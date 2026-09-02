@@ -1937,8 +1937,12 @@
     var s = sheetclarState(state, kind);
     try {
       host.setAttribute('data-mls-sheet-state', s.label);
-      host.innerHTML = '<div data-mls-state-word="1" style="font-size:19px;line-height:1.2;font-weight:900;letter-spacing:.3px;color:' + s.color + '">' + esc(s.label) + '</div>' +
-        '<div data-mls-state-short="1" style="margin-top:3px;color:#385b49;font-size:12.5px">' + esc(s.short) + '</div>';
+      /* writeui-1.0.0 (b1184): ONE STATUS PILL AND ONE SENTENCE. Same node,
+         same two data hooks, same derived label and colour - the word simply
+         wears the box the doctor's eye lands on, so the sheet never shows the
+         state three times in three voices. */
+      host.innerHTML = '<div data-mls-state-word="1" style="display:inline-block;border-radius:999px;padding:3px 13px;background:' + (s.color === '#8b2525' ? '#fdf2f2' : (s.color === '#205c43' ? '#eef7f2' : '#fff7e6')) + ';border:1.5px solid currentColor;font-size:19px;line-height:1.2;font-weight:900;letter-spacing:.3px;color:' + s.color + '">' + esc(s.label) + '</div>' +
+        '<div data-mls-state-short="1" style="margin-top:5px;color:#385b49;font-size:12.5px">' + esc(s.short) + '</div>';
     } catch (e2) {}
     /* A refusal is never folded away; anything else reads as one line plus a
        fold the doctor opens when he wants the whole sentence. */
@@ -3002,7 +3006,37 @@
     var banner = (noteRows.length && inAthena.length === noteRows.length)
       ? '<div style="border:1px solid #bfe0cf;background:#eef7f2;color:#205c43;border-radius:10px;padding:10px 12px;margin-bottom:8px;font-weight:800">&#10003; Everything on this review is in Athena — ' + inAthena.length + ' of ' + noteRows.length + ' note sections verified. Nothing was saved or signed; finish Save / Sign in Athena yourself.</div>'
       : '';
-    host.innerHTML = banner + '<div style="border:1px solid #e2e8f2;background:#fff;border-radius:10px;padding:10px 12px"><div style="font-weight:800;color:#204034;margin-bottom:6px">What happened</div>' + state.manifest.rows.map(function (row) {
+    /* writeui-1.0.0 (b1184, owner ask 5): WHEN IT IS DONE, THE SHEET IS A
+       RECEIPT. What landed WHERE, in the doctor's own words, plus the one line
+       that says Athena read it back; and when only part of it landed, the ones
+       that did not are NAMED with their reason instead of being left for him to
+       find by reading eight rows. Every word here is derived from the receipts
+       the execute path already minted - this renderer decides nothing. */
+    var landedRows = state.manifest.rows.filter(function (row) {
+      var r = receiptStateForRow(state, row); return r.status === 'verified' || r.status === 'already in Athena';
+    });
+    var missedRows = noteRows.filter(function (row) {
+      var r = receiptStateForRow(state, row); return !(r.status === 'verified' || r.status === 'already in Athena');
+    });
+    var landedHtml = landedRows.length
+      ? '<div data-mls-receipt-landed="1" style="border:1px solid #bfe0cf;background:#f6fbf8;border-radius:10px;padding:10px 12px;margin-bottom:8px;color:#205c43;font-size:12px">' +
+        '<div style="font-weight:850;margin-bottom:4px">What landed, and where</div>' +
+        landedRows.map(function (row) {
+          return '<div style="margin-top:3px"><b>' + esc(row.label) + '</b> &rarr; ' + esc(row.destination) + '</div>';
+        }).join('') +
+        '<div style="margin-top:6px;color:#3d5147">Athena read each of these back from the exact field after the write. Nothing was saved and nothing was signed.</div>' +
+        (S(state.manifest.visit.encounterUrl).trim()
+          ? '<div style="margin-top:7px"><a href="' + esc(S(state.manifest.visit.encounterUrl).trim()) + '" target="_blank" rel="noopener" style="color:#204034;font-weight:800">Open this encounter in athenaOne</a></div>'
+          : '') + '</div>'
+      : '';
+    var missedHtml = (landedRows.length && missedRows.length)
+      ? '<div data-mls-receipt-missed="1" style="border:1px solid #f0d79a;background:#fffdf5;border-radius:10px;padding:10px 12px;margin-bottom:8px;color:#6d5010;font-size:12px">' +
+        '<div style="font-weight:850;margin-bottom:4px">Not written &mdash; ' + missedRows.length + ' of ' + noteRows.length + '</div>' +
+        missedRows.map(function (row) {
+          return '<div style="margin-top:3px"><b>' + esc(row.label) + '</b> &mdash; ' + esc(S(receiptStateForRow(state, row).message) || 'no outcome was recorded for this section.') + '</div>';
+        }).join('') + '</div>'
+      : '';
+    host.innerHTML = banner + landedHtml + missedHtml + '<div style="border:1px solid #e2e8f2;background:#fff;border-radius:10px;padding:10px 12px"><div style="font-weight:800;color:#204034;margin-bottom:6px">What happened</div>' + state.manifest.rows.map(function (row) {
       var r = receiptStateForRow(state, row), label = S(r.status).toUpperCase();
       return '<div style="border-top:1px solid #e2e8f2;padding:7px 0"><b>' + esc(row.label) + '</b><span style="float:right;color:' + (colors[r.status] || '#52675c') + ';font-weight:800">' + esc(label) + '</span><div style="clear:both;color:#52675c;font-size:12px">' + esc(r.message) + '</div></div>';
     }).join('') + '</div>';
@@ -3022,6 +3056,14 @@
         cancelBtn.textContent = 'Close review (writes stay in Athena)';
       }
       if (batchBtn2 && banner && !state.batchRunning && !state.running) { batchBtn2.disabled = true; batchBtn2.setAttribute('aria-disabled', 'true'); batchBtn2.textContent = 'Nothing left to send'; }
+      /* writeui-1.0.0 (b1184): once EVERY note section is in Athena the
+         "Sections to write" checklist is describing work that is finished -
+         checked boxes and READY pills over a green "everything is in Athena"
+         banner. The sheet becomes the receipt: the checklist folds away and
+         what landed where takes the page. Presentation only, and reversible -
+         a reopen rebuilds the sheet from the manifest. */
+      var sectionsHost = document.querySelector('#mlsAthenaUnifiedConfirm [data-mls-sections="1"]');
+      if (sectionsHost) sectionsHost.style.display = banner ? 'none' : '';
     } catch (eFoot) {}
   }
   function resultToUnifiedReceipt(state, row, resp, probe) {
@@ -4126,10 +4168,47 @@
   function unifiedHashFooter(row) {
     return 'Payload ' + esc(row.payloadHash) + ' &middot; Row ' + esc(row.rowHash);
   }
-  function unifiedPayloadDetails(row) {
-    return '<details style="margin-top:6px"><summary style="cursor:pointer;font-weight:750;color:#204034;font-size:11.5px">Review full payload and hashes</summary>' +
-      '<div style="font-size:11px;color:#52675c;margin:5px 0">' + unifiedHashFooter(row) + '</div>' +
-      '<pre style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:220px;overflow:auto;margin:0;padding:9px;border:1px solid #dbe7e0;border-radius:8px;background:#f7fbf9;color:#1f3027;font:12px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace">' + esc(manifestPayloadText(row)) + '</pre></details>';
+  /* writeui-1.0.0 (b1184, owner 2026-09-01: "the write UI we have right now I
+     don't love"): THE EXACT TEXT IS STILL REVIEWABLE, IT IS NO LONGER OPEN.
+     The sheet used to print the whole payload in a monospace slab with the
+     payload/row ids right under it, above the fold, for every review. That is
+     the wall of text the owner is looking at. It becomes ONE per-section
+     disclosure - closed by default - whose summary names the exact Athena
+     destination, and the two technical ids move to the bottom of the expanded
+     view in small type where an engineer can still read them off.
+     Nothing about WHAT is sent changes: manifestPayloadText, the payload hash
+     and the row hash are the same bytes they always were. */
+  function unifiedPayloadDetails(row, summary, bodyHtml) {
+    return '<details data-mls-view-text="' + esc(row.id) + '" style="margin-top:7px"><summary style="cursor:pointer;font-weight:750;color:#204034;font-size:11.5px">' +
+      (summary || ('View the exact text going to ' + esc(S(row.destination) || 'Athena'))) + '</summary>' +
+      (bodyHtml ||
+        '<pre style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:44vh;overflow:auto;margin:6px 0 0;padding:11px;border:1px solid #dbe7e0;border-radius:9px;background:#f8fbf9;color:#1f3027;font:13px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace">' + esc(manifestPayloadText(row)) + '</pre>') +
+      '<div style="font-size:10.5px;color:#8b9791;margin-top:6px;overflow-wrap:anywhere">' + unifiedHashFooter(row) + '</div></details>';
+  }
+  /* writeui-1.0.0: the note hero used to be its own top-level slab ABOVE the
+     section list, so the one note section was described twice - once by the
+     hero and once by its own row. It is now the SAME row's "view text"
+     disclosure: identical selection rule (the generic write-note row, or a
+     review whose only note write is a single named section), identical
+     heading, so a review that never had a hero still never gets one. */
+  function unifiedHeroNote(manifest) {
+    var noteRow = unifiedRow(manifest, 'write-note');
+    if (noteRow) return { row: noteRow, heading: 'Review the generated encounter-note text' };
+    var singles = manifest.rows.filter(function (r) { return r.action === 'write_note'; });
+    if (singles.length !== 1) return null;
+    return { row: singles[0], heading: 'Review the exact text going to ' + S(singles[0].destination) };
+  }
+  function unifiedHeroBodyHtml(row) {
+    return '<pre style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:52vh;overflow:auto;margin:6px 0 0;padding:13px;border:1px solid #dbe7e0;border-radius:10px;background:#f8fbf9;color:#1f3027;font:14px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace">' + esc(S(row.payload.noteText)) + '</pre>' +
+      '<div style="display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-top:8px">' +
+      '<button type="button" data-mls-copy-note="' + esc(row.id) + '" style="border:1px solid #d8ddd9;background:#fff;color:#3d5147;border-radius:8px;padding:5px 10px;font-size:11.5px;font-weight:700;cursor:pointer">Copy note</button></div>';
+  }
+  /* ONE call site's worth of the hero rule, used by all three row renderers so
+     a hero row keeps its heading whatever its capability turned out to be. */
+  function unifiedSectionText(manifest, row) {
+    var hero = null; try { hero = unifiedHeroNote(manifest); } catch (e) { hero = null; }
+    if (hero && hero.row.id === row.id) return unifiedPayloadDetails(row, esc(hero.heading), unifiedHeroBodyHtml(row));
+    return unifiedPayloadDetails(row);
   }
   function unifiedCopyPayloadButton(row) {
     return '<button type="button" data-mls-copy-payload="' + esc(row.id) + '" style="margin-top:7px;border:1px solid #d8ddd9;background:#fff;color:#3d5147;border-radius:8px;padding:5px 10px;font-size:11.5px;font-weight:700;cursor:pointer">Copy payload</button>';
@@ -4149,15 +4228,29 @@
   function unifiedDefaultChecked(row) {
     return !!(row && row.capability === 'ready' && row.action === 'write_note');
   }
-  function unifiedReadyRowHtml(manifest, row, preChecked) {
+  function unifiedReadyRowHtml(manifest, row, preChecked, soleReady) {
     /* wf3: the ready row is a compact selectable pill (real radio inside, so
        every existing change-wire and suite hook still works). The preferred
        row arrives pre-checked and is probed on open — the doctor only touches
        these pills to switch to Save-as-draft. Payload details and destination
        teaching stay one fold away. */
-    return '<section data-manifest-row="' + esc(row.id) + '" style="border:1px solid #cfe0d7;border-radius:11px;padding:9px 11px;margin-top:8px;background:#fff;flex:1;min-width:210px">' +
-      '<label style="display:flex;gap:9px;align-items:center;cursor:pointer">' +
-      '<input type="radio" name="mlsAthenaUnifiedAction" value="' + esc(row.id) + '"' + (preChecked ? ' checked' : '') + ' aria-label="Select ' + esc(row.label) + ' for Athena review">' +
+    /* writeui-1.0.0 (b1184): THE SOLE-READY ROW STOPS SHOWING TWO CONTROLS FOR
+       ONE ACT. On an op-note review there is exactly one READY section, and it
+       rendered a radio ("pick this one") beside an include checkbox ("send this
+       section") beside the big Confirm. The radio is a CHOICE control; with one
+       candidate there is no choice to make, so it renders but is not painted -
+       same element, same name/value, same pre-checked property, same change
+       wire, so probeUnifiedRow, the residue step strip and every suite that
+       counts or reads radios see exactly what they saw before. Two or more
+       READY rows still paint the radio, because then it is a real choice. */
+    /* writeui-1.0.0: the row is a COLUMN FLEX so the include tick can lead it
+       visually (order:-1) while staying where it is in the markup - the batch
+       pin requires the checkbox to be emitted OUTSIDE and AFTER the radio's
+       label, and the two controls must never share a label. Order is paint;
+       the source order is the contract. */
+    return '<section data-manifest-row="' + esc(row.id) + '" style="display:flex;flex-direction:column;border:1px solid #cfe0d7;border-radius:11px;padding:10px 12px;margin-top:8px;background:#fff;flex:1;min-width:210px">' +
+      '<label style="display:flex;gap:9px;align-items:flex-start;cursor:pointer">' +
+      '<input type="radio" name="mlsAthenaUnifiedAction" value="' + esc(row.id) + '"' + (preChecked ? ' checked' : '') + (soleReady ? ' style="display:none"' : '') + ' aria-label="Select ' + esc(row.label) + ' for Athena review">' +
       '<span style="flex:1;min-width:0">' +
       '<span style="display:flex;gap:7px;align-items:center;flex-wrap:wrap"><b style="color:#204034">What: ' + esc(unifiedArtifactName(row)) + '</b>' +
       '<span style="font-size:10.5px;font-weight:850;color:#205c43;border:1px solid currentColor;border-radius:999px;padding:1px 7px">READY &middot; SEPARATE CONFIRMATION</span>' +
@@ -4175,9 +4268,9 @@
          controls never fight, and only write_note rows ever get one - Save,
          Sign, billing and orders can never join a batch. */
       (row.action === 'write_note'
-        ? '<label style="display:flex;gap:7px;align-items:center;margin-top:6px;font-size:11.5px;color:#204034;cursor:pointer"><input type="checkbox" class="mls-bx-check" data-mls-bx-row="' + esc(row.id) + '"' + (unifiedDefaultChecked(row) ? ' checked' : '') + '> Send this section</label>'
+        ? '<label style="order:-1;display:flex;gap:7px;align-items:center;margin:0 0 6px;font-size:12px;font-weight:800;color:#204034;cursor:pointer"><input type="checkbox" class="mls-bx-check" data-mls-bx-row="' + esc(row.id) + '"' + (unifiedDefaultChecked(row) ? ' checked' : '') + '> Send this section</label>'
         : '') +
-      unifiedPayloadDetails(row) + advancedTeachingHtml(manifest, row) + '</section>';
+      unifiedSectionText(manifest, row) + advancedTeachingHtml(manifest, row) + '</section>';
   }
   function unifiedManualRowHtml(manifest, row) {
     return '<section data-manifest-row="' + esc(row.id) + '" style="border:1px solid #f0d79a;border-radius:11px;padding:10px 11px;margin-top:8px;background:#fffdf5">' +
@@ -4190,7 +4283,7 @@
       '<details style="margin-top:5px"><summary style="cursor:pointer;font-weight:700;color:#6d5010;font-size:11.5px">Why?</summary>' +
       (row.reason ? '<div style="font-size:12px;color:#52675c;margin-top:4px">' + esc(row.reason) + '</div>' : '') +
       '</details>' +
-      unifiedPayloadDetails(row) + unifiedCopyPayloadButton(row) + advancedTeachingHtml(manifest, row) + '</section>';
+      unifiedSectionText(manifest, row) + unifiedCopyPayloadButton(row) + advancedTeachingHtml(manifest, row) + '</section>';
   }
   /* wfclar-1.0.0 (owner 2026-08-27: "not so many things that say blocked"):
      when EVERY blocked row is blocked for the SAME reason - which is the
@@ -4240,7 +4333,7 @@
         ? '<div data-mls-bind-hint="' + esc(row.id) + '" style="font-size:12px;color:#204034;margin-top:5px;font-weight:700">Fixable here: press &ldquo;' + esc(WFBIND_LABEL) + '&rdquo; above. MLS re-pulls the day and re-checks this exact appointment; nothing is written.</div>'
         : '') +
       '<div style="font-size:12px;color:#52675c;margin-top:3px"><b>Result:</b> ' + esc(unifiedOneLine(row.consequence)) + '</div>' +
-      unifiedPayloadDetails(row) + unifiedCopyPayloadButton(row) + '</section>';
+      unifiedSectionText(manifest, row) + unifiedCopyPayloadButton(row) + '</section>';
   }
   /* ===== wfx-1.0.0 (2026-08-19) — THE WRITE-FIDELITY CONTRACT ==============
      Closes three of the five holes the qwen3.8:27b oracle found in the
@@ -4369,7 +4462,10 @@
     var manifest = state.manifest, patient = wfxSourcePatient(state);
     var contradictions = wfxContradictions(manifest, patient);
     var tally = wfxTally(manifest, patient);
-    var head = '<details open style="margin-top:12px"><summary style="cursor:pointer;font-weight:750;color:#204034;font-size:11.5px">What this note was written from</summary>' +
+    /* writeui-1.0.0 (b1184): this shipped `open` and the shell's clunky fold
+       pass shut it a beat later anyway - an open-then-snap fold on every sheet.
+       It ships closed, which is the state the doctor actually saw. */
+    var head = '<details style="margin-top:12px"><summary style="cursor:pointer;font-weight:750;color:#204034;font-size:11.5px">What this note was written from</summary>' +
       '<div style="margin-top:7px;padding:11px 12px;background:#f7f9fb;border:1px solid #e2e8f2;border-radius:10px;color:#3d5147;font-size:12px;overflow-wrap:anywhere">';
     var body = '<div data-mls-wfx="staleness">' + esc(wfxStalenessLine(manifest)) + '</div>';
     if (contradictions.length) {
@@ -4391,48 +4487,42 @@
     return head + body + '</div></details>';
   }
   /* ===== end wfx-1.0.0 ==================================================== */
-  function unifiedNoteHeroHtml(manifest) {
-    var noteRow = unifiedRow(manifest, 'write-note'), heading = 'Review the generated encounter-note text';
-    /* Named HPI/ROS/Exam/Assessment/Plan reviews have several independent
-       destinations. A generic Encounter-note hero would be false and would
-       visually duplicate those rows, so only the true generic-note lane gets
-       the full-text hero. Named sections show their own What/Where/How rows. */
-    /* wfclar-1.0.0 (owner 2026-08-27, on the op-note write): a review with
-       EXACTLY ONE note-write row has no wall of destinations to duplicate, and
-       an op note is exactly that shape. Hiding its entire body behind "Review
-       full payload and hashes" made the one thing the doctor is confirming the
-       hardest thing on the sheet to read. One row, one hero, titled by that
-       row's own destination so it can never claim to be the generic note. */
-    if (!noteRow) {
-      var singles = manifest.rows.filter(function (r) { return r.action === 'write_note'; });
-      if (singles.length !== 1) return '';
-      noteRow = singles[0];
-      heading = 'Review the exact text going to ' + S(noteRow.destination);
-    }
-    var who = [S(manifest.patient.name).trim() || '(patient name missing)'];
-    if (manifest.patient.dob) who.push('DOB ' + S(manifest.patient.dob));
-    if (manifest.patient.mrn) who.push('MRN ' + S(manifest.patient.mrn));
-    if (manifest.visit.visitDate) who.push(S(manifest.visit.visitDate));
-    if (manifest.visit.provider) who.push(S(manifest.visit.provider));
-    var open = '<section style="border:1px solid #dce5df;border-radius:12px;padding:14px 15px;background:#fff;min-width:0;margin-top:12px">' +
-      '<div style="font-size:13.5px;font-weight:850;color:#204034">' + esc(heading) + '</div>' +
-      '<div style="color:#52675c;font-size:12px;margin-top:3px">' + esc(who.join(' - ')) + '</div>';
-    return open +
-      '<pre style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:60vh;overflow:auto;margin:11px 0 0;padding:13px;border:1px solid #dbe7e0;border-radius:10px;background:#f8fbf9;color:#1f3027;font:14px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace">' + esc(S(noteRow.payload.noteText)) + '</pre>' +
-      '<div style="display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-top:8px">' +
-      '<span style="font-size:11px;color:#52675c">' + unifiedHashFooter(noteRow) + '</span>' +
-      '<button type="button" data-mls-copy-note="' + esc(noteRow.id) + '" style="margin-left:auto;border:1px solid #d8ddd9;background:#fff;color:#3d5147;border-radius:8px;padding:5px 10px;font-size:11.5px;font-weight:700;cursor:pointer">Copy note</button></div></section>';
-  }
+  /* writeui-1.0.0 (b1184): unifiedNoteHeroHtml is GONE as a top-level slab.
+     Its selection rule and both of its headings live on in unifiedHeroNote /
+     unifiedHeroBodyHtml above, where they render as the hero row's own
+     "view text" disclosure - the same text, the same Copy note button, the
+     same payload/row ids, one surface instead of two. */
   /* WHO and WHICH VISIT, in one line, from the frozen manifest only. An absent
      field says so instead of being omitted - a header that silently drops the
-     provider would read as a complete identity. */
+     provider would read as a complete identity.
+     writeui-1.0.0 (b1184): the MRN joins it. The header is the sheet's whole
+     identity statement now that the note slab and its duplicate who-line are
+     gone, and the MRN is the field an Athena write is actually matched on -
+     it may not be the only thing folded away in a drawer. */
   function unifiedWhoLine(manifest) {
     var patient = (manifest && manifest.patient) || {}, visit = (manifest && manifest.visit) || {};
     var bits = [S(patient.name).trim() || '(patient name missing)'];
     if (S(patient.dob).trim()) bits.push('DOB ' + S(patient.dob).trim());
+    if (S(patient.mrn).trim()) bits.push('MRN ' + S(patient.mrn).trim());
     bits.push(S(visit.visitDate).trim() || 'visit date not bound yet');
     bits.push(S(visit.provider).trim() || 'provider not bound yet');
     return bits.join(' - ');
+  }
+  /* writeui-1.0.0 (b1184): ONE SENTENCE OF WHAT WILL HAPPEN, in the header,
+     instead of the dense capability paragraph that used to sit there (that
+     paragraph is not deleted - it moved verbatim into "How this works", where
+     athena-unified-confirmation-contract still reads both of its branches).
+     Derived from the manifest's own READY note destinations, so it can never
+     name a section this sheet cannot write. */
+  function unifiedPlanSentence(manifest) {
+    var rows = [];
+    try {
+      rows = manifest.rows.filter(function (r) { return r.capability === 'ready' && r.action === 'write_note'; });
+    } catch (e) { rows = []; }
+    var tail = ' Save and Sign & Save stay yours in athenaOne.';
+    if (!rows.length) return 'Nothing on this review can be written yet — each section below says what is missing.' + tail;
+    if (rows.length === 1) return 'MLS will write this text into ' + S(rows[0].destination) + '.' + tail;
+    return 'MLS will write ' + rows.length + ' checked sections into this encounter, one at a time, each with its own read-only check and its own receipt.' + tail;
   }
   function unifiedIdentityHtml(manifest) {
     return '<details style="margin-top:12px"><summary style="cursor:pointer;font-weight:750;color:#204034;font-size:11.5px">Patient, visit and manifest identity</summary>' +
@@ -4524,12 +4614,23 @@
     var sharedHow = readyRows.some(function (row) { return row.action === 'write_note'; })
       ? ' Leave the sections you want checked, then press <b>Confirm &amp; Send to Athena</b> once. Each checked section still gets its own read-only Athena check, its own write and its own receipt; nothing is saved or signed.'
       : ' Every READY item needs its own Confirm &amp; Send.';
-    var rowsHtml = generationIssue ? '' : '<div data-mls-destination-guide="1" style="margin-top:12px;padding:8px 10px;border:1px solid #dbe7e0;background:#f7fbf9;border-radius:9px;color:#385b49;font-size:12px"><b>What &rarr; Where &rarr; How.</b>' + sharedHow + ' MANUAL and BLOCKED items never cross the Athena write bridge.</div>';
+    /* writeui-1.0.0 (b1184): the What -> Where -> How paragraph is the same
+       paragraph, byte for byte - it moved OUT of the doctor's first screen and
+       into the one "How this works" disclosure below. It is still rendered
+       exactly once, which is what 1p-writeflow-sheet-ux pins. */
+    var guideHtml = generationIssue ? '' : '<div data-mls-destination-guide="1" style="margin-top:9px;padding:8px 10px;border:1px solid #dbe7e0;background:#f7fbf9;border-radius:9px;color:#385b49;font-size:12px"><b>What &rarr; Where &rarr; How.</b>' + sharedHow + ' MANUAL and BLOCKED items never cross the Athena write bridge.</div>';
+    /* writeui-1.0.0: the sections are a CHECKLIST with a heading, not a loose
+       stack of cards under a paragraph. */
+    var rowsHtml = '';
+    if (readyRows.length) {
+      rowsHtml += '<div data-mls-sections-head="1" style="margin-top:14px;font-size:12.5px;font-weight:850;color:#204034">Sections to write' +
+        (readyRows.length > 1 ? (' (' + readyRows.length + ')') : '') + '</div>';
+    }
     if (readyRows.length > 1) {
-      rowsHtml += '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap" role="radiogroup" aria-label="What MLS sends">' +
-        readyRows.map(function (row) { return unifiedReadyRowHtml(manifest, row, chosen && chosen.id === row.id); }).join('') + '</div>';
+      rowsHtml += '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap" role="radiogroup" aria-label="What MLS sends">' +
+        readyRows.map(function (row) { return unifiedReadyRowHtml(manifest, row, chosen && chosen.id === row.id, false); }).join('') + '</div>';
     } else if (readyRows.length === 1) {
-      rowsHtml += unifiedReadyRowHtml(manifest, readyRows[0], true);
+      rowsHtml += unifiedReadyRowHtml(manifest, readyRows[0], true, true);
     }
     /* wfclar-1.0.0: one reason shared by every blocked row is said ONCE, in
        this group's heading, led by the single fact that is missing where there
@@ -4549,9 +4650,16 @@
     if (drawerCount) {
       /* wf3: the drawer ships OPEN — what stays manual must be VISIBLE (the
          unified-confirmation runtime pins this), it is merely grouped and
-         de-emphasized below the primary action instead of interleaved. */
+         de-emphasized below the primary action instead of interleaved.
+         writeui-1.0.0 (b1184): it ships CLOSED. What "VISIBLE" actually buys
+         is that the rows are IN the sheet and readable - and the runtime pin
+         reads card.innerHTML, which a closed disclosure keeps intact. Shipping
+         it open meant the shell's own fold pass (clunky-athena item 21) snapped
+         it shut a beat later on every single sheet, so the doctor never got the
+         open state anyway; he got a flash and a wall. The count stays in the
+         summary, which is what makes a shut drawer honest. */
       var readyOrderCount = orderRows.filter(function (row) { return row.capability === 'ready' && !!row.action; }).length;
-      rowsHtml += '<details open style="margin-top:12px"><summary style="cursor:pointer;font-weight:750;color:#6d5010;font-size:12px">' +
+      rowsHtml += '<details style="margin-top:12px"><summary style="cursor:pointer;font-weight:750;color:#6d5010;font-size:12px">' +
         (readyOrderCount ? ('Orders and other Athena items (' + drawerCount + ') — ' + readyOrderCount + ' order' + (readyOrderCount === 1 ? '' : 's') + ' can be sent with separate confirmation') : ('Complete final actions in Athena yourself (' + drawerCount + ') — nothing here is sent')) + '</summary>' +
         /* sheetux-1.0.0: each group states its shared "How" ONCE, here. */
         (manualRows.length ? unifiedGroupHead('You finish this in Athena', '#7a5a16', 'Review or copy each payload here, then complete it yourself in Athena. Nothing is sent from these rows; the exact payload stays here for you to copy and never crosses the write bridge.') +
@@ -4580,34 +4688,89 @@
        Confirm button's box cannot intersect anything inside the body, whatever
        the stacking. tests/sheet-clarity.test.js pins that shape. */
     var card = document.createElement('div'); card.style.cssText = 'background:#fff;color:#1A211C;width:min(720px,96vw);max-height:92vh;display:flex;flex-direction:column;overflow:hidden;border-radius:16px;box-shadow:0 24px 70px rgba(10,30,70,.42);font:13px/1.5 system-ui';
+    /* writeui-1.0.0 (b1184, owner 2026-09-01: "the write UI we have right now
+       I don't love; if you could also completely fix it please. I do like the
+       loading bar from it though.")
+       THE SHEET IS RE-ORDERED, NOT RE-WIRED. Every id, every handler, every
+       gate, every allowlist and the whole four-layer sign/order/billing block
+       are untouched (seven regions of this file are pinned byte-for-byte by
+       SHA-256 in tests/sheet-clarity.test.js and tests/write-auto-chain.test.js
+       and none of them is presentation). What changed is what the doctor's
+       first screen holds:
+         header (who + ONE sentence of what will happen)
+           -> the four step chips, in their own reserved host, as the spine
+           -> ONE status pill + ONE sentence
+           -> the loading bar he likes
+           -> the receipt, the moment there is one
+           -> sections to write, as a checklist whose exact text is one click
+              away instead of poured onto the page
+           -> everything explanatory in ONE closed "How this works".
+       The three competing explanations - the dense capability paragraph, the
+       What/Where/How guide and the long Nothing-has-changed-yet block - said
+       three different true things at the doctor at once. They are all still
+       here, verbatim (athena-unified-confirmation-contract reads both
+       capability branches, 1p-writeflow-sheet-ux counts the guide exactly
+       once); they are one fold down. */
+    var capabilityLine = generationIssue
+      ? (esc(S(manifest.patient.name) || 'This note') + ' &middot; generate the missing or stale five-field clinical draft locally first; no Athena write is available until the rebuilt rows pass the exact encounter check.')
+      : (athenaFinalActionsReady()
+        ? 'Reviewed note writes, Save Draft, billing staging, Sign &amp; Save, and each supported catalog-bound order run only after their own explicit confirmation; medication and injection orders stay yours in Athena.'
+        : 'Only reviewed note write and Save Draft can be confirmed here; signing, billing and orders stay yours in Athena.');
+    var boundaryLine = generationIssue
+      ? 'Generate / Regenerate updates only the local MLS draft through the normal validation and persistence gate. It never binds an encounter and never writes Athena; the rebuilt review must still pass exact patient, appointment, and destination checks.'
+      : (athenaFinalActionsReady()
+        ? 'One READY row is pre-selected and checked read-only; each Confirm &amp; Send click runs exactly that one action, and MLS never retries or auto-chains. Sign &amp; Save unlocks only after a verified note write; a reviewed catalog-bound order places only that item; prescriptions and claim submission stay yours in Athena.'
+        : 'One READY note row is pre-selected and checked read-only; each Confirm &amp; Send click runs exactly that one action, and MLS never retries or auto-chains. Billing, orders, prescriptions, signature, attestation, and claim submission stay yours in Athena.');
+    var howHtml = '<details data-mls-sheet-how="1" style="margin-top:12px"><summary style="cursor:pointer;font-weight:750;color:#52675c;font-size:11.5px">How this works</summary>' +
+      '<div style="margin-top:7px;color:#52675c;font-size:12px">' + capabilityLine + '</div>' +
+      '<div style="margin-top:7px;color:#52675c;font-size:12px">' + boundaryLine + '</div>' +
+      guideHtml +
+      /* the exact-encounter box keeps its id, its writer (renderUnifiedContext)
+         and its every word; it is a FACT PANEL, not running commentary, so it
+         reads here instead of competing with the status pill. The walkthrough
+         strip and the residue overlay both read its textContent, which a closed
+         disclosure keeps intact. */
+      '<div id="mlsAthenaUnifiedContext" style="margin-top:9px;padding:10px 12px;border:1px solid #cfe0d7;background:#f7fbf9;border-radius:10px;color:#204034;overflow-wrap:anywhere"><b>Exact Athena encounter:</b> ' + (generationIssue ? 'kept fail-closed while the five local draft fields are generated.' : 'being verified read-only now.') + '</div>' +
+      '</details>';
     card.innerHTML =
       '<div id="mlsAthenaUnifiedBody" style="flex:1 1 auto;min-height:0;overflow:auto;padding:20px 22px 4px">' +
       (probeOnlyActive() ? '<div id="mlsAthenaProbeOnlyBanner" style="margin:0 0 12px;padding:10px 12px;border:2px solid #8b2525;background:#fdf2f2;color:#8b2525;border-radius:10px;font-weight:850">' + esc(PROBE_ONLY_BANNER) + '</div>' : '') +
       /* wfclar-1.0.0 (owner 2026-08-27: "make it easy and simple"): the header
-         now leads with WHO and WHICH VISIT - the one thing it did NOT say, and
-         the thing the doctor most needs at a glance; until now it was folded
-         away inside the identity drawer.
-         MEASURED, AND THE REASON THE SENTENCE BELOW IT STAYED: that sub-line
-         reads like a duplicate of the Nothing-has-changed-yet block, and it is
-         not. athena-unified-confirmation-contract pins BOTH of its capability
-         branches by exact wording - the capability-off "Only reviewed note
-         write and Save Draft can be confirmed here" and the capability-on
-         "...run only after their own explicit confirmation" - and neither
-         sentence exists anywhere else on the sheet. Deleting it silently drops
-         a disclosure of what MLS is allowed to do at all. It stays. */
-      '<div style="display:flex;gap:10px;align-items:flex-start"><div style="flex:1"><div id="mlsAthenaUnifiedTitle" style="font-size:20px;font-weight:850;color:#204034">Send to Athena</div>' + (generationIssue ? '' : '<div style="color:#204034;font-weight:700;margin-top:3px">' + esc(unifiedWhoLine(manifest)) + '</div>') + '<div style="color:#52675c;margin-top:3px">' + (generationIssue ? (esc(S(manifest.patient.name) || 'This note') + ' &middot; generate the missing or stale five-field clinical draft locally first; no Athena write is available until the rebuilt rows pass the exact encounter check.') : (athenaFinalActionsReady() ? 'Reviewed note writes, Save Draft, billing staging, Sign &amp; Save, and each supported catalog-bound order run only after their own explicit confirmation; medication and injection orders stay yours in Athena.' : 'Only reviewed note write and Save Draft can be confirmed here; signing, billing and orders stay yours in Athena.')) + '</div></div><button type="button" id="mlsAthenaUnifiedClose" aria-label="Close Athena review" style="border:0;background:none;font-size:23px;color:#66766d;cursor:pointer">&times;</button></div>' +
-      unifiedNoteHeroHtml(manifest) +
-      unifiedCanonicalGenerationHtml(state) +
-      rowsHtml +
-      '<div id="mlsAthenaUnifiedContext" style="margin-top:12px;padding:10px 12px;border:1px solid #cfe0d7;background:#f7fbf9;border-radius:10px;color:#204034;overflow-wrap:anywhere"><b>Exact Athena encounter:</b> ' + (generationIssue ? 'kept fail-closed while the five local draft fields are generated.' : 'being verified read-only now.') + '</div>' +
+         leads with WHO and WHICH VISIT - the thing the doctor most needs at a
+         glance; before that it was folded away inside the identity drawer.
+         writeui-1.0.0 adds the MRN to that line and replaces the dense
+         capability paragraph under it with ONE sentence of what will happen.
+         THE HEADER SHAPE IS LOAD-BEARING: feat_mls_writeback_walkthrough.js
+         finds #mlsAthenaUnifiedTitle and mounts the step strip after
+         title.parentElement.parentElement, so the title stays wrapped in a
+         flex:1 column inside a flex row that is a direct child of the body. */
+      '<div style="display:flex;gap:10px;align-items:flex-start"><div style="flex:1"><div id="mlsAthenaUnifiedTitle" style="font-size:20px;font-weight:850;color:#204034">Send to Athena</div>' + (generationIssue ? '' : '<div data-mls-sheet-who="1" style="color:#204034;font-weight:700;margin-top:3px">' + esc(unifiedWhoLine(manifest)) + '</div>') + '<div data-mls-sheet-plan="1" style="color:#52675c;margin-top:3px">' + (generationIssue ? capabilityLine : esc(unifiedPlanSentence(manifest))) + '</div></div><button type="button" id="mlsAthenaUnifiedClose" aria-label="Close Athena review" style="border:0;background:none;font-size:23px;color:#66766d;cursor:pointer">&times;</button></div>' +
+      /* writeui-1.0.0: THE SPINE. The four step chips (Pick the action ->
+         Athena checks it -> Confirm & write -> Verify in Athena) and their
+         one-line status are the surface the owner named as the one he likes.
+         feat_mls_writeback_walkthrough.js creates #wbwSteps itself when it is
+         missing and inserts it after the header; reserving the host here makes
+         its position deterministic instead of a side effect of DOM order, and
+         the module simply paints into the node it finds. No second strip is
+         created and no control is added - an empty host renders nothing. */
+      '<div id="wbwSteps" data-mls-sheet-steps="1" style="margin-top:11px"></div>' +
       /* sheetclar-1.0.0: the one thing a scanning doctor reads - the state word
          and one short sentence. Derived from measured state (paintSheetclarState),
-         so it can never claim more than the gates allow. */
-      '<div id="mlsAthenaUnifiedState" role="status" aria-live="polite" style="margin-top:11px" data-mls-sheet-state="' + (generationIssue ? 'NEEDS ONE STEP' : 'CHECKING') + '"><div data-mls-state-word="1" style="font-size:19px;line-height:1.2;font-weight:900;letter-spacing:.3px;color:' + (generationIssue ? '#7a5a16' : '#6d5010') + '">' + (generationIssue ? 'NEEDS ONE STEP' : 'CHECKING') + '</div><div data-mls-state-short="1" style="margin-top:3px;color:#385b49;font-size:12.5px">' + (generationIssue ? 'No Athena check or write has started. Generate the five local draft fields first; nothing here can be sent until they pass.' : 'MLS is reading the exact Athena chart read-only. Nothing has been sent.') + '</div></div>' +
+         so it can never claim more than the gates allow.
+         writeui-1.0.0: painted as ONE pill plus ONE sentence. Same node, same
+         data-mls-sheet-state / data-mls-state-word / data-mls-state-short
+         hooks, same derivation - only the box around the word is new. */
+      '<div id="mlsAthenaUnifiedState" role="status" aria-live="polite" style="margin-top:11px" data-mls-sheet-state="' + (generationIssue ? 'NEEDS ONE STEP' : 'CHECKING') + '"><div data-mls-state-word="1" style="display:inline-block;border-radius:999px;padding:3px 13px;background:#fff7e6;border:1.5px solid currentColor;font-size:19px;line-height:1.2;font-weight:900;letter-spacing:.3px;color:' + (generationIssue ? '#7a5a16' : '#6d5010') + '">' + (generationIssue ? 'NEEDS ONE STEP' : 'CHECKING') + '</div><div data-mls-state-short="1" style="margin-top:5px;color:#385b49;font-size:12.5px">' + (generationIssue ? 'No Athena check or write has started. Generate the five local draft fields first; nothing here can be sent until they pass.' : 'MLS is reading the exact Athena chart read-only. Nothing has been sent.') + '</div></div>' +
       /* wfprog-1.1.0 lives with the words it belongs to: the read-only ladder is
          the LONG stretch, and its bar was rendered far below the state line, off
          the bottom of a scrolled sheet. It is the second thing you read now. */
       '<div id="mlsAthenaUnifiedProgress" role="status" aria-live="polite" style="display:none;margin-top:11px"></div>' +
+      /* writeui-1.0.0: THE RECEIPT MOVED UP. It renders nothing at all until an
+         outcome exists (renderUnifiedReceipts returns early on an empty
+         ledger), so on a fresh sheet it costs no pixels - and the moment
+         something lands, what landed where is the first thing under the status
+         instead of the last thing under a wall. */
+      '<div id="mlsAthenaUnifiedReceipt" style="margin-top:11px"></div>' +
       /* sheetclar-1.0.0: the full honest sentence, unchanged, one fold below the
          state word. #mlsAthenaUnifiedProbe keeps EXACTLY the textContent it has
          always had; a refusal opens this disclosure itself, so nothing that says
@@ -4630,15 +4793,20 @@
       /* sheetclar-1.0.0: position:static is deliberate and pinned. This strip is
          the surface that was measured on top of Confirm & Send; it stays in
          normal flow inside the scrolling body, ABOVE the footer, and never
-         becomes a positioned box that could share the footer's pixels. */
+         becomes a positioned box that could share the footer's pixels.
+         writeui-1.0.0 keeps it directly under the status it belongs to - the
+         one thing to try next reads with the reason it exists. */
       '<div id="mlsAthenaUnifiedFix" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;position:static"></div>' +
-      '<div id="mlsAthenaUnifiedSafety" style="margin-top:10px;padding:9px 11px;border:1px solid #f0d79a;background:#fff7e6;border-radius:9px;color:#6d5010"><b>Nothing has changed yet.</b> ' + (generationIssue ? 'Generate / Regenerate updates only the local MLS draft through the normal validation and persistence gate. It never binds an encounter and never writes Athena; the rebuilt review must still pass exact patient, appointment, and destination checks.' : (athenaFinalActionsReady() ? 'One READY row is pre-selected and checked read-only; each Confirm &amp; Send click runs exactly that one action, and MLS never retries or auto-chains. Sign &amp; Save unlocks only after a verified note write; a reviewed catalog-bound order places only that item; prescriptions and claim submission stay yours in Athena.' :'One READY note row is pre-selected and checked read-only; each Confirm &amp; Send click runs exactly that one action, and MLS never retries or auto-chains. Billing, orders, prescriptions, signature, attestation, and claim submission stay yours in Athena.')) + '</div>' +
+      unifiedCanonicalGenerationHtml(state) +
+      '<div data-mls-sections="1">' + rowsHtml + '</div>' +
+      /* writeui-1.0.0: the standing promise, said SHORT. It is the dialog's own
+         aria-describedby, so it stays visible and outside every fold; the long
+         boundary sentence it used to carry is one fold down in How this works,
+         where it is still read by every pin that reads it. */
+      '<div id="mlsAthenaUnifiedSafety" style="margin-top:12px;padding:9px 11px;border:1px solid #f0d79a;background:#fff7e6;border-radius:9px;color:#6d5010;font-size:12px"><b>Nothing has changed yet.</b> Nothing leaves MLS until you press Confirm &amp; Send, and MLS never saves and never signs.</div>' +
       wfxEvidenceHtml(state) + /* wfx-1.0.0: W1 staleness, W2 contradiction screen, W4 completeness tally */
+      howHtml +
       unifiedIdentityHtml(manifest) +
-      /* wfprog-1.0.0: the send's own loading surface - which section, N of M,
-         and a settled verdict per section - now rendered up with the state line
-         (sheetclar-1.0.0), where the doctor is already looking. */
-      '<div id="mlsAthenaUnifiedReceipt" style="margin-top:11px"></div>' +
       '</div>' + /* /#mlsAthenaUnifiedBody - everything above scrolls; the footer below does not */
       /* sheetux-1.0.0: ONE primary send button. "Send checked sections" and
          "Confirm & Send to Athena" were the same act described twice, so the

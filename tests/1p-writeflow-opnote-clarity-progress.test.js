@@ -547,9 +547,15 @@ async function settle(n) { for (let i = 0; i < (n || 400); i++) await new Promis
     h.wf.openUnifiedConfirmation({ patient: PATIENT, sections: OP_SECTION, expectedContext: BOUND, receiptSessionId: 'op-head' });
     await settle(120);
     const html = h.cardHtml();
-    /* what the header gained: who and which visit, out of the identity drawer */
-    ok(html.indexOf(PATIENT.name + ' - DOB ' + PATIENT.dob + ' - ' + ATHENA_DAY + ' - ' + PROVIDER) > 0,
-      'the header does not name who and which visit this sheet is about');
+    /* what the header gained: who and which visit, out of the identity drawer.
+       RE-AIMED DELIBERATELY, writeui-1.0.0 (b1184): the MRN joined this line.
+       Nothing was dropped - the same name, DOB, date and provider are still
+       required, in the same order, and the field an Athena write is actually
+       matched on is now required with them. The old assertion could only pass
+       while the MRN was absent from the header, which is the thing writeui
+       fixed; it is strengthened, not relaxed. */
+    ok(html.indexOf(PATIENT.name + ' - DOB ' + PATIENT.dob + ' - MRN ' + PATIENT.mrn + ' - ' + ATHENA_DAY + ' - ' + PROVIDER) > 0,
+      'the header does not name who (name, DOB, MRN) and which visit this sheet is about');
     /* AND THE REGRESSION GUARD. Collapsing the sub-line under it looks like
        removing duplicate prose and is not: athena-unified-confirmation-contract
        pins both capability branches by exact wording, and neither sentence

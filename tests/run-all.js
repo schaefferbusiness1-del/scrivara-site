@@ -21,6 +21,9 @@ const AUTOMATED_PROOF_FILES = new Set([
      card beside it - eleven measured defects pinned against the real builders
      plus the receipt-only re-attribution of provider-less rows. */
   'reports-fixes-proof.js',
+  /* writeui-1.0.0 (b1187): the Send-to-Athena sheet rebuilt around the step
+     bar - presentation only, every gate region SHA-pinned unchanged. */
+  'write-ui-proof.js',
   '1p-avatar-photo-framing-proof.js',
   '1p-avatar-professional-likeness-proof.js',
   /* avlook-1.0.0 (2026-08-17): the drawn face's proportions as eleven measured
@@ -1256,6 +1259,7 @@ const tests = [
   'write-auto-chain.test.js',
   'month-report-surface.test.js',
   'reports-fixes-proof.js',
+  'write-ui-proof.js',
   'visit-walkthrough-proof.js',
   'phone-fixes-proof.js',
   'note-quality-proof.js',
