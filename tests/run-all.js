@@ -28,6 +28,15 @@ const AUTOMATED_PROOF_FILES = new Set([
      pull drains on its settle path; a day with debt is never complete; the
      Follow guard mutes only af-1.0.0 replies while MLS drives athenaOne. */
   'day-note-proof.js',
+  /* genvis-1.0.0 / histrefuse-1.0.0 (2026-09-01): two refusals that left no
+     persistent trace, so the owner read both as "the button does nothing" -
+     a 28 s generation that settled failed in silence, and a History Athena
+     review refusal that lived only in a toast. */
+  'refusal-visibility-proof.js',
+  /* residue-1.0.0 (b1189): a chart MLS itself opened in athenaOne is never a
+     chart Follow adopts - not while the lane drives, and not in the quiet
+     afterwards when the reader has finished and left the chart parked. */
+  'follow-residue-proof.js',
   '1p-avatar-photo-framing-proof.js',
   '1p-avatar-professional-likeness-proof.js',
   /* avlook-1.0.0 (2026-08-17): the drawn face's proportions as eleven measured
@@ -1265,6 +1274,8 @@ const tests = [
   'reports-fixes-proof.js',
   'write-ui-proof.js',
   'day-note-proof.js',
+  'refusal-visibility-proof.js',
+  'follow-residue-proof.js',
   'visit-walkthrough-proof.js',
   'phone-fixes-proof.js',
   'note-quality-proof.js',

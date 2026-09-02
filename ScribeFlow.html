@@ -483,6 +483,9 @@
   body.theme-dark .team-doc:hover,
   body.theme-dark .team-doc.on,
   body.theme-dark .pt-item.active{ background:var(--soft); border-color:var(--brand) }
+  /* histrefuse-1.0.0: the light card would be a white slab on the dark shell */
+  body.theme-dark .hist-main .hist-refusal{ background:rgba(224,96,107,.13); border-color:rgba(224,96,107,.38); color:var(--red) }
+  body.theme-dark .hist-main .hist-refusal .cure{ color:var(--gold) }
   body.theme-dark .hist-item .del:hover,
   body.theme-dark .pt-item .del:hover,
   body.theme-dark .doc-item .del:hover,
@@ -1236,6 +1239,14 @@
   .hist-main{flex:1;min-width:0}
   .hist-main .t{font-weight:700;font-size:15px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .hist-main .s{font-size:13px;color:var(--muted);margin-top:2px}
+  /* histrefuse-1.0.0 (2026-09-01): a "Review Athena actions" refusal used to
+     exist ONLY as a toast that was gone before it could be read, so the row
+     looked like a dead button. It now says so in the row and stays there.
+     white-space:normal because .hist-main .t truncates and this sentence must
+     never be the one that gets an ellipsis. */
+  .hist-main .hist-refusal{font-size:12.5px;line-height:1.45;color:#9F2D2D;margin-top:5px;
+    background:#FDF3F2;border:1px solid #F0D3D0;border-radius:8px;padding:6px 9px;white-space:normal}
+  .hist-main .hist-refusal .cure{display:block;margin-top:3px;color:#7A5A18;font-weight:600}
   .hist-item .del{background:none;color:var(--muted);font-size:18px;padding:4px 8px;border-radius:10px}
   .hist-item .del:hover{background:#fdeced;color:var(--red)}
   @media print{
@@ -27214,6 +27225,10 @@ function upsertNote(rec){
   }
   /* ===== end nq-1.0.0 */
   currentNoteId=rec.id;
+  /* histrefuse-1.0.0: this record has just been written again, so whatever the
+     LAST review press objected to was about bytes that no longer exist. Cleared
+     before the repaint below, which is the one that draws the row. */
+  try{ _mlsHistRefusalClear(rec.id); }catch(eHRU){}
   renderHistory();
   updateNavCounts();
   if(currentView==='patients'){ renderPatients(); renderProfile(); }
@@ -27585,6 +27600,7 @@ function renderHistory(){
       <div class="hist-main">
         <div class="t">${patName} — ${cc}</div>
         <div class="s">${esc(dateStr)} &nbsp;·&nbsp; ${status}${_syncBadge(n)}${kindTag}${orphanTag}</div>
+        ${_mlsHistRefusalHtml(n.id)}
       </div>
       ${pushBtn}
       ${attachBtn}
@@ -27686,6 +27702,10 @@ function openNoteFromHistory(id){
   }
   document.getElementById('viewBody').value=body;
   document.getElementById('viewModal').classList.add('show');
+  /* histrefuse-1.0.0: a SUCCESSFUL open is the doctor acting on the refusal -
+     the sentence has been read and its first step taken, so the row stops
+     carrying it. A press that still refuses writes it straight back. */
+  try{ _mlsHistRefusalClear(id); if(document.getElementById('histList')&&typeof renderHistory==='function') renderHistory(); }catch(eHR){}
 }
 function closeView(){ document.getElementById('viewModal').classList.remove('show'); }
 function reopenViewed(){
@@ -34966,24 +34986,71 @@ function pushSuperbillToAthena(){
 }
 /* Preview a SAVED visit using the identity stored with that record. Never use
    whichever patient happens to be active when History is opened. */
+/* ===== histrefuse-1.0.0 begin ============================================
+   MEASURED 2026-09-01 in the owner's own tab on b1189, note id
+   n1788181673092neds (Adam J Schaeffer, his test patient). He pressed that
+   row's "Review Athena actions". pushHistoryNoteToAthena refused - CORRECTLY -
+   because the saved record no longer carries a current, verified five-section
+   Athena payload, and it said so in a toast. The toast was gone before he
+   finished reading it, the row itself showed nothing, and no sheet opened.
+   From outside, that is a button that does nothing.
+   Every refusal branch below now ALSO writes a per-note record that the
+   History row paints inline and KEEPS. Nothing here weakens a refusal, opens a
+   sheet, or changes which notes are eligible - it only makes an existing stop
+   visible. The toast stays, because this function is also reached from screens
+   that are not History.
+   IN MEMORY ONLY, keyed by note id. A refusal is a fact about this session's
+   attempt, not something to resurrect from storage next week. And it cannot
+   live in the row's html: renderHistory rebuilds the entire list string on
+   every call and swaps it in whenever it differs from the last one, so a
+   status line written into the DOM would be erased by the next unrelated
+   repaint - which is the same class of disappearance this fix is for. */
+var _mlsHistPushRefusals=Object.create(null);
+var HIST_REFUSAL_CANON_CURE='Open this visit ▸ Regenerate ▸ Save to history, then review again';
+function _mlsHistRefusalFor(id){ try{ return _mlsHistPushRefusals[String(id||'')]||null; }catch(e){ return null; } }
+function _mlsHistRefusalClear(id){ try{ delete _mlsHistPushRefusals[String(id||'')]; }catch(e){} }
+function _mlsHistRefusalHtml(id){
+  var r=_mlsHistRefusalFor(id); if(!r) return '';
+  /* PHI-free by construction: every message stored here is a fixed sentence
+     about the RECORD (draft, blank tokens, quarantined binding, stale payload),
+     never about the patient. The one interpolated branch names TEMPLATE FIELD
+     labels. esc() regardless - this is html. */
+  return '<div class="hist-refusal" role="status">⚠ '+esc(String(r.message||''))+
+    (r.cure?('<span class="cure">'+esc(String(r.cure))+'</span>'):'')+'</div>';
+}
+function _mlsHistPushRefuse(id,message,cure){
+  var msg=String(message||'');
+  try{ toast(msg,'err'); }catch(e){}
+  try{ _mlsHistPushRefusals[String(id||'')]={ message:msg, cure:String(cure||''), at:Date.now() }; }catch(e1){}
+  /* Paint it where the press happened. renderHistory compares the html it
+     builds against its own signature, so this costs nothing on a list that
+     already matches, and it is skipped entirely when History is not mounted. */
+  try{ if(document.getElementById('histList')&&typeof renderHistory==='function') renderHistory(); }catch(e2){}
+  return false;
+}
+/* ===== histrefuse-1.0.0 end ============================================== */
 function pushHistoryNoteToAthena(id){
   var ns=(typeof getNotes==='function'?getNotes():[])||[];
-  var n=ns.find(function(x){ return x.id===id; }); if(!n){ try{ toast('That visit no longer exists.','err'); }catch(e){} return; }
-  var bundle=String(n.text||n.soap||''); if(!bundle.trim()){ try{ toast('This visit has no note text to review.','err'); }catch(e){} return; }
+  var n=ns.find(function(x){ return x.id===id; }); if(!n){ _mlsHistPushRefuse(id,'That visit no longer exists.'); return; }
+  var bundle=String(n.text||n.soap||''); if(!bundle.trim()){ _mlsHistPushRefuse(id,'This visit has no note text to review.'); return; }
   /* Fail-closed even when called directly: drafts and notes with unresolved
      placeholders never open an Athena route (the History UI already hides the
      button for drafts — this is the internal last line of defense). */
-  if(n.isDraft){ try{ toast('This is still a draft. Complete and save it before reviewing Athena actions. Nothing changed.','err'); }catch(eD){} return; }
+  if(n.isDraft){ _mlsHistPushRefuse(id,'This is still a draft. Complete and save it before reviewing Athena actions. Nothing changed.'); return; }
+  var _phRefused=false;
   try{
     if(typeof opNoteBlankTokens==='function'){
       var _phUnresolved=opNoteBlankTokens(bundle);
-      if(_phUnresolved.length){ try{ toast('This note still has '+_phUnresolved.length+' unresolved field'+(_phUnresolved.length===1?'':'s')+' ('+_phUnresolved.slice(0,5).map(function(x){return x.label||x.key;}).join(', ')+(_phUnresolved.length>5?'…':'')+'). Fill them in before any Athena review. Nothing changed.','err'); }catch(eP){} return; }
+      if(_phUnresolved.length){ _mlsHistPushRefuse(id,'This note still has '+_phUnresolved.length+' unresolved field'+(_phUnresolved.length===1?'':'s')+' ('+_phUnresolved.slice(0,5).map(function(x){return x.label||x.key;}).join(', ')+(_phUnresolved.length>5?'…':'')+'). Fill them in before any Athena review. Nothing changed.'); _phRefused=true; }
     }
   }catch(ePh){}
+  /* The refusal return moved OUT of the try: a throw from anything inside it
+     must not be able to turn a recorded stop into a continue. */
+  if(_phRefused) return;
   var c=n.coding||null; var orders=Array.isArray(n.orders)?n.orders:[];
   var savedBinding=_athenaBindingForSavedRecord(n);
-  if(savedBinding.routeBlocked){try{toast('This saved visit was quarantined because its patient binding was not safe. Recreate it as a New visit for the correct patient before any Athena action. Nothing changed.','err');}catch(e00){}return;}
-  if(savedBinding.identityConflict){try{toast('This saved visit patient identity conflicts with its linked chart. Correct or reattach it before any Athena action. Nothing changed.','err');}catch(e0){}return;}
+  if(savedBinding.routeBlocked){_mlsHistPushRefuse(id,'This saved visit was quarantined because its patient binding was not safe. Recreate it as a New visit for the correct patient before any Athena action. Nothing changed.');return;}
+  if(savedBinding.identityConflict){_mlsHistPushRefuse(id,'This saved visit patient identity conflicts with its linked chart. Correct or reattach it before any Athena action. Nothing changed.');return;}
   var immutablePatient=savedBinding.patient;
   var who=immutablePatient.name||'this saved patient';
   /* An op note is not a generic encounter note. Preserve its exact Procedure
@@ -34999,7 +35066,10 @@ function pushHistoryNoteToAthena(id){
   if(noteRoute==='note'){
     var savedCanonical=_mlsSavedAthenaCanonicalForWrite(n);
     if(savedCanonical&&savedCanonical.required){
-      if(!savedCanonical.ok){try{toast('This saved generated note no longer has a current, verified five-section Athena payload. Reopen it, regenerate or repair the standard note, and save it again. Nothing changed in Athena.','err');}catch(eCanonicalHistory){}return;}
+      /* THE ONE THE OWNER HIT on 2026-09-01. It is also the only refusal here
+         whose cure is a sequence rather than a single act, so the row carries
+         that sequence under the sentence. */
+      if(!savedCanonical.ok){_mlsHistPushRefuse(id,'This saved generated note no longer has a current, verified five-section Athena payload. Reopen it, regenerate or repair the standard note, and save it again. Nothing changed in Athena.',HIST_REFUSAL_CANON_CURE);return;}
       plan=savedCanonical.sections.map(function(s){return {kind:s.key,body:s.text,generatedSoap:true,generatedCanonical:true};});
       lines=['📝 Canonical Athena note  →  five exact Athena clinical destinations'];
     }
@@ -35011,7 +35081,11 @@ function pushHistoryNoteToAthena(id){
      record's later save/update time and the currently signed-in provider are
      not evidence of the original encounter and must never be substituted. */
   var visitContext=savedBinding.visitContext||{historical:true,noteTimestamp:savedBinding.noteTimestamp||null,visitDate:'',provider:'',appointmentId:'',encounterId:'',encounterUrl:''};
-  if(typeof _athenaPushPlan==='function') _athenaPushPlan(plan, who, immutablePatient, visitContext); else { try{ toast('Could not open the Athena review. Nothing was written.','err'); }catch(e){} }
+  if(typeof _athenaPushPlan==='function'){
+    /* Reached the sheet: whatever stopped the LAST press no longer applies. */
+    _mlsHistRefusalClear(id);
+    _athenaPushPlan(plan, who, immutablePatient, visitContext);
+  } else { _mlsHistPushRefuse(id,'Could not open the Athena review. Nothing was written.'); }
 }
 function getAutoSendEMR(){ return false; }
 function applyAutoSendPreview(c){
@@ -45223,7 +45297,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1188';
+  window.__MLS_AV='b1189';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

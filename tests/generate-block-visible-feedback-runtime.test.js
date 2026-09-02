@@ -97,7 +97,16 @@ const engine = between(
   'shipped generation engine'
 );
 const gateReasonFn = extractFn(connect, 'function genGateReason() {');
-const paintGateFn = extractFn(connect, 'function paintGenGate(btn, reason, readyHint) {');
+/* RE-AIMED 2026-09-01 (genvis-1.0.0). paintGenGate gained a fourth parameter,
+ * `run` - the read-only generation-lifecycle overlay published by the flow
+ * lane - and syncGenGateUi now asks genRunOverlay() for it. This suite is
+ * about the PRE-CLICK gate, which is unchanged: with no lane mounted (the case
+ * below) genRunOverlay returns null and every assertion in this file measures
+ * exactly what it measured before. The marker moved because the signature
+ * moved; nothing here is weakened, and genRunOverlay is added to the bundle so
+ * the shipped syncGenGateUi can be executed as shipped rather than stubbed. */
+const paintGateFn = extractFn(connect, 'function paintGenGate(btn, reason, readyHint, run) {');
+const runOverlayFn = extractFn(connect, 'function genRunOverlay() {');
 const syncGateFn = extractFn(connect, 'function syncGenGateUi() {');
 const shoutFn = extractFn(connect, 'function shoutGenBlock(message) {');
 const ez3GenHandler = handlerExpression(connect, "on('ez3Gen', function () {");
@@ -206,6 +215,7 @@ const BOOT = `
   var GEN_READY_HINT = 'Uses every recorded and typed segment above';
   var GEN_NO_TEXT_HINT = 'Add some transcript text first';
   ${gateReasonFn}
+  ${runOverlayFn}
   ${paintGateFn}
   ${syncGateFn}
   ${shoutFn}

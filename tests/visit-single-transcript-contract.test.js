@@ -37,7 +37,19 @@ const flowStart = source.indexOf(' * __mlsEz3Flow');
 const flowIife = source.indexOf('(function () {', flowStart);
 assert(flowStart >= 0 && flowIife > flowStart, 'the Easy visit-flow owner is missing');
 
-const flowBody = source.slice(flowIife, flowIife + 60000);
+/* RE-AIMED 2026-09-01 (genvis-1.0.0). This used to read a fixed 60,000-char
+ * PREFIX of the module, which is a pin on a length rather than on a property:
+ * genvis-1.0.0 added the generation-lifecycle memory near the top of the flow
+ * lane and pushed the #ez3flTranscript builder past character 60,000, so a
+ * change that touched nothing this suite is about reported "the flow no longer
+ * owns the #ez3flTranscript node" - a false alarm about a node that is still
+ * built, and one that would have gone the other way just as easily (a deletion
+ * further down would have stayed inside the window and gone unnoticed). The
+ * module's own terminator is the real boundary, so the whole module is read
+ * and every assertion below now covers all of it. */
+const flowEnd = source.indexOf('\n})();\n', flowIife);
+assert(flowEnd > flowIife, 'the Easy visit-flow module has no terminator - the slice below would be unbounded');
+const flowBody = source.slice(flowIife, flowEnd);
 assert(/var VERSION = 'fl-1\.7\.\d+'/.test(flowBody),
   'the Easy visit-flow owner is not active (expected a live fl-1.7.x VERSION)');
 assert(!flowBody.includes("version: 'retired-b432'"),

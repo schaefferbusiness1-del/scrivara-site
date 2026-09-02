@@ -3931,6 +3931,11 @@
         onStatus("Verifying patient identity " + (receipt.requested) + " of " + rows.length + " in Athena...", "");
         var requestId = "schedule-proof-" + startedAt.toString(36) + "-p" + (i + 1);
         var deadlineAt = Date.now() + 110000;
+        /* residue-1.0.0 (b1189): the identity bootstrap opens the appointment's
+           own chart in athenaOne and leaves it open. The DOB is what this read
+           is FOR, so the residue carries the name alone - which is exactly the
+           tolerant comparison Follow itself makes when one side has no DOB. */
+        dnoteResidueStamp("identity-proof", String(row.name || ""));
         var opened = await bridge("mlsAppChartResult", "mlsAppReadChart", 112000, {
           patient: String(row.name || ""), patientDob: "", patientMrn: String(row.mrn || row.athenaId || ""),
           appointmentId: appointmentId, bootstrapIdentity: true, scheduleDate: scheduleDate,
@@ -5187,6 +5192,10 @@
        `this` is still window at the inner call. */
     function dnReadChart(target, say, opts) {
       safe(function () { receipt.chartOpensHistory = Number(receipt.chartOpensHistory || 0) + 1; });
+      /* residue-1.0.0 (b1189): this door is about to leave athenaOne parked on
+         this patient's chart. Remember whose, so Follow can never adopt it as
+         the doctor's own navigation once the lane goes quiet. */
+      dnoteResidueStamp("day-pull-chart", target);
       return window._assistReadChart(target, say, opts);
     }
     function tnDayApplicable(day) {
@@ -5196,6 +5205,11 @@
       return { ok: true, future: false, reason: "" };
     }
     function tnBoundedRead(vp, p, day, opts) {
+      /* residue-1.0.0 (b1189): the day-note leg opens this patient's chart too
+         (the scoped reader re-verifies the surface before it reads), and the
+         off-pass tail round runs after the pull's Done - exactly the quiet
+         moment in which Follow used to adopt our leftover chart. */
+      dnoteResidueStamp("day-note", p);
       var budget = tnRowDeadlineMs();
       /* dnb2-1.0.0: the machine's own per-row bet, BEFORE the pass clip below.
          Recorded as a bounded trace of integers so "successes raised it,
@@ -7920,6 +7934,11 @@
       /* dnote-1.1.0 (b1184): the deferred round opens charts too - stamp the
          busy marker so Follow cannot mistake our navigation for the doctor's. */
       safe(dnoteStampDriving);
+      /* residue-1.0.0 (b1189): and remember WHOSE chart, because this round
+         finishes and leaves athenaOne parked there. The queue is deliberately
+         name-free (dnbf-1.0.0), so the identity is resolved from the local
+         record here and kept in memory only. */
+      dnoteResidueStamp("deferred-round", patientById(item.patientId));
       safe(function () { _tnBackfill.attempted = Number(_tnBackfill.attempted || 0) + 1; });
       return Promise.resolve().then(function () { return item.attempt(); }).then(function (ok) {
         if (ok === true) {
@@ -8417,6 +8436,11 @@
     /* dnote-1.0.0 (b1184): WHICH row is being read, so the card can say
        "reading" about that one row instead of a nameless "reading now". */
     _ni.readingKey = String(row.p) + "|" + String(row.d);
+    /* residue-1.0.0 (b1189): THE lane that produced the owner's 2026-09-01
+       flips. It opens a chart, finishes, and leaves athenaOne parked there;
+       minutes later nothing is driving and Follow adopts our leftover chart.
+       Remember whose chart it is - in memory only - so it never can. */
+    dnoteResidueStamp("notes-idle", patientById(row.p));
     /* dnote-1.1.0 (b1184): this lane is about to OPEN A CHART in athenaOne.
        Say so on the busy stamp every follow/reload guard already consults, so
        our own navigation can never move the doctor's active patient. */
@@ -9030,6 +9054,64 @@
   }
   function dnoteStampDriving() { safe(function () { window.__mlsPullBusyAt = Date.now(); }); }
   safe(function () { window.__mlsAthenaDrivenByMls = dnoteFollowReceipt; });
+  /* ===== residue-1.0.0 (b1189): THE CHART WE PARKED IS STILL OURS =========
+     MEASURED live 2026-09-01 (owner's tab, b1188), six or more times in one
+     evening: the active patient kept flipping to somebody the owner never
+     chose, and one note generation aborted with "source-changed". dnote-1.1.0
+     closed the WHILE-DRIVING hole - a chart-identity answer produced by our
+     own navigation is muted while a lane is running. It does not close the
+     RESIDUE hole, and the residue is what the owner actually watched:
+
+       20:41  the catch-up opens patient X's chart to read the Sep 1 note
+       20:43  the read finished; nothing is running; the busy stamp is stale
+              -- BUT ATHENAONE IS STILL PARKED ON X, because a reader never
+              navigates back
+       20:43  the doctor clicks the MLS tab; Follow's Leg B asks "which chart
+              is open", hears X, and adopts X as the active patient
+
+     Nobody is driving at that moment, so every "am I driving" predicate is
+     honestly false. The chart is still OURS.
+
+     THE RULE (residue-1.0.0): a chart MLS itself opened in athenaOne is never
+     something Follow adopts - not while the lane runs and not afterwards. The
+     only thing that retires the residue is a DIFFERENT chart: the doctor
+     navigating athenaOne by hand (a chart-identity answer naming another
+     person) or the doctor choosing another patient in MLS. It deliberately
+     does NOT expire on a timer, because a parked chart does not expire either.
+
+     WHAT IS RECORDED: the identity of the patient whose chart we are opening,
+     in memory only - window.__mlsDrivenChartResidue. Never localStorage, never
+     a log line, never a receipt (the receipts carry the LANE and a count, not
+     the person). window.__mlsDrivenChartResidueClear() drops it.
+
+     Stamped at every door through which an MLS-driven lane opens a chart:
+     the managed pull's history/visits read, the managed pull's day-note leg,
+     the immediate deferred round, the notes-idle catch-up, and the schedule
+     identity-proof bootstrap. The drain has no door of its own - it spends
+     the deferred round and notes-idle, which stamp for it. */
+  var DNOTE_RESIDUE_VERSION = "residue-1.0.0";
+  function dnoteResidueStamp(lane, who, dob) {
+    return safe(function () {
+      var name = "", d = dob;
+      if (who && typeof who === "object") { name = String(who.name || ""); if (d == null) d = who.dob; }
+      else name = String(who == null ? "" : who);
+      name = name.replace(/^\s+|\s+$/g, "");
+      if (!name) return false;
+      window.__mlsDrivenChartResidue = {
+        name: name, dob: String(d == null ? "" : d).replace(/^\s+|\s+$/g, ""),
+        at: Date.now(), lane: String(lane || "mls")
+      };
+      return true;
+    }, false) === true;
+  }
+  function dnoteResidueClear() { safe(function () { window.__mlsDrivenChartResidue = null; }); return true; }
+  function dnoteResidueReceipt() {
+    var r = safe(function () { return window.__mlsDrivenChartResidue; }, null);
+    return { version: DNOTE_RESIDUE_VERSION, present: !!(r && r.name),
+      lane: String((r && r.lane) || ""), at: Number((r && r.at) || 0) };
+  }
+  safe(function () { window.__mlsDrivenChartResidueClear = dnoteResidueClear; });
+  /* ===== end residue-1.0.0 (b1189) ===== */
   /* ===== end dnote-1.1.0 (b1184) ===== */
   /* ===== end dnote-1.0.0 (b1184) ===== */
   function runManagedAthenaOperation(task, busyFactory) {

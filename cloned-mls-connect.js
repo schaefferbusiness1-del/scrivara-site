@@ -5791,13 +5791,50 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
  *
  * PHI-free (counts and a lane name), no timers, additive.
  * Revert: window.__mlsFollowGuard.revert()
+ *
+ * -----------------------------------------------------------------------------
+ * residue-1.0.0 (b1189) -- AND THE CHART WE LEFT PARKED IS STILL OURS
+ *
+ * MEASURED live 2026-09-01 on the owner's tab, six or more times in one
+ * evening, WITH the guard above already shipped: the active patient kept
+ * flipping to somebody he never chose, and one note generation aborted with
+ * "source-changed: the patient or visit source changed while MLS was
+ * generating". The guard above was not wrong - it was not even consulted,
+ * because by the time Follow asked, NOTHING WAS DRIVING:
+ *
+ *    20:41  the notes-idle catch-up opens patient X's chart to read the note
+ *    20:43  it finishes. No lane is running. The busy stamp is minutes stale.
+ *           BUT ATHENAONE IS STILL PARKED ON X - a reader never navigates back
+ *    20:43  the doctor clicks the MLS tab; Leg B asks "which chart is open",
+ *           hears X, and adopts X. "Following athenaOne: X"
+ *
+ * THE RULE: a chart MLS itself opened in athenaOne is never something Follow
+ * adopts - not while the lane runs, and not in the quiet afterwards. The
+ * engine records the identity it is about to open (residue-1.0.0 in
+ * cloned-feat_mls_schedimport_exact.js -> window.__mlsDrivenChartResidue, memory
+ * only, never storage, never a log); this guard compares an incoming Follow
+ * reply against it with af-1.0.0's OWN comparator when that module is loaded.
+ *
+ * Same person as the residue -> the reply is swallowed exactly as a driving
+ * one is, and Leg B's bridgeOnce times out and does nothing. A DIFFERENT
+ * person -> that is the doctor's own navigation, the residue is retired, and
+ * the reply goes through untouched: Follow keeps working. The residue never
+ * expires on a clock, because a parked chart does not expire either; it is
+ * retired by a different chart, or by the doctor picking another patient in
+ * MLS (the first-party 'mls:active-patient-changed' event, honoured only
+ * while MLS is not the one driving).
  * ========================================================================== */
 (function () {
   'use strict';
   try { if (window.__mlsFollowGuard && window.__mlsFollowGuard.installed) return; } catch (eG0) { return; }
   var VERSION = 'dnote-1.1.0';
+  var RESIDUE_VERSION = 'residue-1.0.0';   /* the parked-chart rule, b1189 */
   var FOLLOW_RID_PREFIX = 'af';   /* af-1.0.0 bridgeOnce: 'af' + base36 + seq */
   var ignored = 0, allowed = 0, lastAt = 0, lastBy = '';
+  /* PHI-FREE COUNTS ONLY. Nothing here ever records who. */
+  var stats = { drivingMuted: 0, residueMuted: 0, residueRefreshed: 0,
+    residueCleared: 0, residuePassed: 0 };
+  var lastClear = '';
   function drivingBy() {
     try {
       var fn = window.__mlsAthenaDrivenByMls;
@@ -5806,30 +5843,156 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     } catch (eG1) { return ''; }
   }
   function shouldIgnoreChartIdentity() { return drivingBy() !== ''; }
+  /* ---- residue-1.0.0: the chart MLS left parked in athenaOne -------------- */
+  function residue() {
+    try {
+      var r = window.__mlsDrivenChartResidue;
+      return (r && typeof r === 'object' && r.name) ? r : null;
+    } catch (eR0) { return null; }
+  }
+  function clearResidue(why) {
+    try { window.__mlsDrivenChartResidue = null; } catch (eR1) {}
+    stats.residueCleared++;
+    lastClear = String(why || '');
+    return true;
+  }
+  /* af-1.0.0's normalization, kept identical here so "the same person" cannot
+     mean two things in one tab. The shipped comparator is preferred whenever
+     the follow module is loaded (below); this is the fallback for a page where
+     it is not, and the pair is pinned by tests/follow-residue-proof.js. */
+  function normName(s) {
+    return String(s == null ? '' : s).toLowerCase().replace(/[^a-z\s]/g, ' ')
+      .split(/\s+/).filter(function (w) { return w.length > 1; }).sort().join(' ');
+  }
+  function normDob(s) {
+    var m = String(s == null ? '' : s).match(/(\d{1,4})[\/\-.](\d{1,2})[\/\-.](\d{1,4})/);
+    if (!m) return '';
+    var a = +m[1], b = +m[2], c = +m[3];
+    if (m[1].length === 4) return a + '-' + b + '-' + c;      /* YYYY-M-D */
+    return c + '-' + a + '-' + b;                              /* M/D/YYYY */
+  }
+  function localSamePerson(aName, aDob, bName, bDob) {
+    if (!aName || !bName || normName(aName) !== normName(bName)) return false;
+    var da = normDob(aDob), db = normDob(bDob);
+    if (da && db && da !== db) return false;
+    return true;
+  }
+  function samePerson(aName, aDob, bName, bDob) {
+    try {
+      var af = window.__mlsAthenaFollow;
+      if (af && typeof af._samePerson === 'function') {
+        return af._samePerson(aName, aDob, bName, bDob) === true;
+      }
+    } catch (eR2) {}
+    return localSamePerson(aName, aDob, bName, bDob);
+  }
+  /* the extension answers either bare or nested under `resp` (af-1.0.0's
+     bridgeOnce resolves `d.resp || d`), so read both shapes. */
+  function identityOf(d) {
+    try {
+      var r = (d && d.resp) ? d.resp : d;
+      var id = r && r.identity;
+      return (id && id.name) ? id : null;
+    } catch (eR3) { return null; }
+  }
+  function refreshResidueFrom(d, lane) {
+    var id = identityOf(d);
+    if (!id) return false;
+    try {
+      window.__mlsDrivenChartResidue = { name: String(id.name),
+        dob: String(id.dob || ''), at: Date.now(), lane: String(lane || 'mls') };
+    } catch (eR4) { return false; }
+    stats.residueRefreshed++;
+    return true;
+  }
+  function residueMatches(d) {
+    var r = residue();
+    if (!r) return false;
+    var id = identityOf(d);
+    if (!id) return false;
+    return samePerson(id.name, id.dob, r.name, r.dob) === true;
+  }
   function onMessage(ev) {
     try {
       var d = ev && ev.data;
       if (!d || d.source !== 'mls-ext') return;
       if (String(d.type || '') !== 'mlsAppChartIdentityResult') return;
-      if (String(d.requestId || '').indexOf(FOLLOW_RID_PREFIX) !== 0) return;
       var by = drivingBy();
-      if (!by) { allowed++; return; }
-      ignored++; lastAt = Date.now(); lastBy = by;
-      if (typeof ev.stopImmediatePropagation === 'function') ev.stopImmediatePropagation();
+      /* residue-1.0.0: while MLS drives, EVERY chart-identity answer that goes
+         past - the write lane's above all - is a statement about a chart MLS
+         opened. Keep the residue on the chart we actually landed on. */
+      if (by) refreshResidueFrom(d, by);
+      if (String(d.requestId || '').indexOf(FOLLOW_RID_PREFIX) !== 0) return;
+      if (by) {
+        ignored++; stats.drivingMuted++; lastAt = Date.now(); lastBy = by;
+        if (typeof ev.stopImmediatePropagation === 'function') ev.stopImmediatePropagation();
+        return;
+      }
+      /* Nothing is driving. This is the 2026-09-01 residue case: the lane
+         finished minutes ago and athenaOne is still parked where it left it. */
+      if (residue()) {
+        if (residueMatches(d)) {
+          ignored++; stats.residueMuted++; lastAt = Date.now();
+          lastBy = 'residue:' + String(residue().lane || 'mls');
+          if (typeof ev.stopImmediatePropagation === 'function') ev.stopImmediatePropagation();
+          return;
+        }
+        /* a DIFFERENT person is on screen: the doctor navigated athenaOne
+           himself, so our leftover chart is history and Follow may work. */
+        if (identityOf(d)) clearResidue('doctor-navigated');
+        stats.residuePassed++;
+      }
+      allowed++;
     } catch (eG2) {}
   }
+  /* The doctor picking a patient in MLS retires the residue too - the roster
+     click, the up-now "Switch" offer, anything that dispatches the app's own
+     active-patient event - but only when MLS is not the one driving (Leg B and
+     our own writers dispatch the same event). An id we cannot resolve says
+     nothing about the residue, so it keeps it: fail closed toward the doctor's
+     chosen patient, never toward a silent switch. */
+  function onActiveChanged(ev) {
+    try {
+      if (drivingBy()) return;
+      var r = residue();
+      if (!r) return;
+      var id = '';
+      try { id = String((ev && ev.detail && ev.detail.patientId) || ''); } catch (eR5) {}
+      if (!id) return;
+      var p = null;
+      try { p = (typeof window.findPatient === 'function') ? window.findPatient(id) : null; } catch (eR6) {}
+      if (!p || !p.name) return;
+      if (samePerson(p.name, p.dob, r.name, r.dob)) return;
+      clearResidue('active-patient-changed');
+    } catch (eR7) {}
+  }
   try { window.addEventListener('message', onMessage, true); } catch (eG3) { return; }
+  try { window.addEventListener('mls:active-patient-changed', onActiveChanged); } catch (eG3b) {}
   window.__mlsFollowGuard = {
-    installed: true, version: VERSION, followRidPrefix: FOLLOW_RID_PREFIX,
+    installed: true, version: VERSION, residueVersion: RESIDUE_VERSION,
+    followRidPrefix: FOLLOW_RID_PREFIX,
     drivingBy: drivingBy,
     shouldIgnoreChartIdentity: shouldIgnoreChartIdentity,
+    stats: stats,
+    clearResidue: function () { return clearResidue('api'); },
     receipt: function () {
-      return { version: VERSION, ignored: ignored, allowed: allowed,
-        lastAt: lastAt, lastBy: lastBy, drivingNow: drivingBy() };
+      var r = residue();
+      return { version: VERSION, residueVersion: RESIDUE_VERSION,
+        ignored: ignored, allowed: allowed,
+        lastAt: lastAt, lastBy: lastBy, drivingNow: drivingBy(),
+        stats: { drivingMuted: stats.drivingMuted, residueMuted: stats.residueMuted,
+          residueRefreshed: stats.residueRefreshed, residueCleared: stats.residueCleared,
+          residuePassed: stats.residuePassed },
+        /* PHI-free: whether a chart is parked, by which lane, and when. */
+        residue: r ? { present: true, lane: String(r.lane || ''), at: Number(r.at || 0) } : null,
+        lastClear: lastClear };
     },
     _onMessage: onMessage,
+    _onActiveChanged: onActiveChanged,
+    _samePerson: samePerson,
     revert: function () {
       try { window.removeEventListener('message', onMessage, true); } catch (eG4) {}
+      try { window.removeEventListener('mls:active-patient-changed', onActiveChanged); } catch (eG4b) {}
       try { delete window.__mlsFollowGuard; } catch (eG5) {}
     }
   };
@@ -7486,6 +7649,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     '#mlsEz3 .ez3fl-gen[aria-disabled="true"]{background:#55605A;border-color:#55605A;}',
     '#mlsEz3 .ez3fl-gen[hidden]{display:none!important;}',
     '#mlsEz3 .ez3fl-rechint{flex-basis:100%;font-size:12px;color:#79837C;margin-top:-2px;}',
+    /* genvis-1.0.0 (2026-09-01): this line is the lane's ONLY place to say what
+       a Generate press did. While a run is in flight it is the "generating"
+       state; when a run settles failed/refused it carries the engine's own
+       sentence and STAYS there. A refusal must not read like ordinary help
+       text, so it is given the red the rest of the app uses for a stop, and
+       enough weight to be seen without shouting. */
+    '#mlsEz3 .ez3fl-rechint[data-mls-gen-run="active"]{color:#2E6A4B;font-weight:600;}',
+    '#mlsEz3 .ez3fl-rechint[data-mls-gen-run="failed"]{color:#9F2D2D;font-weight:600;}',
     '#mlsEz3 .ez3fl-transcript{flex-basis:100%;background:#F8FAF7;border:1px solid #DCE4DD;border-radius:14px;padding:13px 14px;margin-top:2px;}',
     /* fl-1.7.0 (owner 2026-07-16, supersedes the fl-1.6.1 yield direction):
        ONE transcript box and the TOP lane is the keeper — hiding .ez3fl-record
@@ -8265,6 +8436,132 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     value = String(value);
     if (el && el.getAttribute(name) !== value) el.setAttribute(name, value);
   }
+  /* ===== genvis-1.0.0 begin ============================================== */
+  /* MEASURED LIVE 2026-09-01 in the owner's own tab on b1188. He pressed this
+     lane's "Generate one note". The engine really started: window fired
+     mls:generation-started {runId:2, evidence:'today'}. TWENTY-EIGHT SECONDS
+     later it fired mls:generation-settled
+       {status:'failed', code:'draft_quality_failed',
+        message:'Note was rejected by the safety checks. Nothing changed.
+                 Details: note was not structured.'}
+     and this lane said NOTHING at either end. Through the whole 28 s the hint
+     line under the button still read the stale "Your note is ready below"
+     sentence belonging to a note loaded EARLIER, and the refusal existed only
+     as a toast that was gone within seconds. Nothing on screen changed. That
+     is his complaint - "the button does nothing" - stated exactly: a refusal
+     that leaves no persistent trace is indistinguishable from a dead button.
+     WHAT THIS IS NOT. It is not a second generation gate, it does not retry,
+     re-judge, soften or re-word any refusal, and it never decides whether a
+     run may start. The engine remains the sole owner of started/settled and
+     of every reason inside them. This block is only the lane's MEMORY of the
+     engine's own lifecycle - kept long enough for a human to read it. */
+  /* Pure ASCII on purpose. This constant is re-emitted by the two derive
+     scripts, and a latin1 writer in that chain turns a literal U+2026 into
+     control bytes - so the trailing pause is three dots, not an ellipsis. */
+  var GEN_RUN_HINT = 'Generating your note - usually under a minute...';
+  var _genRun = { id: 0, active: false, settled: null };
+  function genTranscriptText() {
+    var t = $('transcript');
+    return t ? String(t.value == null ? '' : t.value) : '';
+  }
+  function genSettledHintText(rec) {
+    if (!rec) return '';
+    var msg = String(rec.message || '').trim();
+    var code = String(rec.code || '').trim();
+    /* VERBATIM, on purpose. The engine's sentence is the doctor's only
+       accurate account of what happened to their note; paraphrasing it here
+       would create a SECOND wording for one event, which is the defect class
+       this lane already carries a pin for. The code is appended because it is
+       the thing a support conversation asks for first. */
+    if (!msg) msg = (rec.status === 'refused')
+      ? 'Note generation was refused. Nothing changed.'
+      : 'Note generation did not finish. Nothing changed.';
+    return code ? (msg + ' (' + code + ')') : msg;
+  }
+  function genRunHint() {
+    if (_genRun.active) return { state: 'active', text: GEN_RUN_HINT };
+    if (_genRun.settled) return { state: 'failed', text: genSettledHintText(_genRun.settled) };
+    return { state: '', text: '' };
+  }
+  function noteGenStarted(detail) {
+    var d = detail || {};
+    _genRun.id = Number(d.runId || 0) || 0;
+    _genRun.active = true;
+    /* A NEW RUN is the one thing besides a transcript edit that clears the old
+       verdict, and nothing else does: the doctor decides when they have read
+       it, not a timer and not the next repaint. */
+    _genRun.settled = null;
+    return genRunHint();
+  }
+  function noteGenSettled(detail) {
+    var d = detail || {};
+    var runId = Number(d.runId || 0) || 0;
+    /* A late settle from an ABANDONED run must never overwrite the run the
+       doctor is watching - the same runId fence the Easy facade applies. */
+    if (_genRun.id && runId && runId !== _genRun.id) return genRunHint();
+    _genRun.active = false;
+    var status = String(d.status || '');
+    if (status === 'success' || status === 'ok') { _genRun.settled = null; return genRunHint(); }
+    _genRun.settled = {
+      runId: runId, status: status || 'failed',
+      code: String(d.code || ''), message: String(d.message || ''),
+      tx: genTranscriptText()
+    };
+    return genRunHint();
+  }
+  function genRunTranscriptChanged(text) {
+    /* "...until the next run starts OR THE TRANSCRIPT CHANGES." A verdict about
+       words that are no longer on screen is worse than no verdict: it would
+       answer a question the doctor is no longer asking. Compared against the
+       transcript captured AT SETTLE, so it survives repaints and re-reads. */
+    if (_genRun.active || !_genRun.settled) return false;
+    var now = String(text == null ? '' : text);
+    var was = String(_genRun.settled.tx == null ? '' : _genRun.settled.tx);
+    if (now === was) return false;
+    _genRun.settled = null;
+    return true;
+  }
+  function genRunState() {
+    /* Every reader gets the freshness check, not just the lane - the hero
+       button's <small> is painted from a module that never sees the lane. */
+    genRunTranscriptChanged(genTranscriptText());
+    var h = genRunHint();
+    var s = _genRun.settled;
+    return {
+      active: !!_genRun.active,
+      runId: _genRun.id,
+      state: h.state,
+      hint: h.text,
+      activeHint: _genRun.active ? GEN_RUN_HINT : '',
+      settledHint: _genRun.active ? '' : h.text,
+      settled: s ? { runId: s.runId, status: s.status, code: s.code, message: s.message } : null
+    };
+  }
+  try { window.__mlsGenerationRunState = genRunState; } catch (eGenRun) {}
+  function laneHintDefault(live, text, noteTextValue) {
+    var tx = String(text == null ? '' : text);
+    var nt = String(noteTextValue == null ? '' : noteTextValue);
+    if (live) return 'Recording now. Pause whenever you need to; everything captured stays here so you can resume later.';
+    if (nt.trim()) return 'Your note is ready below. Review and edit it here before using any send tools.';
+    if (tx.trim()) return _recSessionSeen
+      ? 'Recording stopped. Resume to add more, or generate one note from every segment.'
+      : 'Transcript added. Record to add more, or generate one note from every segment.';
+    return 'Records locally and drafts the note here - nothing goes to Athena until you review and send it.';
+  }
+  function paintLaneHint(hint, live, text, noteTextValue) {
+    if (!hint) return '';
+    genRunTranscriptChanged(text);
+    var run = genRunHint();
+    var next = run.text || laneHintDefault(live, text, noteTextValue);
+    setLaneText(hint, next);
+    /* role=status so the sentence is ANNOUNCED and not merely drawn. A refusal
+       is the one thing on this lane a doctor must not be able to miss, and the
+       toast that used to be its only carrier is gone within seconds. */
+    setLaneAttr(hint, 'role', 'status');
+    setLaneAttr(hint, 'data-mls-gen-run', run.state);
+    return next;
+  }
+  /* ===== genvis-1.0.0 end ================================================ */
   function topLaneIsVisible(rec) {
     if (!rec || !rec.parentNode || !document.body) return false;
     try {
@@ -8423,20 +8720,28 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (gb) {
       setLaneHidden(gb, live || !text.trim() || !!noteText.trim());
       setLaneDisabled(gb, !genReal || !!genReal.disabled);
-      setLaneText(gb, genReal && genReal.disabled && !noteText.trim() ? 'Generating note...' : '\u2728 Generate one note');
+      /* genvis-1.0.0: #genBtn.disabled was the ONLY evidence this label had
+         that a run was in flight, and on 2026-09-01 it was not enough - the
+         button merely looked dimmed for 28 s while the label still offered to
+         start. The engine's own started/settled events are the honest signal,
+         so the run state is consulted first and the disabled proxy is kept as
+         the fallback for a run this lane did not hear announced.
+         aria-disabled and the tooltip are NOT written here: paintGenGate is
+         the single writer of those on this button and runs immediately below,
+         and two writers on one attribute is a defect this repo already pays
+         for elsewhere. */
+      setLaneText(gb, (_genRun.active || (genReal && genReal.disabled)) && !noteText.trim() ? 'Generating note...' : '\u2728 Generate one note');
     }
     syncTopGenerationOwnership(rec, gb);
     /* gcx-1.0.0: the top lane's Generate carries the same read-only evidence
        verdict as the canonical control, so its tooltip explains a refusal
        before the click and clears itself the moment the transcript qualifies. */
     try { if (typeof window.__mlsSyncGenerationGateUi === 'function') window.__mlsSyncGenerationGateUi(); } catch (eGate) {}
-    if (hint) {
-      setLaneText(hint, live ? 'Recording now. Pause whenever you need to; everything captured stays here so you can resume later.' :
-        (noteText.trim() ? 'Your note is ready below. Review and edit it here before using any send tools.' :
-        (text.trim() ? (_recSessionSeen ? 'Recording stopped. Resume to add more, or generate one note from every segment.' :
-        'Transcript added. Record to add more, or generate one note from every segment.') :
-        'Records locally and drafts the note here - nothing goes to Athena until you review and send it.')));
-    }
+    /* genvis-1.0.0: the four ordinary sentences moved verbatim into
+       laneHintDefault(); paintLaneHint puts the live generation state in front
+       of them. This is the line that read "Your note is ready below" for the
+       whole 28 s of a run that ended in a refusal. */
+    paintLaneHint(hint, live, text, noteText);
     /* txm-1.0.0: a PURE APPEND (which is what live dictation is) is now taken
        even while the caret is in the box, caret and scroll preserved, so the
        doctor watches their words arrive instead of the box sitting frozen until
@@ -8949,6 +9254,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     watchCapture();
     try { var body = $('mlsEz3Body'); if (body && _obs) _obs.observe(body, { childList: true, subtree: true }); } catch (e) {}
   }
+  /* genvis-1.0.0: the two ends of a generation, repainted the moment they are
+     announced instead of whenever the next 2.5 s safety pass happens to run.
+     Both surfaces are repainted, not just the lane: the hero button's <small>
+     is owned by a module that never sees this lane, and on a shell where the
+     hero is the visible control it is the line the doctor is reading. */
+  function repaintGenSurfaces() {
+    try { syncTopLane(_primaryLane || document.querySelector('.ez3fl-record')); } catch (e) {}
+    try { if (typeof window.__mlsSyncGenerationGateUi === 'function') window.__mlsSyncGenerationGateUi(); } catch (e2) {}
+  }
+  function onLaneGenStarted(ev) { noteGenStarted(ev && ev.detail); repaintGenSurfaces(); }
+  function onLaneGenSettled(ev) { noteGenSettled(ev && ev.detail); repaintGenSurfaces(); }
   function boot() {
     try { _obs = new MutationObserver(function () { scheduleFromMutation(); }); } catch (e) {}
     run();
@@ -8957,6 +9273,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     document.addEventListener('change', laneSignal, true);
     document.addEventListener('click', laneSignal, true);
     window.addEventListener('mls:view-changed', laneViewChanged);
+    window.addEventListener('mls:generation-started', onLaneGenStarted);
+    window.addEventListener('mls:generation-settled', onLaneGenSettled);
     /* Event-driven updates cover normal recording/transcript/note/voice work.
        This slow, visibility-gated safety pass only catches a legacy owner that
        mutates .value without firing an event; it no longer forces layout and
@@ -8977,6 +9295,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   window.__mlsEz3Flow = {
     installed: true, version: VERSION,
+    /* genvis-1.0.0: probeable from the console on a live tab, so "the button
+       did nothing" can be answered with the engine's own last verdict instead
+       of a guess. Read-only accessors; nothing here starts a generation. */
+    genRun: {
+      state: genRunState, hint: genRunHint, settledText: genSettledHintText,
+      started: noteGenStarted, settled: noteGenSettled, paintHint: paintLaneHint,
+      RUN_HINT: GEN_RUN_HINT
+    },
     revert: function () {
       try { setReviewStepOpen(false); } catch (e0) {}
       try { if (_obs) _obs.disconnect(); } catch (e) {}
@@ -8986,6 +9312,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       try { if (_laneRaf != null) { if (window.cancelAnimationFrame) window.cancelAnimationFrame(_laneRaf); else clearTimeout(_laneRaf); } } catch (e) {}
       try { document.removeEventListener('input', laneSignal, true); document.removeEventListener('change', laneSignal, true); document.removeEventListener('click', laneSignal, true); } catch (e) {}
       try { window.removeEventListener('mls:view-changed', laneViewChanged); } catch (e) {}
+      try { window.removeEventListener('mls:generation-started', onLaneGenStarted); } catch (e) {}
+      try { window.removeEventListener('mls:generation-settled', onLaneGenSettled); } catch (e) {}
+      try { if (window.__mlsGenerationRunState === genRunState) delete window.__mlsGenerationRunState; } catch (e) {}
       try { if (_topSegmentStopIv) clearInterval(_topSegmentStopIv); } catch (e) {}
       try { document.body.classList.remove('mls-top-voice-tools'); } catch (e) {}
       try { document.querySelectorAll('.ez3fl-staffLink,.ez3fl-back,.ez3fl-staffbadge,.ez3fl-record,#ez3flMenuStaff').forEach(function (n2) { n2.remove(); }); } catch (e) {}
@@ -23350,18 +23679,47 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     } catch (e) {}
     return '';
   }
-  function paintGenGate(btn, reason, readyHint) {
+  /* genvis-1.0.0 (2026-09-01) -- the gate answers "may I press this"; it has
+     never had an answer to "what happened when I DID". That second answer is
+     owned by the engine's mls:generation-started / -settled events, which the
+     flow lane remembers and publishes here read-only. This function only ASKS
+     for it: it starts no run, judges no refusal and re-words nothing. When the
+     lane module is absent or reverted this returns null and every button below
+     behaves exactly as it did before this lane existed. */
+  function genRunOverlay() {
+    try {
+      var ask = window.__mlsGenerationRunState;
+      if (isFn(ask)) { var s = ask(); if (s && (s.active || s.settledHint)) return s; }
+    } catch (e) {}
+    return null;
+  }
+  function paintGenGate(btn, reason, readyHint, run) {
     if (!btn) return;
-    var blocked = !!reason;
+    /* A RUN IN FLIGHT OUTRANKS THE PRE-CLICK VERDICT: while the engine is
+       working, the honest answer to "why can I not press this" is "it is
+       already running", and that is the reason the button must carry.
+       A SETTLED refusal deliberately does NOT block. The doctor has to be able
+       to press Generate again, so a settled verdict changes only what the hint
+       line says - never whether the control answers a click. */
+    var running = !!(run && run.active);
+    var blocked = running || !!reason;
+    var tip = running ? String(run.hint || '') : reason;
     try {
       /* `dim` is the hero button's own shipped blocked skin (both themes carry
          a rule for it). The top lane is styled off aria-disabled instead. */
       if (btn.classList && btn.classList.contains('ez3-big') && btn.classList.contains('dim') !== blocked) btn.classList.toggle('dim', blocked);
       btn.setAttribute('aria-disabled', blocked ? 'true' : 'false');
-      if (blocked) btn.setAttribute('title', reason); else btn.removeAttribute('title');
+      if (blocked) btn.setAttribute('title', tip); else btn.removeAttribute('title');
       var small = btn.querySelector ? btn.querySelector('small') : null;
       if (small && readyHint != null) {
-        var next = blocked ? reason : readyHint;
+        /* Priority, in the order a doctor needs it: what is happening now >
+           what happened to the press they already made > why the next press
+           would be refused > the ordinary ready sentence. The middle two
+           cannot in practice collide - a settled verdict is dropped the moment
+           the transcript changes, and the transcript is what the pre-click
+           gate reads - but the order is stated rather than left to luck. */
+        var next = running ? String(run.hint || '')
+          : ((run && run.settledHint) ? String(run.settledHint) : (blocked ? reason : readyHint));
         if (small.textContent !== next) small.textContent = next;
       }
     } catch (e) {}
@@ -23369,8 +23727,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function syncGenGateUi() {
     var reason = '';
     try { reason = genGateReason(); } catch (e) {}
-    paintGenGate($('ez3Gen'), reason, GEN_READY_HINT);
-    paintGenGate($('ez3flGen'), reason, null);
+    var run = genRunOverlay();
+    paintGenGate($('ez3Gen'), reason, GEN_READY_HINT, run);
+    paintGenGate($('ez3flGen'), reason, null, run);
     return reason;
   }
   try { window.__mlsSyncGenerationGateUi = syncGenGateUi; } catch (eGcx) {}
