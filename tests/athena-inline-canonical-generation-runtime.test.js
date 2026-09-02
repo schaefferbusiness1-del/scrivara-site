@@ -21,7 +21,18 @@ const bindBlock = source.slice(source.indexOf('/* ===== wfbind-1.0.0'), source.i
 assert(bindBlock.length > 500, 'bind-cure block is missing');
 assert(!/generateNote|runUnifiedCanonicalGeneration/.test(bindBlock), 'bind/re-pull silently started clinical generation');
 assert(/return generate\(\)/.test(source), 'inline action no longer calls the normal generateNote gate');
-assert(/var rebuilt = reopen\(null\)/.test(source), 'successful generation no longer re-enters the ordinary Athena review entrypoint');
+/* RE-AIMED, regenkeep-1.0.0 (2026-09-02), and STRENGTHENED, not relaxed. The
+   rebuild itself is unchanged - it is still reopen(null), the ordinary Athena
+   review entrypoint - but the call is now wrapped so the ONE-SHOT visit
+   carry-through a regenerate arms is disarmed even when that rebuild refuses or
+   throws. The old pin matched the assignment's exact spelling ("var rebuilt =")
+   and so reddened on a change that only moved the declaration up one line. It
+   now follows the CALL, and a second line pins the disarm the wrap exists for -
+   without it, a refused rebuild would leave a standing visit override armed for
+   whatever opened the review next. See tests/sheet-rows-and-reopen-proof.js. */
+assert(/rebuilt = reopen\(null\);/.test(source), 'successful generation no longer re-enters the ordinary Athena review entrypoint');
+assert(/try \{ rebuilt = reopen\(null\); \} finally \{ regenKeepDisarm\(\); \}/.test(source),
+  'the regenerate rebuild no longer disarms its one-shot visit carry-through');
 assert(/generationIssue:\s*unifiedCanonicalGenerationIssue\(opts\)/.test(source), 'a bind/re-pull rebuild drops the canonical generation issue');
 for (const file of shellPaths) {
   const shell = shellSources[file];

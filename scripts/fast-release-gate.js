@@ -81,7 +81,12 @@ const ROOT = path.resolve(__dirname, '..');
        press authorizes one section (or, on MLS Assist 3.0.108+, the ordered
        batch it minted), the sheet re-arms with the next section named, and a
        read-only stage that will not settle is bounded instead of hanging. */
-const FULL_GATE_TESTS = 940;
+/*   + sheet-rows-and-reopen-proof (rowsel-1.0.0 / reopen-1.0.0 /
+       regenkeep-1.0.0, 2026-09-02) = 941 - an unchecked section reads NOT
+       SELECTED and is in neither half of "Not written - N of M", a reopened
+       saved note keeps the canonical Athena sidecar it already carries, and the
+       sheet's Regenerate keeps the exact visit the doctor just bound. */
+const FULL_GATE_TESTS = 941;
 const DEFAULT_BASE = 'origin/main';
 const DEFAULT_STEP_TIMEOUT_MS = 180000;
 const DEFAULT_TOTAL_TIMEOUT_MS = 300000;

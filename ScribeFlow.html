@@ -27929,6 +27929,10 @@ function loadRecordIntoEditor(n){
       line.style.display='block'; line.textContent=n.signLine||'Signed (restored from history).';
     }
   }
+  /* reopen-1.0.0: last, after every deterministic display mutation above has
+     settled - the sidecar's fingerprint owns the editor the clinician is
+     looking at, exactly as generateNote binds its own. */
+  try{ _mlsReopenRestoreSavedAthenaSidecar(n); }catch(eReopenSidecar){}
 }
 
 /* =========================================================
@@ -31073,6 +31077,52 @@ function _mlsSavedAthenaCanonicalForWrite(n){
   if(!String(n.athenaNote||'').trim())return {required:true,ok:false,reason:'missing-canonical-note'};
   if(!_mlsSavedAthenaFingerprintMatchesRecord(n.athenaNoteSourceFingerprint,n))return {required:true,ok:false,reason:'canonical-source-changed'};
   try{var valid=_mlsValidateAthenaNote(n.athenaNote);valid.required=true;valid.ok=true;return valid;}catch(e){return {required:true,ok:false,reason:'malformed-canonical-note'};}
+}
+/* reopen-1.0.0 (owner 2026-09-02, measured on his own tab at b1198): REOPENING
+   A SAVED GENERATED VISIT NOTE THREW AWAY ITS ATHENA SIDECAR. The record he
+   reopened carried athenaNote (1,603 chars), athenaNoteProvenance 'generated'
+   and a matching athenaNoteSourceFingerprint - History's own review accepted
+   that record - yet after "Reopen in editor" currentAthenaNoteProvenance read
+   'stale' and the Send-to-Athena sheet answered "NEEDS ONE STEP - generate the
+   five local draft fields first", costing a second model call and about forty
+   seconds for a note that already had a valid payload.
+
+   WHY. _mlsRestoreAthenaState re-checks the restored fingerprint against the
+   LIVE editor (_mlsAthenaFingerprintMatchesCurrent). Reopening rebuilds that
+   live state from the record, but not byte for byte: #patientLabel is filled
+   from the record's ROUTE PATIENT NAME (n.patient) while the saved fingerprint
+   holds the clinician's own typed label (n.patientLabel), and the rebound
+   patient snapshot comes from the chart on file. Identity metadata, in other
+   words - never the clinical text. The comparison therefore failed on fields
+   that had not changed and marked a perfectly current sidecar stale.
+
+   THE RULE. When the record's own fingerprint matches the record - the exact
+   check the History review uses, _mlsSavedAthenaFingerprintMatchesRecord by way
+   of _mlsSavedAthenaCanonicalForWrite - and the reopened editor holds that
+   record's transcript, context, visit comment and standard note VERBATIM, the
+   canonical payload is current for what is now on screen: it is restored and
+   its fingerprint re-anchored to that editor, so the sheet opens READY to
+   check without regenerating. A record whose fingerprint does not match its own
+   soap/text stays 'stale' exactly as today, and every later edit marks it stale
+   through the ordinary path. This function validates and restores; it never
+   generates, never writes, and never relaxes the gate - the clinical text the
+   fingerprint exists to protect is proven equal to the record, field by field,
+   before anything is restored, and identity is re-verified against Athena by
+   the write chain regardless. Proven in tests/sheet-rows-and-reopen-proof.js. */
+function _mlsReopenRestoreSavedAthenaSidecar(n){
+  n=n||{};
+  try{
+    var canonical=_mlsSavedAthenaCanonicalForWrite(n);
+    if(!canonical||canonical.required!==true||canonical.ok!==true)return false;
+    var fingerprint=_mlsAthenaSourceFingerprint(),live=null;
+    try{live=JSON.parse(String(fingerprint||""));}catch(eLive){live=null;}
+    if(!live||live.v!==2)return false;
+    if(live.transcript!==String(n.transcript||"")||live.context!==String(n.context||"")||live.visitComment!==String(n.visitComment||"")||live.standardNote!==String(n.soap||""))return false;
+    currentAthenaNote=String(n.athenaNote||"");
+    currentAthenaNoteProvenance=String(n.athenaNoteProvenance||"");
+    currentAthenaNoteSourceFingerprint=fingerprint;
+    return true;
+  }catch(e){return false;}
 }
 function _mlsAthenaCanonicalForWrite(){
   var provenance=String(typeof currentAthenaNoteProvenance!=='undefined'?currentAthenaNoteProvenance:'none');
@@ -45607,7 +45657,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1197';
+  window.__MLS_AV='b1198';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

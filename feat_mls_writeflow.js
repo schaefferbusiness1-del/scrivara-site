@@ -3255,16 +3255,40 @@
        has not been asked to write yet is not a failure and must never read like
        one. It is simply the next thing the doctor's next press does - and this
        renderer still decides nothing: it reads the checkbox and the receipts. */
+    /* rowsel-1.0.0 (owner 2026-09-02, same ruling, measured on his own tab at
+       b1197): he UNCHECKED five of six sections and pressed Confirm for the one
+       he wanted. The one he checked landed VERIFIED - and the five he had
+       deliberately left alone were reported "NOT ATTEMPTED - Ready, but not
+       attempted in this receipt." and counted into "Not written - 5 of 6".
+       An unchecked row is not an attempt that failed and not work still owed:
+       it is the doctor's own choice, and the receipt must read it back to him
+       as that choice. ROWSEL_* below are the only two sentences this adds; the
+       renderer still decides nothing - it reads the checkbox and the receipts. */
     if (row.capability === 'ready' && row.action) {
-      var stillChecked = false;
-      try {
-        var boxes = bxCheckBoxes();
-        for (var bi = 0; bi < boxes.length; bi++) { if (boxes[bi].checked && boxes[bi].getAttribute('data-mls-bx-row') === row.id) { stillChecked = true; break; } }
-      } catch (eBox) { stillChecked = false; }
-      if (stillChecked) return { status: 'waiting for your press', message: 'Checked and ready. Nothing has been attempted for this section - your next Confirm press writes it, and MLS reads it back before it says so.' };
+      var box = bxBoxForRow(row.id);
+      if (box) {
+        if (box.checked) return { status: 'waiting for your press', message: 'Checked and ready. Nothing has been attempted for this section - your next Confirm press writes it, and MLS reads it back before it says so.' };
+        return { status: ROWSEL_NOT_SELECTED, message: ROWSEL_NOT_SELECTED_MSG };
+      }
     }
     return { status: 'not attempted', message: 'Ready, but not attempted in this receipt.' };
   }
+  /* A row is NOT SELECTED only when its own include checkbox is on the sheet
+     and off. A row that never carries one (Save draft, Sign & Save, an order,
+     or any sheet with no include checkboxes at all) can never be "unchecked",
+     so it keeps every word it had. */
+  function bxBoxForRow(rowId) {
+    try {
+      var boxes = bxCheckBoxes();
+      for (var i = 0; i < boxes.length; i++) if (boxes[i].getAttribute('data-mls-bx-row') === S(rowId)) return boxes[i];
+    } catch (e) {}
+    return null;
+  }
+  /* The doctor's choice, said back to him in his own terms. Kept as constants
+     so the count below and the row label can never drift apart. */
+  var ROWSEL_NOT_SELECTED = 'not selected';
+  var ROWSEL_NOT_SELECTED_MSG = 'You left this section unchecked; nothing was sent for it.';
+  function rowselNotSelected(state, row) { return receiptStateForRow(state, row).status === ROWSEL_NOT_SELECTED; }
   function renderUnifiedReceipts(state) {
     var host = document.getElementById('mlsAthenaUnifiedReceipt'); if (!host) return;
     /* 2026-07-28: before anything is attempted every row reported "NOT ATTEMPTED
@@ -3276,7 +3300,7 @@
     var anyOutcome = Object.keys(state.receipts).length > 0 ||
       state.manifest.rows.some(function (row) { return !!sectionLedger[ledgerKey(state, row.id)]; });
     if (!anyOutcome) { host.innerHTML = ''; return; }
-    var colors = { verified: '#205c43', rehearsed: '#204034', uncertain: '#8b2525', blocked: '#8b2525', manual: '#6d5010', 'not attempted': '#52675c', 'already in Athena': '#205c43', 'waiting for your press': '#52675c' };
+    var colors = { verified: '#205c43', rehearsed: '#204034', uncertain: '#8b2525', blocked: '#8b2525', manual: '#6d5010', 'not attempted': '#52675c', 'already in Athena': '#205c43', 'waiting for your press': '#52675c', 'not selected': '#52675c' };
     /* wfsum-1.0.0 completion banner: when every note-write row is in Athena
        (verified now, verified earlier, or its field already holds text), say so
        ONCE in green - the owner asked for one glanceable "everything is
@@ -3295,7 +3319,12 @@
     var landedRows = state.manifest.rows.filter(function (row) {
       var r = receiptStateForRow(state, row); return r.status === 'verified' || r.status === 'already in Athena';
     });
-    var missedRows = noteRows.filter(function (row) {
+    /* rowsel-1.0.0: "Not written - N of M" is a report on the work the doctor
+       ASKED for. M is the checked rows, N the checked rows that did not land.
+       A row he unchecked is neither, and appears in neither number - it is
+       named once, in the row list below, as NOT SELECTED. */
+    var selectedRows = noteRows.filter(function (row) { return !rowselNotSelected(state, row); });
+    var missedRows = selectedRows.filter(function (row) {
       var r = receiptStateForRow(state, row); return !(r.status === 'verified' || r.status === 'already in Athena');
     });
     var landedHtml = landedRows.length
@@ -3311,7 +3340,7 @@
       : '';
     var missedHtml = (landedRows.length && missedRows.length)
       ? '<div data-mls-receipt-missed="1" style="border:1px solid #f0d79a;background:#fffdf5;border-radius:10px;padding:10px 12px;margin-bottom:8px;color:#6d5010;font-size:12px">' +
-        '<div style="font-weight:850;margin-bottom:4px">Not written &mdash; ' + missedRows.length + ' of ' + noteRows.length + '</div>' +
+        '<div style="font-weight:850;margin-bottom:4px">Not written &mdash; ' + missedRows.length + ' of ' + selectedRows.length + '</div>' +
         missedRows.map(function (row) {
           return '<div style="margin-top:3px"><b>' + esc(row.label) + '</b> &mdash; ' + esc(S(receiptStateForRow(state, row).message) || 'no outcome was recorded for this section.') + '</div>';
         }).join('') + '</div>'
@@ -4923,6 +4952,88 @@
     var issue = S(opts && opts.generationIssue).trim();
     return /^(?:athena-note-|generated-soap-format$)/.test(issue) ? issue : '';
   }
+  /* ===== regenkeep-1.0.0 (owner 2026-09-02, measured on his own tab, b1197) ==
+     WHAT HE DID, in order: pressed "Bind to 2026-08-31", watched the sheet
+     rebind to the exact appointment for that day, then pressed this section's
+     "Regenerate HPI, ROS, Exam, Assessment & Plan". The rebuilt review came
+     back reading "expected day 2026-09-01 - no appointment id is bound", so the
+     bind he had just done had to be done again.
+
+     WHY, exactly. wfbind does NOT touch the app's own currentVisitAthenaBinding;
+     it re-pulls the day and re-enters openUnifiedConfirmation with an
+     expectedContext carrying the day (wfbindOptsForDay), and that bound context
+     then lives in state.reopenOpts - the SHEET's copy. runUnifiedCanonicalGeneration
+     rebuilt through pushEntireVisitToAthena(null), which builds its context from
+     the app binding alone and knows nothing about the sheet's copy. So the day
+     the doctor had just bound was thrown away by the rebuild, every time.
+
+     THE RULE. A regenerate re-runs the note generation and the local validation
+     and NOTHING ELSE: the exact visit this review is bound to (visitDate,
+     appointmentId, encounterId, encounterUrl, provider) carries through when the
+     patient is unchanged. This is a ONE-SHOT carry-through armed immediately
+     before the rebuild and consumed by the very next openUnifiedConfirmation -
+     never a standing override; it can only restore a binding the sheet already
+     held, never invent one; and it refuses outright the moment the rebuild names
+     a different patient. It writes nothing, sends nothing, and does not touch
+     currentVisitAthenaBinding, so generateNote's own source-changed guard still
+     compares the same binding before and after. */
+  var regenKeepPending = null;
+  /* Only an EXACT binding is worth carrying: a day with an Athena appointment
+     id, or a day with a bound encounter id + URL. A half-bound context is left
+     to the ordinary resolver exactly as today. */
+  function regenKeepVisit(visit) {
+    visit = visit || {};
+    var day = S(visit.visitDate).trim(), appt = S(visit.appointmentId).trim();
+    var enc = S(visit.encounterId).trim(), url = S(visit.encounterUrl).trim();
+    if (!day) return null;
+    if (!appt && !(enc && url)) return null;
+    return { visitDate: day, provider: S(visit.provider).trim(), appointmentId: appt, encounterId: enc, encounterUrl: url };
+  }
+  /* The SAME identity the write chain's lock uses, read-only: id when both
+     sides carry one, plus the name/DOB comparators. Anything short of a match
+     drops the carry-through and the rebuild keeps whatever it resolved. */
+  function regenKeepSamePatient(a, b) {
+    a = a || {}; b = b || {};
+    var ia = S(a.patientId).trim(), ib = S(b.patientId).trim();
+    if (ia && ib && ia !== ib) return false;
+    if (!nameMatch(a.name, b.name)) return false;
+    var da = nrmDob(a.dob), db = nrmDob(b.dob);
+    if (da && db && da !== db) return false;
+    var ma = nrmId(a.mrn), mb = nrmId(b.mrn);
+    if (ma && mb && ma !== mb) return false;
+    return !!((ia && ib) || (da && db));
+  }
+  function regenKeepArm(state) {
+    regenKeepPending = null;
+    try {
+      if (!state || !state.manifest) return false;
+      var keep = regenKeepVisit(state.manifest.visit);
+      if (!keep) return false;
+      regenKeepPending = { patient: stableClone(state.manifest.patient), visit: keep };
+      return true;
+    } catch (e) { regenKeepPending = null; return false; }
+  }
+  function regenKeepDisarm() { regenKeepPending = null; }
+  /* Consumed exactly once, by the next openUnifiedConfirmation. */
+  function regenKeepApply(opts) {
+    var keep = regenKeepPending; regenKeepPending = null;
+    if (!keep) return opts;
+    try {
+      var incoming = (opts && opts.patient) || {};
+      if (!regenKeepSamePatient(keep.patient, incoming)) return opts;
+      var merged = {}, k;
+      for (k in opts) if (Object.prototype.hasOwnProperty.call(opts, k)) merged[k] = opts[k];
+      var ctx = {}, c0 = opts.expectedContext || {};
+      for (k in c0) if (Object.prototype.hasOwnProperty.call(c0, k)) ctx[k] = c0[k];
+      ctx.visitDate = keep.visit.visitDate;
+      ctx.appointmentId = keep.visit.appointmentId;
+      ctx.encounterId = keep.visit.encounterId;
+      ctx.encounterUrl = keep.visit.encounterUrl;
+      if (keep.visit.provider) ctx.provider = keep.visit.provider;
+      merged.expectedContext = ctx;
+      return merged;
+    } catch (e) { return opts; }
+  }
   function unifiedCanonicalGenerationHtml(state) {
     var issue = unifiedCanonicalGenerationIssue(state && state.sourceOpts);
     if (!issue) return '';
@@ -4966,7 +5077,13 @@
       if (state.closed || unifiedAthenaState !== state) return;
       if (ok !== true) { release('Generation did not complete, so the existing review stayed unchanged and nothing was sent. Correct the issue shown by MLS and try again.', true); return; }
       unifiedCanonicalGenerationStatus(state, 'The five fields passed generation and validation. Rebuilding the exact Athena review now…', false);
-      var rebuilt = reopen(null);
+      /* regenkeep-1.0.0: the exact visit this review is already bound to travels
+         through the rebuild. Armed here and consumed by the rebuild's own
+         openUnifiedConfirmation; the finally makes it one-shot even when the
+         rebuild refuses, throws, or never reaches the sheet. */
+      regenKeepArm(state);
+      var rebuilt;
+      try { rebuilt = reopen(null); } finally { regenKeepDisarm(); }
       if (state.closed || unifiedAthenaState !== state) return;
       if (rebuilt !== true) { release('The fields were generated, but the review could not be rebuilt for the same exact patient and visit. Nothing was sent; re-open Send to Athena after fixing the binding shown here.', true); return; }
       release('The five fields were generated. Re-open Send to Athena to review the rebuilt rows; nothing was sent.', false);
@@ -5889,6 +6006,10 @@
 
   function openUnifiedConfirmation(opts) {
     opts = opts || {};
+    /* regenkeep-1.0.0: a regenerate armed one carry-through of the visit this
+       review was already bound to. It is consumed here, once, and only for the
+       same patient; every other entry to this function sees opts untouched. */
+    opts = regenKeepApply(opts);
     if (athenaActionRunning) { actionSay(opts, 'Another Athena action is already awaiting confirmation. Finish or cancel it before opening the unified review.', ''); return null; }
     var returnFocus = null;
     try {
@@ -7799,6 +7920,16 @@
          same functions the sheet paints with. Nothing here can write. */
       receiptLedger: { v: 'wfsum-1.0.0', key: ledgerKey, remember: rememberRowOutcome,
         rowState: receiptStateForRow, render: renderUnifiedReceipts },
+      /* rowsel-1.0.0 read-only seam: the two sentences an UNCHECKED row is
+         reported with. Nothing here can send, check a box, or change a verdict. */
+      rowSel: { v: 'rowsel-1.0.0', status: ROWSEL_NOT_SELECTED, message: ROWSEL_NOT_SELECTED_MSG,
+        notSelected: function (row) { return unifiedAthenaState ? rowselNotSelected(unifiedAthenaState, row) : false; } },
+      /* regenkeep-1.0.0 read-only seam: the one-shot visit carry-through a
+         regenerate arms. arm()/apply() are the SAME calls the regenerate path
+         makes - neither sends, probes, binds, nor enables any control. */
+      regenKeep: { v: 'regenkeep-1.0.0', arm: regenKeepArm, disarm: regenKeepDisarm, apply: regenKeepApply,
+        visitOf: regenKeepVisit, samePatient: regenKeepSamePatient,
+        pending: function () { return regenKeepPending ? stableClone(regenKeepPending) : null; } },
       /* sheetux-1.0.0 test seam (read-only except press(), which is the SAME
          call the merged primary button makes). */
       sheetUx: { v: 'sheetux-1.0.0', zeroReason: SHEETUX_ZERO_REASON, doItLabel: SHEETUX_DOIT_LABEL,

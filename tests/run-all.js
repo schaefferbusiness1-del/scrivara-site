@@ -57,6 +57,15 @@ const AUTOMATED_PROOF_FILES = new Set([
      of the two it measured; the clarity table settles it in one step and points
      at the combined Assessment & Plan destination a one-field A/P stage has. */
   'assessment-probe-proof.js',
+  /* rowsel-1.0.0 / reopen-1.0.0 / regenkeep-1.0.0 (owner-measured 2026-09-02,
+     b1197): a section the doctor UNCHECKED reads NOT SELECTED and is counted
+     in neither half of "Not written - N of M" (M is the checked rows), while a
+     checked row still owed keeps WAITING FOR YOUR PRESS and a checked row that
+     did not land still counts; reopening a saved generated note keeps the
+     canonical Athena sidecar it already carries instead of demanding a second
+     model call; and the sheet's Regenerate keeps the exact visit the doctor
+     just bound by hand instead of resetting the review to the creation day. */
+  'sheet-rows-and-reopen-proof.js',
   /* vntpl-1.1.0 (2026-09-01): the standard visit note only ever takes a
      VISIT-NOTE template. Nine straight backend refusals came from a
      TEMPLATE_CONTRACT built out of an OPERATIVE REPORT; the op-note room keeps
@@ -1312,6 +1321,7 @@ const tests = [
   'capture-keeps-selection-proof.js',
   'scoped-pull-keeps-others-proof.js',
   'assessment-probe-proof.js',
+  'sheet-rows-and-reopen-proof.js',
   'visit-template-scope-proof.js',
   'write-next-press-proof.js',
   'visit-walkthrough-proof.js',
