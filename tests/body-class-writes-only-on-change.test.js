@@ -297,7 +297,13 @@ const CONNECT_BODY_SITE_AUDIT = [
   { op: "remove('mls-top-voice-tools')", count: 1, reasons: ['owner revert teardown'] },
   { op: "toggle('mls-top-voice-tools', wantTvt)", count: 1, reasons: ['contains() guard'] },
   { op: "toggle('ez3adv', S.advOpen)", count: 4, reasons: ['trusted/user toggle', 'trusted/user toggle', 'trusted/user toggle', 'trusted/user toggle'] },
-  { op: "add('ez3adv')", count: 1, reasons: ['guarded by !S.advOpen state transition'] },
+  { op: "add('ez3adv')", count: 2, reasons: ['guarded by !S.advOpen state transition',
+    /* walkfix-1.0.0 (b1184): the 35th site, read rather than absorbed into a
+       bumped total. revwork's own openWorkspace() opens `if (advOpen()) return
+       false;` and advOpen() IS body.classList.contains('ez3adv'), so a steady
+       state writes nothing; it is also the last rung, reached only when the
+       #ez3Adv element is absent from the build entirely. */
+    'revwork openWorkspace: advOpen() contains() guard taken before the add'] },
   { op: "toggle('ez3sec0', !secOpen)", count: 1, reasons: ['contains() guard'] },
   { op: "remove('ez3adv')", count: 3, reasons: ['v3.2 owner revert', 'v3.2 twin owner revert', 'v3.1 owner revert'] },
   { op: "toggle('mls-r44-hidebday', !c.birthdays)", count: 1, reasons: ['contains() guard'] },
@@ -323,7 +329,23 @@ const CONNECT_BODY_SITE_AUDIT = [
          body.classList.toggle('ez3fl-top-gen-owns', owns);
      Enumerated rather than the total simply bumped, so the next new site still
      has to be read by a person. */
-  { op: "toggle('ez3fl-top-gen-owns', owns)", count: 1, reasons: ['contains() !== owns guard before the toggle'] }
+  { op: "toggle('ez3fl-top-gen-owns', owns)", count: 1, reasons: ['contains() !== owns guard before the toggle'] },
+  /* walkfix-1.0.0 (b1184): TWO SITES READ AND AUDITED, not one total bumped.
+     The list said 34 while the source said 35 - the same shape of drift the
+     bodycensus note above describes - and this change adds the 36th. Both are
+     enumerated here so the next new site still has to be read by a person.
+       35th: revwork's own openWorkspace() (the codes jump). It is change-safe
+       by a contains() read taken BEFORE the write:
+         function openWorkspace() { if (advOpen()) return false; ...
+           safe(function () { document.body.classList.add('ez3adv'); });
+       and advOpen() is body.classList.contains('ez3adv'), so a steady state
+       writes nothing. It is also the LAST rung - reached only when #ez3Adv
+       itself is absent from the build.
+       36th: toggleWorkspaceFromLane()'s fallback for a shell with no #ez3Adv
+       element at all. A two-argument-free toggle() cannot write an unchanged
+       value by construction: it always flips. It runs once per deliberate
+       press of the lane's workspace door, never on a repaint. */
+  { op: "toggle('ez3adv')", count: 1, reasons: ['argument-free toggle always flips - it cannot write an unchanged value'] }
 ];
 const connectBodyOps = new Map();
 const connectBodyRe = /(?:document\.body|\bbody)\.classList\.(add|remove|toggle)\(([^\n;]*)\)/g;
@@ -333,10 +355,10 @@ while ((connectBodyMatch = connectBodyRe.exec(connectText))) {
   const op = connectBodyMatch[1] + '(' + connectBodyMatch[2] + ')';
   connectBodyOps.set(op, (connectBodyOps.get(op) || 0) + 1);
 }
-assert.strictEqual([...connectBodyOps.values()].reduce((sum, count) => sum + count, 0), 34,
-  'mls-connect body-class audit no longer enumerates exactly 34 syntactic sites');
-assert.strictEqual(CONNECT_BODY_SITE_AUDIT.reduce((sum, row) => sum + row.count, 0), 34,
-  'the documented mls-connect body-class audit does not account for all 34 sites');
+assert.strictEqual([...connectBodyOps.values()].reduce((sum, count) => sum + count, 0), 36,
+  'mls-connect body-class audit no longer enumerates exactly 36 syntactic sites');
+assert.strictEqual(CONNECT_BODY_SITE_AUDIT.reduce((sum, row) => sum + row.count, 0), 36,
+  'the documented mls-connect body-class audit does not account for all 36 sites');
 assert.strictEqual(connectBodyOps.size, CONNECT_BODY_SITE_AUDIT.length,
   'mls-connect gained or lost an operation shape without an explicit audit entry');
 for (const row of CONNECT_BODY_SITE_AUDIT) {
@@ -389,7 +411,7 @@ for (const row of SCRIBEFLOW_BODY_SITE_AUDIT) {
     'every ScribeFlow occurrence needs its own guard or exact exception: ' + row.op);
 }
 
-const SITES = { 'mls-connect.js': 34, 'feat_athena_tooltip_dedupe.js': 9, 'feat_mls_pervisit_unify.js': 1, 'ScribeFlow.html': 19, 'feat_mls_redesign.js': 6, 'feat_mls_phone_ui.js': 3 };
+const SITES = { 'mls-connect.js': 36, 'feat_athena_tooltip_dedupe.js': 9, 'feat_mls_pervisit_unify.js': 1, 'ScribeFlow.html': 19, 'feat_mls_redesign.js': 6, 'feat_mls_phone_ui.js': 3 };
 const ANY_OP = /(?:document\.body|\bbody)\.classList\.(?:add|remove|toggle)\(/g;
 for (const [file, expected] of Object.entries(SITES)) {
   const found = (read(file).match(ANY_OP) || []).length;
@@ -434,4 +456,4 @@ assert(connect.includes("var A='feat_mls_redesign.js',V='3.2.4'") &&
 assert(!connect.includes('20260808rd332perf2') && !connect.includes('20260804rd331'),
   'a retired hand-maintained redesign cache token is still reachable');
 
-console.log('PASS body-class churn: measured writers plus recurring Lite/P1-dock paths compare first; all 34 connect and 19 shell operation sites are classified, and changed satellites use fresh or build-bound cache tokens (' + scanned + ' published files scanned)');
+console.log('PASS body-class churn: measured writers plus recurring Lite/P1-dock paths compare first; all 36 connect and 19 shell operation sites are classified, and changed satellites use fresh or build-bound cache tokens (' + scanned + ' published files scanned)');

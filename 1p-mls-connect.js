@@ -7630,17 +7630,51 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      and whose entire purpose is to take you there, behaves exactly as before.
      The Orders chip keeps its own scrollIntoView to #visitOrdersCard - that one
      is deliberate and takes him to what he asked for. */
+  /* walkfix-1.0.0 (b1184): THE ONE SCROLL RULE FOR THIS LANE.
+     A control scrolls to ITS OWN result and nowhere else. If that result is
+     already fully on screen, the page does not move at all; if it is not, it
+     moves by the smallest amount that reveals it. block:'start' threw the
+     doctor to the top of a 35k-line document for a card that was often
+     already under the cursor - the owner's "buttons that scroll you to weird
+     places". Returns true only when the page was actually moved. */
+  function bringIntoView(el) {
+    if (!el || typeof el.scrollIntoView !== 'function') return false;
+    var needed = true;
+    try {
+      var r = (typeof el.getBoundingClientRect === 'function') ? el.getBoundingClientRect() : null;
+      var vh = window.innerHeight || (document.documentElement && document.documentElement.clientHeight) || 0;
+      if (r && vh && r.height > 0 && r.top >= 0 && r.bottom <= vh) needed = false;
+    } catch (e) {}
+    if (!needed) return false;
+    try { el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
+    catch (e2) { try { el.scrollIntoView(); } catch (e3) {} }
+    return true;
+  }
+  function workspaceOpen() {
+    try { return !!(document.body && document.body.classList.contains('ez3adv')); } catch (e) { return false; }
+  }
   function openWorkspace(scrollToNoteCard) {
-    var wasOpen = false;
-    try { wasOpen = document.body.classList.contains('ez3adv'); } catch (e) {}
+    var wasOpen = workspaceOpen();
     if (!wasOpen) { try { var adv = $('ez3Adv'); if (adv) adv.click(); } catch (e) {} }
     if (scrollToNoteCard === false) return;
     setTimeout(function () {
-      try {
-        var cc = $('noteCard') || $('emrCard') || $('outcomesCard');
-        if (cc) cc.scrollIntoView({ block: 'start', behavior: 'smooth' });
-      } catch (e) {}
+      bringIntoView($('mlsRevWork') || $('noteCard') || $('emrCard') || $('outcomesCard'));
     }, wasOpen ? 80 : 650);
+  }
+  /* walkfix-1.0.0 (b1184): the lane's own workspace door is a TOGGLE, exactly
+     like #ez3Adv, and it presses that button when it exists so there is one
+     state machine and one owner. It is only ever on screen when #ez3Adv is
+     not (see syncTopLane) - the phone lane hides #ez3Adv outright, which is
+     the case this button exists for. */
+  function toggleWorkspaceFromLane() {
+    var adv = $('ez3Adv');
+    if (adv) { try { adv.click(); } catch (e) {} }
+    else { try { document.body.classList.toggle('ez3adv'); } catch (e2) {} }
+    if (!workspaceOpen()) return false;
+    setTimeout(function () {
+      bringIntoView($('mlsRevWork') || $('noteCard') || $('emrCard') || $('outcomesCard'));
+    }, 260);
+    return true;
   }
   function recordingNow() {
     try {
@@ -8177,7 +8211,23 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       setLaneText(rbLabel, live ? '\u23F8 Pause recording' : (text.trim() && _recSessionSeen ? '\uD83C\uDFA4 Resume recording' : '\uD83C\uDFA4 ' + (pname ? 'Start recording - ' + pname : 'Start a visit recording')));
       setLaneAttr(rb, 'aria-pressed', live ? 'true' : 'false');
     }
-    setLaneHidden(ob, !!noteText.trim());
+    /* walkfix-1.0.0 (b1184): ONE DOOR AT A TIME. #ez3Adv (the engine's own
+       row, "Show / Hide the review workspace below") and this lane copy were
+       BOTH on screen until a note existed - two controls for one job, and
+       only one of them could close what it opened. The lane copy is now the
+       fallback for shells where that row is not on screen at all: the phone
+       lane hides #ez3Adv with an id-chained !important rule, which is the
+       case this button was built for. When it does show, it says Show/Hide
+       like the control it stands in for, instead of only ever saying Open. */
+    var advBtn = $('ez3Adv');
+    var advOnScreen = false;
+    try { advOnScreen = !!(advBtn && advBtn.offsetParent !== null); } catch (eAdvB) { advOnScreen = !!advBtn; }
+    setLaneHidden(ob, advOnScreen || !!noteText.trim());
+    if (ob && !advOnScreen) {
+      var wsOpen = workspaceOpen();
+      setLaneText(ob, wsOpen ? 'Hide the review workspace below' : 'Open the review workspace below');
+      setLaneAttr(ob, 'aria-expanded', wsOpen ? 'true' : 'false');
+    }
     if (gb) {
       setLaneHidden(gb, live || !text.trim() || !!noteText.trim());
       setLaneDisabled(gb, !genReal || !!genReal.disabled);
@@ -8318,7 +8368,19 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
              second door to the SAME room, and the room opens BELOW this lane. */
           ob.textContent = 'Open the review workspace below';
           ob.title = 'Opens the review, codes and outcome cards under this flow. The flow itself stays exactly where it is.';
-          ob.addEventListener('click', openWorkspace);
+          /* walkfix-1.0.0 (b1184): TWO DEFECTS ON THIS ONE LINE.
+             (a) `openWorkspace` was handed straight to addEventListener, so
+             the MouseEvent arrived as its `scrollToNoteCard` parameter. The
+             guard is `if (scrollToNoteCard === false) return;` and an event is
+             not false, so this button ALWAYS ran the 650ms scroll to
+             #noteCard - the exact dropped-argument defect the comment above
+             openWorkspace() documents for the three Visit shortcut chips,
+             repeated verbatim here and never noticed because this caller
+             passed nothing at all in the source.
+             (b) it only ever OPENED. Pressed while the workspace was already
+             open it silently degraded into a scroll and went on saying
+             "Open". It is now the same toggle #ez3Adv is. */
+          ob.addEventListener('click', function () { toggleWorkspaceFromLane(); });
           var gb = document.createElement('button');
           gb.type = 'button'; gb.className = 'ez3fl-gen'; gb.id = 'ez3flGen'; gb.hidden = true;
           gb.textContent = '✨ Generate one note';
@@ -8441,7 +8503,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
                at all. */
             var rw = window.__mlsRevWork;
             if (rw && typeof rw.revealTranscript === 'function' && rw.revealTranscript()) return;
-            try { var top = $('ez3flTranscript'); if (top) { top.scrollIntoView({ block: 'center', behavior: 'smooth' }); top.focus(); } } catch (e) {}
+            /* walkfix-1.0.0 (b1184): the bounded fallback honours the same
+               scroll rule as the revealer it stands in for - the page moves
+               only when the transcript is not already on screen. */
+            try { var top = $('ez3flTranscript'); if (top) { bringIntoView(top); top.focus(); } } catch (e) {}
           });
           pasteChip.id = 'ez3flPaste';
           /* phn-1.0.1: this chip was DEAD. startPhoneMicFromEasy (and
@@ -8474,7 +8539,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           avsQuick.id = 'ez3flAvs';
           mkq('&#128221; Orders', 'See or edit the orders that ride along when you send the visit to Athena', function () {
             openWorkspace(false);
-            setTimeout(function () { try { var oc = $('visitOrdersCard'); if (oc) oc.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) {} }, 800);
+            /* walkfix-1.0.0 (b1184): same rule - Orders takes the doctor to
+               the orders card, and only when it is not already on screen. */
+            setTimeout(function () { try { bringIntoView($('visitOrdersCard')); } catch (e) {} }, 800);
           });
           syncQ();
           rec.appendChild(q);
@@ -22298,6 +22365,25 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      scrub a stale lane left by an older hot-loaded bundle before repainting. */
   function setWrapHtml(h) {
     var w = wrap(); if (!w) return;
+    /* walkfix-1.0.0 (b1184): A NO-OP REPAINT MUST DESTROY NOTHING.
+       ez3calm-1.0.0 already refused to rewrite #ez3Wrap when the html had not
+       changed - but the two DESTRUCTIVE steps below ran BEFORE that guard, on
+       every single call. So an identical repaint (the 250ms render a style
+       chip schedules, a mls:active-patient-changed render, any render whose
+       html is byte-identical) still:
+         1. removed every .ez3fl-record - the record pill, the transcript box,
+            Generate one note and the whole Visit shortcuts row - leaving the
+            doctor's primary lane to be rebuilt from scratch by the flow
+            module's next observer tick; and
+         2. detached #ez3Transcript and then, because nothing was rewritten,
+            found no fresh node to put it back into - so it fell through to
+            the "real phase change" branch, the canonical transcript stayed
+            GONE, and any dictation aimed at it was stopped.
+       That is the owner's "UI elements that come and go", and a control that
+       is torn out between mousedown and mouseup produces no click at all,
+       which is the same press read as "I had to click it twice".
+       Both steps now happen only on the path that actually rewrites. */
+    if (w.__ez3H === h) return;
     /* Keep the canonical transcript node alive when a same-phase Easy repaint
        (Advanced/Phone/AVS/Orders) rebuilds the surrounding room. Dictate owns
        the exact textarea node it started on; replacing that node mid-utterance
@@ -22314,7 +22400,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       }
     } catch (e0) { keepTx = null; }
     try { w.querySelectorAll('.ez3fl-record').forEach(function (n) { n.remove(); }); } catch (e) {}
-    if (w.__ez3H !== h) { w.innerHTML = h; w.__ez3H = h; } /* ez3calm-1.0.0 */
+    w.innerHTML = h; w.__ez3H = h; /* ez3calm-1.0.0; the guard moved to the top (walkfix-1.0.0) */
     if (!keepTx) return;
     var freshTx = null;
     try { freshTx = w.querySelector('#ez3Transcript'); } catch (e1) {}
@@ -22343,8 +22429,18 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function render() {
     if (!host) return;
     reflectEasyMode();
-    clearClicks(); /* every render rebuilds the click registry with fresh closures */
+    /* walkfix-1.0.0 (b1184): CLEAR THE REGISTRY ONLY WHEN WE WILL REFILL IT.
+       clearClicks() used to run BEFORE this guard. A render that arrived while
+       #ez3Wrap was momentarily absent (the 3s mount keep-alive, another module
+       rebuilding the body) therefore emptied CLICKS and returned - with every
+       already-painted button still on screen and still delegated through
+       ez3Click, which resolves handlers out of that registry AT CLICK TIME.
+       The whole flow went silently dead until the next successful render:
+       Edit note, Regenerate, Copy for Athena, Review & Sign, Review Athena
+       actions, all of them. That is the owner's "buttons that do nothing",
+       and no second press could help - there was nothing left to answer. */
     if (!wrap()) return;
+    clearClicks(); /* every render rebuilds the click registry with fresh closures */
     try { var wantTvt = S.mode !== 'staff' && S.screen === 'doctor' && !!S.appt;
       if (document.body.classList.contains('mls-top-voice-tools') !== wantTvt) document.body.classList.toggle('mls-top-voice-tools', wantTvt); } catch (e0) {}
     if (S.mode === 'staff') { renderStaff(); return; }
@@ -23223,7 +23319,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if (rw && isFn(rw.revealTranscript) && rw.revealTranscript()) return;
       var transcript = $('ez3Transcript');
       if (!transcript) { toast('Open the transcript step before pasting.'); return; }
-      try { transcript.scrollIntoView({ block: 'center', behavior: 'smooth' }); transcript.focus(); } catch (e) {}
+      /* walkfix-1.0.0 (b1184): the bounded fallback obeys the same scroll rule
+         as the revealer it stands in for - no move at all when the box is
+         already on screen, and the minimum move when it is not. */
+      try {
+        if (rw && isFn(rw.bring)) rw.bring(transcript);
+        else transcript.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        transcript.focus();
+      } catch (e) {}
     });
     /* phn-1.0.1: same dead-chip bug as the flow-lane chip. The click dispatcher
        hands every handler (btn, ev) — this one dropped both, so it called
@@ -23656,12 +23759,36 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     /* note-style chips as HTML with data-chip — resolved at click time */
     var chipHost = $('ez3StyleChips');
     if (chipHost) {
-      var ch = '';
-      styleChipHosts().forEach(function (c) {
-        ch += '<button type="button" data-chip="' + esc(c.label) + '" class="ez3-chip' +
-              (/\bon\b|\bactive\b|\bsel\b/.test(c.el.className) ? ' on' : '') + '">' + esc(c.label) + '</button>';
-      });
-      chipHost.innerHTML = ch;
+      /* walkfix-1.0.0 (b1184): PATCH THE CHIPS, NEVER REPLACE THEM.
+         `chipHost.innerHTML = ch` rebuilt all eight SOAP / APSO / Narrative /
+         Problem-based / H&P / Concise / Standard / Detailed buttons on EVERY
+         wire pass, even when the labels and the selected state were identical.
+         A repaint that lands between mousedown and mouseup removes the node
+         under the cursor and the browser then produces no click event at all -
+         the press is simply eaten, and the doctor presses again. The label set
+         is now rebuilt only when it genuinely changes; otherwise the same
+         nodes stay put and only the .on state is written, and only when it
+         actually moved. */
+      var wantChips = styleChipHosts();
+      var haveChips = chipHost.querySelectorAll ? chipHost.querySelectorAll('button[data-chip]') : [];
+      var sameSet = haveChips.length === wantChips.length;
+      for (var ci = 0; sameSet && ci < wantChips.length; ci++) {
+        if (!haveChips[ci] || haveChips[ci].getAttribute('data-chip') !== wantChips[ci].label) sameSet = false;
+      }
+      if (!sameSet) {
+        var ch = '';
+        wantChips.forEach(function (c) {
+          ch += '<button type="button" data-chip="' + esc(c.label) + '" class="ez3-chip">' + esc(c.label) + '</button>';
+        });
+        chipHost.innerHTML = ch;
+        haveChips = chipHost.querySelectorAll('button[data-chip]');
+      }
+      for (var cj = 0; cj < wantChips.length; cj++) {
+        var chipEl = haveChips[cj];
+        if (!chipEl || !chipEl.classList) continue;
+        var chipOn = /\bon\b|\bactive\b|\bsel\b/.test(wantChips[cj].el.className);
+        if (chipEl.classList.contains('on') !== chipOn) chipEl.classList.toggle('on', chipOn);
+      }
     }
     syncTx();
   }
@@ -62837,10 +62964,32 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
   var _css = null, _iv = null, _deb = null, _bodyObs = null, _wrapObs = null;
   var _wrapWatched = null, _noteObs = null, _noteWatched = null;
   var _installed = false, _advWas = null;
+  /* walkfix-1.0.0 (b1184): the doctor's standing request to have the note box
+     open. Held here, re-asserted on every reconcile, because the thing that
+     hides that box repaints on its own cadence (see enforceEdit). */
+  var _editWanted = false;
 
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
   function isFn(f) { return typeof f === 'function'; }
   function safe(fn, dflt) { try { return fn(); } catch (e) { return dflt; } }
+  /* walkfix-1.0.0 (b1184): THE ONE SCROLL RULE. Every control in this lane
+     scrolls to ITS OWN result and nowhere else, and only when that result is
+     not already on screen - then by the smallest move that reveals it.
+     block:'center' and block:'start' both threw the page around a 35k-line
+     document for a target the doctor was already looking at. Returns true
+     only when the page was actually moved. */
+  function bring(el) {
+    if (!el || !isFn(el.scrollIntoView)) return false;
+    var needed = true;
+    safe(function () {
+      var r = isFn(el.getBoundingClientRect) ? el.getBoundingClientRect() : null;
+      var vh = window.innerHeight || (document.documentElement && document.documentElement.clientHeight) || 0;
+      if (r && vh && r.height > 0 && r.top >= 0 && r.bottom <= vh) needed = false;
+    });
+    if (!needed) return false;
+    safe(function () { el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); });
+    return true;
+  }
   function say(msg, kind) {
     try { if (isFn(window.toast)) { window.toast(msg, kind || ''); return; } } catch (e) {}
     try {
@@ -63011,7 +63160,7 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
       el = c; break;
     }
     if (!el) return false;
-    safe(function () { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); });
+    bring(el);                                  /* walkfix-1.0.0: only if off screen */
     safe(function () { el.focus(); });
     return true;
   }
@@ -63059,7 +63208,7 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
       return '';
     }
     if (send.disabled) { say('The Athena review step is not ready yet. Save the note, then press this again.', 'err'); return ''; }
-    safe(function () { send.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); });
+    bring(send);                                /* walkfix-1.0.0: only if off screen */
     safe(function () { send.click(); });
     return SEND_TARGET;
   }
@@ -63090,7 +63239,7 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
     openWorkspace();
     var target = $('mlsAtStep3') || $('emrCard');
     if (!target) { say('The codes step is not on this build.', 'err'); return ''; }
-    safe(function () { target.scrollIntoView({ block: 'start', behavior: 'smooth' }); });
+    bring(target);                              /* walkfix-1.0.0: only if off screen */
     var tbl = $('emrTable');
     if (tbl && inlineHidden(tbl)) {
       say(noteText().trim()
@@ -63462,27 +63611,126 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
     doGenerate();
     return 'restyled';
   }
+  /* walkfix-1.0.0 (b1184): A GENERATION IS PROVED BY ITS RESULT, NOT BY AN
+     ORDERING. ez3Click is registered on document FIRST, so by the time this
+     handler runs the engine's on('ez3Regen') has ALREADY clicked #genBtn and
+     _mlsStartGeneration has ALREADY emitted mls:generation-started - which
+     clears _genPending. Incrementing it here therefore re-armed the very
+     fallback the engine had just disarmed, and the comment above ("an engine
+     that did fire clears the flag first, so the note can never be generated
+     twice") described an order that runs the other way round.
+     What the doctor got: press Regenerate, the note regenerates correctly,
+     and 700ms later - with the generation still in flight, so #genBtn is
+     disabled and pressFirst can press nothing - MLS shouts "Generate is not
+     ready yet ... press it again" in red over a press that was working. Obey
+     that sentence and the note is generated twice. If the generation happened
+     to land inside the 700ms, the fallback fired a real second one.
+     The fallback is KEPT - a dispatch that never arrives is the case it
+     exists for - but it now reads the result: a generation in flight, or a
+     note that has already moved, is proof enough that the press landed. */
+  function genInFlight() {
+    if ($('ez3GenBusy')) return true;
+    var g = $('genBtn');
+    if (g && g.disabled) return true;
+    var fl = $('ez3flGen');
+    if (fl && fl.disabled) return true;
+    return false;
+  }
   function onRegenPress() {
     if (!identityGuard('this regeneration')) return '';
     say('Regenerating this note from the same transcript\u2026');
     var stamp = ++_genPending;
+    var before = noteText();
     setTimeout(function () {
-      if (_genPending !== stamp) return;       /* the engine's own handler got there */
+      if (_genPending !== stamp) return;       /* a later press owns the watchdog */
       _genPending = 0;
+      if (genInFlight()) return;               /* it IS running - say nothing */
+      if (noteText() !== before) return;       /* it already finished */
       doGenerate();
     }, 700);
     return 'armed';
   }
+  /* walkfix-1.0.0 (b1184): ONE OWNER FOR THE NOTE BOX'S VISIBILITY.
+     #ez3Note is decorated by the "Formatted view (live)" panel
+     (feat_mls_fixpack_0701 attachPreview, which takes ANY structured textarea
+     over 200 characters), and that panel sets ta.style.display = 'none' while
+     it holds the slot. The old handler cleared that inline hide ONCE, 60ms
+     after the press; the panel's next render put it straight back, and every
+     engine repaint replaces #ez3Note with a fresh node the panel re-decorates
+     from scratch. So Edit note opened the box or it did not, depending on
+     which of the two landed last - the owner's "buttons that need to be
+     clicked twice".
+     Fighting the panel was the mistake. It owns a real toggle of its own, so
+     the press is handed to THAT toggle and the panel stops hiding the box;
+     the intent is held in _editWanted and re-asserted on every reconcile
+     until the engine itself closes editing. Nothing new is drawn. */
+  function fmtEntryFor(el) { return safe(function () { return (el && el.__fpFmt) || null; }, null); }
+  function fmtToggleOf(entry) {
+    if (!entry || !entry.wrap || !isFn(entry.wrap.querySelector)) return null;
+    return safe(function () { return entry.wrap.querySelector('.fmt-edit') || entry.wrap.querySelector('button'); }, null);
+  }
+  function enforceEdit() {
+    if (!_editWanted) return false;
+    var t = $(ORIGINALS.note);
+    if (!t) return false;
+    if (t.readOnly) { _editWanted = false; return false; }
+    var entry = fmtEntryFor(t);
+    if (entry && entry.hidden !== true) {
+      var b = fmtToggleOf(entry);
+      if (b && isFn(b.click)) { safe(function () { b.click(); }); return true; }
+    }
+    return clearHide(t);
+  }
   function onEditPress() {
+    _editWanted = true;
     setTimeout(function () {
       var t = $(ORIGINALS.note);
       if (!t) return;
-      if (t.readOnly) return;                  /* the engine closed editing - leave the view alone */
-      clearHide(t);                            /* the formatted-view panel collapses it */
-      safe(function () { t.scrollIntoView({ block: 'center', behavior: 'smooth' }); });
+      if (t.readOnly) {
+        /* "Done editing" - give the formatted view its slot back rather than
+           leaving a read-only raw box where the note used to be. */
+        _editWanted = false;
+        var doneEntry = fmtEntryFor(t);
+        if (doneEntry && doneEntry.hidden === true) {
+          var db = fmtToggleOf(doneEntry);
+          if (db && isFn(db.click)) safe(function () { db.click(); });
+        }
+        return;
+      }
+      enforceEdit();
+      bring(t);
       safe(function () { t.focus(); });
     }, 60);
+    bump();                                    /* re-assert across the repaint window */
     return 'revealed';
+  }
+  /* walkfix-1.0.0 (b1184): COPY WAS THE ONE CONTROL OF THE THREE WITH NO
+     OWNER OUTSIDE THE ENGINE'S CLICK REGISTRY. #ez3Edit and #ez3Regen both
+     had a handler here; #ez3Copy had none, so in any window where that
+     registry is empty (see the clearClicks ordering defect in render()) the
+     press was completely silent - no text, no toast, nothing.
+     This presses nothing a second time, and it does NOT compare the label
+     against a snapshot taken here: ez3Click is registered first, so by the
+     time this runs the engine has already renamed the button and a "before"
+     read here would be the AFTER value - the same inverted-ordering trap that
+     made Regenerate double-fire. It reads the label's MEANING instead. The
+     idle label is an offer ("Copy for Athena"); the engine replaces it with
+     an answer ("Copied" / "Not copied") for 1.8s the moment it responds. A
+     button still offering to copy 700ms after the press is one that nothing
+     answered. The no-note case is left entirely to the engine so its refusal
+     is never doubled. */
+  var COPY_IDLE_LABEL = 'Copy for Athena';
+  function copyUnanswered(btn) {
+    if (!btn) return false;
+    return String(btn.textContent == null ? '' : btn.textContent).indexOf(COPY_IDLE_LABEL) >= 0;
+  }
+  function onCopyPress(btn) {
+    if (!noteText().trim()) return '';
+    setTimeout(function () {
+      if (!copyUnanswered(btn)) return;       /* the engine answered */
+      doCopy();
+    }, 700);
+    return 'armed';
   }
 
   /* =======================================================================
@@ -63492,6 +63740,7 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
     unhideFlow();
     relabelAdv();
     syncPanel();
+    enforceEdit();                             /* walkfix-1.0.0 (b1184) */
     watchWrap();
     watchNote();
   }
@@ -63514,9 +63763,11 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
     if (hit) { bump(); return; }
     var chip = safe(function () { return t.closest('#ez3StyleChips [data-chip]'); }, null);
     if (chip) { safe(function () { onChipPress(chip); }); return; }
-    var orig = safe(function () { return t.closest('#ez3Edit,#ez3Regen'); }, null);
+    /* walkfix-1.0.0 (b1184): all THREE controls of the row, not two. */
+    var orig = safe(function () { return t.closest('#ez3Edit,#ez3Regen,#ez3Copy'); }, null);
     if (!orig) return;
     if (orig.id === ORIGINALS.edit) safe(onEditPress);
+    else if (orig.id === ORIGINALS.copy) safe(function () { onCopyPress(orig); });
     else safe(onRegenPress);
   }
   function watchWrap() {
@@ -63611,6 +63862,14 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
     chipPress: onChipPress,
     regenPress: onRegenPress,
     editPress: onEditPress,
+    /* walkfix-1.0.0 (b1184) */
+    copyPress: onCopyPress,
+    copyUnanswered: copyUnanswered,
+    COPY_IDLE_LABEL: COPY_IDLE_LABEL,
+    genInFlight: genInFlight,
+    enforceEdit: enforceEdit,
+    editWanted: function () { return _editWanted; },
+    bring: bring,
     rememberGenerated: rememberGenerated,
     noteEdited: noteEdited,
     advLabel: advLabel,

@@ -160,7 +160,11 @@ ok(!/\.disabled\s*=\s*true/.test(CODE), 'a review control now ships disabled - i
    Regenerate - and must NOT press them a second time (ez3Click is registered
    on the same target first, so the engine half has already run). */
 ok(/t\.closest\('#ez3StyleChips \[data-chip\]'\)/.test(CODE), 'the style chips are not routed');
-ok(/t\.closest\('#ez3Edit,#ez3Regen'\)/.test(CODE), 'Edit note and Regenerate are not routed');
+/* walkfix-1.0.0 (b1184) re-aimed this pin: Copy for Athena joined the router.
+   It was the one control of the three with no owner outside the engine's
+   click registry, so in any window where that registry was empty the press
+   was completely silent. All three ids are routed now. */
+ok(/t\.closest\('#ez3Edit,#ez3Regen,#ez3Copy'\)/.test(CODE), 'Edit note, Regenerate and Copy are not all routed');
 ok(!/stopImmediatePropagation|stopPropagation/.test(CODE),
   'the router stops propagation - that would disable the engine half these controls still need');
 ok(!/setGenStyle|setGenLength/.test(CODE),
