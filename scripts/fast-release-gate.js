@@ -94,8 +94,20 @@ const ROOT = path.resolve(__dirname, '..');
        +1 (retry-visible-proof.js, retryvis-1.0.0, 2026-09-02) = 943 - the
        Retry control is on screen for every job status whose own sentence
        tells the doctor to press it, on a reloaded tab as well as on the tab
-       that ran the job, and it names attention days as attention days. */
-const FULL_GATE_TESTS = 943;
+       that ran the job, and it names attention days as attention days.
+       +1 (pad-provider-proof.js, padprov-1.0.0, 2026-09-02 05:5x) = 944 -
+       "Pull this day from Athena" resolves provider scope the same way the
+       month card renders its own label, so the default-scope wording
+       ("Your athenaOne view (default)") can never be forwarded to the pull
+       as a literal provider name and produce a false empty.
+       +1 (nav-home-proof.js, navhome-1.0.0, 2026-09-02 05:5x) = 945 - a goto
+       receipt whose initFrames/initFound/rounds are the ABSENCE of MLS
+       Assist's diag says so instead of printing zeros that read as a
+       measurement, names the deadline stage its budget died in, spends
+       exactly one READ-ONLY surface probe on that class and never a
+       navigation of its own, and puts Calendar > View Calendar on the day
+       card and the durable month card. */
+const FULL_GATE_TESTS = 945;
 const DEFAULT_BASE = 'origin/main';
 const DEFAULT_STEP_TIMEOUT_MS = 180000;
 const DEFAULT_TOTAL_TIMEOUT_MS = 300000;

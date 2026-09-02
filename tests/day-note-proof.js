@@ -556,6 +556,11 @@ function partEDurableJob() {
     balanced(RANGE, 'function isStorageReason(value)', 'isStorageReason'),
     balanced(RANGE, 'function own(obj, key)', 'own'),
     balanced(RANGE, 'function now()', 'now'),
+    /* navhome-1.0.0 (2026-09-02): summarize and checkpointDay now read the
+       closed athenaOne-surface vocabulary a nav refusal is recorded with. */
+    balanced(RANGE, 'var NAV_SURFACE_CODES = {', 'NAV_SURFACE_CODES') + ';',
+    balanced(RANGE, 'function navSurfaceShape(raw)', 'navSurfaceShape'),
+    balanced(RANGE, 'var NAV_SURFACE_REASONS = {', 'NAV_SURFACE_REASONS') + ';',
     balanced(RANGE, 'function summarize(manifest)', 'summarize'),
     balanced(RANGE, 'function checkpointDay(ctx, monthKey, payload, seen)', 'checkpointDay')
   ].join('\n');

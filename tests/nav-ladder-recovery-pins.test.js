@@ -20,6 +20,31 @@ const end = src.indexOf('return gotoWithRecovery().then(function (nav) {', start
 assert.ok(start > 0 && end > start, 'the nvl-1.1.0 ladder left the goto leg');
 const makeLadder = new Function('normDate', 'date', 'navRecovery', 'gotoDateSettled', 'onStatus',
   src.slice(start, end) + '\nreturn gotoWithRecovery;');
+/* navhome-1.0.0 (2026-09-02): navDiagOf now names the deadline stage the
+   extension's own budget died in, so the executed slices need that shipped
+   classifier too. Lifted VERBATIM like everything else here - never stubbed. */
+function navhomeSlice() {
+  function closing(source, at, open, shut, label) {
+    let depth = 0, quote = '', i = source.indexOf(open, at);
+    assert.ok(i > at - 1, 'navhome slice has no body: ' + label);
+    for (; i < source.length; i++) {
+      const ch = source[i], prev = source[i - 1];
+      if (quote) { if (ch === quote && prev !== String.fromCharCode(92)) quote = ''; continue; }
+      if (ch === '/' && source[i + 1] === '*') { i = source.indexOf('*/', i) + 1; continue; }
+      if (ch === '/' && source[i + 1] === '/') { i = source.indexOf('\n', i); continue; }
+      if (ch === '"' || ch === "'" || ch === '`') { quote = ch; continue; }
+      if (ch === open) depth++;
+      else if (ch === shut && --depth === 0) return source.slice(at, i + 1);
+    }
+    throw new Error('unterminated navhome slice: ' + label);
+  }
+  const stagesAt = src.indexOf('var P1_NAV_DEADLINE_STAGES = [');
+  const fnAt = src.indexOf('function p1NavDeadlineStage(nav)');
+  assert.ok(stagesAt > 0 && fnAt > 0, 'the navhome deadline-stage vocabulary left the importer');
+  return closing(src, stagesAt, '[', ']', 'P1_NAV_DEADLINE_STAGES') + ';\n' +
+    closing(src, fnAt, '{', '}', 'p1NavDeadlineStage') + '\n';
+}
+const NAVHOME = navhomeSlice();
 
 function harness(gotoResults) {
   const calls = { goto: 0, status: [] };
@@ -115,7 +140,7 @@ const GOOD = { ok: true, supported: true, schedDate: '2026-08-26' };
     const makeBusyRetry = new Function('isFn', 'p1IsNoAthenaTabAnswer', 'P1_ATHENA_BUSY_MAX', 'p1PresenceProbe', 'p1PresenceSaysAthenaLives', 'p1BusySleep', 'P1_ATHENA_BUSY_WAITS',
       src.slice(wStart, wEnd) + '\nreturn p1AthenaBusyRetry;');
     const makeReal = new Function('safe', 'normDate', 'date', 'p1AthenaBusyRetry', 'bridge', 'onStatus', 'window',
-      src.slice(aStart, aEnd) + '\n' + src.slice(bStart, bEnd) +
+      NAVHOME + src.slice(aStart, aEnd) + '\n' + src.slice(bStart, bEnd) +
       '\nreturn { run: gotoWithRecovery, attempts: function () { return navAttempts; }, diag: function (nav) { return navDiagOf(nav, navAttempts); }, navRecovery: navRecovery };');
     const BUSY = { reason: 'stub-athena-busy' }; /* matched by the injected no-tab predicate */
     const drive = async (replies) => {

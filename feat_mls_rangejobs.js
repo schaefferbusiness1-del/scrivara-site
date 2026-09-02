@@ -208,6 +208,28 @@
     }
     return out;
   }
+  /* ===== navhome-1.0.0 (which athenaOne surface the nav refusal died on) ===
+     MEASURED 2026-09-02 05:5x: one day of the owner's provider-scoped August
+     job failed `nav-failed` nine times running while the other thirty
+     navigated, and the card could say only "check the athenaOne tab is signed
+     in and responsive" - which was true and useless, because the tab WAS
+     signed in and responsive and simply sitting on its dashboard. The
+     importer now proves which surface it died on (feat_mls_schedimport_
+     exact.js, navhome-1.0.0) and hands this job one closed code for it. */
+  var NAV_SURFACE_CODES = { 'control-visible': 1, 'no-control': 1, 'no-athena-tab': 1 };
+  function navSurfaceShape(raw) {
+    var code = String(raw == null ? '' : raw).toLowerCase().slice(0, 24);
+    return NAV_SURFACE_CODES[code] === 1 ? code : '';
+  }
+  /* The two nav classes a surface note may ever be attached to. Anything else
+     keeps the copy it already had. */
+  var NAV_SURFACE_REASONS = { 'nav-failed': 1, 'wrong-day': 1 };
+  var NAV_SURFACE_COPY = {
+    'control-visible': 'athenaOne had a date control open but never switched to those days before the navigation deadline — that is what its dashboard schedule widget does. Open the athenaOne tab, choose Calendar > View Calendar (the day schedule, not the dashboard), then press Resume.',
+    'no-control': 'athenaOne was not showing a schedule date control at all — it looks parked on its dashboard or inside a chart. Open the athenaOne tab, choose Calendar > View Calendar, then press Resume.',
+    'no-athena-tab': 'No signed-in athenaOne tab answered. Open athenaOne on its day schedule, then press Resume.'
+  };
+  /* ===== end navhome-1.0.0 vocabulary ===== */
   /* ===== end attn-1.0.0 vocabulary ===== */
   var LOGIN_REASONS = {
     signin: 1, 'signin-expired': 1, 'session-expired': 1,
@@ -493,7 +515,18 @@
              attn-1.0.0 adds ONE bounded integer: how many schedule rows a
              calendar-partial day never accounted for. */
           out.needsAttention++;
-          if (out.attention.length < 60) out.attention.push({ date: dayKeys[di], reason: day.reason, missing: Number(day.calendarMissing || 0) || 0 });
+          /* navhome-1.0.0 adds ONE closed code: which athenaOne surface a nav
+             refusal died on, so the card can name the cure instead of asking
+             the owner to check a tab that is already fine. */
+          if (out.attention.length < 60) {
+            var attnRow = { date: dayKeys[di], reason: day.reason, missing: Number(day.calendarMissing || 0) || 0 };
+            /* written only when there is something to say, exactly like the
+               day record it comes from, so a receipt with nothing proved keeps
+               the shape every earlier build wrote. */
+            var attnNav = navSurfaceShape(day.navSurface);
+            if (attnNav) attnRow.navSurface = attnNav;
+            out.attention.push(attnRow);
+          }
         } else if (day.status === 'retry') out.failed++;
         else out.pending++;
       }
@@ -657,6 +690,11 @@
         if (dayMissingRows) dayOut.calendarMissing = dayMissingRows;
         if (dayRaw.scopedEmpty === 1 || dayRaw.scopedEmpty === true) dayOut.scopedEmpty = 1;
         if (daySurface) dayOut.surfaceProviders = daySurface;
+        /* navhome-1.0.0: the athenaOne surface a nav refusal died on, kept only
+           while the day is unfinished and only as a closed code, so a manifest
+           written before navhome keeps its exact stored shape. */
+        var dayNavSurface = dayStatus === 'complete' ? '' : navSurfaceShape(dayRaw.navSurface);
+        if (dayNavSurface) dayOut.navSurface = dayNavSurface;
         /* pullheal-1.0.0: the extension version that spent this day's newest
            attempt. Written only when it is a real dotted version, so every
            manifest written before pullheal keeps its exact stored shape and a
@@ -1095,6 +1133,13 @@
       day.scopedEmpty = 1;
       if (surfaceProviders > 0) day.surfaceProviders = surfaceProviders;
     }
+    /* navhome-1.0.0: keep WHICH athenaOne surface a nav refusal died on, so
+       the card can name the two clicks that cure it. Written only for the nav
+       classes and only while the day is unfinished; a day that goes on to
+       complete drops the note rather than carrying a stale one. */
+    var navSurface = navSurfaceShape(payload.navSurface);
+    if (!complete && navSurface && NAV_SURFACE_REASONS[code] === 1) day.navSurface = navSurface;
+    else if (complete && day.navSurface) delete day.navSurface;
     /* A day already proved empty for this provider is not re-opened by a
        MONTH-level code. It keeps its own verdict and completes with no
        re-read. A day-level verdict of its own (no-read, nav-failed, ...) is
@@ -1232,7 +1277,11 @@
         chartsRefused: stamp.chartsRefused,
         chartsRefusedCodes: stamp.chartsRefusedCodes,
         calendarMissing: stamp.calendarMissing,
-        surfaceProviders: stamp.surfaceProviders
+        surfaceProviders: stamp.surfaceProviders,
+        /* navhome-1.0.0: the same closed surface code on the settling path, so
+           a month result and its per-day callback cannot disagree about which
+           athenaOne screen a nav refusal died on. */
+        navSurface: stamp.navSurface
       }, seen);
     }
     /* A day callback settles before the month owner's final release proof. If
@@ -1974,8 +2023,16 @@
       return row.date + ' (' + String(row.reason || '').replace(/-/g, ' ') +
         (missing > 0 ? ', ' + missing + ' appointment' + (missing === 1 ? '' : 's') + ' missing' : '') + ')';
     });
+    /* navhome-1.0.0: when the attention days died on a proved athenaOne
+       surface, say the two clicks that cure it. ONE sentence for the whole
+       list, from the first proved code, so a long list cannot repeat it. */
+    var surfaceCode = '';
+    for (var si = 0; si < list.length && !surfaceCode; si++) {
+      if (NAV_SURFACE_REASONS[String(list[si] && list[si].reason || '')] === 1) surfaceCode = navSurfaceShape(list[si] && list[si].navSurface);
+    }
     return 'Needs attention: ' + shown.join('; ') + (list.length > shown.length ? '; …' : '') +
-      (receipt.needsAttention > list.length ? ' (' + receipt.needsAttention + ' total)' : '') + '.';
+      (receipt.needsAttention > list.length ? ' (' + receipt.needsAttention + ' total)' : '') + '.' +
+      (surfaceCode ? ' ' + NAV_SURFACE_COPY[surfaceCode] : '');
   }
   function uiStatusCopy(manifest, progress, selected) {
     if (!manifest) {

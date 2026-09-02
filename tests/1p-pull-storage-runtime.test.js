@@ -259,7 +259,13 @@ async function microtasks() { await Promise.resolve(); await Promise.resolve(); 
      against an untouched baseline - the pin is re-aimed at the shipped list
      here and strengthened below with the property it was really for. Every
      member is a date, a count, a bounded code or a boolean BY CONSTRUCTION -
-     no error text, no identity, ever. */
+     no error text, no identity, ever.
+     navhome-1.0.0 (2026-09-02) adds the thirteenth: navSurface, the closed
+     code naming WHICH athenaOne surface a nav refusal died on, so the durable
+     job can tell "no date control at all" from "a date control that cannot
+     switch the day" and name the cure. The pin is re-aimed here deliberately;
+     the closed-value law for the new member is proved in
+     tests/nav-home-proof.js. */
   const checkpointStart = source.indexOf('function p1MonthDaySignedOut');
   const checkpointEnd = source.indexOf('/* One exact month route', checkpointStart);
   assert(checkpointStart >= 0 && checkpointEnd > checkpointStart, 'the month day-checkpoint block could not be isolated');
@@ -269,12 +275,12 @@ async function microtasks() { await Promise.resolve(); await Promise.resolve(); 
   const returned = checkpoint(value => { delivered = value; throw new Error('caller failure'); }, '2026-03-08', { ok: true, complete: true, reason: 'complete', patientName: 'Never Expose', error: 'secret' });
   assert.deepStrictEqual(Object.keys(returned).sort(),
     ['calendarMissing', 'chartsRead', 'chartsRefused', 'chartsRefusedCodes', 'chartsUnread',
-      'complete', 'date', 'dayNotesPending', 'ok', 'reason', 'sessionExpired', 'surfaceProviders'],
+      'complete', 'date', 'dayNotesPending', 'navSurface', 'ok', 'reason', 'sessionExpired', 'surfaceProviders'],
     'checkpoint exposed fields outside its PHI-free contract');
   assert.deepStrictEqual(JSON.parse(JSON.stringify(delivered)), {
     date: '2026-03-08', ok: true, complete: true, reason: 'complete', sessionExpired: false,
     dayNotesPending: 0, chartsRead: 0, chartsUnread: 0, chartsRefused: 0, chartsRefusedCodes: {},
-    calendarMissing: 0, surfaceProviders: 0
+    calendarMissing: 0, surfaceProviders: 0, navSurface: ''
   }, 'checkpoint content was not minimal and exact');
   /* THE PROPERTY THE KEY LIST IS FOR: nothing from the outcome that is not a
      date, a count, a bounded code or a boolean may cross this seam. */
@@ -320,7 +326,7 @@ async function microtasks() { await Promise.resolve(); await Promise.resolve(); 
        grows a field nothing bounded. */
     assert.deepStrictEqual(Object.keys(out).sort(),
       ['calendarMissing', 'chartsRead', 'chartsRefused', 'chartsRefusedCodes', 'chartsUnread',
-        'complete', 'date', 'dayNotesPending', 'ok', 'reason', 'sessionExpired', 'surfaceProviders'],
+        'complete', 'date', 'dayNotesPending', 'navSurface', 'ok', 'reason', 'sessionExpired', 'surfaceProviders'],
       'a sign-out checkpoint grew extra fields');
     assert(!/sign-in page|athenaOne showed/.test(JSON.stringify(out)), 'the sign-out checkpoint carried the raw error text');
   });

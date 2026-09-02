@@ -4520,6 +4520,46 @@
   var DEFAULT_NOTE = 'Imports that day’s schedule for the Doctor picked above, then pulls chart history (DOB + history + visits) for the day’s patients. Read-only in athenaOne; re-clicking never doubles anything. ' + (_engineNameGateFixed
     ? 'Every real name shape is pulled - suffixes (“Hatton, Jr”), ALL-CAPS, apostrophes/hyphens (O’Hare, Smith-Jones), two-word first names and “(Bob)” nicknames; only placeholder rows (FROZEN / OPEN / Hold) and staff credential rows (“…, MD / PA-C / RN”) are skipped, and the status line names anything skipped.'
     : 'Heads-up: the chart engine currently skips a few name shapes (a known filter bug) - if that hits this day you’ll be told exactly which patients.');
+  /* padprov-1.0.0 (measured 2026-09-02 05:5x, Staff prep): pressing this
+     button for a day athenaOne showed a full column of appointments reported
+     the false empty "athenaOne shows no appointments" - nothing imported, no
+     charts to pull. Root cause: the month card's live "Pulling for" label
+     (#ez3PullFor) is painted from activeProviderLabel() in the mls-connect
+     asset, which prints the constant DEFAULT_PROVIDER_SCOPE_LABEL ("Your
+     athenaOne view (default)", ~line 21009) when no one doctor is selected -
+     and this handler forwarded that ENGLISH SENTENCE to runFlow() as a
+     literal provider name, so the schedule filter matched zero athenaOne
+     rows against a doctor named "Your athenaOne view (default)". Neither
+     activeProviderLabel() nor the constant is on window - both are
+     closure-private to that asset - so this cannot call them directly;
+     label comparison is the only reachable option.
+     Fix: treat that exact wording (and the older "All providers" wording) as
+     the 'all' scope, and never forward a name the roster
+     (window.__mlsProviderRoster.providers(), when installed and populated)
+     does not recognize - when in doubt this resolves to 'all', never a
+     made-up provider filter. An older card's #ez3sPullProv dropdown, when
+     present with a value, still wins outright (unchanged behavior). */
+  function resolvePadScope() {
+    var provEl = document.getElementById('ez3sPullProv');
+    var explicit = provEl && provEl.value ? String(provEl.value).trim() : '';
+    if (explicit) return explicit;
+    var pf = document.getElementById('ez3PullFor');
+    var t = pf ? String(pf.textContent || '').trim() : '';
+    var norm = t.toLowerCase().replace(/\s+/g, ' ').trim();
+    if (!norm || norm === 'all providers' || norm === 'your athenaone view (default)') return 'all';
+    try {
+      var rp = window.__mlsProviderRoster;
+      var list = (rp && typeof rp.providers === 'function') ? (rp.providers() || []) : null;
+      if (list && list.length) {
+        var found = false;
+        for (var i = 0; i < list.length; i++) {
+          if (String(list[i] || '').toLowerCase().replace(/\s+/g, ' ').trim() === norm) { found = true; break; }
+        }
+        if (!found) return 'all'; /* roster reachable and populated but silent on this name - never invent a filter */
+      }
+    } catch (e) {}
+    return t;
+  }
   function css() {
     if (document.getElementById('mlsPadCss')) return;
     var s = document.createElement('style'); s.id = 'mlsPadCss';
@@ -4565,18 +4605,10 @@
       var btn = row.querySelector('#mlsPadBtn');
       btn.disabled = !!api.state.running;
       btn.onclick = function () {
-        /* provider = the SAME scope the schedule pull above uses: the v3.5.1+
-           card has no #ez3sPullProv - its live "Pulling for" label (#ez3PullFor,
-           rendered from activeProvider() on every selector change) is the one
-           provider source of truth; older cards still expose the dropdown. */
-        var provEl = document.getElementById('ez3sPullProv');
-        var prov = (provEl && provEl.value) || '';
-        if (!prov) {
-          var pf = document.getElementById('ez3PullFor');
-          var t = pf ? String(pf.textContent || '').trim() : '';
-          prov = (t && !/^all providers$/i.test(t)) ? t : 'all';
-        }
-        runFlow(inp.value, prov);
+        /* provider = the SAME scope the schedule pull above uses - see
+           resolvePadScope() (padprov-1.0.0) for why a raw label compare is
+           not enough on its own. */
+        runFlow(inp.value, resolvePadScope());
       };
       row.querySelector('#mlsPadNote').innerHTML = api._noteHtml || DEFAULT_NOTE;
     } catch (e) {}

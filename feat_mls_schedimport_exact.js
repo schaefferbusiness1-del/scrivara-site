@@ -3968,6 +3968,110 @@
     if (/week strip shows no selected day|no selected day/i.test(err)) return true;
     return !!(diag && Number(diag.rounds || 0) > 0 && diag.initFound === false);
   }
+  /* ===== navhome-1.0.0 (a deadline reply carries NO diag - say so) =========
+     MEASURED live 2026-09-02 05:5x on the owner's provider-scoped August month
+     job (29 of 31 days complete): one day failed `nav-failed` on nine
+     consecutive attempts across three app builds while every other day of that
+     month navigated normally. Its receipt carried
+       navDiag { reason:'goto-date-deadline-exceeded', initFrames:0,
+                 initFound:false, rounds:0, recoveryRan:false, sequences:1 }
+     and three separate readers - including the brief that opened this lane -
+     read those zeros as "the goto never found a calendar frame, so its
+     recovery ladder was never reachable". THEY ARE NOT A MEASUREMENT.
+
+     MLS Assist answers a blown request deadline from ONE guarded funnel, and
+     that funnel attaches no `diag` at all. navDiagOf below then defaults every
+     diag-derived field through `(d && d.initFrames) || 0`, so a diag-less
+     reply prints initFrames 0, initFound false, rounds 0 and an empty tabPath
+     no matter what the handler actually did. The zeros are the ABSENCE of the
+     evidence, never zero frames. The one real signal the deadline reply DOES
+     carry is the STAGE its own text names, and the stage this day died in -
+     the selected-day settle - is reachable only AFTER a date control was
+     found: athenaOne HAD a control and the whole navigation budget was spent
+     failing to make the day land on it.
+
+     That is exactly the surface the owner cures by hand. athenaOne parked on
+     its dashboard still paints a week strip, so the extension's control
+     detection is satisfied and its own Calendar > View Calendar restore -
+     which is reachable ONLY behind "no control was found" - is never entered;
+     the handler goes straight to verification and burns its budget re-clicking
+     a widget that cannot express a provider-scoped day switch.
+
+     There is NO app-reachable verb for that restore. The extension's bridge
+     allowlist carries a Home verb, which lands on the dashboard (the wrong
+     surface), and nothing that opens the Calendar menu; the menu driver is
+     private to the goto handler's own ladder. This build therefore invents no
+     extension work and drives no navigation of its own - the extension owns
+     that tab and is driving it. It makes the refusal say the true thing
+     instead: that the diag was absent, which stage the budget died in, which
+     surface MLS Assist can still see, and the exact two clicks that cure it.
+     Closed codes, bounded counts and one date - never a chart fact. */
+  /* The CLOSED stage vocabulary of the extension's deadline funnel. Its text
+     is fixed English from a fixed set of call sites; only the CODE ever
+     crosses into a receipt, and an unrecognised deadline reply is 'other'. */
+  var P1_NAV_DEADLINE_STAGES = [
+    { code: "selected-day-settle", re: /selected-day settle/i },
+    { code: "selected-day-re-render", re: /selected-day re-render/i },
+    { code: "view-calendar-settle", re: /view calendar settle/i },
+    { code: "calendar-menu", re: /calendar menu|view calendar entry/i },
+    { code: "frameset-settle", re: /frameset settle/i },
+    { code: "home-navigation", re: /home (?:navigation|reset)/i },
+    { code: "session-settle", re: /session settle/i },
+    { code: "tab-recovery", re: /athena recovery/i },
+    { code: "nav-lock", re: /navigation lock/i },
+    { code: "quiet-workspace", re: /quiet athena workspace/i },
+    { code: "tab-selection", re: /tab selection/i },
+    { code: "tab-enumeration", re: /tab enumeration/i },
+    { code: "date-navigation", re: /date navigation|date re-click/i },
+    { code: "request", re: /^the request$/i }
+  ];
+  /* The two stages the handler can only reach once a date control was already
+     located. A deadline here PROVES a control was found, whatever the
+     diag-less receipt's zeros suggest. */
+  var P1_NAV_POST_CONTROL_STAGES = { "selected-day-settle": 1, "selected-day-re-render": 1 };
+  function p1NavDeadlineStage(nav) {
+    if (!nav || typeof nav !== "object") return "";
+    if (String(nav.reason || "") !== "goto-date-deadline-exceeded") return "";
+    var text = String(nav.error || "");
+    if (/late result was discarded/i.test(text)) return "late-result";
+    var at = text.search(/during /i);
+    var phrase = at < 0 ? "" : text.slice(at + 7, at + 87);
+    var stop = phrase.indexOf(".");
+    if (stop >= 0) phrase = phrase.slice(0, stop);
+    for (var i = 0; i < P1_NAV_DEADLINE_STAGES.length; i++) {
+      if (P1_NAV_DEADLINE_STAGES[i].re.test(phrase)) return P1_NAV_DEADLINE_STAGES[i].code;
+    }
+    return "other";
+  }
+  /* The extension's goto verb in PROBE mode is read-only by construction (it
+     returns before every click) and answers inside its own short budget. It is
+     the one shipped, PHI-free way to ask "is athenaOne showing a schedule date
+     control right now?" - four closed answers and nothing else. */
+  var P1_NAV_SURFACE_CODES = { "control-visible": 1, "no-control": 1, "no-athena-tab": 1 };
+  function p1NavSurfaceOf(resp) {
+    if (!resp || typeof resp !== "object") return "unmeasured";
+    if (String(resp.reason || "") !== "") return "unmeasured";
+    if (resp.ok !== true) return resp.supported === false ? "no-athena-tab" : "unmeasured";
+    if (resp.supported !== true) return "unmeasured";
+    return resp.controlVisible === true ? "control-visible" : "no-control";
+  }
+  /* The sentence that names the cure. It speaks only when the evidence is
+     positive - a measured control, or a stage that proves one - so every other
+     nav refusal keeps the copy it already had. */
+  function p1NavSurfaceAdvice(surface, stage) {
+    /* A probe taken AFTER the failure that finds no signed-in athenaOne tab is
+       the FRESHER fact and outranks the stage evidence: there is no tab to
+       open a Calendar menu in, and the existing sign-in copy already owns it. */
+    if (surface === "no-athena-tab") return "";
+    if (surface === "no-control") {
+      return "athenaOne isn't showing a schedule date control - it looks parked on its dashboard or inside a chart. In the athenaOne tab choose Calendar > View Calendar (the day schedule, not the dashboard), then press Retry.";
+    }
+    if (surface === "control-visible" || P1_NAV_POST_CONTROL_STAGES[String(stage || "")] === 1) {
+      return "athenaOne had a date control open but never switched to the requested day before MLS Assist's navigation deadline - the dashboard's own schedule widget behaves exactly this way. In the athenaOne tab choose Calendar > View Calendar (the day schedule, not the dashboard), then press Retry.";
+    }
+    return "";
+  }
+  /* ===== end navhome-1.0.0 vocabulary ===== */
   /* ADVISORY, fire-and-forget: never blocks a pull, never refuses one. It
      speaks only when the extension reports more than one athena tab or cannot
      verify the one it has - the exact state that later dies as a 60 s
@@ -9704,6 +9808,15 @@
             initFrames: Number((d && d.initFrames) || 0),
             initFound: !!(d && d.initFound),
             rounds: Number((d && Array.isArray(d.rounds) && d.rounds.length) || 0),
+            /* navhome-1.0.0: EVERY field above this line is defaulted when the
+               reply carried no diag at all - which is exactly what the
+               extension's deadline funnel answers. Without this boolean the
+               four zeros above read as a measurement of zero, and they were
+               read that way live on 2026-09-02. */
+            diagPresent: !!d,
+            /* navhome-1.0.0: and when the budget did blow, WHICH stage it blew
+               in - a closed code off the extension's own fixed stage text. */
+            deadlineStage: p1NavDeadlineStage(nav),
             recoveryRan: navRecovery.ran === true, /* nvl-1.1.0: the guarded seam was re-entered */
             recoveryVia: navRecovery.ran === true ? "second-settled-goto" : "",
             sequences: navRecovery.ran === true ? 2 : 1 /* nvl-1.2.0: attempts above is the monotonic total across these */
@@ -9756,7 +9869,23 @@
         var emptyStrip = p1NavEmptyStrip(nav, diag);
         var known = p1AthenaTabsKnown();
         var counted = (emptyStrip && known < 0) ? p1AthenaTabCount(2500) : Promise.resolve(known);
-        return Promise.resolve(counted).then(function (tabs) {
+        /* navhome-1.0.0: the pull is already lost by the time this runs, so ONE
+           bounded READ-ONLY surface probe costs the successful path exactly
+           nothing - and it is the only measurement that separates "athenaOne
+           shows no date control at all" from "it shows one that cannot switch
+           the day". It is issued ONLY for the deadline class (the shape whose
+           receipt carries no diag), so every other nav refusal keeps its
+           existing latency and its existing verdict byte for byte. Nothing
+           here navigates athenaOne: the extension owns that tab. */
+        var navStage = p1NavDeadlineStage(nav);
+        var surfaced = navStage
+          ? safe(function () {
+              return bridge("mlsAppGotoDateResult", "mlsAppGotoDate", 6000, { date: date, probe: true })
+                .then(p1NavSurfaceOf, function () { return "unmeasured"; });
+            }, Promise.resolve("unmeasured"))
+          : Promise.resolve("");
+        return Promise.all([Promise.resolve(counted), Promise.resolve(surfaced)]).then(function (pair) {
+          var tabs = pair[0], navSurface = String(pair[1] || "");
           var extra = {
             error: (nav && nav.error) || "",
             navSessionLikelyExpired: !!(nav && nav.sessionLikelyExpired),
@@ -9764,9 +9893,19 @@
             athenaBusyRetries: Number(athenaBusy.athenaBusyRetries || 0),
             athenaPresenceAtFailure: String(athenaBusy.athenaPresence || (p1PresenceLast.resp && p1PresenceLast.resp.reason) || ""),
             athenaTabsAtFailure: Number(isFinite(Number(tabs)) ? tabs : -1),
-            navEmptyStrip: emptyStrip
+            navEmptyStrip: emptyStrip,
+            /* navhome-1.0.0: closed codes only. navStage is "" unless the
+               extension answered its own deadline; navSurface is "" unless
+               that made this build ask, and "unmeasured" when it asked and
+               got no usable answer. */
+            navStage: navStage,
+            navSurface: navSurface
           };
+          var surfaceAdvice = p1NavSurfaceAdvice(navSurface, navStage);
+          /* The empty-strip sentence is the older, MORE specific measurement
+             (an answering strip with no day cells) and keeps priority. */
           if (emptyStrip) extra.navAdvice = p1OneTabAdvice(tabs);
+          else if (surfaceAdvice) extra.navAdvice = surfaceAdvice;
           onStatus(extra.navAdvice || (nav && nav.error) || "Couldn't open the requested athenaOne day.", "err");
           return fail("nav-failed", extra);
         });
@@ -11219,6 +11358,22 @@
     return list ? Math.min(400, list.length) : 0;
   }
   /* ===== end attn-1.0.0 measurements ===== */
+  /* navhome-1.0.0: the ONE closed code that tells a durable range job which
+     athenaOne surface a nav refusal died on, so the month card can name the
+     two clicks that cure it instead of the generic "check the Athena tab".
+     It folds the stage evidence in by the SAME law p1NavSurfaceAdvice uses, so
+     the day card and the day receipt can never disagree; "" whenever nothing
+     was proved, which is every day written before this build. */
+  function p1MonthDayNavSurface(receipt) {
+    if (!receipt || typeof receipt !== "object") return "";
+    var surface = String(receipt.navSurface || ""), stage = String(receipt.navStage || "");
+    /* the SAME precedence p1NavSurfaceAdvice uses, in the same order, so the
+       day card and the day receipt can never disagree about this day. */
+    if (surface === "no-athena-tab") return "no-athena-tab";
+    if (surface === "no-control") return "no-control";
+    if (surface === "control-visible" || stage === "selected-day-settle" || stage === "selected-day-re-render") return "control-visible";
+    return "";
+  }
   function p1MonthDayCheckpoint(callback, date, outcome) {
     var reason = String(outcome && outcome.reason || "no-result");
     if (!/^[a-z0-9][a-z0-9-]{0,79}$/.test(reason)) reason = "unclassified";
@@ -11242,7 +11397,10 @@
       chartsRefused: charts.refused,
       chartsRefusedCodes: charts.codes,
       calendarMissing: p1MonthDayCalendarMissing(outcome && outcome.receipt),
-      surfaceProviders: p1MonthDaySurfaceProviders(outcome && outcome.receipt)
+      surfaceProviders: p1MonthDaySurfaceProviders(outcome && outcome.receipt),
+      /* navhome-1.0.0: which athenaOne surface a nav refusal died on. A closed
+         code or "" - never a path, a URL, or the extension's error prose. */
+      navSurface: p1MonthDayNavSurface(outcome && outcome.receipt)
     };
     /* This callback is a PHI-free durability seam for a caller that owns a
        larger range manifest. It is advisory to the month engine: a broken

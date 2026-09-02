@@ -114,6 +114,12 @@ function rangeContext() {
     balanced(RANGE, 'function cleanText(value, max)', 'cleanText'),
     balanced(RANGE, 'function finiteStamp(value)', 'finiteStamp'),
     balanced(RANGE, 'function monthComplete(month)', 'monthComplete'),
+    /* navhome-1.0.0 (2026-09-02): the closed athenaOne-surface vocabulary the
+       day record, the summary row and the card copy all read. */
+    balanced(RANGE, 'var NAV_SURFACE_CODES = {', 'NAV_SURFACE_CODES') + ';',
+    balanced(RANGE, 'function navSurfaceShape(raw)', 'navSurfaceShape'),
+    balanced(RANGE, 'var NAV_SURFACE_REASONS = {', 'NAV_SURFACE_REASONS') + ';',
+    balanced(RANGE, 'var NAV_SURFACE_COPY = {', 'NAV_SURFACE_COPY') + ';',
     balanced(RANGE, 'function summarize(manifest)', 'summarize'),
     balanced(RANGE, 'function sanitizeRun(raw)', 'sanitizeRun'),
     balanced(RANGE, 'function checkpointDay(ctx, monthKey, payload, seen)', 'checkpointDay'),
@@ -196,6 +202,8 @@ function importerContext() {
     balanced(IMPORTER, 'function p1MonthDaySurfaceProviders(receipt)', 'p1MonthDaySurfaceProviders'),
     balanced(IMPORTER, 'function p1MonthDaySignedOut(receipt)', 'p1MonthDaySignedOut'),
     balanced(IMPORTER, 'function p1MonthDayNotesPending(receipt)', 'p1MonthDayNotesPending'),
+    /* navhome-1.0.0 (2026-09-02): the thirteenth checkpoint member's builder. */
+    balanced(IMPORTER, 'function p1MonthDayNavSurface(receipt)', 'p1MonthDayNavSurface'),
     balanced(IMPORTER, 'function p1MonthDayCheckpoint(callback, date, outcome)', 'p1MonthDayCheckpoint')
   ].join('\n');
   const sandbox = {
@@ -249,9 +257,13 @@ function proveTheSeamMeasures() {
   eq(cp.chartsRefused, 1, 'the DOB refusal did not cross the seam as a refusal');
   eq(JSON.stringify(cp.chartsRefusedCodes), '{"dob-mismatch":1}', 'the refusal cause did not cross the seam as a bounded code');
   eq(cp.calendarMissing, 0, 'a fully accounted calendar reported missing rows');
+  /* navhome-1.0.0 (2026-09-02): the thirteenth member is navSurface, the
+     closed code naming WHICH athenaOne surface a nav refusal died on. The pin
+     is re-aimed here deliberately; its closed-value law and the day card it
+     feeds are proved in tests/nav-home-proof.js. */
   eq(JSON.stringify(Object.keys(cp).sort()),
     JSON.stringify(['calendarMissing', 'chartsRead', 'chartsRefused', 'chartsRefusedCodes', 'chartsUnread',
-      'complete', 'date', 'dayNotesPending', 'ok', 'reason', 'sessionExpired', 'surfaceProviders']),
+      'complete', 'date', 'dayNotesPending', 'navSurface', 'ok', 'reason', 'sessionExpired', 'surfaceProviders']),
     'the PHI-free checkpoint grew a field that is not a count, a date or a bounded code');
   const serialized = JSON.stringify(cp);
   ok(serialized.indexOf('Refused One') < 0 && serialized.indexOf('Read 0') < 0,

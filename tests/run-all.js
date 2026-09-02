@@ -76,6 +76,20 @@ const AUTOMATED_PROOF_FILES = new Set([
      calendar-partial stays attention and says how many appointments were
      missing; nav-failed is retried to the attempt cap and no further. */
   'attention-days-proof.js',
+  /* navhome-1.0.0 (owner-measured 2026-09-02 05:5x, MLS Assist 3.0.107): one
+     day of the provider-scoped August month job failed nav-failed nine times
+     running while the other thirty navigated, and its receipt read
+     initFrames:0 / initFound:false / rounds:0 - read by three separate readers
+     as "no calendar frame was ever found". It is not a measurement: the
+     extension answers a blown request deadline from a funnel that attaches NO
+     diag, so every diag-derived field defaults to zero. The receipt now says
+     the diag was absent, names the stage the budget died in, asks the
+     extension's own READ-ONLY goto probe which surface athenaOne is showing
+     (once, only on that class, only after the pull is already lost), and puts
+     Calendar > View Calendar on the day card and the durable month card. The
+     app drives no navigation of its own; there is no app-reachable verb for
+     the extension's Calendar restore. */
+  'nav-home-proof.js',
   /* retryvis-1.0.0 (owner-measured 2026-09-02 05:1x): the month card said
      "Finished, with days that still need attention - press Retry" while
      #ez3PullRetry computed display:none, because pCounts returns before it
@@ -117,7 +131,15 @@ const AUTOMATED_PROOF_FILES = new Set([
      like AFTER the shipped mask — crown gap, head height and surviving garment
      per surface, at each surface's real diameter, plus the drawn face and the
      photograph measured with ONE instrument in the SAME 302px circle. */
-  '1p-avatar-surface-quality-proof.js'
+  '1p-avatar-surface-quality-proof.js',
+  /* padprov-1.0.0 (owner-measured 2026-09-02 05:5x): "Pull this day from
+     Athena" forwarded the month card's "Your athenaOne view (default)" label
+     to runFlow as a literal provider NAME, matching zero athenaOne rows and
+     reporting a false empty for a day with a full schedule. resolvePadScope()
+     now recognizes that label (and the older "All providers" wording) as the
+     'all' scope, and never forwards a name the provider roster does not
+     recognize. */
+  'pad-provider-proof.js'
 ]);
 
 const tests = [
@@ -1340,7 +1362,9 @@ const tests = [
   'scoped-pull-keeps-others-proof.js',
   'assessment-probe-proof.js',
   'sheet-rows-and-reopen-proof.js',
+  'pad-provider-proof.js',
   'attention-days-proof.js',
+  'nav-home-proof.js',
   'retry-visible-proof.js',
   'visit-template-scope-proof.js',
   'write-next-press-proof.js',
