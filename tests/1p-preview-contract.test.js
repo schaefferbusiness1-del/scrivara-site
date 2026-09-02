@@ -31,9 +31,9 @@ const P1_CONFIG_BASE_COMMIT = '08a7da1c6520fc6c6220664ebf4f05556859ab47';
    v3.0.61 / 4d77f337...; each release maps THOSE baseline literals to the current
    release (scripts/sweep-3063.js). */
 const P1_CONFIG_RELEASE_SUBS = [
-  ['MLS_Assist_v3.0.61', 'MLS_Assist_v3.0.106'],
+  ['MLS_Assist_v3.0.61', 'MLS_Assist_v3.0.107'],
   ['  # The exact released MLS Assist package (owner directive 2026-07-20).\n  # SHA-256 4d77f337a6810dac82a36b8f4320a1802411a116b773cd82a18ee37a3e092775 —\n  # identical bytes to the stamped 3.0.22 Web Store release. Candidate/historical\n  # ZIPs remain excluded by the fail-closed patterns above.',
-   '  # The exact released MLS Assist 3.0.106 package (owner directive 2026-08-31).\n  # SHA-256 320579d6fefc76ec35bcffda32d9d35842be0a943ddf561a07c745e661fa40e0 —\n  # deterministic ZIP and byte-identical .bin mirror. Candidate/historical\n  # ZIPs remain excluded by the fail-closed patterns above.']
+   '  # The exact released MLS Assist 3.0.107 package (owner directive 2026-08-31).\n  # SHA-256 e12127e967b8e46fa0c15a5097543dacb31a547619f8b40881c2ccdbf42739fc —\n  # deterministic ZIP and byte-identical .bin mirror. Candidate/historical\n  # ZIPs remain excluded by the fail-closed patterns above.']
 ];
 /* Advanced by the AUTHORIZED /p1-only launch train of 2026-08-15 — resumable
    month/year pulls, scoped storage recovery, clinical review confirmation,

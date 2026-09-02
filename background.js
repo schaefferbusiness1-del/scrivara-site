@@ -4752,7 +4752,7 @@ function mlsAthenaContinueFn() {
  * lightweight page heartbeat only when the tab is still signed in, and reports
  * that a manual refresh may be needed. */
 var __mlsReadsSinceReload = 0;
-async function mlsRecoverAthenaTab(tabId) {
+async function mlsRecoverAthenaTab(tabId, ownerToken) { /* recover-1.1.0 (3.0.107): ownerToken = the day-schedule lease holder asking for its own reload */
   /* Central fail-closed rail: several legacy callers retain generic-EMR
      fallbacks. Athena recovery must never reload Epic/Cerner/another site and
      risk discarding the doctor's unsaved work. */
@@ -4765,7 +4765,7 @@ async function mlsRecoverAthenaTab(tabId) {
   var sessionHealth = await mlsAthPing(tabId, 1500);
   if (sessionHealth && sessionHealth.signedOut) return { ok: false, skipped: 'athena-signed-out', manualSignIn: true, timedOut: !!sessionHealth.timedOut };
   try { await mlsArmKeepAlive(tabId, true, sessionHealth); } catch (eKa) {}
-  __mlsReadsSinceReload = 0;
+  /* recover-1.1.0: the reads-since-reload counter resets only after a REAL navigation (below), never on a refused recovery */
   /* rec-1.0.0 (3.0.84, owner directive 2026-08-27: fix it with everything):
      the disabled rail starved every wired self-heal call site (goto retry,
      stale-read recycle, search-open recovery). Recovery now performs ONE
@@ -4780,7 +4780,7 @@ async function mlsRecoverAthenaTab(tabId) {
     if (recNow - Number(self.__mlsRecoverAt[tabId] || 0) < 120000) {
       return { ok: false, skipped: 'recovery-throttled', manualRefresh: true, tabUntouched: true };
     }
-    if (self.__mlsQp && self.__mlsQp.active) {
+    if (self.__mlsQp && self.__mlsQp.active && !(ownerToken && self.__mlsDayScheduleQpOwner === ownerToken)) { /* recover-1.1.0 (3.0.107): the lease OWNER (the pull's own goto ladder) may reload its quiet workspace - measured 2026-09-01: the only cure for a dashboard whose widget stopped rendering was exactly this same-origin reload, and it was refused for the whole pull */
       return { ok: false, skipped: 'quiet-probe-active', tabUntouched: true };
     }
     var recSeg = String(recoverTab.url || '').match(/athenahealth\.com\/(\d+)\/(\d+)\//);
@@ -4789,6 +4789,7 @@ async function mlsRecoverAthenaTab(tabId) {
     var recUrl = 'https://athenanet.athenahealth.com/' + recSeg[1] + '/' + recSeg[2] + '/globalframeset.esp?MAIN=' + encodeURIComponent(recMain);
     self.__mlsRecoverAt[tabId] = recNow;
     await chrome.tabs.update(tabId, { url: recUrl });
+    __mlsReadsSinceReload = 0; /* recover-1.1.0: a real navigation happened */
     await new Promise(function (recDone) {
       var recT = setTimeout(finishRec, 15000);
       function onUpd(id, info) { if (id === tabId && info && info.status === 'complete') finishRec(); }
@@ -7239,7 +7240,8 @@ if (!found) {
               try {
                 if (!__gotoLeft() || __gotoResponded) { __gotoDeadline('date recovery'); return; }
                 if (rec === 1) {
-                  const recoveryX = await __gotoSettle(mlsRecoverAthenaTab(tab.id), Math.min(6000, __gotoLeft()), 'Athena recovery');
+                  const recoveryX = await __gotoSettle(mlsRecoverAthenaTab(tab.id, __gotoGuard.token), Math.min(6000, __gotoLeft()), 'Athena recovery'); /* recover-1.1.0: the ladder owns the lease and says so */
+                  try { RD.reload = (recoveryX && recoveryX.value) ? (recoveryX.value.ok ? 'reloaded' : ('skipped:' + String(recoveryX.value.skipped || ''))) : 'settle-timeout'; } catch (eRdR) {}
                   if (!recoveryX.ok) { __gotoDeadline('Athena recovery'); return; }
                 }
                 const hx = await __gotoExec({ target: { tabId: tab.id, allFrames: true }, args: [__gotoGuard], func: mlsGoHomeDriverFn }, Math.min(9000, __gotoLeft()), 'the Home navigation');

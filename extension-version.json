@@ -1,5 +1,5 @@
 {
-  "version": "3.0.106",
+  "version": "3.0.107",
   "minChrome": 116,
-  "notes": "v3.0.106 - Pull reliability, measured on a real provider-scoped month: when athenaOne lists more than one clinician in a single schedule list (the dashboard widget stacks every clinician heading and rows in one list), each row now takes the heading that precedes it, so those days import instead of being refused as identity-less; the schedule receipt now carries a PHI-free trace of which reader produced the rows; a navigation that saw the calendar strip but had not landed yet is no longer sent back Home. Everything from v3.0.105 remains. Requires Chrome 116+."
+  "notes": "v3.0.107 - Pull reliability: when athenaOne stops rendering its schedule mid-pull, the pull can now reload its own athena tab to the dashboard (the same-origin reload that was the only manual cure) instead of retrying a frozen page; the reload is still refused on a signed-out session, on any other site, and for anyone who does not own the pull. Everything from v3.0.106 remains. Requires Chrome 116+."
 }
