@@ -565,7 +565,10 @@ function partEDurableJob() {
     accountGuard() { return true; },
     persistContext() { return true; },
     stopImporter() {},
-    currentExtVersion() { return '3.0.106'; }
+    currentExtVersion() { return '3.0.106'; },
+    /* attnscope-1.0.0: checkpointDay also stamps the app build that spent
+       the attempt; the lifted slice needs the stub. */
+    currentAppBuild() { return 'dnote-proof-build'; }
   };
   const ctx = vm.createContext(sandbox);
   vm.runInContext(slices, ctx, { filename: 'range-slices.js' });

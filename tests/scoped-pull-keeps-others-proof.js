@@ -325,7 +325,10 @@ function proveScopedEmptyDay() {
     accountGuard() { return true; },
     persistContext() { return true; },
     stopImporter() {},
-    currentExtVersion() { return '3.0.108'; }
+    currentExtVersion() { return '3.0.108'; },
+    /* attnscope-1.0.0: checkpointDay also stamps the app build that spent
+       the attempt; the lifted slice needs the stub. */
+    currentAppBuild() { return 'scope-proof-build'; }
   };
   const ctx = vm.createContext(sandbox);
   vm.runInContext(slices, ctx, { filename: 'scopeempty-slices.js' });

@@ -130,7 +130,11 @@ function rangeContext() {
     accountGuard() { return true; },
     persistContext() { return true; },
     stopImporter() {},
-    currentExtVersion() { return '3.0.107'; }
+    currentExtVersion() { return '3.0.107'; },
+    /* attnscope-1.0.0: checkpointDay now stamps the app build that spent the
+       attempt beside the extension version, so the lifted slice needs the
+       same stub. An opaque build token, never PHI. */
+    currentAppBuild() { return 'attn-proof-build'; }
   };
   const ctx = vm.createContext(sandbox);
   vm.runInContext(slices, ctx, { filename: 'attn-range-slices.js' });

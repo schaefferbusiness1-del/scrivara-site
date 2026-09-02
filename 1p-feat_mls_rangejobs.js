@@ -358,7 +358,27 @@
     }
     return 0;
   }
-  /* ===== end pullheal-1.0.0 instrumentation ===== */
+  /* ===== attnscope-1.0.0 (an APP fix must give the attempts back too) =====
+     MEASURED 2026-09-02 04:5x on the owner's live August job: an app-side cure
+     shipped that changes what a re-read of a settled day yields, and the four
+     needs-attention days were NOT re-read - attempts 3, the same extension
+     version stamped on each of them, updatedAt unchanged. pullheal-1.0.0
+     scoped the attempts to the EXTENSION alone, so a cure this side of the
+     seam could never earn fresh attempts and the owner would have had to wait
+     for an extension reload that has nothing to do with the fix. The scope is
+     now BOTH: the extension version AND the app build that spent the attempt.
+     The build token is the shell's own window.__MLS_AV - an opaque short
+     token, never PHI, never a name - and an absent one fails closed exactly
+     the way an absent extension version does. */
+  var MAX_APP_BUILD = 40;
+  function appBuildShape(value) {
+    value = cleanText(value, MAX_APP_BUILD);
+    return /^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/.test(value) ? value : '';
+  }
+  function currentAppBuild() {
+    return appBuildShape(safe(function () { return window.__MLS_AV; }, ''));
+  }
+  /* ===== end pullheal-1.0.0 / attnscope-1.0.0 instrumentation ===== */
 
   function currentManifestKey() { return noteScope(computeManifestKey()); }
   function computeManifestKey() {
@@ -643,6 +663,12 @@
            garbage value can never mint a re-arm. */
         var dayExtV = extVersionShape(dayRaw.attemptExtV);
         if (dayExtV) dayOut.attemptExtV = dayExtV;
+        /* attnscope-1.0.0: and the app build that spent that same attempt.
+           Same discipline and the same closed shape, so a manifest written
+           before attnscope keeps its exact stored shape and a garbage value
+           can never mint a re-arm. */
+        var dayAppV = appBuildShape(dayRaw.attemptAppV);
+        if (dayAppV) dayOut.attemptAppV = dayAppV;
         days[dayKey] = dayOut;
       }
       var sanitizedMonthStatus = MONTH_STATUS[String(monthRaw.status || '')] ? String(monthRaw.status) : 'retry';
@@ -932,31 +958,50 @@
     }
     return rearmed;
   }
-  /* ===== pullheal-1.0.0 (needs-attention drains itself after an extension fix)
-     THE RULE, exactly: a day settled 'needs-attention' re-arms iff it carries
-     an attemptExtV AND the CURRENT reported extension version is STRICTLY
-     NEWER than it. Every other case keeps the cap:
-       - no attemptExtV (pre-pullheal manifest, or no version was reported when
-         the attempt was spent)   -> keeps the cap; absence proves nothing.
-       - attemptExtV EQUAL to the current version -> keeps the cap. This is the
+  /* ===== pullheal-1.0.0 + attnscope-1.0.0 (needs-attention drains itself
+     after a fix - on EITHER side of the extension seam)
+     THE RULE, exactly: a day settled 'needs-attention' re-arms iff EITHER
+       (EXT ARM) it carries an attemptExtV AND the CURRENT reported extension
+         version is STRICTLY NEWER than it, OR
+       (APP ARM) an app build is running AND it is not the build stamped on the
+         day's spent attempts.
+     Every other case keeps the cap:
+       - both stamps matching what is running -> keeps the cap. This is the
          load-bearing half: a live broken loop must still stop.
-       - attemptExtV NEWER than current (a downgrade) -> keeps the cap.
-       - no current version reported                 -> nothing re-arms at all.
+       - attemptExtV NEWER than the running extension (a downgrade) -> the ext
+         arm keeps the cap; only a changed app build can still move it.
+       - no attemptExtV -> the ext arm proves nothing and keeps the cap.
+       - no attemptAppV (a checkpoint written before attnscope) -> the app arm
+         counts it as differing, so it re-arms EXACTLY ONCE: the next attempt
+         it spends stamps the running build and the cap holds from then on.
+       - nothing running reported at all -> nothing re-arms at all.
      Days already retryable are untouched; only a settled day is re-armed. */
+  function dayRearmArm(day, liveExt, liveApp) {
+    var spentExt = extVersionShape(day.attemptExtV);
+    if (liveExt && spentExt && compareExtVersions(liveExt, spentExt) === 1) return 'ext';
+    if (liveApp && appBuildShape(day.attemptAppV) !== liveApp) return 'app';
+    return '';
+  }
   function rearmOutdatedVersionDays(manifest) {
-    var out = { rearmed: 0, from: '', to: currentExtVersion() };
-    if (!out.to || !manifest || !manifest.months) return out;
+    var liveExt = currentExtVersion(), liveApp = currentAppBuild();
+    var out = { rearmed: 0, from: '', to: liveExt, app: liveApp };
+    if ((!liveExt && !liveApp) || !manifest || !manifest.months) return out;
     var months = Object.keys(manifest.months), stamp = now(), oldest = '';
     for (var mi = 0; mi < months.length; mi++) {
       var month = manifest.months[months[mi]], days = Object.keys(month.days), touched = false;
       for (var di = 0; di < days.length; di++) {
         var day = month.days[days[di]];
         if (!day || day.status !== 'needs-attention') continue;
+        var arm = dayRearmArm(day, liveExt, liveApp);
+        if (!arm) continue;
         var spent = extVersionShape(day.attemptExtV);
-        if (!spent || compareExtVersions(out.to, spent) !== 1) continue;
         day.status = 'retry'; day.attempts = 0; day.updatedAt = stamp;
-        delete day.attemptExtV;
-        if (!oldest || compareExtVersions(spent, oldest) === -1) oldest = spent;
+        delete day.attemptExtV; delete day.attemptAppV;
+        /* the receipt names the OLDEST extension that failed these days, and
+           ONLY on the extension arm - a day re-armed because the APP changed
+           was not failed by an older MLS Assist, and the copy must not say it
+           was. That arm has no version to name and says so in words. */
+        if (arm === 'ext' && spent && (!oldest || compareExtVersions(spent, oldest) === -1)) oldest = spent;
         out.rearmed++; touched = true;
       }
       if (touched && month.status === 'needs-attention') { month.status = 'retry'; month.updatedAt = stamp; }
@@ -977,7 +1022,7 @@
       var done = rearmOutdatedVersionDays(manifest);
       if (!done.rearmed) {
         return { ok: true, complete: false, status: manifest.status, reason: reasonCode(manifest.reason),
-          rearmed: 0, from: '', to: done.to, state: copy(manifest) };
+          rearmed: 0, from: '', to: done.to, app: done.app, state: copy(manifest) };
       }
       /* The days are retryable again, so the job may no longer claim it is
          settled. sanitizeManifest enforces the same invariant on every read;
@@ -988,7 +1033,7 @@
       var saved = writeManifestAt(key, manifest);
       if (!saved.ok) return refusal(saved.reason, manifest);
       return { ok: true, complete: false, status: manifest.status, reason: reasonCode(manifest.reason),
-        rearmed: done.rearmed, from: done.from, to: done.to, state: copy(manifest) };
+        rearmed: done.rearmed, from: done.from, to: done.to, app: done.app, state: copy(manifest) };
     });
   }
   /* ===== end pullheal-1.0.0 version-scoped attempts ===== */
@@ -1068,6 +1113,11 @@
          compare against. */
       var spentUnder = currentExtVersion();
       if (spentUnder) day.attemptExtV = spentUnder;
+      /* attnscope-1.0.0: and the app build that spent it, stamped from the
+         same tab that is about to judge the cap - so a day re-armed because
+         the app changed can never re-arm a second time on the same build. */
+      var appUnder = currentAppBuild();
+      if (appUnder) day.attemptAppV = appUnder;
     }
     /* ===== attn-1.0.0 R2/R3/R4 (what the day could NOT read, recorded) =====
        Run AFTER the attempt is spent, so the cap is judged on the same number
@@ -2425,8 +2475,12 @@
     /* The receipt the owner asked for, kept on its OWN field so a later
        recovery line can never overwrite the sentence that explains WHY those
        days came back. */
+    /* attnscope-1.0.0: the extension arm still names the exact MLS Assist that
+       failed those days. The app arm has no such version to name, so it says
+       what actually changed instead of inventing one. */
     healLedger.lastRearm = 're-armed ' + count + ' day' + (count === 1 ? '' : 's') +
-      ' - their failures happened under MLS Assist ' + ((done && done.from) || 'an older version');
+      (done && done.from ? ' - their failures happened under MLS Assist ' + done.from
+        : ' - their failures happened under an older MLS Assist or app version');
     healLedger.lastAction = healLedger.lastRearm;
     healLedger.lastActionAt = now();
   }
@@ -2597,10 +2651,12 @@
   function healVersionHeal() {
     if (healBusy || !healLedger) return;
     var live = currentExtVersion();
-    /* Try once per extension version per job: a fresh MLS Assist is the only
-       thing that can change the answer, so re-asking every 30s is noise. */
-    if (!live || healLedger.versionCheckedAt === live) return;
-    healLedger.versionCheckedAt = live;
+    /* Try once per extension version AND app build per job: attnscope-1.0.0
+       made either one able to change the answer, so the key this is asked
+       once per is both. Re-asking every 30s on an unchanged pair is noise. */
+    var scope = live + '|' + currentAppBuild();
+    if (scope === '|' || healLedger.versionCheckedAt === scope) return;
+    healLedger.versionCheckedAt = scope;
     healBusy = true;
     Promise.resolve(safe(function () { return rearmOutdatedVersions(); }, null)).then(function (result) {
       healBusy = false;
@@ -2608,7 +2664,7 @@
       healNoteRearm(result);
       queueUiRefresh(0);
       healSerializedResume('re-armed ' + result.rearmed + ' day' + (result.rearmed === 1 ? '' : 's') +
-        ' after MLS Assist ' + result.to);
+        (result.to ? ' after MLS Assist ' + result.to : ' after an app update'));
     }, function () { healBusy = false; });
   }
 
@@ -2729,7 +2785,7 @@
     var parts = [], resumes = healNum(ledger && ledger.resumes, 999);
     var rearmed = healNum(ledger && ledger.rearmedDays, 400);
     if (resumes) parts.push(resumes + ' automatic ' + (resumes === 1 ? 'recovery' : 'recoveries'));
-    if (rearmed) parts.push('re-armed ' + rearmed + ' day' + (rearmed === 1 ? '' : 's') + ' after an MLS Assist update');
+    if (rearmed) parts.push('re-armed ' + rearmed + ' day' + (rearmed === 1 ? '' : 's') + ' after an MLS Assist or app update');
     return parts;
   }
   function healLedgerFor(manifest) {
@@ -2901,7 +2957,8 @@
        card for the same reason code. Read-only. */
     reasonCopy: function (reason) { return uiReasonCopy(reason); },
     /* pullheal-1.0.0: the supervisor's own surface. Read-only except for the
-       two acts it is allowed - re-arm days an older MLS Assist failed, and
+       two acts it is allowed - re-arm days an older MLS Assist or an older app
+       build failed (attnscope-1.0.0), and
        turn itself off. */
     rearmOutdatedVersions: rearmOutdatedVersions,
     heal: {

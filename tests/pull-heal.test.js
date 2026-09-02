@@ -23,6 +23,10 @@ const clonedSource = fs.readFileSync('cloned-feat_mls_rangejobs.js', 'utf8');
 
 const EXT_OLD = '3.0.99';
 const EXT_NEW = '3.0.100';
+/* attnscope-1.0.0: the app build that spends an attempt, stamped beside the
+   extension version. APP_OLD is a build that has since been superseded. */
+const APP_BUILD = 'synthetic-p1-build';
+const APP_OLD = 'synthetic-p1-build-old';
 const ACCOUNT = 'doctor-a@example.invalid';
 const PROVIDER_NAME = 'Dr Secret Person';
 const PROVIDER_RAW = 'Secret Person, MD';
@@ -127,7 +131,7 @@ function runtime(options = {}) {
     clearInterval(id) { const at = pending.findIndex((t) => t.id === id); if (at >= 0) pending.splice(at, 1); },
     addEventListener(type, fn) { (listeners[`window:${type}`] ||= []).push(fn); },
     removeEventListener() {},
-    __MLS_AV: 'synthetic-p1-build',
+    __MLS_AV: options.appBuild || APP_BUILD,
     __MLS_P1_PREVIEW: { enabled: true, route: '/1p/', build: 'synthetic-p1-build' },
     __mlsSI: importer,
     __mlsProviderRoster: {
@@ -177,6 +181,13 @@ function runtime(options = {}) {
       if (value == null) delete sandbox.__mlsExtReportedVersion;
       else sandbox.__mlsExtReportedVersion = value;
     },
+    /* attnscope-1.0.0: the shell's build token, the second half of the attempt
+       scope. Setting it is exactly what shipping a new app build looks like to
+       a tab that is already open. */
+    setAppBuild(value) {
+      if (value == null) delete sandbox.__MLS_AV;
+      else sandbox.__MLS_AV = value;
+    },
     setHidden(value) { document.hidden = value === true; },
     stopCalls() { return stopCalls; },
     workerTickMs() { return workerTickMs; },
@@ -219,9 +230,14 @@ async function beat(r) {
   await settle(r);
 }
 
-function newDay(status, reason, attempts, extV) {
+/* attnscope-1.0.0: a day checkpoint now carries the app build that spent the
+   attempt as well as the extension version. `appV` is omitted deliberately by
+   the legacy case below - that absence is what a pre-attnscope manifest looks
+   like on disk. */
+function newDay(status, reason, attempts, extV, appV) {
   const day = { status, reason, attempts, updatedAt: 1 };
   if (extV) day.attemptExtV = extV;
+  if (appV) day.attemptAppV = appV;
   return day;
 }
 function cappedManifest(days) {
@@ -267,7 +283,14 @@ async function testVersionScopedRearmReleasesOldExtensionFailures() {
 }
 
 async function testCurrentVersionAttemptsAreNeverGivenBack() {
-  /* THE load-bearing half: the cap must still stop a live broken loop. */
+  /* THE load-bearing half: the cap must still stop a live broken loop.
+     RE-AIMED for attnscope-1.0.0 (2026-09-02): the scope is now the extension
+     version AND the app build, so "the current version" means BOTH stamps
+     match what is running. Each fixture day therefore carries the running app
+     build - without it the day would look like a pre-attnscope checkpoint and
+     the app arm would (correctly) give it its one re-arm. The property this
+     case is really for is unchanged: a day whose attempts were spent by
+     exactly what is running now never gets them back. */
   for (const [label, stamp, ext] of [
     ['the CURRENT extension', EXT_NEW, EXT_NEW],
     ['a NEWER extension than the one reported (a downgrade)', '3.0.101', EXT_NEW],
@@ -277,8 +300,8 @@ async function testCurrentVersionAttemptsAreNeverGivenBack() {
     const r = runtime({ extVersion: ext });
     if (ext === null) r.setExtVersion(null);
     r.writeManifest(cappedManifest({
-      '2026-09-01': newDay('needs-attention', 'nav-failed', 3, stamp),
-      '2026-09-02': newDay('needs-attention', 'nav-failed', 3, stamp)
+      '2026-09-01': newDay('needs-attention', 'nav-failed', 3, stamp, APP_BUILD),
+      '2026-09-02': newDay('needs-attention', 'nav-failed', 3, stamp, APP_BUILD)
     }));
     const result = await r.api.rearmOutdatedVersions();
     await settle(r);
@@ -311,8 +334,110 @@ async function testAttemptsRecordTheExtensionThatSpentThem() {
   const capped = r.manifest().months['2026-09'].days['2026-09-01'];
   assert.strictEqual(capped.attempts, 3, 'the cap did not hold at 3');
   assert.strictEqual(capped.attemptExtV, EXT_OLD, 'the day does not record the extension that spent its attempts');
+  /* attnscope-1.0.0: and the app build that spent that same attempt. */
+  assert.strictEqual(capped.attemptAppV, APP_BUILD, 'the day does not record the app build that spent its attempts');
   assert(r.manifest().summary.needsAttention > 0, 'the fixture did not produce needs-attention days');
   return r;
+}
+
+/* ------------------------------------------------------------------ */
+/* 1b. attnscope-1.0.0: the attempt scope is the extension AND the app */
+/* ------------------------------------------------------------------ */
+/* MEASURED 2026-09-02 04:5x on the owner's live August job: an app-side cure
+   shipped that changes what a re-read of those days yields, and the four
+   needs-attention days were not re-read - attempts 3, the same extension
+   version stamped on each, updatedAt unchanged. The three cases below are the
+   whole of the new rule. */
+async function testAnAppBuildChangeGivesTheAttemptsBack() {
+  /* (a) the extension is unchanged; only the app moved. */
+  const r = runtime({ extVersion: EXT_NEW });
+  r.writeManifest(cappedManifest({
+    '2026-09-01': newDay('needs-attention', 'history-partial', 3, EXT_NEW, APP_OLD),
+    '2026-09-02': newDay('needs-attention', 'calendar-partial', 3, EXT_NEW, APP_OLD),
+    '2026-09-03': newDay('complete', 'complete', 1, EXT_NEW, APP_OLD)
+  }));
+  assert.strictEqual(r.api.state().summary.needsAttention, 2, 'the fixture did not start with two capped days');
+
+  const result = await r.api.rearmOutdatedVersions();
+  await settle(r);
+  assert.strictEqual(result.ok, true, 'the re-arm refused a healthy manifest');
+  assert.strictEqual(result.rearmed, 2, 'an app build the days were NOT failed by did not give the attempts back');
+  assert.strictEqual(result.app, APP_BUILD, 'the receipt does not name the app build that is running now');
+  assert.strictEqual(result.from, '', 'an app-arm re-arm invented an older extension version to blame');
+
+  const after = r.api.state();
+  const day = after.months['2026-09'].days['2026-09-01'];
+  assert.strictEqual(day.status, 'retry', 'the re-armed day was not planned again');
+  assert.strictEqual(day.attempts, 0, 'the re-armed day kept its spent attempts');
+  assert.strictEqual(day.attemptAppV, undefined, 'the re-armed day kept a stale app-build stamp');
+  assert.strictEqual(after.summary.needsAttention, 0, 'needs-attention did not drain after the app update');
+  assert.strictEqual(after.months['2026-09'].days['2026-09-03'].status, 'complete', 'a proved day was disturbed');
+
+  /* the receipt the owner reads says what changed, without naming a version
+     that does not exist on this arm */
+  const ledger = r.api.heal.ledger();
+  if (ledger) {
+    assert(!/MLS Assist undefined|MLS Assist $/.test(ledger.lastRearm || ''),
+      `the app-arm receipt names an empty MLS Assist version: ${JSON.stringify(ledger.lastRearm)}`);
+  }
+
+  /* (b) both stamps equal to what is running: the cap still holds. */
+  const held = runtime({ extVersion: EXT_NEW });
+  held.writeManifest(cappedManifest({
+    '2026-09-01': newDay('needs-attention', 'history-partial', 3, EXT_NEW, APP_BUILD),
+    '2026-09-02': newDay('needs-attention', 'calendar-partial', 3, EXT_NEW, APP_BUILD)
+  }));
+  const heldResult = await held.api.rearmOutdatedVersions();
+  await settle(held);
+  assert.strictEqual(heldResult.rearmed, 0,
+    'attempts spent by the extension AND the app build that are running right now were given back');
+  const heldAfter = held.api.state();
+  assert.strictEqual(heldAfter.months['2026-09'].days['2026-09-01'].attempts, 3, 'the cap was reset');
+  assert.strictEqual(heldAfter.summary.needsAttention, 2, 'needs-attention was falsely drained');
+}
+
+async function testALegacyCheckpointReArmsExactlyOnce() {
+  /* (c) a checkpoint written before attnscope carries no app stamp at all.
+     That absence counts as differing - ONCE. The pass it earns stamps the
+     running build, and the cap holds from then on. */
+  const r = runtime({
+    extVersion: EXT_NEW,
+    pullMonth(opts) {
+      const days = opts.dates.map((date) => {
+        const out = { date, ok: false, complete: false, reason: 'nav-failed' };
+        opts.onDayCheckpoint(out); return out;
+      });
+      return Promise.resolve({ ok: false, complete: false, reason: 'month-partial', days, retry: { dates: opts.dates.slice() } });
+    }
+  });
+  const legacy = cappedManifest({ '2026-09-01': newDay('needs-attention', 'nav-failed', 3, EXT_NEW) });
+  assert.strictEqual(legacy.months['2026-09'].days['2026-09-01'].attemptAppV, undefined,
+    'the legacy fixture was not written without an app stamp');
+  r.writeManifest(legacy);
+
+  const first = await r.api.rearmOutdatedVersions();
+  await settle(r);
+  assert.strictEqual(first.rearmed, 1, 'a pre-attnscope checkpoint did not earn its one re-arm');
+  assert.strictEqual(r.api.state().months['2026-09'].days['2026-09-01'].status, 'retry',
+    'the legacy day was not planned again');
+
+  /* let it be driven: it fails the same way and walks back to the cap, and
+     THIS time it records the build that spent the attempts. */
+  const resumed = r.api.resume();
+  await settle(r);
+  await resumed;
+  const driven = r.api.state().months['2026-09'].days['2026-09-01'];
+  assert.strictEqual(driven.status, 'needs-attention', 'the re-armed day did not settle back at the cap');
+  assert.strictEqual(driven.attempts, 3, 'the re-armed day did not spend its attempts again');
+  assert.strictEqual(driven.attemptAppV, APP_BUILD, 'the re-driven day still carries no app-build stamp');
+  assert.strictEqual(driven.attemptExtV, EXT_NEW, 'the re-driven day lost the extension stamp');
+
+  const second = await r.api.rearmOutdatedVersions();
+  await settle(r);
+  assert.strictEqual(second.rearmed, 0, 'the legacy day re-armed a SECOND time on the same app build - the cap cannot hold');
+  assert.strictEqual(r.api.state().months['2026-09'].days['2026-09-01'].attempts, 3,
+    'the cap was reset on the second pass');
+  assert.strictEqual(r.api.state().summary.needsAttention, 1, 'needs-attention was falsely drained a second time');
 }
 
 /* ------------------------------------------------------------------ */
@@ -772,6 +897,8 @@ const CASES = [
   ['version-scoped re-arm releases old-extension failures', testVersionScopedRearmReleasesOldExtensionFailures],
   ['current-version attempts are never given back', testCurrentVersionAttemptsAreNeverGivenBack],
   ['attempts record the extension that spent them', testAttemptsRecordTheExtensionThatSpentThem],
+  ['an app-build change gives the attempts back, an unchanged one never does', testAnAppBuildChangeGivesTheAttemptsBack],
+  ['a legacy checkpoint with no app stamp re-arms exactly once', testALegacyCheckpointReArmsExactlyOnce],
   ['the supervisor drains needs-attention after an extension fix', testSupervisorDrainsNeedsAttentionAfterAnExtensionFix],
   ['blocked navigations are counted, not acted on', testNavigationBlocksAreCountedNotActedOn],
   ['bounded auto-resume with receipts and an honest stop', testBoundedAutoResumeWithReceiptsAndAnHonestStop],
@@ -802,7 +929,7 @@ process.on('exit', (code) => {
   }
   finished = true;
   clearInterval(holdOpen);
-  console.log('PASS pullheal-1.0.0: version-scoped attempts drain needs-attention to 0 after an MLS Assist fix and NEVER give back attempts the current extension spent; bounded auto-resume on the measured metadata-persist stall with a receipt each time and an honest stop at the bound; every supervisor action serialized pause -> confirmed -> resume -> confirmed, with another tab\'s job left alone; a PHI-free closed-allowlist health ledger and history; a kill switch that defaults ON; a hidden-tab-safe Worker clock admitted on the wall clock; and the metadata-persist mystery instrumented down to which key failed and whether it moved');
+  console.log('PASS pullheal-1.0.0 + attnscope-1.0.0: attempts are scoped to the extension version AND the app build, so needs-attention drains to 0 after an MLS Assist fix OR an app update (a pre-attnscope checkpoint re-arms exactly once) and NEVER gives back attempts the running extension and running build spent; bounded auto-resume on the measured metadata-persist stall with a receipt each time and an honest stop at the bound; every supervisor action serialized pause -> confirmed -> resume -> confirmed, with another tab\'s job left alone; a PHI-free closed-allowlist health ledger and history; a kill switch that defaults ON; a hidden-tab-safe Worker clock admitted on the wall clock; and the metadata-persist mystery instrumented down to which key failed and whether it moved');
 })().catch((error) => {
   finished = true;
   clearInterval(holdOpen);
