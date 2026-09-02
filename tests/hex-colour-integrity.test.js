@@ -154,10 +154,16 @@ const PREEXISTING = {
                   //          /cloned was re-derived from /1p: ScribeFlow.html 2,
                   //          1pScribeFlow.html 2, cloned/index.html 2, and 0 in
                   //          every 1p-feat_*.js and cloned-feat_*.js.
-  '#8b9791': 5,   // "b979" — the write-back walkthrough's muted todo colour
+  '#8b9791': 8,   // "b979" — the write-back walkthrough's muted todo colour
                   //          +1 on 2026-08-20: the production promotion —
                   //          ScribeFlow.html is now the 1p shell, which
                   //          carries one use (verified 0 -> 1, shell only).
+                  //          +3 on 2026-09-02: writeui-1.0.0 (b1193) reused the
+                  //          same muted todo colour for the Send to Athena
+                  //          sheet in 1p-feat_mls_writeflow.js, which derives
+                  //          into feat_mls_writeflow.js and
+                  //          cloned-feat_mls_writeflow.js (1 each, measured
+                  //          per file; every other copy unchanged).
                   // (feat_mls_writeback_walkthrough.js), plus residue-athena-1.0.0's
                   // evidence-derived step chips reusing the palette in both twins
                   // + derived cloned (2026-08-18: 1 production + 3 residue).

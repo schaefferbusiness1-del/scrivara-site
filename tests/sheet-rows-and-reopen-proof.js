@@ -607,6 +607,30 @@ async function settle(n) { for (let i = 0; i < (n || 300); i++) await new Promis
     eq(s.currentAthenaNote, record.athenaNote, file + ': the reopened sidecar text is not the saved payload');
     eq(api.write().ok, true, file + ': the reopened review is still not ready to check - a regenerate is still being demanded');
 
+    /* reopen-1.1.0 - THE LIVE b1199 SIGNATURE. reopen-1.0.0 re-anchors correctly
+       at load time (every load-time asymmetry was measured; none reproduces the
+       failure), so the only way the owner could see provenance 'generated' with
+       the payload restored AND canonical-source-changed is a mutation AFTER
+       loadRecordIntoEditor returned. The whole-state fingerprint dies on identity
+       churn the canonical note does not depend on. Non-clinical churn must not
+       cost him a second model call. */
+    const beforeChurn = s.currentAthenaNote;
+    v.patientLabel = 'Adam S (walk-in)';                    /* a re-render of the label */
+    s.currentVisitAthenaBinding = {
+      patient: { patientId: 'p-1', name: 'Route Patient Name', dob: '1980-01-01', mrn: 'M-1' },
+      visitContext: { visitDate: DAY, provider: PROVIDER, appointmentId: APPOINTMENT, encounterId: ENCOUNTER, encounterUrl: ENCOUNTER_URL + '?rebound=1' }
+    };                                                       /* a later re-bind of the visit */
+    eq(api.write().ok, true,
+      file + ': THE MEASURED b1199 DEFECT - non-clinical churn after the reopen (a relabel, a re-bind) killed a restored sidecar and the sheet demanded a regenerate again');
+    eq(s.currentAthenaNote, beforeChurn, file + ': the re-anchor rewrote the canonical payload instead of only its fingerprint');
+    eq(s.currentAthenaNoteProvenance, 'generated', file + ': the re-anchor changed the payload provenance');
+
+    /* ...and the gate still MEANS what it says: a clinical edit is still stale. */
+    s.currentSoap = record.soap + '\nA clinical line the sidecar never saw.';
+    eq(api.write().ok, false, file + ': A CLINICAL EDIT WAS RE-ANCHORED - the canonical note no longer has to match the note on screen');
+    eq(api.write().reason, 'canonical-source-changed', file + ': a clinical edit reported the wrong refusal');
+    s.currentSoap = record.soap;
+
     /* a record whose fingerprint does NOT match its own soap/text stays stale */
     const drifted = Object.assign({}, record, { soap: record.soap + '\nEdited after the save.' });
     s.currentSoap = drifted.soap; v.noteBox = drifted.soap;

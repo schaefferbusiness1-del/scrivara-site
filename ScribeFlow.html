@@ -31014,7 +31014,61 @@ function _mlsSetAthenaNote(text,provenance){
   currentAthenaNote=canonical.text;
   currentAthenaNoteProvenance=provenance||'generated';
   currentAthenaNoteSourceFingerprint=_mlsAthenaSourceFingerprint();
+  /* reopen-1.1.0: the anchor can never outlive the payload it vouches for. */
+  try{_mlsAthenaClearReopenAnchor();}catch(eAnchor){}
   return canonical;
+}
+/* reopen-1.1.0 (measured 2026-09-02 on the owner's tab at b1200, after
+   reopen-1.0.0 shipped): the reopened sheet STILL demanded a regenerate.
+   currentAthenaNoteProvenance read 'generated' with the full 1150-character
+   payload restored - so the restore itself ran - yet
+   _mlsAthenaFingerprintMatchesCurrent() was false and the sheet answered
+   canonical-source-changed.
+
+   WHAT WAS MEASURED. Every load-time asymmetry was reproduced against the
+   shipped functions: a trimmed visit comment, a note saved from the box rather
+   than currentSoap, an MRN filled in on the chart since the save, a reformatted
+   DOB, a chart no longer on file, an unswitched active patient, a typed label
+   that differs from the route name, an encounter bound after the save. NONE of
+   them produces that signature: each either ends 'stale' with the payload
+   cleared, or is already re-anchored correctly by reopen-1.0.0. The signature is
+   therefore only reachable AFTER loadRecordIntoEditor has returned - some later
+   actor re-binds the visit or re-renders identity, and the whole-state
+   fingerprint dies with it, taking a perfectly current payload along.
+
+   THE RULE. The canonical note is DERIVED from the transcript, the context, the
+   visit comment and the standard note, and from nothing else -
+   _mlsAthenaNoteWithVisitComment reads exactly those. Patient identity, the
+   active-patient id and the visit binding sit in the fingerprint to say WHOSE
+   visit it was, not to describe the note. So a sidecar restored by reopen stays
+   current while its CLINICAL inputs are unchanged, and is re-anchored to the
+   live editor at the point of use.
+
+   WHY THIS DOES NOT WEAKEN THE GATE. It is armed ONLY by the reopen restore, so
+   the live generate path's staleness rule is untouched; it is dropped the moment
+   the sidecar is rebuilt (_mlsSetAthenaNote); and a sidecar that has been marked
+   stale can never reach it, because _mlsAthenaCanonicalForWrite refuses on
+   provenance first. Identity is not being trusted here - it is verified where it
+   belongs, against Athena's own read-only reply, by validatedUnifiedProbe (name
+   + DOB + MRN + the exact encounter) before any write can land. Proven in
+   tests/sheet-rows-and-reopen-proof.js. */
+function _mlsAthenaClinicalKey(fingerprint){
+  try{
+    var s=JSON.parse(String(fingerprint||'')); if(!s||s.v!==2)return '';
+    return JSON.stringify({v:2,transcript:String(s.transcript||''),context:String(s.context||''),visitComment:String(s.visitComment||''),standardNote:String(s.standardNote||'')});
+  }catch(e){return '';}
+}
+var _mlsAthenaReopenAnchor='';
+function _mlsAthenaSetReopenAnchor(fingerprint){_mlsAthenaReopenAnchor=_mlsAthenaClinicalKey(fingerprint);}
+function _mlsAthenaClearReopenAnchor(){_mlsAthenaReopenAnchor='';}
+function _mlsAthenaReanchorIfClinicalUnchanged(){
+  try{
+    if(!_mlsAthenaReopenAnchor)return false;
+    var live=_mlsAthenaSourceFingerprint(); if(!live)return false;
+    if(_mlsAthenaClinicalKey(live)!==_mlsAthenaReopenAnchor)return false;
+    currentAthenaNoteSourceFingerprint=live;
+    return true;
+  }catch(e){return false;}
 }
 function _mlsRefreshAthenaNoteFromDisplayedSoap(){
   if(typeof currentFormat!=='undefined'&&currentFormat!=='soap'){_mlsMarkAthenaNoteStale('non-soap display edited');return false;}
@@ -31121,6 +31175,9 @@ function _mlsReopenRestoreSavedAthenaSidecar(n){
     currentAthenaNote=String(n.athenaNote||"");
     currentAthenaNoteProvenance=String(n.athenaNoteProvenance||"");
     currentAthenaNoteSourceFingerprint=fingerprint;
+    /* reopen-1.1.0: remember WHICH clinical inputs this payload belongs to, so a
+       later re-bind or re-render cannot silently kill it. */
+    _mlsAthenaSetReopenAnchor(fingerprint);
     return true;
   }catch(e){return false;}
 }
@@ -31129,7 +31186,11 @@ function _mlsAthenaCanonicalForWrite(){
   if(provenance==='none')return null; // typed/manual notes retain legacy generic-note behavior
   if(provenance!=='generated'&&provenance!=='edited')return {required:true,ok:false,reason:'stale-canonical-provenance'};
   if(!String(currentAthenaNote||'').trim())return {required:true,ok:false,reason:'missing-canonical-note'};
-  if(!_mlsAthenaFingerprintMatchesCurrent(currentAthenaNoteSourceFingerprint))return {required:true,ok:false,reason:'canonical-source-changed'};
+  /* reopen-1.1.0: a reopen-restored sidecar whose CLINICAL inputs are unchanged
+     is re-anchored here rather than refused for identity churn it does not
+     depend on. Any other sidecar keeps the original rule exactly, and a stale
+     one never reaches this line - the provenance check above refuses it first. */
+  if(!_mlsAthenaFingerprintMatchesCurrent(currentAthenaNoteSourceFingerprint)&&!_mlsAthenaReanchorIfClinicalUnchanged())return {required:true,ok:false,reason:'canonical-source-changed'};
   try{
     var valid=_mlsValidateAthenaNote(currentAthenaNote); valid.required=true; valid.ok=true; return valid;
   }catch(e){return {required:true,ok:false,reason:(e&&e.mlsAi&&e.mlsAi.detail)||'malformed-canonical-note'};}
@@ -45657,7 +45718,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1199';
+  window.__MLS_AV='b1200';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
