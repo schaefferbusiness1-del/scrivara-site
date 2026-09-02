@@ -76,6 +76,14 @@ const AUTOMATED_PROOF_FILES = new Set([
      calendar-partial stays attention and says how many appointments were
      missing; nav-failed is retried to the attempt cap and no further. */
   'attention-days-proof.js',
+  /* retryvis-1.0.0 (owner-measured 2026-09-02 05:1x): the month card said
+     "Finished, with days that still need attention - press Retry" while
+     #ez3PullRetry computed display:none, because pCounts returns before it
+     reaches a single control whenever the tab holds no in-tab pull object -
+     the reloaded-tab case a settled job lands in. The control the sentence
+     names is now painted in that branch too, from the saved manifest, and it
+     calls attention days attention days instead of failures. */
+  'retry-visible-proof.js',
   /* vntpl-1.1.0 (2026-09-01): the standard visit note only ever takes a
      VISIT-NOTE template. Nine straight backend refusals came from a
      TEMPLATE_CONTRACT built out of an OPERATIVE REPORT; the op-note room keeps
@@ -1333,6 +1341,7 @@ const tests = [
   'assessment-probe-proof.js',
   'sheet-rows-and-reopen-proof.js',
   'attention-days-proof.js',
+  'retry-visible-proof.js',
   'visit-template-scope-proof.js',
   'write-next-press-proof.js',
   'visit-walkthrough-proof.js',

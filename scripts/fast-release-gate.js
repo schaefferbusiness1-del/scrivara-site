@@ -90,8 +90,12 @@ const ROOT = path.resolve(__dirname, '..');
        durable job completed survives the month reconciliation unless the
        month-owner release proof failed, a chart refused on identity finishes
        its day instead of holding it in needs-attention for ever, and
-       calendar-partial says how many appointments it was missing. */
-const FULL_GATE_TESTS = 942;
+       calendar-partial says how many appointments it was missing.
+       +1 (retry-visible-proof.js, retryvis-1.0.0, 2026-09-02) = 943 - the
+       Retry control is on screen for every job status whose own sentence
+       tells the doctor to press it, on a reloaded tab as well as on the tab
+       that ran the job, and it names attention days as attention days. */
+const FULL_GATE_TESTS = 943;
 const DEFAULT_BASE = 'origin/main';
 const DEFAULT_STEP_TIMEOUT_MS = 180000;
 const DEFAULT_TOTAL_TIMEOUT_MS = 300000;

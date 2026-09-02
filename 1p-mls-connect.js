@@ -25022,6 +25022,35 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           /* a saved YEAR job blocks a month start, so do not offer one. */
           var bs0 = $('ez3PullStart'); if (bs0) { bs0.disabled = true; }
         }
+        /* ===== retryvis-1.0.0 (owner-measured 2026-09-02 05:1x) ===========
+           THE CARD POINTED AT A CONTROL THAT WAS NOT ON THE SCREEN. The status
+           line read "Finished, with days that still need attention - press
+           Retry. 27 of 31 days saved · 4 need attention" while #ez3PullRetry
+           computed display:none and the only buttons on screen were "Start
+           month pull" and "Pull today only". CANCEL WAS ABSENT TOO, and that
+           is what proves WHICH rule was wrong: the durable control branch far
+           below shows Cancel for any resumable job, so it never ran at all -
+           this early return had already been taken. It is taken whenever the
+           tab holds no in-tab pull object, which is exactly what a reloaded
+           tab has when it lands on a job that settled while it was away.
+           Pressing the hidden button through the DOM did the right thing, so
+           the handler was never the defect - only the visibility was.
+           The control the sentence names is painted here from the SAVED
+           manifest, and it is the ONLY control this branch decides: Start is
+           left exactly as it was, so nothing the doctor could already press
+           moves. Same expression shape as the durable branch below - not
+           running, and the job has days left to re-read. */
+        var dStatus0 = String((dur0 && dur0.status) || '');
+        var dAttn0 = (dur0 && dur0.summary && +dur0.summary.needsAttention) || 0;
+        var btnR0 = $('ez3PullRetry');
+        if (btnR0) {
+          var showR0 = !!(owns0 && !p1RangeRunning(dur0) &&
+            (dStatus0 === 'waiting-retry' || dStatus0 === 'needs-attention' || dAttn0));
+          btnR0.style.display = showR0 ? '' : 'none';
+          if (showR0) btnR0.textContent = (dStatus0 === 'needs-attention' || (dAttn0 && dStatus0 !== 'waiting-retry'))
+            ? '↻ Retry days that need attention'
+            : '↻ Retry failed days';
+        }
       } catch (eHt0) {}
       return;
     }
@@ -25108,10 +25137,25 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var btnP = $('ez3PullPause'); if (btnP) btnP.style.display = (durableForCard && liveCard) ? '' : 'none';
     var btnU = $('ez3PullResume');
     if (btnU) btnU.style.display = (resumableCard && !settledWithFailures) ? '' : 'none';
+    /* retryvis-1.0.0 (owner-measured 2026-09-02 05:1x): THE LABEL NAMES WHAT
+       THE PRESS DOES. settledWithFailures is already exactly "days still to
+       retry OR days parked for attention", and p1RangeSyncP already folds a
+       needs-attention day into P.failedDays, so this arm was never the reason
+       the button was off screen (the early return at the top of pCounts was).
+       What WAS wrong here is the word on it: a day settled at the attempt cap
+       is 'needs-attention', never a failure the job will keep retrying by
+       itself, so "Retry failed days" told the doctor the wrong thing about
+       the press. One control either way - never a second button. */
     var btnR = $('ez3PullRetry');
-    if (btnR) btnR.style.display = durableForCard
-      ? ((resumableCard && settledWithFailures) ? '' : 'none')
-      : ((!P.running && P.failedDays.length) ? '' : 'none');
+    if (btnR) {
+      var showRetry = durableForCard
+        ? !!(resumableCard && settledWithFailures)
+        : !!(!P.running && P.failedDays.length);
+      btnR.style.display = showRetry ? '' : 'none';
+      if (showRetry) btnR.textContent = (durableStatus === 'needs-attention')
+        ? '↻ Retry days that need attention'
+        : '↻ Retry failed days';
+    }
     var btnC = $('ez3PullCancel'); if (btnC) btnC.style.display = (durableForCard ? (liveCard || resumableCard) : P.running) ? '' : 'none';
     var btnS = $('ez3PullStart');
     if (btnS) {
