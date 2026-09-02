@@ -25,7 +25,15 @@ assert(connect.includes('var _recSessionSeen = false;'), 'audio-session-history 
 assert(connect.includes('if (live) _recSessionSeen = true;'), 'live recording must mark the session flag');
 assert(connect.includes("else if (!text.trim()) _recSessionSeen = false;"), 'clearing the transcript must reset the session flag');
 assert(connect.includes("text.trim() && _recSessionSeen ? '\\uD83C\\uDFA4 Resume recording'"), 'Resume label no longer requires a real prior recording session');
-assert(connect.includes("(_recSessionSeen ? 'Recording stopped. Resume to add more"), 'Recording-stopped hint no longer requires a real prior recording session');
+/* genvis-1.0.0 (b1189) rebuilt the flow lane around a run-state overlay and
+   reflowed laneHintDefault, so this one-line ternary became a three-line one.
+   The guarantee never lapsed - the literal did. Pinned as the PROPERTY: the
+   "Recording stopped" sentence is reachable ONLY through the _recSessionSeen
+   gate, and the pasted-transcript sentence is its else. That is strictly more
+   than the old substring proved (it also pins the gate's else-arm and the
+   order of the two), and it survives a reflow. */
+assert(/_recSessionSeen\s*\?\s*'Recording stopped\. Resume to add more, or generate one note from every segment\.'\s*:\s*'Transcript added\./.test(connect),
+  'Recording-stopped hint no longer requires a real prior recording session');
 assert(connect.includes("'Transcript added. Record to add more, or generate one note from every segment.'"), 'pasted-transcript hint missing');
 
 /* ---- 2. assistant dictation mic ---- */
