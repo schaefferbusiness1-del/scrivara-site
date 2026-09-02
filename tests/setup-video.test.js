@@ -33,11 +33,13 @@
  *   PART 7  CONFIRM FIRST. The real mlsSvRerunSetup() with confirm() false
  *           touches nothing and opens nothing; with confirm() true it resets,
  *           opens the wizard on the USER path and forces step 0 - the video.
- *   PART 8  PUBLICATION. The CURRENT tree (no MLS_HowTo_v1.mp4) still passes
- *           the real fail-closed source audit, the inventory carries no
- *           speculative entry for a file that does not exist, and the auditor
- *           is shown REFUSING an inventory mp4 whose source is missing - which
- *           is why the video-landing commit, not this one, edits the inventory.
+ *   PART 8  PUBLICATION - THE VIDEO HAS LANDED (2026-09-02). This is the
+ *           video-landing commit the previous revision of this PART named and
+ *           waited for: MLS_HowTo_v1.mp4 is a real file on disk, the reviewed
+ *           inventory carries it in sorted position, and the real fail-closed
+ *           source audit passes WITH it. The negative control is kept rather
+ *           than retired - the same auditor is still shown REFUSING every
+ *           inventory mp4, the walkthrough included, when its source is absent.
  * ===========================================================================*/
 
 const assert = require('assert');
@@ -552,28 +554,80 @@ function rerunHarness(answer) {
   /* ============================================== PART 8: PUBLICATION WIRING */
   const audit = require(path.join(ROOT, 'scripts', 'audit-pages-build.js'));
 
-  /* 1. NO SPECULATIVE HOLE. The walkthrough asset does not exist yet, so it is
-        deliberately NOT in the inventory. */
-  eq(fs.existsSync(path.join(ROOT, VIDEO)), false,
-    'this commit wires the SURFACE only - ' + VIDEO + ' is produced separately');
-  eq(inventory.indexOf(VIDEO), -1,
-    'the inventory must not carry ' + VIDEO + ' before the file exists - that is a speculative hole AND a red CI audit');
+  /* 2026-09-02 - THE LANDING COMMIT. The previous revision of PART 8 asserted
+     the opposite of 1. below: that the walkthrough asset was absent and
+     deliberately un-inventoried, "which is why the video-landing commit, not
+     this one, edits the inventory". This IS that commit. The recording exists
+     (howto-video/build/assemble.js, real site footage), so the file and its
+     single inventory line land together, in the one commit the fail-closed
+     audit allows - and the two assertions invert accordingly. Nothing else in
+     this suite moves: PARTS 1-7 are unchanged, the negative control in 3.
+     below is kept, and no allowlist anywhere is widened. */
 
-  /* 2. THE CURRENT TREE STILL PASSES THE REAL FAIL-CLOSED SOURCE AUDIT. */
+  /* 1. THE ASSET IS PUBLISHED. File on disk, one inventory line, in sorted
+        position. Both halves have to be true in the SAME commit or the deploy
+        audit reds: a file with no inventory line is "unexpected/unreviewed
+        generated file", an inventory line with no file is "missing reviewed
+        source file". */
+  const videoPath = path.join(ROOT, VIDEO);
+  eq(fs.existsSync(videoPath), true,
+    VIDEO + ' is missing - the surface points at it and the inventory publishes it, so its absence is a shipped 404');
+  ok(fs.statSync(videoPath).isFile(), VIDEO + ' must be a regular file, not a directory or a link');
+  ok(inventory.indexOf(VIDEO) >= 0,
+    'the inventory must carry ' + VIDEO + ' now that the file exists, or Pages publishes an unreviewed file and the audit refuses the deploy');
+  eq(inventory.filter((p) => p === VIDEO).length, 1, VIDEO + ' must appear exactly once in the inventory');
+  {
+    const at = inventory.indexOf(VIDEO);
+    ok(at > 0 && inventory[at - 1].localeCompare(VIDEO) < 0 && inventory[at + 1].localeCompare(VIDEO) > 0,
+      'the inventory line must sit in sorted position (' + inventory[at - 1] + ' < ' + VIDEO + ' < ' + inventory[at + 1] + ')');
+  }
+
+  /* 1b. THE BYTES ARE A REAL MP4, the size sanity check homepage-sales-video
+         models. A truncated copy, an LFS pointer or a saved 404 page is small
+         and has no ftyp box; the ceiling is GitHub's 50 MB push warning, well
+         under its 100 MB hard refusal, so an accidentally re-encoded master
+         cannot slip into a Pages deploy unnoticed. */
+  const videoBytes = fs.statSync(videoPath).size;
+  ok(videoBytes > 5_000_000,
+    VIDEO + ' is unexpectedly small (' + videoBytes + ' bytes) - an 11-minute 1080p walkthrough cannot be this size, so this is a truncated copy, an LFS pointer or a saved error page');
+  ok(videoBytes < 50_000_000,
+    VIDEO + ' is ' + videoBytes + ' bytes - above GitHub\'s 50 MB push warning. Re-encode before landing a bigger master.');
+  {
+    const head = Buffer.alloc(12);
+    const fd = fs.openSync(videoPath, 'r');
+    try { fs.readSync(fd, head, 0, 12, 0); } finally { fs.closeSync(fd); }
+    eq(head.slice(4, 8).toString('latin1'), 'ftyp',
+      VIDEO + ' has no ISO base-media ftyp box in its first bytes - whatever landed is not an mp4');
+  }
+
+  /* 2. THE TREE PASSES THE REAL FAIL-CLOSED SOURCE AUDIT *WITH* THE VIDEO IN
+        IT. This is the assertion that would have gone red had the inventory
+        line landed on its own, and it is the one that proves the pair landed
+        together. */
   const now = audit.inspectExpectedSources(ROOT);
   eq(now.failures, [], 'the current tree fails the reviewed-source audit: ' + JSON.stringify(now.failures.slice(0, 5)));
   ok(now.valid.size === inventory.length,
     'every one of the ' + inventory.length + ' reviewed paths resolves to a real regular file');
+  ok(now.valid.has(VIDEO), 'the auditor must ACCEPT ' + VIDEO + ' now that source and inventory line agree');
 
-  /* 3. WHY THE INVENTORY EDIT BELONGS TO THE VIDEO-LANDING COMMIT: the auditor
-        refuses an inventory entry whose source is absent. Shown with the real
-        auditor against a root that has none of them, using the mp4 the repo
-        already publishes as the named subject. */
+  /* 3. THE NEGATIVE CONTROL, KEPT. The auditor being fail-closed is what made
+        the inventory edit wait for the file, and a landing commit that deleted
+        the demonstration would leave that claim unproven from here on. It is
+        still the real auditor, still refusing an inventory entry whose source
+        is absent - and the walkthrough is now one of the named subjects rather
+        than a hypothetical one.
+
+        It has to be shown against a ROOT with no such file rather than against
+        a doctored inventory: audit-pages-build.js freezes PUBLICATION_INVENTORY
+        at module load from one fixed path, so inspectExpectedSources() takes a
+        root and never an inventory. An empty temp root is the only way to ask
+        the shipped auditor what it does about a missing source. */
   const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'mls-pub-audit-'));
   try {
     const missing = audit.inspectExpectedSources(empty);
     const mp4s = inventory.filter((p) => p.endsWith('.mp4'));
-    ok(mp4s.length >= 1, 'the repo already publishes at least one mp4 as precedent');
+    ok(mp4s.length >= 2, 'the inventory publishes the walkthrough alongside the existing sales mp4');
+    ok(mp4s.indexOf(VIDEO) >= 0, 'the landed walkthrough must be one of the mp4s this control names');
     for (const rel of mp4s) {
       ok(missing.failures.indexOf('missing reviewed source file: ' + rel) >= 0,
         'the reviewed-source audit must REFUSE an inventory mp4 whose file is absent (' + rel + ')');
@@ -582,10 +636,14 @@ function rerunHarness(answer) {
     try { fs.rmSync(empty, { recursive: true, force: true }); } catch (e) {}
   }
 
-  /* 4. WHAT THE VIDEO-LANDING COMMIT DOES *NOT* HAVE TO EDIT, measured:
-        _config.yml has no exclude glob for .mp4, and the mp4 this repo already
-        publishes is on NO include line - so Jekyll publishes an mp4 by default
-        and the allowlist needs no new entry. */
+  /* 4. WHAT THIS COMMIT STILL DOES *NOT* EDIT, re-measured with the video in
+        the tree: _config.yml has no exclude glob for .mp4, and NO mp4 the
+        inventory publishes is on an include line - so Jekyll publishes an mp4
+        by default and the allowlist needed no new entry for the walkthrough.
+        Re-aimed 2026-09-02: this loop used to read the ONE existing mp4 as
+        precedent for the absent walkthrough. The walkthrough is now in that
+        same list, so the loop is what pins the finished state - every reviewed
+        mp4, this one included, publishes with no include line. */
   const config = fs.readFileSync(path.join(ROOT, '_config.yml'), 'utf8');
   const includeAt = config.indexOf('\ninclude:');
   ok(includeAt > 0, '_config.yml still has an include allowlist');
@@ -594,7 +652,7 @@ function rerunHarness(answer) {
   ok(!/mp4/i.test(excludeBlock), '_config.yml must not have grown an mp4 exclude glob - the walkthrough would stop publishing');
   for (const rel of inventory.filter((p) => p.endsWith('.mp4'))) {
     ok(includeBlock.indexOf('"' + rel + '"') < 0,
-      'precedent: ' + rel + ' publishes with NO include line, so ' + VIDEO + ' needs no _config.yml edit either');
+      rel + ' must keep publishing with NO include line - adding one would desynchronise the allowlist that public-publication-boundary.test.js compares exactly');
   }
 
   /* 5. AND WHAT THE BOUNDARY SUITE ALREADY ALLOWS: mp4 is a reviewed root
@@ -611,7 +669,8 @@ function rerunHarness(answer) {
     'keeps Skip and Get started live on the video step; Settings carries the same player plus Re-run setup inside ' +
     'Account & access in all 4 shells; the real reset removes EXACTLY ' + EXPECTED_LOCAL.concat(EXPECTED_SESSION).join(' + ') +
     ' and writes nothing, with a 14-key decoy account intact; re-run confirms first, reopens on the user path and ' +
-    'forces step 0; and the current tree - with no ' + VIDEO + ' and no inventory entry for it - still passes the ' +
-    'real fail-closed reviewed-source audit over ' + inventory.length + ' paths.');
+    'forces step 0; and the walkthrough has LANDED - ' + VIDEO + ' is a real ' + videoBytes + '-byte mp4 on disk with one ' +
+    'inventory line in sorted position, the real fail-closed reviewed-source audit passes over all ' + inventory.length +
+    ' paths WITH it, and that same auditor is still shown refusing every reviewed mp4 whose source is absent.');
   COMPLETED = true;
 })().catch((e) => { console.error(e && e.stack || e); process.exit(1); });
