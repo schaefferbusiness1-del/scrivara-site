@@ -25,6 +25,18 @@
 
   var VERSION = 'cf-1.0.0';
 
+  /* capsel-1.0.0 (b1192): an MLS-driven read or capture never changes the
+     doctor's active patient. The one answer lives in the engine
+     (window.__mlsCaptureSelectionKeep); the lane predicate
+     window.__mlsAthenaDrivenByMls() (dnote-1.1.0) is the fallback for a page
+     where that block has not evaluated yet. Fail-open toward the doctor. */
+  function capselKeep(site, scopedOnly) {
+    try { if (typeof window.__mlsCaptureSelectionKeep === 'function') return window.__mlsCaptureSelectionKeep(site, scopedOnly) === true; } catch (eK1) {}
+    if (scopedOnly === true) return false;
+    try { var f = window.__mlsAthenaDrivenByMls, r = (typeof f === 'function') ? f() : null; return !!(r && r.driving === true); } catch (eK2) {}
+    return false;
+  }
+
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
   function gid(id) { return safe(function () { return document.getElementById(id); }, null); }
   function toast(m, k) { safe(function () { if (typeof window.toast === 'function') window.toast(m, k || ''); }); }
@@ -217,7 +229,12 @@
     safe(function () {
       if (typeof getPatients === 'function' && typeof selectPatient === 'function') {
         var p = getPatients().find(function (x) { return String(x.name || '').trim().toLowerCase() === name.toLowerCase(); });
-        if (p) { selectPatient(p.id); filled.linked = true; }
+        /* capsel-1.0.0 (b1192): filling the hero fields is data work and always
+           happens; LINKING is a selection change, so a driven read files the
+           read and leaves the doctor's chart alone. This module reads Athena
+           only on a click, where nothing is driving and the link still
+           happens - the gate covers the case where a lane is mid-run. */
+        if (p) { if (capselKeep('chart-autofill-link', true)) filled.selectionKept = true; else { selectPatient(p.id); filled.linked = true; } }
       }
     });
     return filled;

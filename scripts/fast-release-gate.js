@@ -73,7 +73,15 @@ const ROOT = path.resolve(__dirname, '..');
 /*   + visit-template-scope-proof (vntpl-1.1.0, 2026-09-01) = 936 - the
        standard visit note only ever takes a VISIT-NOTE template; an operative
        report is left to the op-note room. */
-const FULL_GATE_TESTS = 936;
+/*   + capture-keeps-selection-proof (capsel-1.0.0, b1192) = 937 - an
+       MLS-driven read or capture never changes the doctor's active patient;
+       seven frozen capture-path writers keep their data work and skip only
+       the selection change. */
+/*   + write-next-press-proof (wfnext-1.0.0, 2026-09-01) = 938 - one trusted
+       press authorizes one section (or, on MLS Assist 3.0.108+, the ordered
+       batch it minted), the sheet re-arms with the next section named, and a
+       read-only stage that will not settle is bounded instead of hanging. */
+const FULL_GATE_TESTS = 938;
 const DEFAULT_BASE = 'origin/main';
 const DEFAULT_STEP_TIMEOUT_MS = 180000;
 const DEFAULT_TOTAL_TIMEOUT_MS = 300000;

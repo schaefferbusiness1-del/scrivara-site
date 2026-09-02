@@ -36,6 +36,17 @@
   'use strict';
   if (window.__mlsAthenaAutoPull && window.__mlsAthenaAutoPull.installed) return;
   var VERSION = '1.2.0';
+  /* capsel-1.0.0 (b1192): an MLS-driven read or capture never changes the
+     doctor's active patient. The one answer lives in the engine
+     (window.__mlsCaptureSelectionKeep); the lane predicate
+     window.__mlsAthenaDrivenByMls() (dnote-1.1.0) is the fallback for a page
+     where that block has not evaluated yet. Fail-open toward the doctor. */
+  function capselKeep(site, scopedOnly) {
+    try { if (typeof window.__mlsCaptureSelectionKeep === 'function') return window.__mlsCaptureSelectionKeep(site, scopedOnly) === true; } catch (eK1) {}
+    if (scopedOnly === true) return false;
+    try { var f = window.__mlsAthenaDrivenByMls, r = (typeof f === 'function') ? f() : null; return !!(r && r.driving === true); } catch (eK2) {}
+    return false;
+  }
   /* A patient pull must always reach a terminal state. The cooperative store
      normally resolves this flush quickly, but a stalled writer used to leave
      the UI at "finishing the local save" forever after Athena had finished.
@@ -731,7 +742,14 @@
       }
       var r = resolvePatient(identity);
       var patient = r.patient;
-      try { if (typeof openPatient === 'function') openPatient(patient.id); else if (typeof selectPatient === 'function') selectPatient(patient.id); } catch (e) {}
+      /* capsel-1.0.0 (b1192): resolvePatient() has already created or matched
+         the row, and every step below is handed `patient` explicitly
+         (cv._saveVisits(patient, ...), upsertPatient(patient)) - this line only
+         moved the doctor's screen onto it. While an MLS lane drives, it does
+         not. The click path is unchanged: nothing is driving when he presses. */
+      if (!capselKeep('autopull-resolve-open', true)) {
+        try { if (typeof openPatient === 'function') openPatient(patient.id); else if (typeof selectPatient === 'function') selectPatient(patient.id); } catch (e) {}
+      }
       status(onStatus, 'Found: ' + identity.name + ', DOB ' + normDob(identity.dob) + ' — pulling ' + visits.length + ' visit' + (visits.length === 1 ? '' : 's') + (r.created ? ' (new patient)' : '') + '…', true);
       var saveBatchApi = window.__mlsPatientStoreBatch, saveBatchToken = null, saved = 0;
       if (!saveBatchApi || typeof saveBatchApi.begin !== 'function' || typeof saveBatchApi.end !== 'function') {
@@ -955,10 +973,16 @@
          finish a pull staring at a different room. Land the saved patient's
          card wherever the pull started, and retire the progress surfaces
          quickly instead of letting a full bar linger like unfinished work. */
-      try { if (typeof setActivePtId === 'function') setActivePtId(String(patient.id)); } catch (eF1) {}
-      try { if (typeof showView === 'function') showView('patients'); } catch (eF2) {}
-      try { if (typeof renderPatients === 'function') renderPatients(); if (typeof renderProfile === 'function') renderProfile(); } catch (eF3) {}
-      try { var pcF = document.getElementById('profileCard'); if (pcF && pcF.scrollIntoView) pcF.scrollIntoView({ block: 'nearest' }); } catch (eF4) {}
+      /* capsel-1.0.0 (b1192): focus-1.1's landing belongs to the doctor who
+         pressed the button. Driven, it would yank his chart AND his view onto
+         the row this run imported; the save and its receipt above are already
+         complete and are not touched either way. */
+      if (!capselKeep('autopull-terminal-land', true)) {
+        try { if (typeof setActivePtId === 'function') setActivePtId(String(patient.id)); } catch (eF1) {}
+        try { if (typeof showView === 'function') showView('patients'); } catch (eF2) {}
+        try { if (typeof renderPatients === 'function') renderPatients(); if (typeof renderProfile === 'function') renderProfile(); } catch (eF3) {}
+        try { var pcF = document.getElementById('profileCard'); if (pcF && pcF.scrollIntoView) pcF.scrollIntoView({ block: 'nearest' }); } catch (eF4) {}
+      }
       hideChipLater(5000);
       return { ok: true, saved: saved, total: n, created: r.created, receipt: lastTerminalReceipt };
     } catch (unexpected) {

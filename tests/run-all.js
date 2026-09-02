@@ -37,12 +37,23 @@ const AUTOMATED_PROOF_FILES = new Set([
      chart Follow adopts - not while the lane drives, and not in the quiet
      afterwards when the reader has finished and left the chart parked. */
   'follow-residue-proof.js',
+  /* capsel-1.0.0 (b1192): an MLS-driven read or capture never changes the
+     doctor's active patient - it keeps every row, chart fact and visit it
+     was already saving and skips ONLY the selection change. */
+  'capture-keeps-selection-proof.js',
   /* vntpl-1.1.0 (2026-09-01): the standard visit note only ever takes a
      VISIT-NOTE template. Nine straight backend refusals came from a
      TEMPLATE_CONTRACT built out of an OPERATIVE REPORT; the op-note room keeps
      those templates and the visit note is written in the note style instead,
      with one plain sentence on the pick receipt. */
   'visit-template-scope-proof.js',
+  /* wfnext-1.0.0 (owner 2026-09-01 23:05: nothing here should be blocked or
+     manual or not attempted once its run): one press writes one section and
+     says so up front, the sheet re-arms with the next one named, a read-only
+     stage nothing will settle is retried once and then settled in the doctor's
+     words, and on MLS Assist 3.0.108+ the ordered batch authorization is on the
+     button before the trusted click. */
+  'write-next-press-proof.js',
   '1p-avatar-photo-framing-proof.js',
   '1p-avatar-professional-likeness-proof.js',
   /* avlook-1.0.0 (2026-08-17): the drawn face's proportions as eleven measured
@@ -1282,7 +1293,9 @@ const tests = [
   'day-note-proof.js',
   'refusal-visibility-proof.js',
   'follow-residue-proof.js',
+  'capture-keeps-selection-proof.js',
   'visit-template-scope-proof.js',
+  'write-next-press-proof.js',
   'visit-walkthrough-proof.js',
   'phone-fixes-proof.js',
   'note-quality-proof.js',

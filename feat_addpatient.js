@@ -43,6 +43,17 @@
     } catch (e) {}
     return false;
   }
+  /* capsel-1.0.0 (b1192): an MLS-driven read or capture never changes the
+     doctor's active patient. The one answer lives in the engine
+     (window.__mlsCaptureSelectionKeep); the lane predicate
+     window.__mlsAthenaDrivenByMls() (dnote-1.1.0) is the fallback for a page
+     where that block has not evaluated yet. Fail-open toward the doctor. */
+  function capselKeep(site, scopedOnly) {
+    try { if (typeof window.__mlsCaptureSelectionKeep === 'function') return window.__mlsCaptureSelectionKeep(site, scopedOnly) === true; } catch (eK1) {}
+    if (scopedOnly === true) return false;
+    try { var f = window.__mlsAthenaDrivenByMls, r = (typeof f === 'function') ? f() : null; return !!(r && r.driving === true); } catch (eK2) {}
+    return false;
+  }
   function selectPatient(id) {
     try { if (isFn(window.setActivePtId)) window.setActivePtId(id); } catch (e) {}
     try { if (isFn(window.selectPatient)) window.selectPatient(id); } catch (e) {}
@@ -711,10 +722,14 @@
       _pending.forEach(function (v) { mod.addVisit(p.id, v, { source: v._ai ? 'manual-ai' : 'manual' }); });
       _pending = [];
     }
-    selectPatient(p.id);   // copy-every-visit operates on the ACTIVE patient
+    /* capsel-1.0.0 (b1192): copy-every-visit does NOT need the active patient -
+       run(onStatus, patientOverride) has always taken the row explicitly, and
+       that is what travels below. The selection moves only when the doctor is
+       the one driving, which is every ordinary press of this button. */
+    if (!capselKeep('addpatient-athena-adopt', true)) selectPatient(p.id);
     setStatus(modal, 'Open ' + esc(p.name) + '’s chart in athenaOne — pulling every visit (read-only)…');
     // run the proven §40 flow; it verifies name+DOB against the open Athena chart
-    return window.__mlsCopyVisits.run(function (m) { if (modalStillCurrent(modal, athenaEpoch)) setStatus(modal, m); }).then(function () {
+    return window.__mlsCopyVisits.run(function (m) { if (modalStillCurrent(modal, athenaEpoch)) setStatus(modal, m); }, p).then(function () {
       if (!modalStillCurrent(modal, athenaEpoch)) return { pulled: true, uiUpdated: false };
       setStatus(modal, '✓ Athena pull complete — see the Visit history on the profile.');
       setTimeout(function () { close(athenaEpoch); }, 1200);

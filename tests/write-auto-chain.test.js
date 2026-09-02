@@ -101,9 +101,26 @@ const HEAD_REGIONS = [
   ['execute (executeUnifiedSelection: the only code that writes)',
     '  function executeUnifiedSelection(state) {', '  /* bx-1.0.0 - batch send (owner 2026-08-26:',
     '13d1a666cb827dfa7561a4daeb394bdba7a990f4d4e322fcdc08317a438b80b5'],
+  /* MOVED DELIBERATELY, wfnext-1.0.0 (2026-09-01) - owner ruling 23:05,
+     verbatim: "nothing here should be blocked or manual or not attempted once
+     its run". MEASURED 22:50-22:56 on his own tab: one trusted press, six
+     checked sections, section 1 verified, sections 2 and 3 refused with
+     fresh-trusted-click-required (MLS Assist consumes the arm on the first
+     execute), section 4 then sat on "checking Athena" past three minutes. TWO
+     things changed in this region and nothing else: the queue is handed the
+     rows THIS PRESS AUTHORIZED (wfnextQueueRows - the whole remaining list on a
+     batch-arm extension, exactly one section on any older one, which is also
+     what stops a section being probed before the doctor has pressed for it),
+     and the read-only stage retries ONCE inside the same run before settling
+     the section in words that name his next move. Every gate, latch, bound,
+     token, payload and receipt path in it is untouched: same probeUnifiedRow,
+     same executeUnifiedSelection, same 150s / 180s ceilings, same
+     halt-on-uncertain, same verified-only counting. Regions 1-4, 6 and 7 did
+     not move, which is the check that this was a sequencing change and not a
+     write-path change. Proven in tests/write-next-press-proof.js. */
   ['batch queue (runUnifiedBatchSend: per-row probe/execute/receipt sequencing)',
     '  function runUnifiedBatchSend(state, btn) {', '  function reopenOptions(opts, manifest) {',
-    '3f5ada09757e4af01242ff084249ee5b6264b933cd39565d65496a10a73bf7c9'],
+    '44e41349ee1d1009cb29f74f1a484a9b70e9c6fc8f29a56017c74c207b98a0ab'],
   ['closed allowlist ATHENA_EXECUTABLE_ACTIONS', '  var ATHENA_EXECUTABLE_ACTIONS = ', '\n',
     '5f712227078089f313988b254825795ed695d22fa6393e5a3c635d92ebcbb6f2'],
   ['closed allowlist OPBATCH_ACTIONS', '  var OPBATCH_ACTIONS = ', '\n',

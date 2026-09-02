@@ -5998,6 +5998,128 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   };
 })();
 
+/* =============================================================================
+ * capsel-1.0.0 (b1192)  ->  window.__mlsCaptureSelection
+ * AN MLS-DRIVEN READ OR CAPTURE NEVER CHANGES THE DOCTOR'S ACTIVE PATIENT
+ * -----------------------------------------------------------------------------
+ * MEASURED live 2026-09-01 23:0x on the owner's tab (b1191): while the durable
+ * August month pull was running, the ACTIVE PATIENT of the Visit screen moved
+ * off the chart the doctor had chosen and onto a row the capture itself had
+ * minted - one of the '_'+digits capture twins padoptIsDebrisId() knows about,
+ * carrying the assist-capture source. At that moment
+ * window.__mlsAthenaDrivenByMls() answered {driving:true, by:'day-pull'} and
+ * window.__mlsFollowGuard.stats showed ZERO Follow activity, so this is NOT the
+ * Follow module: residue-1.0.0 above already covers that one, and it was not
+ * even consulted. The writer is the capture's OWN adopt path - it makes the row
+ * it is importing "current" so its next step can find it, and the doctor's
+ * screen follows the import. Earlier the same evening the same class aborted a
+ * generation with "source-changed: the patient or visit source changed while
+ * MLS was generating"; to the owner it read as "the thing went away".
+ *
+ * THE RULE (capsel-1.0.0): an MLS-driven read or capture may create, merge and
+ * update patient rows, chart facts and visit records exactly as it does today.
+ * What it may not do is move the SELECTION. getActivePtId() comes out of every
+ * driven lane - day pull, month/range job, day-history pull, notes-idle
+ * catch-up, deferred round, drain, patient batch - exactly as it went in.
+ *
+ * The doctor's own picks still switch, and are not touched here: a roster
+ * click, the up-now "Switch" offer, search, a History reopen and the pull
+ * buttons all run with NOTHING driving, so laneFor() returns "" and every
+ * gated writer behaves exactly as it did before this block existed.
+ *
+ * A lane that legitimately needs the row "current" for its own bookkeeping is
+ * handed the row itself rather than the global selection -
+ * __mlsCopyVisits.run(onStatus, patientOverride) has always taken an explicit
+ * patient, and the bulk history lane below now passes it.
+ *
+ * TWO INDEPENDENT WAYS TO BE DRIVING, because either alone leaves a gap:
+ *   (1) the lane predicate window.__mlsAthenaDrivenByMls() (dnote-1.1.0) - the
+ *       ONE authoritative "is MLS driving athenaOne right now, and which lane";
+ *   (2) a capture-scoped flag a caller sets around its own adopt call
+ *       (begin/end/around), for an adopt that runs in the moments after its
+ *       lane has already released the athena reader.
+ *
+ * PHI-FREE: window.__mlsCaptureSelectionKept carries {count, lastLane, at} -
+ * a call-site name, a lane name and a count. Never a patient, name, DOB or id.
+ *
+ * Additive, and fail-open toward the doctor: with no engine loaded nothing is
+ * driving, so nothing is held. Revert: window.__mlsCaptureSelection.revert()
+ * ========================================================================== */
+(function () {
+  'use strict';
+  try { if (window.__mlsCaptureSelection && window.__mlsCaptureSelection.installed) return; } catch (eS0) { return; }
+  var VERSION = 'capsel-1.0.0';
+  var depth = 0, scopeLane = '';
+  try { window.__mlsCaptureSelectionKept = { count: 0, lastLane: '', at: 0 }; } catch (eS1) {}
+  function drivingBy() {
+    try {
+      var fn = window.__mlsAthenaDrivenByMls;
+      var r = (typeof fn === 'function') ? fn() : null;
+      return (r && r.driving === true) ? String(r.by || 'mls') : '';
+    } catch (eS2) { return ''; }
+  }
+  /* "" means the doctor is in charge and the writer may switch as before.
+     Otherwise "<call site>:<lane>" - what is held, and who was driving.
+
+     scopedOnly is the difference between a writer that ONLY a driven lane can
+     reach and a writer a human can also press, and it was MEASURED, not
+     guessed: with the ambient predicate on the pull button's landing,
+     tests/1p-pull-one-owner-contract.test.js went red because a background
+     visits-backfill was running while the doctor pressed. "Some lane is busy"
+     is true and irrelevant there; the question a SHARED writer must ask is
+     "did MLS initiate THIS call", and only an explicit capture scope can
+     answer it. Lane-private code - code no human press can reach - asks the
+     ambient question, because for it the two questions are the same. */
+  function laneFor(hint, scopedOnly) {
+    var site = String(hint == null ? '' : hint).slice(0, 40) || 'capture';
+    if (depth > 0) return site + ':' + (scopeLane || 'capture-scope');
+    if (scopedOnly === true) return '';
+    var by = drivingBy();
+    return by ? (site + ':' + by) : '';
+  }
+  function keep(hint, scopedOnly) {
+    var who = laneFor(hint, scopedOnly);
+    if (!who) return false;
+    try {
+      var k = window.__mlsCaptureSelectionKept;
+      if (!k || typeof k !== 'object') { k = { count: 0, lastLane: '', at: 0 }; window.__mlsCaptureSelectionKept = k; }
+      k.count = Number(k.count || 0) + 1;
+      k.lastLane = who;
+      k.at = Date.now();
+    } catch (eS3) {}
+    return true;
+  }
+  function begin(name) {
+    depth++;
+    if (depth === 1) scopeLane = String(name == null ? '' : name).slice(0, 40) || 'capture-scope';
+    return true;
+  }
+  function end() { if (depth > 0) depth--; if (depth === 0) scopeLane = ''; return true; }
+  function around(name, fn) {
+    begin(name);
+    try { return (typeof fn === 'function') ? fn() : undefined; }
+    finally { end(); }
+  }
+  window.__mlsCaptureSelectionKeep = keep;
+  window.__mlsCaptureSelection = {
+    installed: true, version: VERSION,
+    keep: keep, begin: begin, end: end, around: around,
+    drivingBy: drivingBy, laneFor: laneFor,
+    scoped: function () { return depth > 0; },
+    receipt: function () {
+      var k = null;
+      try { k = window.__mlsCaptureSelectionKept; } catch (eS4) { k = null; }
+      return { version: VERSION, drivingNow: drivingBy(), scoped: depth > 0,
+        count: Number((k && k.count) || 0), lastLane: String((k && k.lastLane) || ''),
+        at: Number((k && k.at) || 0) };
+    },
+    revert: function () {
+      try { delete window.__mlsCaptureSelectionKeep; } catch (eS5) {}
+      try { delete window.__mlsCaptureSelection; } catch (eS6) {}
+    }
+  };
+})();
+
 /* feat_study_builder_v2.js  ->  window.__mlsStudyBuilderV2   (Run-a-Study: more
  * filters + richer reports)
  * ==========================================================================
@@ -14851,6 +14973,15 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var api = { version: '3.7.0', seen: {}, stamped: 0, guards: 0, hygiene: { installed: false, openDropped: 0, provDropped: 0, dobsAttached: 0 }, backfill: { runs: 0, apptDobs: 0, patientDobs: 0, conflicts: 0, lastReplyRows: 0, lastReplyWithDob: 0 } };
   window.__mlsImportChainFix = api;
   var MARKS = ['__b49', '__provWrap', '__prf'];
+  /* capsel-1.0.0: the shared guard block above owns the one answer. This local
+     reader prefers it and falls back to the lane predicate itself, so the rule
+     still holds on a page where the guard has not evaluated yet. */
+  function capselKeep(site, scopedOnly) {
+    try { if (typeof window.__mlsCaptureSelectionKeep === 'function') return window.__mlsCaptureSelectionKeep(site, scopedOnly) === true; } catch (eK1) {}
+    if (scopedOnly === true) return false;
+    try { var f = window.__mlsAthenaDrivenByMls, r = (typeof f === 'function') ? f() : null; return !!(r && r.driving === true); } catch (eK2) {}
+    return false;
+  }
 
   /* ---------------- PART 1: marker unification ---------------- */
   function guard() {
@@ -15431,15 +15562,26 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
            needs the chart's Encounters/Visits view to be readable — when it
            is not (briefing view), it refuses honestly and we move on. */
         if (!ok || !window.__mlsCopyVisits || typeof window.__mlsCopyVisits.run !== 'function') { setTimeout(next, 2500); return; }
+        /* capsel-1.0.0 (b1192): THE ROW TRAVELS, THE SELECTION STAYS.
+           This loop IS an MLS-driven lane - a whole day or month of charts,
+           opened one after another with nobody watching - so it may not move
+           the doctor's active patient onto the row it happens to be importing.
+           The visit walk never needed the selection: __mlsCopyVisits.run's
+           second argument is an explicit patientOverride, and everything below
+           it works off that row's own frozen target snapshot. So the row goes
+           in as an argument (bulkRow) and the selection is left alone unless
+           the doctor is the one driving, in which case nothing has changed. */
+        var bulkRow = null;
         try {
           var ps2 = (typeof window.getPatients === 'function') ? (window.getPatients() || []) : [],p2 = null;
           for (var j = 0; j < ps2.length; j++) { if (ps2[j] && String(ps2[j].id||'')===String(target.patientId)) { p2 = ps2[j]; break; } }
-          if (p2 && typeof window.selectPatient === 'function') window.selectPatient(p2.id);
+          bulkRow = p2;
+          if (p2 && typeof window.selectPatient === 'function' && !capselKeep('bulk-history-adopt')) window.selectPatient(p2.id);
         } catch (e) {}
         var moved = false;
         var proceed = function () { if (!moved) { moved = true; setTimeout(next, 2500); } };
         try {
-          Promise.resolve(window.__mlsCopyVisits.run(function () {})).then(function (r) {
+          Promise.resolve(window.__mlsCopyVisits.run(function () {}, bulkRow || undefined)).then(function (r) {
             if (r && (r.saved || (r.visits && r.visits.length))) { BULK.visits = (BULK.visits || 0) + (r.saved || r.visits.length); }
             proceed();
           }, proceed);

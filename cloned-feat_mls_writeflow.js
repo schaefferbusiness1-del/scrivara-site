@@ -1708,6 +1708,13 @@
         ticks[i].style.display = (rowId && ticks[i].getAttribute('data-mls-ready-tick') === rowId) ? 'inline-block' : 'none';
       }
     } catch (e) {}
+    /* wfnext-1.0.0: this is the moment the probe ladder finished re-labelling
+       the primary button ("Confirm & Send to Athena") and the moment an execute
+       stripped it again - the only two moments the doctor's next press changes
+       meaning. Repaint the N-of-M label and the batch list from here so the
+       pinned probe and execute paths need not know this module exists. It
+       paints; it enables nothing. */
+    try { if (unifiedAthenaState) wfnextPaintPrimary(unifiedAthenaState); } catch (eNext) {}
   }
   function disableUnifiedGo() {
     var go = document.getElementById('mlsAthenaUnifiedGo'); if (!go) return;
@@ -1871,7 +1878,16 @@
      short sentence under it gains "...and MLS is re-checking by itself". */
   function sheetclarState(state, kind) {
     var out = sheetclarStateBase(state, kind);
-    if (!out || WFAUTO_SKIP_LABELS[out.label] === 1) return out;
+    if (!out) return out;
+    /* wfnext-1.0.0: whatever the word is, the doctor is told in one sentence
+       what HIS next press does and that nothing runs until he makes it. The
+       WORD is untouched - it is decided by the sheet's own gates, and nothing
+       weaker than a bound validated probe may ever paint READY - so a sheet
+       part-way through a run reads PARTLY DONE with the next press named under
+       it, rather than claiming a readiness it has not re-earned. */
+    var nextNote = ''; try { nextNote = wfnextNote(state); } catch (eNext) {}
+    if (nextNote) out = { label: out.label, color: out.color, short: out.short + nextNote };
+    if (WFAUTO_SKIP_LABELS[out.label] === 1) return out;
     var note = ''; try { note = wfautoNote(state); } catch (e) {}
     return note ? { label: out.label, color: out.color, short: out.short + note } : out;
   }
@@ -2004,6 +2020,10 @@
     /* sheetux-1.0.0: a settled refusal is also the moment the merged primary
        button becomes the doctor's next move again. */
     try { unifiedSyncPrimaryButton(state); } catch (eSync) {}
+    /* wfnext-1.0.0: ...and the moment to say which section that press is for.
+       Label and up-front sentence only - a refused sheet is left carrying no
+       action binding on Confirm, exactly as it was. */
+    try { wfnextPaintPrimary(state, false); } catch (eNext) {}
     /* wfauto-1.0.0: ...and it is the exact moment the AUTOMATIC cycle stopped.
        If the evidence says the surface is simply not ready YET, keep pressing
        this same read-only re-check on a bounded backoff instead of waiting for
@@ -2067,6 +2087,232 @@
       wfdxOpenEncounter(state, rowId, btn, false);
     };
   }
+  /* ===== wfnext-1.0.0 (owner 2026-09-01 23:05, verbatim: "nothing here should
+     be blocked or manual or not attempted once its run") ====================
+
+     WHAT WAS MEASURED, 22:50-22:56, his own tab, b1191, Adam #7833832,
+     encounter 08-31. Six sections checked, state READY, ONE trusted press of
+     Confirm & Send. Section 1 (reviewed HPI) wrote and read back - VERIFIED.
+     Sections 2 and 3 came back "Click the matching Athena action button again
+     before continuing". Section 4 then sat on "checking Athena" with the pill
+     on SENDING for more than three minutes, footer offering only "Close review"
+     and a dead "Done". Final line: 1 written, 2 not sent, 3 still to go.
+
+     WHY, EXACTLY. The queue was never the problem - it faithfully ran six
+     probe/execute pairs. MLS Assist mints the write authorization from ONE
+     trusted click and CONSUMES IT ON THE FIRST EXECUTE (content.js: the arm is
+     reset to empty the moment a mutation uses it) and it expires 20 seconds
+     later anyway. So one press could only ever authorize one write, and the
+     other five were refused by the safety gate doing exactly its job. Nothing
+     here weakens that gate. It gives the gate the authorization it asks for.
+
+     TWO LANES, CHOSEN BY WHAT THE INSTALLED EXTENSION SAYS IT CAN DO.
+
+       batchArm (MLS Assist 3.0.108+, whose pong carries batchArm / the
+         batchArmV1 capability): the SAME trusted click may mint a BATCH
+         authorization inside the extension - an ordered list of preview
+         hashes, one per checked section, whose first entry must equal the
+         button's own data-mls-preview-hash, consumed one item per successful
+         execute and cleared when the list is spent or after ten minutes. This
+         module's entire job on that lane is to put that list on the button
+         BEFORE the click, so the press the doctor makes is the press that
+         authorizes the run. One press, N sections, each still read back.
+
+       one-press-per-section (every older extension): the queue is handed
+         EXACTLY ONE section per press and re-arms for the next. A section
+         nobody has pressed for is not probed, not attempted, and is never
+         called blocked - it is simply next. That is the whole of the owner's
+         sentence on an extension that cannot do better.
+
+     WHAT THIS MODULE MAY NEVER DO, and does not. It never enables Confirm -
+     unifiedPrimaryPlan and unifiedSyncPrimaryButton still decide that, byte for
+     byte. It never mints a token, never probes, never navigates, never writes,
+     and never touches the app-side execute gate: executeUnifiedSelection still
+     refuses anything not bound to a fresh validated probe for that exact row,
+     row hash and manifest hash, so painting an attribute on a button cannot
+     make MLS write anything. Sign & Save, orders and billing carry no include
+     control at all (bx-1.0.0 law), can never be on the list, and the extension
+     refuses a batch arm for them a second time on its own side. */
+  var WFNEXT_MAX_BATCH = 24;      /* the extension's own ceiling (batcharm-1.0.0) */
+  /* NEVER HANG, AND NEVER LIE ABOUT WHY. One extra read-only attempt inside the
+     same run, then the section settles in words that name the doctor's next
+     move instead of an internal bound. Same 150s / 180s ceilings as before. */
+  var WFNEXT_CHECK_TRIES = 2;
+  var WFNEXT_CHECK_TIMEOUT_MSG = 'One section did not answer in time, twice - press Confirm again to retry it. Nothing was written for it.';
+  var WFNEXT_WRITE_TIMEOUT_MSG = 'One write did not answer in time and left no receipt - look at that exact Athena field before you press again for it.';
+  var wfnextBatchArmSeen = false;
+  /* READ-ONLY CAPABILITY DETECTION. The extension pongs on its own heartbeat,
+     so listening costs nothing and no new traffic; the one ping below only
+     shortens the wait on a sheet opened between beats. */
+  function wfnextReadPong(d) {
+    try {
+      if (!d || d.source !== 'mls-ext' || d.type !== 'mlsPong') return false;
+      if (S(d.batchArm).trim() || (d.capabilities && d.capabilities.batchArmV1 === true)) { wfnextBatchArmSeen = true; return true; }
+    } catch (e) {}
+    return false;
+  }
+  try { window.addEventListener('message', function (ev) { wfnextReadPong(ev && ev.data); }, false); } catch (eWfnextWire) {}
+  function wfnextBatchArmReady() {
+    if (wfnextBatchArmSeen) return true;
+    try { if (window.__mlsExtensionCapabilities && window.__mlsExtensionCapabilities.batchArmV1 === true) return true; } catch (e) {}
+    return false;
+  }
+  function wfnextAskCapability(state) {
+    if (wfnextBatchArmSeen) return;
+    try {
+      bridge('mlsPing', null, 'mlsPong', 3500).then(function (pong) {
+        if (!wfnextReadPong(pong)) return;
+        try { if (state && !state.closed && unifiedAthenaState === state) wfnextPaintPrimary(state); } catch (e) {}
+      });
+    } catch (e2) {}
+  }
+  /* The doctor's own words for one section, taken from the row label the sheet
+     already shows him: "Write reviewed Review of Systems" -> "Review of
+     Systems". Never invented, never translated. */
+  function wfnextShortName(row) {
+    var s = S(row && row.label).trim().replace(/^Write\s+reviewed\s+/i, '').replace(/^Write\s+/i, '');
+    return s || 'this section';
+  }
+  function wfnextCheckedRows(state) {
+    try { return bxCheckedRows(state) || []; } catch (e) { return []; }
+  }
+  /* THE ORDER THE QUEUE WILL RUN. Manifest order for the checked note sections;
+     a Save-draft row sorts last because a draft save is only ever meaningful
+     after the text is in - though bx-1.0.0 law gives Save no include control at
+     all, so on today's sheet the list is note sections and nothing else. A row
+     whose own receipt already says verified is finished and is not on it. */
+  function wfnextRemainingRows(state) {
+    var rows = wfnextCheckedRows(state), notes = [], drafts = [];
+    for (var i = 0; i < rows.length; i++) {
+      var rec = state.receipts[rows[i].id];
+      if (rec && rec.status === 'verified') continue;
+      if (rows[i].action === 'save_draft') drafts.push(rows[i]); else notes.push(rows[i]);
+    }
+    return notes.concat(drafts);
+  }
+  function wfnextLandedCount(state) {
+    return wfnextCheckedRows(state).length - wfnextRemainingRows(state).length;
+  }
+  /* THE ROWS THIS ONE PRESS AUTHORIZES - the whole contract, in one function.
+     With a batch-arm extension the press authorized the remaining list; with
+     any older one it authorized exactly one section, so the queue is given
+     exactly one. That is also precisely why nothing is probed for a section
+     nobody has pressed for: the queue never sees it. */
+  function wfnextQueueRows(state) {
+    var remaining = wfnextRemainingRows(state);
+    if (!remaining.length) return [];
+    if (wfnextBatchArmReady() && remaining.length > 1) return remaining.slice(0, WFNEXT_MAX_BATCH);
+    return [remaining[0]];
+  }
+  function wfnextButtonLabel(state) {
+    var total = wfnextCheckedRows(state).length, remaining = wfnextRemainingRows(state);
+    if (!total || !remaining.length) return '';
+    var next = remaining[0];
+    if (wfnextBatchArmReady() && remaining.length > 1) {
+      return 'Confirm & write all ' + remaining.length + ', starting with ' + wfnextShortName(next);
+    }
+    if (total === 1) return 'Confirm & write: ' + wfnextShortName(next);
+    return 'Confirm & write ' + ((total - remaining.length) + 1) + ' of ' + total + ': ' + wfnextShortName(next);
+  }
+  /* THE SENTENCE THE DOCTOR READS BEFORE HE PRESSES ANYTHING. It says how many
+     presses this will cost him, in plain words, before the first one. */
+  function wfnextUpfrontText(state) {
+    var total = wfnextCheckedRows(state).length, remaining = wfnextRemainingRows(state), landed = total - remaining.length;
+    if (!total) return '';
+    if (!remaining.length) return 'All ' + total + ' checked section' + (total === 1 ? ' is' : 's are') + ' in Athena and verified. Save and Sign stay yours in athenaOne.';
+    if (total === 1) return 'One section checked - one press writes it, and MLS reads it back before it says so.';
+    if (wfnextBatchArmReady()) {
+      return total + ' sections checked - one press writes all ' + total + ', one at a time, each read back before the next.' +
+        (landed ? (' ' + landed + ' already landed; this press writes the remaining ' + remaining.length + '.') : '');
+    }
+    return total + ' sections checked - each needs its own Confirm press; MLS writes them one at a time and asks you before each.' +
+      (landed ? (' ' + landed + ' of ' + total + ' already landed.') : '');
+  }
+  /* Appended to the state pill's own short sentence, never replacing it and
+     never replacing the WORD - the word is decided by the sheet's own gates and
+     "nothing weaker may ever paint READY". This only names the next press. */
+  function wfnextNote(state) {
+    try {
+      if (!state || state.closed || state.running || state.batchRunning) return '';
+      var total = wfnextCheckedRows(state).length, remaining = wfnextRemainingRows(state);
+      if (!total || !remaining.length || total === remaining.length) return '';
+      if (wfnextBatchArmReady() && remaining.length > 1) return ' One more press writes the remaining ' + remaining.length + ', starting with ' + wfnextShortName(remaining[0]) + '.';
+      return ' Press Confirm to write ' + ((total - remaining.length) + 1) + ' of ' + total + ': ' + wfnextShortName(remaining[0]) + '. Nothing runs for it until you do.';
+    } catch (e) { return ''; }
+  }
+  function wfnextUpfrontHost() {
+    try { return document.querySelector('[data-mls-next-plan="1"]'); } catch (e) { return null; }
+  }
+  /* THE ONE PAINTER. Label, up-front sentence, and - only on a batch-arm
+     extension - the ordered hash list the extension reads inside the SAME
+     trusted click. It is called from the places that already re-sync the
+     primary button, so the attributes are on the button long before any click,
+     never set from a click handler. */
+  function wfnextPaintPrimary(state, armNext) {
+    var go = null;
+    try { go = document.getElementById('mlsAthenaUnifiedGo'); } catch (e) { return; }
+    if (!go || !state || state.closed || unifiedAthenaState !== state) return;
+    /* while a run is in flight the queue owns this button's N-of-M label */
+    if (state.running || state.batchRunning || state.generating) return;
+    var host = wfnextUpfrontHost();
+    if (host) { try { host.textContent = wfnextUpfrontText(state); } catch (eHost) {} }
+    var boxes = [];
+    try { boxes = bxCheckBoxes(); } catch (eBoxes) { boxes = []; }
+    /* a sheet with no include controls is the legacy one-row lane - untouched */
+    if (!boxes.length) { wfnextClearBatchAttrs(go); return; }
+    var remaining = wfnextRemainingRows(state);
+    var label = wfnextButtonLabel(state);
+    if (label) { try { go.textContent = label; } catch (eLabel) {} }
+    /* RE-ARM THE EXTENSION'S OWN BINDING FOR THE NEXT PRESS - and ONLY at the
+       one moment that is honest, which is the end of a run that actually wrote
+       something. executeUnifiedSelection strips these after a write, and the
+       next press needs them on the button at click time or MLS Assist mints no
+       authorization at all; but a REFUSED sheet must be left carrying no action
+       binding whatsoever (write-auto-chain and sheet-clarity both pin that, and
+       they are right), so every other caller paints the label and the list and
+       nothing else. Even here it is safe by construction: the app-side gate is
+       state.probe, which is null, so the queue's own execute still refuses
+       until its read-only check has run and bound this exact row - an attribute
+       on a button cannot write anything. */
+    var next = (armNext === true && wfnextLandedCount(state) > 0) ? (remaining[0] || null) : null;
+    if (next && !go.getAttribute('data-mls-primary-blocked') && ATHENA_EXECUTABLE_ACTIONS[next.action] && UNIFIED_ARIA[next.action]) {
+      try {
+        go.setAttribute('data-mls-athena-action', next.action);
+        go.setAttribute('data-mls-preview-hash', state.manifest.previewHash);
+        go.setAttribute('aria-label', UNIFIED_ARIA[next.action]);
+      } catch (eArm) {}
+    }
+    wfnextPaintBatchAttrs(state, go, remaining);
+  }
+  function wfnextClearBatchAttrs(go) {
+    try { go.removeAttribute('data-mls-batch-count'); go.removeAttribute('data-mls-batch-hashes'); } catch (e) {}
+  }
+  /* THE LIST, and the exact shape MLS Assist 3.0.108 will accept: 2..24
+     entries, one per section this press will run, in the order the queue will
+     run them, whose FIRST entry is the button's own data-mls-preview-hash.
+     Every execute this sheet sends carries state.manifest.previewHash - one
+     review, one preview - so the honest list is that hash once per section, and
+     the COUNT is what actually bounds the authorization. Anything else, and the
+     extension keeps its single-use 20-second arm. */
+  function wfnextPaintBatchAttrs(state, go, remaining) {
+    if (!wfnextBatchArmReady() || !remaining || remaining.length < 2) { wfnextClearBatchAttrs(go); return; }
+    var hash = S(state.manifest && state.manifest.previewHash).trim();
+    var armed = '';
+    try { armed = S(go.getAttribute('data-mls-preview-hash')).trim(); } catch (eRead) { armed = ''; }
+    /* the extension requires hashes[0] === the button's own preview hash, and
+       the whole list is one review's hash - so if the button is not carrying
+       it, there is nothing honest to paint. */
+    if (!hash || hash.length < 8 || hash.indexOf(',') >= 0 || armed !== hash) { wfnextClearBatchAttrs(go); return; }
+    var n = Math.min(remaining.length, WFNEXT_MAX_BATCH);
+    if (n < 2) { wfnextClearBatchAttrs(go); return; }
+    var list = [];
+    for (var i = 0; i < n; i++) list.push(hash);
+    try {
+      go.setAttribute('data-mls-batch-count', String(n));
+      go.setAttribute('data-mls-batch-hashes', list.join(','));
+    } catch (eSet) { wfnextClearBatchAttrs(go); }
+  }
+  /* ===== end wfnext-1.0.0 ================================================= */
   /* ===== wfauto-1.0.0 (owner 2026-08-31: "writes need to be even more
      seamless and work every time") ==========================================
      THE SEAM THIS CLOSES, MEASURED LIVE. When athenaOne sits on the dashboard
@@ -2983,6 +3229,19 @@
     }
     if (row.capability === 'manual') return { status: 'manual', message: row.reason };
     if (row.capability === 'blocked') return { status: 'blocked', message: row.reason };
+    /* wfnext-1.0.0 (owner 2026-09-01 23:05: "nothing here should be blocked or
+       manual or not attempted once its run"): a checked, READY section that MLS
+       has not been asked to write yet is not a failure and must never read like
+       one. It is simply the next thing the doctor's next press does - and this
+       renderer still decides nothing: it reads the checkbox and the receipts. */
+    if (row.capability === 'ready' && row.action) {
+      var stillChecked = false;
+      try {
+        var boxes = bxCheckBoxes();
+        for (var bi = 0; bi < boxes.length; bi++) { if (boxes[bi].checked && boxes[bi].getAttribute('data-mls-bx-row') === row.id) { stillChecked = true; break; } }
+      } catch (eBox) { stillChecked = false; }
+      if (stillChecked) return { status: 'waiting for your press', message: 'Checked and ready. Nothing has been attempted for this section - your next Confirm press writes it, and MLS reads it back before it says so.' };
+    }
     return { status: 'not attempted', message: 'Ready, but not attempted in this receipt.' };
   }
   function renderUnifiedReceipts(state) {
@@ -2996,7 +3255,7 @@
     var anyOutcome = Object.keys(state.receipts).length > 0 ||
       state.manifest.rows.some(function (row) { return !!sectionLedger[ledgerKey(state, row.id)]; });
     if (!anyOutcome) { host.innerHTML = ''; return; }
-    var colors = { verified: '#205c43', rehearsed: '#204034', uncertain: '#8b2525', blocked: '#8b2525', manual: '#6d5010', 'not attempted': '#52675c', 'already in Athena': '#205c43' };
+    var colors = { verified: '#205c43', rehearsed: '#204034', uncertain: '#8b2525', blocked: '#8b2525', manual: '#6d5010', 'not attempted': '#52675c', 'already in Athena': '#205c43', 'waiting for your press': '#52675c' };
     /* wfsum-1.0.0 completion banner: when every note-write row is in Athena
        (verified now, verified earlier, or its field already holds text), say so
        ONCE in green - the owner asked for one glanceable "everything is
@@ -3394,17 +3653,68 @@
      An uncertain outcome halts the manifest exactly as a manual run would.
      Waits are settle-latch driven (probeSettled) plus a hidden-safe sleep -
      never bare timers, because a backgrounded tab freezes those. */
+  /* wfnext-1.0.0 (owner 2026-09-01, MEASURED 22:50-22:56 on his own tab): the
+     six-section queue sat on "checking Athena" with the pill on SENDING for
+     MORE THAN THREE MINUTES against a 150-second read-only bound, and never
+     reported a timeout at all.
+
+     THIS FUNCTION IS WHY. bxSleep was hidden-safe only when the tab was ALREADY
+     hidden AT THE MOMENT IT WAS CALLED - the first line handed every other case
+     to a bare setTimeout for the WHOLE remaining wait. But the read-only probe
+     deliberately hides this tab (foregroundOk: MLS Assist brings athenaOne
+     forward to check), so the ordinary case is "visible when scheduled, hidden
+     a moment later", and Chrome then clamps that parked timer to its hidden-tab
+     budget - up to a minute for a 500ms poll. A bound is only ever CHECKED by a
+     poll, so bxWait's 150-second ceiling was observed as minutes.
+
+     Same wall clock, same numbers, no new budget: `at` is the deadline, and the
+     sleeper now FOLLOWS the tab instead of guessing at schedule time - a short
+     bare timer while visible (re-checking the clock, so a clamp can only cost
+     one tick), the MessageChannel pump the moment it goes hidden, and back
+     again on the next visibility change. It resolves exactly once, at or after
+     `at`, and it still opens no timer a hidden tab can bucket. */
+  var BXSLEEP_VISIBLE_TICK_MS = 250;
   function bxSleep(ms) {
     return new Promise(function (resolve) {
       var at = Date.now() + Math.max(0, Number(ms || 0));
-      if (typeof document === 'undefined' || !document.hidden) { setTimeout(resolve, Math.max(0, at - Date.now())); return; }
-      var ch = null; try { ch = new MessageChannel(); } catch (e) { ch = null; }
-      if (!ch) { setTimeout(resolve, Math.max(0, at - Date.now())); return; }
-      ch.port1.onmessage = function () {
-        if (Date.now() >= at || !document.hidden) { try { ch.port1.onmessage = null; ch.port1.close(); ch.port2.close(); } catch (e2) {} if (Date.now() >= at) { resolve(); } else { setTimeout(resolve, Math.max(0, at - Date.now())); } return; }
-        try { ch.port2.postMessage(0); } catch (e3) { setTimeout(resolve, Math.max(0, at - Date.now())); }
-      };
-      ch.port2.postMessage(0);
+      var done = false, timer = null, ch = null, onVis = null;
+      function hidden() { try { return typeof document !== 'undefined' && document.hidden === true; } catch (e) { return false; } }
+      function drop() {
+        if (timer) { try { clearTimeout(timer); } catch (e) {} timer = null; }
+        if (ch) { try { ch.port1.onmessage = null; ch.port1.close(); ch.port2.close(); } catch (e2) {} ch = null; }
+      }
+      function finish() {
+        if (done) return;
+        done = true; drop();
+        if (onVis) { try { document.removeEventListener('visibilitychange', onVis, false); } catch (e3) {} onVis = null; }
+        resolve();
+      }
+      function park(msLeft) { timer = setTimeout(function () { timer = null; arm(); }, Math.max(0, Math.min(BXSLEEP_VISIBLE_TICK_MS, msLeft))); }
+      /* HIDDEN: yield through a MessageChannel, which a hidden tab still
+         delivers, instead of handing the delay to a timer it may bucket. */
+      function pump() {
+        if (done) return;
+        if (Date.now() >= at) { finish(); return; }
+        if (!hidden()) { arm(); return; }
+        if (!ch) { try { ch = new MessageChannel(); } catch (e) { ch = null; } }
+        if (!ch) { park(at - Date.now()); return; }
+        ch.port1.onmessage = function () { pump(); };
+        try { ch.port2.postMessage(0); } catch (e2) { drop(); park(at - Date.now()); }
+      }
+      function arm() {
+        if (done) return;
+        drop();
+        if (Date.now() >= at) { finish(); return; }
+        if (hidden()) { pump(); return; }
+        park(at - Date.now());
+      }
+      try {
+        if (typeof document !== 'undefined' && document.addEventListener) {
+          onVis = function () { if (!done) arm(); };
+          document.addEventListener('visibilitychange', onVis, false);
+        }
+      } catch (eWatch) { onVis = null; }
+      arm();
     });
   }
   /* wfgen-1.0.0 (owner 2026-09-01: writing must "work for anybody and any
@@ -3534,6 +3844,10 @@
      READY over a dead button. It paints; it presses nothing. */
   function unifiedSyncFromIncludeCheckbox(state) {
     unifiedSyncPrimaryButton(state);
+    /* wfnext-1.0.0: the checked set IS the list this press authorizes, so the
+       button's "k of N" label and the extension's ordered hash list are both
+       re-painted here - synchronously, on the change, long before any click. */
+    try { wfnextPaintPrimary(state); } catch (eNext) {}
     try { paintSheetclarState(state, state && state.wfautoLastKind); } catch (e) {}
   }
   function runUnifiedPrimarySend(state, btn) {
@@ -3550,7 +3864,16 @@
   function runUnifiedBatchSend(state, btn) {
     if (!state || state.closed || state.running || state.generating || state.batchRunning) return;
     if (state.halted) { unifiedStatus(state, 'This review is halted on an uncertain outcome. Inspect Athena before anything else runs.', 'err'); return; }
-    var rows = bxCheckedRows(state);
+    /* wfnext-1.0.0 (owner 2026-09-01 23:05: "nothing here should be blocked or
+       manual or not attempted once its run"). THE ROWS THIS PRESS AUTHORIZED,
+       not "everything that is ticked". On an MLS Assist that can take a batch
+       authorization from one trusted click, that is the whole remaining list
+       and one press writes all of it. On any older extension the press
+       authorized exactly ONE write - the arm is consumed by the first execute -
+       so the queue is handed exactly one section, which is also why nothing is
+       ever probed for a section the doctor has not pressed for. The queue
+       itself, its gates, its latches and its bounds are unchanged. */
+    var rows = wfnextQueueRows(state);
     if (!rows.length) { unifiedStatus(state, 'Check at least one READY note section to include in the batch.', 'err'); return; }
     state.batchRunning = true;
     var restLabel = btn ? btn.textContent : '';
@@ -3570,6 +3893,13 @@
          is still checked - then the receipt render below gets the last word,
          because "Nothing left to send" outranks "some rows are checked". */
       try { unifiedSyncPrimaryButton(state); } catch (eSync) {}
+      /* wfnext-1.0.0: THE SHEET STAYS OPEN AND RE-ARMS. Whatever this press
+         settled, the button now names the doctor's NEXT press and the section
+         it is for, and the extension's binding for that section is back on it -
+         so a partly written note is finished from inside the same sheet, with
+         its receipt still accumulating above. Nothing is attempted for that
+         section until he presses. */
+      try { wfnextPaintPrimary(state, true); } catch (eNext) {}
       /* wfsum-1.0.0: re-render so the completion banner and footer relabel
          (Done / Nothing left to send) survive the label restore above. */
       try { renderUnifiedReceipts(state); } catch (eRR) {}
@@ -3579,20 +3909,44 @@
       if (state.halted) { stopMsg = 'Halted on an uncertain outcome - inspect Athena before retrying anything.'; finish(); return; }
       var row = rows[i];
       if (state.receipts[row.id] && state.receipts[row.id].status === 'verified') { okCount++; wfprogPhase(state, row.id, 'already'); step(i + 1); return; }
-      state.batchLabel = 'Checking ' + (i + 1) + ' of ' + rows.length;
-      if (btn) btn.textContent = state.batchLabel + '...';
-      wfprogPhase(state, row.id, 'check');
-      probeUnifiedRow(state, row.id);
-      bxWait(function () {
-        if (state.closed || unifiedAthenaState !== state) return true;
-        if (state.probe && state.probe.rowId === row.id) return true;
-        return state.probeSettled === state.probeGeneration && !state.probe;
-      }, 150000).then(function (settledInTime) {
-        if (state.closed || unifiedAthenaState !== state) { finish(); return; }
-        if (!(state.probe && state.probe.rowId === row.id)) {
+      /* wfnext-1.0.0: THE READ-ONLY STAGE IS BOUNDED, AND IT RETRIES ONCE.
+         Measured 2026-09-01 22:53: this stage ran past three minutes against a
+         150-second bound with the pill stuck on SENDING and no next step. The
+         bound was never the problem - the probe ladder restarts its own
+         generation on every auto-open hop, so neither settle latch can fire and
+         the queue can only end the stage by burning the whole ceiling, which a
+         hidden tab was then stretching further still (see bxSleep). The bound,
+         the latches and the ladder are all unchanged. What is new: a stage that
+         runs out gets ONE more read-only attempt inside this same run, and if
+         that one runs out too the section settles in the doctor's own words -
+         it did not answer in time, press again - instead of the queue sitting
+         on it. Nothing is written by either attempt; this is the read-only
+         check, and the write below still needs its own bound receipt. */
+      function checkStage(attempt) {
+        state.batchLabel = 'Checking ' + (i + 1) + ' of ' + rows.length + (attempt > 1 ? ' (2nd try)' : '');
+        if (btn) btn.textContent = state.batchLabel + '...';
+        wfprogPhase(state, row.id, 'check');
+        probeUnifiedRow(state, row.id);
+        return bxWait(function () {
+          if (state.closed || unifiedAthenaState !== state) return true;
+          if (state.probe && state.probe.rowId === row.id) return true;
+          return state.probeSettled === state.probeGeneration && !state.probe;
+        }, 150000).then(function (settledInTime) {
+          if (state.closed || unifiedAthenaState !== state) return 'gone';
+          if (state.probe && state.probe.rowId === row.id) return 'ready';
+          /* a SETTLED refusal already carries its own honest reason on screen -
+             repeating it would only say the same thing twice. Only a stage that
+             ran out its bound is worth one more read-only try. */
+          if (settledInTime === false && attempt < WFNEXT_CHECK_TRIES && !state.halted) return checkStage(attempt + 1);
+          return settledInTime === false ? 'timeout' : 'refused';
+        });
+      }
+      checkStage(1).then(function (checkOutcome) {
+        if (checkOutcome === 'gone') { finish(); return; }
+        if (checkOutcome !== 'ready') {
           /* wfprog-1.0.0: a queue step is BOUNDED, and a step that ran out its
              bound says so rather than looking like an ordinary refusal. */
-          if (settledInTime === false) { stopMsg = 'One step ran past its 150-second read-only check bound and was left alone.'; wfprogPhase(state, row.id, 'timeout'); }
+          if (checkOutcome === 'timeout') { stopMsg = WFNEXT_CHECK_TIMEOUT_MSG; wfprogPhase(state, row.id, 'timeout'); }
           else wfprogPhase(state, row.id, 'refused');
           skipped.push(row.label); step(i + 1); return;
         }
@@ -3607,7 +3961,7 @@
           var rec = state.receipts[row.id];
           if (rec && rec.status === 'verified') okCount++;
           else if (!rec || rec.status !== 'rehearsed') skipped.push(row.label);
-          if (!rec && wroteInTime === false) { stopMsg = 'One write ran past its 180-second bound with no receipt - inspect that exact Athena field before retrying it.'; wfprogPhase(state, row.id, 'timeout'); }
+          if (!rec && wroteInTime === false) { stopMsg = WFNEXT_WRITE_TIMEOUT_MSG; wfprogPhase(state, row.id, 'timeout'); }
           step(i + 1);
         });
       });
@@ -4625,6 +4979,12 @@
     if (readyRows.length) {
       rowsHtml += '<div data-mls-sections-head="1" style="margin-top:14px;font-size:12.5px;font-weight:850;color:#204034">Sections to write' +
         (readyRows.length > 1 ? (' (' + readyRows.length + ')') : '') + '</div>';
+      /* wfnext-1.0.0 (owner 2026-09-01): HOW MANY PRESSES THIS WILL COST, SAID
+         BEFORE THE FIRST ONE. Empty in the markup and filled by
+         wfnextPaintPrimary from the checked set, so it can never disagree with
+         the button underneath it or promise a batch an older extension cannot
+         honour. */
+      rowsHtml += '<div data-mls-next-plan="1" style="margin-top:4px;font-size:12px;color:#385b49"></div>';
     }
     if (readyRows.length > 1) {
       rowsHtml += '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap" role="radiogroup" aria-label="What MLS sends">' +
@@ -4883,6 +5243,13 @@
        probe's own disable and "Nothing left to send" both still get the last
        word over it. */
     try { unifiedSyncPrimaryButton(state); } catch (eSync0) {}
+    /* wfnext-1.0.0: ask the installed extension, read-only, whether it can take
+       a batch authorization from one trusted click, and paint the up-front
+       sentence and the button label from the answer. Until it answers, the
+       sheet promises only what an older extension can keep: one press per
+       section. */
+    try { wfnextAskCapability(state); } catch (eNext0) {}
+    try { wfnextPaintPrimary(state); } catch (eNext1) {}
     renderUnifiedReceipts(state);
     if (chosen) {
       for (var ri = 0; ri < radios.length; ri++) if (radios[ri].value === chosen.id) radios[ri].checked = true;
@@ -7405,6 +7772,19 @@
       sheetUx: { v: 'sheetux-1.0.0', zeroReason: SHEETUX_ZERO_REASON, doItLabel: SHEETUX_DOIT_LABEL,
         plan: unifiedPrimaryPlan, sync: unifiedSyncPrimaryButton, checkedRows: bxCheckedRows,
         press: function (btn) { return runUnifiedPrimarySend(unifiedAthenaState, btn || null); } },
+      /* wfnext-1.0.0 read-only seam: which rows THIS press authorizes, the
+         label and up-front sentence derived from them, and the two timeout
+         sentences. Every one of these is a pure read of the checked set and the
+         receipts - nothing here can send, arm, enable a control, probe, or
+         change a verdict. Proven in tests/write-next-press-proof.js. */
+      wfnext: { v: 'wfnext-1.0.0', maxBatch: WFNEXT_MAX_BATCH, checkTries: WFNEXT_CHECK_TRIES,
+        checkTimeoutMsg: WFNEXT_CHECK_TIMEOUT_MSG, writeTimeoutMsg: WFNEXT_WRITE_TIMEOUT_MSG,
+        batchArmReady: wfnextBatchArmReady, shortName: wfnextShortName,
+        queueRows: function () { return unifiedAthenaState ? wfnextQueueRows(unifiedAthenaState) : []; },
+        remainingRows: function () { return unifiedAthenaState ? wfnextRemainingRows(unifiedAthenaState) : []; },
+        buttonLabel: function () { return unifiedAthenaState ? wfnextButtonLabel(unifiedAthenaState) : ''; },
+        upfrontText: function () { return unifiedAthenaState ? wfnextUpfrontText(unifiedAthenaState) : ''; },
+        note: function () { return unifiedAthenaState ? wfnextNote(unifiedAthenaState) : ''; } },
       /* sheetclar-1.0.0 read-only seam: the arrival default, the honest
          no-ready-section refusal, and the derived state word. Nothing here can
          send, enable a control, or change a verdict. */

@@ -247,11 +247,21 @@ function makeHarness(options) {
     return { ok: true, mode: 'probe', readOnly: true, action: m.action, actionToken: 'one-use-token',
       rowHash: m.rowHash, clientOrderId: m.clientOrderId || '', reason: 'context-verified', context: clone(CONTEXT) };
   }
+  function deliverRaw(message) {
+    Promise.resolve().then(() => listeners.slice().forEach(fn => fn({ data: message })));
+  }
   function route(m) {
     if (!m || m.source !== 'mls-app') return;
     if (m.type === 'mlsAppAthenaActionV2') return deliver('mlsAppAthenaActionV2Result', m.requestId, options.onAction ? options.onAction(m, defaultAction) : defaultAction(m));
     if (m.type === 'mlsAppSearchOpenPatient') return deliver('mlsAppSearchOpenResult', m.requestId, options.onOpen ? options.onOpen(m) : { ok: true, opened: true, via: 'appointment-id' });
     if (m.type === 'mlsAppGotoDate') return deliver('mlsAppGotoDateResult', m.requestId, options.onGoto ? options.onGoto(m) : { ok: true, supported: true, via: 'weekstrip', schedDate: m.date });
+    /* wfnext-1.0.0 (2026-09-01): the shim answers mlsPing the way the extension
+       really does - a TOP-LEVEL mlsPong with no resp wrapper - so the sheet can
+       feature-detect batchArm. MLS Assist 3.0.108+ mints a batch authorization
+       from ONE trusted click, which is the lane on which one press still writes
+       every checked section; the one-press-per-section lane an older extension
+       gets is proved in tests/write-next-press-proof.js. */
+    if (m.type === 'mlsPing') return deliverRaw({ source: 'mls-ext', type: 'mlsPong', requestId: m.requestId, version: '3.0.108', buildId: '3.0.108', batchArm: '1.0.0', capabilities: { supervisedOrderPlacementV2: true, destinationTeachingV2: true, athenaFinalActionsV1: true, phoneConfirmedWriteV1: true, batchArmV1: true } });
     if (m.type === 'mlsExtHealth') return deliver('mlsExtHealthResult', m.requestId, { ok: true, version: '3.0.84', versionName: '3.0.84+core-sha256:abc', athena: { tabs: 1, discarded: 0 } });
   }
 
