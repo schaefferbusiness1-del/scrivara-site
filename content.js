@@ -136,6 +136,20 @@
               rowHash: String(actionEl.getAttribute('data-mls-row-hash') || '').slice(0, 160),
               clientOrderId: String(actionEl.getAttribute('data-mls-client-order-id') || '').slice(0, 160)
             };
+            /* batcharm-1.0.0 (3.0.108, owner 2026-09-01: nothing blocked or not attempted once its run):
+               the same trusted click may authorize an ORDERED LIST of note sections. Only for the two
+               executable note actions, only when the list is well-formed and begins with this button's own
+               preview hash; otherwise the single-use 20 s arm above stands untouched. */
+            try {
+              if (/^(write_note|save_draft)$/.test(action)) {
+                var __bc = parseInt(String(actionEl.getAttribute('data-mls-batch-count') || ''), 10);
+                var __bh = String(actionEl.getAttribute('data-mls-batch-hashes') || '').split(',').map(function (h) { return String(h || '').trim().slice(0, 160); }).filter(function (h) { return h.length >= 8; });
+                if (__bc >= 2 && __bc <= 24 && __bh.length === __bc && __bh[0] === _mlsAthenaActionGesture.previewHash && !!_mlsAthenaActionGesture.previewHash) {
+                  _mlsAthenaActionGesture.batch = { hashes: __bh, count: __bc, idx: 0 };
+                  _mlsAthenaActionGesture.until = Date.now() + 600000;
+                }
+              }
+            } catch (eBatchArm) {}
           }
         } catch (e) {}
       }, true);
@@ -255,7 +269,7 @@
       reply({ source: 'mls-ext', type: 'mlsBridgeBlocked', requestId: mlsStr(d.requestId || d.id, 100), resp: { ok: false, blocked: true, reason: 'loopback-synthetic-only' } });
       return;
     }
-    if (d.type === 'mlsPing') { var __v = '', __b = ''; try { var __m = chrome.runtime.getManifest(); __v = __m.version || ''; __b = __m.version_name || __v; } catch (e) {} reply({ source: 'mls-ext', type: 'mlsPong', requestId: mlsStr(d.requestId || d.id, 100), version: __v, buildId: __b, capabilities: { supervisedOrderPlacementV2: true, destinationTeachingV2: true, athenaFinalActionsV1: true, phoneConfirmedWriteV1: true } }); return; }
+    if (d.type === 'mlsPing') { var __v = '', __b = ''; try { var __m = chrome.runtime.getManifest(); __v = __m.version || ''; __b = __m.version_name || __v; } catch (e) {} reply({ source: 'mls-ext', type: 'mlsPong', requestId: mlsStr(d.requestId || d.id, 100), version: __v, buildId: __b, capabilities: { supervisedOrderPlacementV2: true, destinationTeachingV2: true, athenaFinalActionsV1: true, phoneConfirmedWriteV1: true, batchArmV1: true }, batchArm: '1.0.0' }); return; }
     if (d.type === 'mlsExtHealth') { var __healthRequestId = mlsStr(d.requestId || d.id, 100); try { mlsRelayRetry({ type: 'mlsExtHealthRequest' }, function (resp) { var le = chrome.runtime.lastError; reply({ source: 'mls-ext', type: 'mlsExtHealthResult', requestId: __healthRequestId, resp: resp || { ok: false, reason: le ? 'worker-unreachable' : 'no-response' } }); }); } catch (e2) { reply({ source: 'mls-ext', type: 'mlsExtHealthResult', requestId: __healthRequestId, resp: { ok: false, reason: 'bridge-error' } }); } return; }
     if (d.type === 'mlsAppCapture') {
       try {
@@ -849,13 +863,23 @@
       if (mutating) {
         var arm = _mlsAthenaActionGesture || {};
         var armHashOk = !!arm.previewHash && !!previewHash && arm.previewHash === previewHash;
+        /* batcharm-1.0.0: a batch arm matches the NEXT hash on its ordered list; the action must stay in the
+           executable note family (write_note / save_draft) - a batch never covers sign, order or billing. */
+        var armBatch = (arm.batch && arm.batch.hashes && arm.batch.hashes.length === arm.batch.count && arm.batch.idx < arm.batch.count) ? arm.batch : null;
+        if (armBatch) armHashOk = !!previewHash && armBatch.hashes[armBatch.idx] === previewHash && /^(write_note|save_draft)$/.test(athAction) && /^(write_note|save_draft)$/.test(arm.action);
         var exactOrderArm = athAction !== 'place_order' || (!!orderRowHash && !!orderClientOrderId && arm.rowHash === orderRowHash && arm.clientOrderId === orderClientOrderId);
-        if (arm.action !== athAction || Date.now() > Number(arm.until || 0) || !armHashOk || !exactOrderArm || !arm.serial) {
+        if ((armBatch ? false : arm.action !== athAction) || Date.now() > Number(arm.until || 0) || !armHashOk || !exactOrderArm || !arm.serial) {
           reply({ source: 'mls-ext', type: 'mlsAppAthenaActionV2Result', requestId: mlsStr(d.requestId, 100), resp: { ok: false, blocked: true, reason: 'fresh-trusted-click-required', error: 'Click the matching Athena action button again before continuing.' } });
           return;
         }
-        gestureProof = arm.serial;
-        _mlsAthenaActionGesture = { action: '', until: 0, serial: '', previewHash: '', rowHash: '', clientOrderId: '' }; // consumed once
+        gestureProof = armBatch ? (arm.serial + ':' + armBatch.idx) : arm.serial;
+        if (armBatch) {
+          /* batcharm-1.0.0: one item consumed; the list clears itself when spent */
+          armBatch.idx += 1;
+          if (armBatch.idx >= armBatch.count) _mlsAthenaActionGesture = { action: '', until: 0, serial: '', previewHash: '', rowHash: '', clientOrderId: '' };
+        } else {
+          _mlsAthenaActionGesture = { action: '', until: 0, serial: '', previewHash: '', rowHash: '', clientOrderId: '' }; // consumed once
+        }
       }
       function safePatient(v) {
         v = (v && typeof v === 'object') ? v : {};

@@ -1,5 +1,5 @@
 {
-  "version": "3.0.107",
+  "version": "3.0.108",
   "minChrome": 116,
-  "notes": "v3.0.107 - Pull reliability: when athenaOne stops rendering its schedule mid-pull, the pull can now reload its own athena tab to the dashboard (the same-origin reload that was the only manual cure) instead of retrying a frozen page; the reload is still refused on a signed-out session, on any other site, and for anyone who does not own the pull. Everything from v3.0.106 remains. Requires Chrome 116+."
+  "notes": "v3.0.108 - Writes: one confirmed press now writes every checked note section, one at a time, each read back before the next. The exact confirm button carries the ordered list of section fingerprints, the extension authorizes that list from the same real click, and every write must match the next fingerprint on it; anything off the list, out of order, or after ten minutes is refused as before. Save and Sign remain your own clicks in athenaOne. Everything from v3.0.107 remains. Requires Chrome 116+."
 }
