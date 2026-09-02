@@ -90,6 +90,20 @@ const AUTOMATED_PROOF_FILES = new Set([
      app drives no navigation of its own; there is no app-reachable verb for
      the extension's Calendar restore. */
   'nav-home-proof.js',
+  /* surfnav-1.0.0 (owner-measured 2026-09-02 05:5x-06:1x, MLS Assist 3.0.107):
+     the durable month pull's date navigation failed nine times, and every
+     failing day was a day whose goto BEGAN while athenaOne was parked on its
+     DASHBOARD. The dashboard paints a .calendar-nav week strip that the
+     extension's date driver accepts as a date control, so the handler believed
+     it had found one and skipped the ONLY branch that runs the shipped
+     Calendar > View Calendar restore - then spent its whole selected-day
+     settle budget re-clicking a widget that cannot express a provider-scoped
+     day switch. scripts/splice-30110-surfnav.js has the frame stamp WHICH
+     surface it answered from and takes that restore once. This suite runs the
+     splice against a temp COPY of background.js, proves it is a pure two-span
+     insertion (so every deadline and the whole __gotoDeadline funnel are
+     byte-identical), and lifts the spliced decision block into a sandbox. */
+  'surfnav-splice-proof.js',
   /* retryvis-1.0.0 (owner-measured 2026-09-02 05:1x): the month card said
      "Finished, with days that still need attention - press Retry" while
      #ez3PullRetry computed display:none, because pCounts returns before it
@@ -1365,6 +1379,7 @@ const tests = [
   'pad-provider-proof.js',
   'attention-days-proof.js',
   'nav-home-proof.js',
+  'surfnav-splice-proof.js',
   'retry-visible-proof.js',
   'visit-template-scope-proof.js',
   'write-next-press-proof.js',

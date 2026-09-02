@@ -106,8 +106,21 @@ const ROOT = path.resolve(__dirname, '..');
        measurement, names the deadline stage its budget died in, spends
        exactly one READ-ONLY surface probe on that class and never a
        navigation of its own, and puts Calendar > View Calendar on the day
-       card and the durable month card. */
-const FULL_GATE_TESTS = 945;
+       card and the durable month card.
+       +1 (surfnav-splice-proof.js, surfnav-1.0.0, 2026-09-02 05:5x-06:1x) =
+       946 - the same nine failures, one layer down. Every failing day was a
+       day whose goto began while athenaOne was parked on its DASHBOARD, whose
+       .calendar-nav week strip the extension's date driver accepts as a date
+       control; the handler therefore believed it had found one and skipped the
+       ONLY branch that runs the shipped Calendar > View Calendar restore. This
+       suite runs scripts/splice-30110-surfnav.js against a temp COPY of
+       background.js, proves it is a pure two-span insertion (so every deadline
+       constant and the whole __gotoDeadline funnel are byte-identical), proves
+       the surface stamp cannot fire on a calendar or schedule frame, and lifts
+       the spliced decision block into a sandbox to prove the restore is taken
+       once for a dashboard control, never for a calendar one, and never twice
+       inside one request. */
+const FULL_GATE_TESTS = 946;
 const DEFAULT_BASE = 'origin/main';
 const DEFAULT_STEP_TIMEOUT_MS = 180000;
 const DEFAULT_TOTAL_TIMEOUT_MS = 300000;

@@ -215,19 +215,19 @@ include:
   - "mammoth.browser-1.12.0.min.js"
   - "jspdf.umd-4.2.1.min.js"
 
-  # The exact released MLS Assist 3.0.109 package (owner directive 2026-08-31).
-  # SHA-256 0143cfe4a03df869a3d0bff3511a7f57a9ca14b5093402d815bf27c5bb808551 —
+  # The exact released MLS Assist 3.0.110 package (owner directive 2026-08-31).
+  # SHA-256 f624bbc467b93db30d0a9553bf54df91b3db0edc6d4b40d1cf26fb30c90c90d4 —
   # deterministic ZIP and byte-identical .bin mirror. Candidate/historical
   # ZIPs remain excluded by the fail-closed patterns above.
-  - "MLS_Assist_v3.0.109.zip"
+  - "MLS_Assist_v3.0.110.zip"
   # Byte-identical mirror of the line above, under an extension no service
   # worker generation retires. A worker keeps controlling a tab until every tab
   # closes and this app's worker deliberately declines skipWaiting(), so an
   # already-installed worker answers the .zip with 410 no matter what we ship.
   # Measured: the worker did not roll across three production deploys. The .bin
   # is the only route that reaches those browsers; the button carries
-  # download="MLS_Assist_v3.0.109.zip" so the doctor still saves a .zip.
-  - "MLS_Assist_v3.0.109.bin"
+  # download="MLS_Assist_v3.0.110.zip" so the doctor still saves a .zip.
+  - "MLS_Assist_v3.0.110.bin"
 
   # Required for the existing branch-based custom-domain deployment.
   - "CNAME"

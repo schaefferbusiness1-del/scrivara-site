@@ -4856,6 +4856,18 @@ async function mlsAthenaGotoDate(target, probe, requestGuard) {
     function actionAllowed() { return !guarded || (!!guard.token && Number.isFinite(guard.deadline) && Date.now() < guard.deadline); }
     function deadlineStop() { out.done = false; out.reason = 'request-deadline-exceeded'; out.error = 'date navigation deadline exceeded'; return out; }
     if (!actionAllowed()) return deadlineStop();
+    /* surfnav-1.0.0 (3.0.110, measured live 2026-09-02): WHICH athenaOne surface
+       this control was found on. The dashboard paints a .calendar-nav week strip
+       that strategy 0 below accepts as a date control (see the v1.66 comment), so
+       a goto that begins on the dashboard answers found:true and its caller never
+       runs the Calendar > View Calendar restore that is the only thing that can
+       express a provider-scoped day switch. The caller cannot tell the surfaces
+       apart from the result - chrome.scripting gives it a frameId, never a URL -
+       so this frame stamps its own path here, as a CLOSED CODE and never as the
+       path itself. '' for every other surface, classic calendar frames included.
+       This is the first renderer read the driver makes, and it is deliberately
+       BELOW the deadline guard above: an expired injection touches nothing. */
+    try { out.surface = /\/ax\/dashboard(?:\/|$)/.test(String(location.pathname || '')) ? 'dashboard' : ''; } catch (eSurfNav) { out.surface = ''; }
     function visible(el) { try { var r = el.getBoundingClientRect(); return r.width > 2 && r.height > 2; } catch (e) { return false; } }
     function hdr() {
       var t = (document.body && document.body.innerText || '').slice(0, 8000);
@@ -7224,6 +7236,52 @@ var mlsProv = (function () {
             if (found) __gotoFoundFrame = __gotoFoundFrameOf(rx2);
             GDIAG.patientRetry = { ran: true, found: !!found, timeout: !!(rx2 && rx2.timeout) };
           } catch (ePr) { GDIAG.patientRetry = { ran: true, err: String((ePr && ePr.message) || ePr).slice(0, 60) }; }
+        }
+        /* ===== surfnav-1.0.0 (3.0.110) =====================================
+           A date control found on athenaOne's DASHBOARD is not the calendar's
+           date control. Measured 2026-09-02 05:5x-06:1x on the owner's practice
+           (3.0.107 loaded, site rebuilt three times): nine month-pull days died
+           at this request's deadline during the selected-day settle with no
+           diag, and every one of them was a day whose goto BEGAN on the
+           dashboard - which is the common case, because the schedule leg and
+           this ladder both navigate Home after the per-chart reads. The
+           dashboard's .calendar-nav week strip is accepted as strategy 0 by
+           mlsAthenaGotoDate (v1.66), so 'found' is truthy and the !found ladder
+           below - the ONLY place the shipped Calendar > View Calendar restore
+           runs - is skipped; the settle budget is then spent re-clicking a
+           widget that, per calmenu-1.0.0, cannot express a provider-scoped day
+           switch. Days whose goto began on Calendar > View Calendar landed in
+           seconds. So: take that same restore ONCE, here, before the found /
+           !found decision, and only for a control whose own frame said it is
+           the dashboard. Same __gotoExec / __gotoWait funnels, same deadline
+           stage names the ladder's calmenu leg already uses, same single picked
+           tab (no new tab query), same late-result discard. Only an
+           off-dashboard control replaces 'found'; if the restore does not
+           produce one, the original hit and every branch below stay exactly as
+           they are today. The leg will not start under 18s of remaining budget,
+           and it can never run twice in one request. */
+        if (found && found.surface === 'dashboard' && !GDIAG.surfaceRestored) {
+          GDIAG.surface = 'dashboard';
+          if (__gotoLeft() < 18000) { GDIAG.surfaceSkipped = 'budget'; }
+          else {
+            GDIAG.surfaceRestored = true; /* set BEFORE the attempt: one restore per request, even if it throws */
+            try {
+              const smo = await __gotoExec({ target: { tabId: tab.id, allFrames: true }, args: ['open'], func: mlsCalendarMenuFn }, Math.min(6000, __gotoLeft()), 'the Calendar menu');
+              GDIAG.surfaceMenu = ((smo && smo.r) || []).map((r) => r && r.result).filter(Boolean).some((h) => h && h.calendar);
+              if (GDIAG.surfaceMenu) {
+                if (!(await __gotoWait(900, 'the Calendar menu paint'))) { __gotoDeadline('the Calendar menu paint'); return; }
+                const smp = await __gotoExec({ target: { tabId: tab.id, allFrames: true }, args: ['pick'], func: mlsCalendarMenuFn }, Math.min(6000, __gotoLeft()), 'the View Calendar entry');
+                GDIAG.surfacePick = ((smp && smp.r) || []).map((r) => r && r.result).filter(Boolean).some((h) => h && h.viewCalendar);
+                if (GDIAG.surfacePick) {
+                  if (!(await __gotoWait(6500, 'the View Calendar settle'))) { __gotoDeadline('the View Calendar settle'); return; }
+                  const sgx = await __gotoExec({ target: { tabId: tab.id, allFrames: true }, args: [date, false, __gotoGuard], func: mlsAthenaGotoDate }, Math.min(16000, __gotoLeft()), 'date navigation');
+                  const sfr = ((sgx && sgx.r) || []).find((r) => r && r.result && r.result.found && r.result.surface !== 'dashboard');
+                  if (sfr) { found = sfr.result; __gotoFoundFrame = (sfr.frameId != null ? sfr.frameId : null); }
+                  GDIAG.surfaceFound = !!sfr;
+                }
+              }
+            } catch (eSurfNav) { GDIAG.surfaceErr = String((eSurfNav && eSurfNav.message) || eSurfNav).slice(0, 60); }
+          }
         }
 if (!found) {
           /* v1.91 (§2.7): NEVER ask the user to move athena by hand. Drive athena
