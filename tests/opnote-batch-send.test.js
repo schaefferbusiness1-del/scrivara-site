@@ -412,6 +412,32 @@ function makeHarness(options) {
   /* ---- the app's OWN saved-note hand-off, sliced out of the shipped twin --- */
   const shell = SHELL_SRC[options.shell || SHELLS[0]];
   const push = extractFunction(shell, 'function pushHistoryNoteToAthena(id)');
+  /* histrefuse-1.0.0 (b1189) gave pushHistoryNoteToAthena a shared refusal
+     recorder that lives ABOVE it in the same shell: every refusal branch calls
+     _mlsHistPushRefuse(id,message,cure), and the success branch - the one this
+     queue takes - calls _mlsHistRefusalClear(id) bare, immediately before
+     _athenaPushPlan. Neither was in this host, so the very first queued note
+     threw ReferenceError out of window.pushHistoryNoteToAthena and the queue
+     recorded all three as "MLS could not open the Athena review". The shipped
+     code is right (both are top-level declarations in the same shell script);
+     the HOST was missing half the entry point. Lift the real block - and the
+     esc() its row line escapes with - out of the SAME shell, never a stub: a
+     stub for the clear would let a batch pass while leaving every queued row's
+     stale refusal line on screen. */
+  const histRefuse = (function () {
+    const a = shell.indexOf('/* ===== histrefuse-1.0.0 begin');
+    const b = shell.indexOf('/* ===== histrefuse-1.0.0 end', a);
+    assert(a > 0 && b > a, (options.shell || SHELLS[0]) + ': the histrefuse-1.0.0 block moved or was removed');
+    return shell.slice(a, b);
+  })();
+  assert(histRefuse.indexOf('function _mlsHistPushRefuse(id,message,cure){') > 0 &&
+    histRefuse.indexOf('function _mlsHistRefusalClear(id){') > 0,
+    'the histrefuse-1.0.0 block no longer defines the recorder and the clear that pushHistoryNoteToAthena calls');
+  const escFn = (function () {
+    const a = shell.indexOf('\nfunction esc(s){');
+    assert(a > 0, 'the shell has no esc()');
+    return shell.slice(a + 1, shell.indexOf('\n', a + 1));
+  })();
   const pushPlan = extractFunction(shell, 'function _athenaPushPlan(sections, who, immutablePatient)');
   const showReceipt = extractFunction(shell, 'function _athenaShowReceipt(who, results, partial, immutablePatient, sections, visitContext)');
   const flow = window.__mlsWriteFlow;
@@ -448,8 +474,9 @@ function makeHarness(options) {
      so publish the two the queue's own pre-screen reads by name. */
   window.opNoteBlankTokens = context.opNoteBlankTokens;
   window._athenaBindingForSavedRecord = context._athenaBindingForSavedRecord;
-  vm.runInContext(showReceipt + '\n' + pushPlan + '\n' + push +
-    '\nwindow.pushHistoryNoteToAthena = pushHistoryNoteToAthena;', context, { filename: 'shell-saved-note-handoff.js' });
+  vm.runInContext(escFn + '\n' + histRefuse + '\n' + showReceipt + '\n' + pushPlan + '\n' + push +
+    '\nwindow.pushHistoryNoteToAthena = pushHistoryNoteToAthena;' +
+    '\nwindow.__histRefusalFor = _mlsHistRefusalFor;', context, { filename: 'shell-saved-note-handoff.js' });
 
   return {
     window, document: dom.document, el: dom.resolve, posted, toasts, records, clock, context,
@@ -729,7 +756,26 @@ async function runToEnd(h, cap) {
     eq(h.batch.matches(state, { patientId: 'syn-op-1', name: patientOf(1).name, body: 'a completely different body of text' }), false,
       'the queue would press a review that does not carry the note it queued');
     eq(h.batch.matches(null, { patientId: 'syn-op-1', name: patientOf(1).name, body: 'x' }), false, 'a closed review matched');
+    /* histrefuse-1.0.0 rides on this exact entry point, so it is measured on
+       the queue's own path rather than trusted: an open CLEARS the row's
+       stale refusal line, and a refusal WRITES one. If either were stubbed
+       away here, this suite would go green on an entry point it is not using. */
+    eq(h.window.__histRefusalFor('note-1'), null,
+      'the review opened but the note kept a stale refusal line on its History row');
     h.wf.closeUnifiedConfirmation();
+  }
+
+  /* ---- 7b. the same entry point, refusing ---------------------------------
+     A draft pressed through the queue's own verb must refuse, leave the
+     persistent per-note line b1189 added, and open nothing. */
+  {
+    const h = makeHarness({ count: 1, records: [{ isDraft: true }] });
+    h.window.pushHistoryNoteToAthena('note-1');
+    await settle(40);
+    eq(h.wf.diagnostics.state() ? true : false, false, 'a draft opened an Athena review through the queue\'s entry point');
+    const rec = h.window.__histRefusalFor('note-1');
+    ok(rec && /still a draft/i.test(String(rec.message || '')),
+      'the draft refusal left no persistent line on its History row: ' + JSON.stringify(rec));
   }
 
   /* ---- 8. the progress surface, and revert ------------------------------- */

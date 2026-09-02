@@ -90,6 +90,20 @@ function shellPlan(shell, flow, noteText) {
 function savedOpNotePlan(shell, flow, text) {
   const source = fs.readFileSync(path.join(root, shell), 'utf8');
   const route = extractFunction(source, 'function pushHistoryNoteToAthena(id)');
+  /* histrefuse-1.0.0 (b1189): every refusal branch of that route now calls the
+     shared _mlsHistPushRefuse, and its success branch calls
+     _mlsHistRefusalClear(id) bare just before _athenaPushPlan. Both are
+     top-level declarations in the SAME shell, above the route - so lift the
+     real block rather than stub it, or the route throws before it can hand
+     off and this suite measures nothing. */
+  const histRefuse = (function () {
+    const a = source.indexOf('/* ===== histrefuse-1.0.0 begin');
+    const b = source.indexOf('/* ===== histrefuse-1.0.0 end', a);
+    assert(a > 0 && b > a, shell + ': the histrefuse-1.0.0 block moved or was removed');
+    return source.slice(a, b);
+  })();
+  const escFn = source.slice(source.indexOf('\nfunction esc(s){') + 1,
+    source.indexOf('\n', source.indexOf('\nfunction esc(s){') + 1));
   let captured = null;
   const record = {
     id: 'saved-op-note', kind: 'opnote', isDraft: false,
@@ -112,10 +126,11 @@ function savedOpNotePlan(shell, flow, text) {
     },
     _athenaOrderReviewBundle: () => ({ drafts: [], suggestions: [] }),
     _athenaPushPlan: (plan, who, patient, visitContext) => { captured = { plan, who, patient, visitContext }; },
+    document: { getElementById() { return null; } },
     toast() {}
   };
   vm.createContext(context);
-  vm.runInContext(`${route}\npushHistoryNoteToAthena('saved-op-note');`, context);
+  vm.runInContext(`${escFn}\n${histRefuse}\n${route}\npushHistoryNoteToAthena('saved-op-note');`, context);
   assert(captured, 'saved completed op note did not reach the app plan handoff');
   return captured;
 }

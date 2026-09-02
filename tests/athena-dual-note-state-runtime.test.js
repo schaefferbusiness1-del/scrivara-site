@@ -248,7 +248,22 @@ for (const file of shells) {
       orders: { icon: 'O', label: 'Orders', dest: 'orders' }
     }
   });
-  vm.runInContext(extractFunction(source, 'function pushHistoryNoteToAthena(id)') + '\nthis.__pushHistory=pushHistoryNoteToAthena;', s, { filename: file });
+  /* histrefuse-1.0.0 (b1189): every refusal branch of the dispatcher now calls
+     the shared _mlsHistPushRefuse (which still toasts, so the toast
+     assertions below are unchanged), and its success branch calls
+     _mlsHistRefusalClear(id) bare just before _athenaPushPlan. Both are
+     top-level declarations in the SAME shell, above the dispatcher - lift the
+     real block, never a stub, or the dispatcher throws before it can stage
+     anything and every assertion below measures a function that never ran. */
+  const histRefuseAt = source.indexOf('/* ===== histrefuse-1.0.0 begin');
+  const histRefuseEnd = source.indexOf('/* ===== histrefuse-1.0.0 end', histRefuseAt);
+  ok(histRefuseAt > 0 && histRefuseEnd > histRefuseAt, file + ': the histrefuse-1.0.0 block moved or was removed');
+  const escAt = source.indexOf('\nfunction esc(s){');
+  ok(escAt > 0, file + ': the shell has no esc()');
+  s.document = s.document || { getElementById() { return null; } };
+  vm.runInContext(source.slice(escAt + 1, source.indexOf('\n', escAt + 1)) + '\n' +
+    source.slice(histRefuseAt, histRefuseEnd) + '\n' +
+    extractFunction(source, 'function pushHistoryNoteToAthena(id)') + '\nthis.__pushHistory=pushHistoryNoteToAthena;', s, { filename: file });
   s.__pushHistory(record.id);
   eq(pushed.map(row => row.kind).join(','), 'hpi,ros,exam,assessment,plan', file + ': History collapsed a saved generated note into generic text');
   ok(pushed.every(row => row.generatedCanonical === true), file + ': History five-field rows lost canonical provenance');

@@ -511,6 +511,32 @@ function makeHarness(options) {
   /* ---- the app's OWN saved-note hand-off, sliced out of the shipped twin --- */
   const shell = SHELL_SRC[options.shell || SHELLS[0]];
   const push = extractFunction(shell, 'function pushHistoryNoteToAthena(id)');
+  /* histrefuse-1.0.0 (b1189) gave pushHistoryNoteToAthena a shared refusal
+     recorder that lives ABOVE it in the same shell: every refusal branch calls
+     _mlsHistPushRefuse(id,message,cure), and the success branch - the one this
+     day queue takes - calls _mlsHistRefusalClear(id) bare, immediately before
+     _athenaPushPlan. Neither was in this host, so the first queued visit threw
+     ReferenceError out of window.pushHistoryNoteToAthena and every visit
+     recorded as unwritten. The shipped code is right (both are top-level
+     declarations in the same shell script); the HOST was missing half the
+     entry point. Lift the real block - and the esc() its row line escapes
+     with - out of the SAME shell, never a stub: a stub for the clear would let
+     a whole day pass while leaving every written row's stale refusal line on
+     screen. */
+  const histRefuse = (function () {
+    const a = shell.indexOf('/* ===== histrefuse-1.0.0 begin');
+    const b = shell.indexOf('/* ===== histrefuse-1.0.0 end', a);
+    assert(a > 0 && b > a, (options.shell || SHELLS[0]) + ': the histrefuse-1.0.0 block moved or was removed');
+    return shell.slice(a, b);
+  })();
+  assert(histRefuse.indexOf('function _mlsHistPushRefuse(id,message,cure){') > 0 &&
+    histRefuse.indexOf('function _mlsHistRefusalClear(id){') > 0,
+    'the histrefuse-1.0.0 block no longer defines the recorder and the clear that pushHistoryNoteToAthena calls');
+  const escFn = (function () {
+    const a = shell.indexOf('\nfunction esc(s){');
+    assert(a > 0, 'the shell has no esc()');
+    return shell.slice(a + 1, shell.indexOf('\n', a + 1));
+  })();
   const pushPlan = extractFunction(shell, 'function _athenaPushPlan(sections, who, immutablePatient)');
   const showReceipt = extractFunction(shell, 'function _athenaShowReceipt(who, results, partial, immutablePatient, sections, visitContext)');
   const flow = window.__mlsWriteFlow;
@@ -559,8 +585,9 @@ function makeHarness(options) {
   window._athenaBindingForSavedRecord = context._athenaBindingForSavedRecord;
   window._mlsSavedAthenaCanonicalForWrite = context._mlsSavedAthenaCanonicalForWrite;
   window._mlsIsChartImportNote = (n) => String((n && n.cc) || '') === 'Athena chart import';
-  vm.runInContext(showReceipt + '\n' + pushPlan + '\n' + push +
-    '\nwindow.pushHistoryNoteToAthena = pushHistoryNoteToAthena;', context, { filename: 'shell-saved-note-handoff.js' });
+  vm.runInContext(escFn + '\n' + histRefuse + '\n' + showReceipt + '\n' + pushPlan + '\n' + push +
+    '\nwindow.pushHistoryNoteToAthena = pushHistoryNoteToAthena;' +
+    '\nwindow.__histRefusalFor = _mlsHistRefusalFor;', context, { filename: 'shell-saved-note-handoff.js' });
 
   /* Which chart athenaOne has open is decided by which note MLS just opened a
      review for - the same coupling the live surface has. */

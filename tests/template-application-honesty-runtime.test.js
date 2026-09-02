@@ -14,6 +14,29 @@ const production = fs.readFileSync(path.join(root, 'ScribeFlow.html'), 'utf8');
 const applyStart = 'async function applyTemplateToNote(template,visitText,expectedBinding,expectedEpoch)';
 const applyEnd = '\nfunction openDoc';
 const applySource = production.slice(production.indexOf(applyStart), production.indexOf(applyEnd, production.indexOf(applyStart)));
+/* noteq-1.0.0 / noteq-1.1.0 (b118x) put the note-quality floor on the reformat
+ * pass: applyTemplateToNote now awaits __mlsNoteQualityEnsure(), appends
+ * __mlsNoteQualityContract('template-fidelity',...) to the system prompt, and
+ * regrades what came back through __mlsNoteQualityOnce. Those wrappers live
+ * ABOVE this slice, so the slice alone stopped running (ReferenceError on the
+ * first contract).
+ * The host lifts the REAL wrappers out of the same shipped file and installs
+ * the REAL module as window.__mlsNoteQuality - the way
+ * tests/note-quality-proof.js does - so the formatter under test builds the
+ * same prompt and takes the same single regrade it takes in production. A
+ * no-op stub would prove the receipts of a formatter that skips the floor,
+ * which is not the formatter that ships. */
+const noteqHostSource = production.slice(
+  production.indexOf('var NOTEQ_MAX_REGEN = 1;'),
+  production.indexOf('async function aiCallRaw(sys,user,key,opts){'));
+assert(noteqHostSource.includes('function __mlsNoteQualityContract(noteType,opts){'),
+  'the shipped note-quality prompt wrapper could not be sliced out of ScribeFlow.html');
+assert(noteqHostSource.includes('async function __mlsNoteQualityOnce(text,noteType,ctx,again){'),
+  'the shipped note-quality one-shot regrade could not be sliced out of ScribeFlow.html');
+const noteQuality = require(path.join(root, 'feat_mls_note_quality.js'));
+assert(typeof noteQuality.contractFor === 'function' && typeof noteQuality.grade === 'function' &&
+  typeof noteQuality.floor === 'function',
+  'the note-quality module no longer exports the contractFor/grade/floor shape the wrappers call');
 /* vnfid-1.0.0: this pinned the exact SPELLING of the success receipt, so a
  * receipt that grew an honest extra field (the template-conformance measure)
  * would red a suite that the change strengthened. Pin the PROPERTY instead:
@@ -57,7 +80,7 @@ function harness(options) {
   };
   const noteBox = { value: state.soap, style: { display: 'block' }, dispatchEvent() {} };
   const context = {
-    window: { __mlsCodeTable: null },
+    window: { __mlsCodeTable: null, __mlsNoteQuality: noteQuality },
     document: { getElementById(id) { return id === 'noteBox' ? noteBox : null; } },
     Promise, String, Object, Array, RegExp, JSON, Math, Date, console, AbortController,
     setTimeout, clearTimeout
@@ -88,8 +111,10 @@ function harness(options) {
       if (mode === 'stale') { safe = false; return 'Formatted note'; }
       return 'Formatted note';
     }
+    ${noteqHostSource}
     ${applySource}
     this.api = { applyTemplateToNote, maybeApplyTemplate, reportTemplateApplication };
+    this.noteq = { contract: __mlsNoteQualityContract };
     this.state = { get soap() { return currentSoap; }, get calls() { return calls; }, get selectionCalls() { return selectionCalls; } };
   `;
   context.calls = state.calls;
@@ -105,6 +130,10 @@ function harness(options) {
 
 (async function run() {
   let h = harness({ mode: 'success' });
+  /* The floor is REALLY in this host, not stubbed away: the template-fidelity
+     contract the reformat pass appends to its own prompt is real prose here. */
+  assert(h.context.noteq.contract('template-fidelity', { template: 'X' }).length > 200,
+    'the note-quality contract is empty in this host, so every receipt below would be proving a formatter that ships without the floor');
   let result = await h.api.applyTemplateToNote({ id: 'tpl-1', name: 'Test', text: 'TEMPLATE' }, 'visit', { id: 'visit-1' }, 4);
   assert.strictEqual(result.applied, true, 'successful formatting was not acknowledged');
   assert.strictEqual(result.templateId, 'tpl-1');

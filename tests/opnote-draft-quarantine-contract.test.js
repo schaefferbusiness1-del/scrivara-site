@@ -43,12 +43,31 @@ const pushSrc = between(app, 'function pushHistoryNoteToAthena(id){', 'function 
 assert(pushSrc.indexOf('n.isDraft') >= 0 && pushSrc.indexOf('n.isDraft') < pushSrc.indexOf('_athenaBindingForSavedRecord'), 'draft guard missing or after binding work');
 assert(pushSrc.indexOf('opNoteBlankTokens') >= 0 && pushSrc.indexOf('opNoteBlankTokens') < pushSrc.indexOf('_athenaBindingForSavedRecord'), 'placeholder guard missing or after binding work');
 
+/* histrefuse-1.0.0 (b1189) moved EVERY refusal branch of this function onto a
+   shared recorder, `_mlsHistPushRefuse(id,message,cure)`, that lives above the
+   function and therefore outside this slice - so the slice alone stopped
+   running (ReferenceError on the first refusal).
+   The host lifts the REAL recorder out of the same shipped file, exactly as
+   tests/refusal-visibility-proof.js does, rather than stubbing it. A stub that
+   only collected the toast would swallow the per-note record, and this suite
+   would then keep passing after the persistent row line - the whole point of
+   histrefuse - was deleted. So the record is asserted alongside the toast. */
+const histRefuse = between(app, '/* ===== histrefuse-1.0.0 begin', '/* ===== histrefuse-1.0.0 end');
+assert(histRefuse.indexOf('function _mlsHistPushRefuse(id,message,cure){') >= 0,
+  'the histrefuse block no longer defines the shared refusal recorder this slice calls');
+assert(histRefuse.indexOf('_mlsHistPushRefusals[String(id||\'\')]=') >= 0,
+  'the shared refusal recorder no longer writes a per-note record');
+const escSrc = between(app, 'function esc(s){', '\n');
+
 /* runtime: a draft and a placeholder-bearing note must return before any
    binding resolution (the stub throws if reached) */
 {
   const toasts = [];
   const ctx = {
     console, Object, Array, String, JSON, Date, Math,
+    /* renderHistory is deliberately absent: the recorder only repaints when
+       #histList is mounted, and it must not need History to record. */
+    document: { getElementById() { return null; } },
     toast(m, t) { toasts.push({ m: String(m), t }); },
     getNotes() {
       return [
@@ -67,13 +86,26 @@ assert(pushSrc.indexOf('opNoteBlankTokens') >= 0 && pushSrc.indexOf('opNoteBlank
     _athenaBindingForSavedRecord() { throw new Error('binding must not be resolved for quarantined notes'); }
   };
   vm.createContext(ctx);
-  vm.runInContext(pushSrc + '\nthis.push = pushHistoryNoteToAthena;', ctx, { filename: 'push-history-quarantine.js' });
+  vm.runInContext(escSrc + '\n' + histRefuse + '\n' + pushSrc +
+    '\nthis.push = pushHistoryNoteToAthena;' +
+    '\nthis.refusalFor = _mlsHistRefusalFor;' +
+    '\nthis.refusalHtml = _mlsHistRefusalHtml;',
+    ctx, { filename: 'push-history-quarantine.js' });
+  /* Each quarantine branch must (a) refuse visibly right now via the toast and
+     (b) leave the persistent per-note line histrefuse added, so a doctor who
+     looks away for two seconds can still see WHY the row did nothing. */
+  function refusalMessage(id) { return String((ctx.refusalFor(id) || {}).message || ''); }
   ctx.push('draft1');
   assert(toasts.length === 1 && /draft/i.test(toasts[0].m) && toasts[0].t === 'err', 'draft was not refused visibly');
+  assert(/draft/i.test(refusalMessage('draft1')), 'the draft refusal left no persistent line on its own History row');
   ctx.push('holes1');
   assert(toasts.length === 2 && /unresolved field/i.test(toasts[1].m), '[[key]]/___ note was not refused');
+  assert(/unresolved field/i.test(refusalMessage('holes1')), 'the [[key]]/___ refusal left no persistent line on its own History row');
   ctx.push('fill1');
   assert(toasts.length === 3 && /unresolved field/i.test(toasts[2].m), '[FILL:] note was not refused');
+  assert(/unresolved field/i.test(refusalMessage('fill1')), 'the [FILL:] refusal left no persistent line on its own History row');
+  assert(/class="hist-refusal"/.test(ctx.refusalHtml('draft1')),
+    'the recorded refusal does not render as a row line, so the record is invisible again');
 }
 
 /* ---- 3. signNote refuses placeholders before badging ---- */

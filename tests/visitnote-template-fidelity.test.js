@@ -102,6 +102,28 @@ const APPLY_SRC = sliceBetween(shell,
   'async function applyTemplateToNote(template,visitText,expectedBinding,expectedEpoch)',
   '\nfunction openDoc', 'applyTemplateToNote block');
 
+/* noteq-1.0.0 / noteq-1.1.0 (b118x) put the note-quality floor ON THIS PASS -
+ * the one whose whole job is "follow the template well". applyTemplateToNote
+ * now awaits __mlsNoteQualityEnsure(), appends
+ * __mlsNoteQualityContract('template-fidelity',...) to the system prompt, and
+ * regrades the result once through __mlsNoteQualityOnce. Those wrappers sit
+ * ABOVE the slice above, so the slice alone stopped running.
+ * Lift the REAL wrappers out of the SAME shell and install the REAL module as
+ * window.__mlsNoteQuality, the way tests/note-quality-proof.js does. Executing
+ * the shipped floor rather than a no-op is the point: everything this suite
+ * measures below - the prompt, the conformance receipt, the conservation
+ * receipt - is measured on the text the shipped pipeline actually produces. */
+const NOTEQ_HOST_SRC = sliceBetween(shell, 'var NOTEQ_MAX_REGEN = 1;',
+  'async function aiCallRaw(sys,user,key,opts){', 'the note-quality wrappers');
+ok(NOTEQ_HOST_SRC.indexOf('function __mlsNoteQualityContract(noteType,opts){') > 0,
+  'the shipped note-quality prompt wrapper is not in the sliced region');
+ok(NOTEQ_HOST_SRC.indexOf('async function __mlsNoteQualityOnce(text,noteType,ctx,again){') > 0,
+  'the shipped note-quality one-shot regrade is not in the sliced region');
+const NOTE_QUALITY = require(path.join(root, 'feat_mls_note_quality.js'));
+ok(typeof NOTE_QUALITY.contractFor === 'function' && typeof NOTE_QUALITY.grade === 'function' &&
+  typeof NOTE_QUALITY.floor === 'function',
+  'the note-quality module no longer exports the contractFor/grade/floor shape these wrappers call');
+
 /* The PROMPT ITSELF, not the comment above it that quotes what it used to
    say - a source grep that cannot tell those two apart proves nothing. */
 const SYS_LINE = sliceBetween(APPLY_SRC, "  const sys='", '\n  const tplForModel=', 'the reformat system prompt');
@@ -195,7 +217,8 @@ function harness(opts) {
   const ids = { noteBox: noteBox, transcript: transcript, tplFidelityNotice: notice };
   const captured = {};
   const context = {
-    window: { __mlsCodeTable: null, __mlsOpNoteIntegrity: opts.integrity || null },
+    window: { __mlsCodeTable: null, __mlsOpNoteIntegrity: opts.integrity || null,
+              __mlsNoteQuality: NOTE_QUALITY },
     document: makeDoc(ids),
     Promise, String, Object, Array, RegExp, JSON, Math, Date, console, AbortController,
     setTimeout, clearTimeout,
@@ -223,7 +246,9 @@ function harness(opts) {
     function resolveActiveTemplate(){ return { id:'tpl-1', name:'Office visit', text: ${JSON.stringify(TEMPLATE)} }; }
     function _mlsStartOptionalTemplate(text,binding,epoch,el){ startedTemplate.push({text:text,binding:binding,epoch:epoch,el:!!el}); return 'started'; }
     async function aiCallRaw(sys,user,key,opts){ captured.sys = sys; captured.user = user; captured.opts = opts; return modelOut; }
+    ${NOTEQ_HOST_SRC}
     ${APPLY_SRC}
+    this.noteq = { contract: __mlsNoteQualityContract };
     this.api = { applyTemplateToNote, maybeApplyTemplate, reportTemplateApplication,
                  _mlsTplConformance, _mlsTplConformanceLocal, _mlsTplContentConservation,
                  _mlsTplSentences, _mlsRenderTplFidelityNotice, _mlsRetryTemplateFormat,

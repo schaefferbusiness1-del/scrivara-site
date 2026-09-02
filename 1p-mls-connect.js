@@ -7657,6 +7657,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        enough weight to be seen without shouting. */
     '#mlsEz3 .ez3fl-rechint[data-mls-gen-run="active"]{color:#2E6A4B;font-weight:600;}',
     '#mlsEz3 .ez3fl-rechint[data-mls-gen-run="failed"]{color:#9F2D2D;font-weight:600;}',
+    '#mlsEz3 #ez3flReview.dim{opacity:.45;filter:saturate(.6);cursor:not-allowed;}',
     '#mlsEz3 .ez3fl-transcript{flex-basis:100%;background:#F8FAF7;border:1px solid #DCE4DD;border-radius:14px;padding:13px 14px;margin-top:2px;}',
     /* fl-1.7.0 (owner 2026-07-16, supersedes the fl-1.6.1 yield direction):
        ONE transcript box and the TOP lane is the keeper — hiding .ez3fl-record
@@ -8251,6 +8252,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var note = $('noteBox');
     var flowNote = $('ez3flNote');
     var flowText = flowNote ? String(flowNote.value || '') : '';
+    /* nextgate-1.0.0: never open the review on a note that is still being written. */
+    try { if (_genRun && _genRun.active) { flowToast('Your note is still generating - the review opens when it is ready.', ''); return; } } catch (eNextGateOpen) {}
     if (note && !(note.value || '').trim() && flowText.trim()) {
       note.value = flowText;
       try { note.dispatchEvent(new Event('input', { bubbles: true })); } catch (eSync) {}
@@ -8757,6 +8760,24 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        only a compact Next action; hide that action while its destination is
        open and restore it when Back closes the workspace. */
     setLaneHidden(noteWrap, _reviewStepOpen || !noteText.trim());
+    /* nextgate-1.0.0 (b1191, owner 2026-09-01: "review and send to athena should not
+       be next if the note isn't generated"): while a generation is in flight, or
+       while the only text on screen is an AI refusal, the Next door is dimmed with
+       its reason instead of standing as the primary action. */
+    try {
+      var rvBtn = noteWrap ? noteWrap.querySelector('#ez3flReview') : null;
+      if (rvBtn) {
+        var rvRun = false; try { rvRun = !!(_genRun && _genRun.active); } catch (eRvRun) { rvRun = false; }
+        var rvRefusal = /^\s*(?:i['\u2019]?m sorry|i am sorry|i cannot|i can['\u2019]?t|unable to)/i.test(noteText);
+        var rvBlocked = rvRun || !noteText.trim() || rvRefusal;
+        var rvWhy = rvRun ? 'Your note is still generating - review opens when it is ready.' : (rvRefusal ? 'The AI answered with a refusal instead of a note - generate again before reviewing.' : 'Generate a note first.');
+        setLaneAttr(rvBtn, 'aria-disabled', rvBlocked ? 'true' : 'false');
+        if (rvBlocked) setLaneAttr(rvBtn, 'title', rvWhy); else if (rvBtn.hasAttribute('title')) rvBtn.removeAttribute('title');
+        if (rvBtn.classList.contains('dim') !== rvBlocked) rvBtn.classList.toggle('dim', rvBlocked);
+        var rvNote = noteWrap.querySelector('.ez3fl-nextrow > span');
+        if (rvNote) setLaneText(rvNote, rvBlocked ? rvWhy : 'Nothing sends automatically. You review every section and confirm the final action.');
+      }
+    } catch (eNextGate) {}
     if (topNote && note && document.activeElement !== topNote && topNote.value !== noteText) topNote.value = noteText;
   }
   function scheduleLaneSync() {
@@ -17724,6 +17745,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
             var parsed = parseJsonNote(raw);
             var note = S(parsed.note).trim();
             if (!note) { resolve({ ok: false, reason: "empty" }); return; }
+            /* opnf-1.1.0: a refusal or apology is not a note - the note on screen stays. */
+            if (/^\s*(?:i['\u2019]?m sorry|i am sorry|i cannot|i can['\u2019]?t|unable to|as an ai)/i.test(note) || !/(?:PROCEDURE|INDICATION|TECHNIQUE|CONSENT|ANESTHESIA|COMPLICATIONS|DISPOSITION)\s*:/i.test(note)) {
+              warnOnce("Op-note draft REJECTED -- the AI answered with a refusal instead of your template. The note was kept exactly as generated.");
+              logEvent("op-refusal-reject", tpl.name, false, note.slice(0, 80));
+              resolve({ ok: false, reason: "refusal" });
+              return;
+            }
             /* audit BEFORE inserting standard lines (they are the doctor's own,
                always allowed) so an invented assertion is caught. */
             var source = base + "\n" + S(transcript) + "\n" + S(tpl.text || "");
@@ -17765,6 +17793,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         return Promise.resolve().then(function () {
           try {
             if (!useTemplatesOn()) return _origMaybe.apply(self, args);   /* OFF path: unchanged */
+            /* opnf-1.1.0 (b1191, measured live 2026-09-01): a knee-injection FOLLOW-UP
+               visit classified as "procedure", the fill took over the freshly generated
+               visit note, the model refused ("I'm sorry, but I cannot generate an
+               operative note for medial branch blocks...") and that refusal replaced the
+               note. The op-note room drafts op notes; the Visit screen's note keeps its
+               own shape unless the doctor explicitly asks for an op-note fill here. */
+            if (window.__mlsOpFillVisitNoteOptIn !== true) { logEvent("op-pick-skipped", "(visit note keeps its shape)", true, "opnf-1.1.0"); return _origMaybe.apply(self, args); }
             var tc = classifyTranscript(S(visitText));
             if (tc.cls !== "procedure") return _origMaybe.apply(self, args); /* office/etc -> b61 */
             var pick = chooseOpTemplate(S(visitText));
