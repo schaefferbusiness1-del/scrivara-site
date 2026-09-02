@@ -6753,6 +6753,10 @@
        and no clinical text is invented. */
     function tnRecomputeAggregate() {
       safe(function () { tnAggregate(); });
+      /* dnote-1.0.0 (b1184): and the DEBT census beside it. One closed
+         vocabulary, stamped wherever the day's note truth is recomputed, so
+         the Done sheet and the durable range job read the same number. */
+      safe(function () { dnoteStamp(receipt, tnBatchDay()); });
     }
     /* tny-1.0.0: ONE census of the day-note column, used by both recompute
        sites so the DONE card, the receipt and the ledger cannot disagree.
@@ -6833,6 +6837,15 @@
         sDv.dayVerdict.tnNotYet = Number(receipt.todayNoteNotYet || 0);   /* tny-1.0.0 */
         sDv.dayVerdict.tnFuture = Number(receipt.todayNoteFutureDay || 0); /* fd-1.0.0 */
         sDv.dayVerdict.tnDeferredRecovered = Number((summary && summary.recovered) || 0);
+        /* dnote-1.0.0 (b1184): the debt, on the stamp the DONE card reads. A
+           queued note is not a failure and not a done - and until it is one or
+           the other, this day is not "everything verified". */
+        var dnDv = safe(function () { return dnoteStamp(receipt, tnBatchDay()); }, null);
+        if (dnDv) {
+          sDv.dayVerdict.tnQueued = Number(dnDv.pending || 0);
+          sDv.dayVerdict.tnRefused = Number(dnDv.refused || 0);
+          sDv.dayVerdict.tnNotesComplete = dnDv.complete === true;
+        }
         sDv.dayVerdict.at = Date.now();
       });
       safe(function () { var day = tnBatchDay(); if (day) recordHistoryVerdict(day, receipt, rows.length); });
@@ -7109,6 +7122,17 @@
          stamping day-level truth is the b752 subset trap. finalizeVerdict may
          run twice by design; the LAST call wins, which is the post-sweep truth. */
       safe(function () { if (sweepDepth) return; var sDv = ppState(); if (!sDv) return; sDv.dayVerdict = { ok: Number(sDv.ok || 0), failed: Number(sDv.failed || 0), chartOnly: Number(sDv.chartOnly || 0), total: Number(sDv.total || 0), complete: receipt.complete === true, tnFailed: Number(receipt.todayNoteFailures || 0), tnReasons: receipt.todayNoteReasons || {}, tnRead: Number(receipt.todayNoteRead || 0) /* tny-1.0.0 */, tnNotYet: Number(receipt.todayNoteNotYet || 0) /* tny-1.0.0 */, tnFuture: Number(receipt.todayNoteFutureDay || 0) /* fd-1.0.0 */, summaryPending: Number(receipt.summariesPending || 0) /* cap-1.0.0 */, capturesSaved: Number(receipt.capturesSaved || 0) /* cap-1.0.0 */, at: Date.now() }; });
+      /* dnote-1.0.0 (b1184): the day-note DEBT rides the same stamp from the
+         first paint, so a card shown before the deferred round has run already
+         knows the difference between "queued to read" and "not read". */
+      safe(function () {
+        if (sweepDepth) return;
+        var sDn = ppState(); if (!sDn || !sDn.dayVerdict) return;
+        var dnC = dnoteStamp(receipt, tnBatchDay()); if (!dnC) return;
+        sDn.dayVerdict.tnQueued = Number(dnC.pending || 0);
+        sDn.dayVerdict.tnRefused = Number(dnC.refused || 0);
+        sDn.dayVerdict.tnNotesComplete = dnC.complete === true;
+      });
       /* b751: persist it. finalizeVerdict runs at every exit and may run twice
          (before and after the end-of-batch re-sweep); the write is keyed by day
          so the LAST call wins, which is the post-sweep truth we want. */
@@ -7893,6 +7917,9 @@
       if (item.attempts >= TN_BACKFILL_ATTEMPTS) return Promise.resolve(false);
       item.attempts++;
       attempted++;
+      /* dnote-1.1.0 (b1184): the deferred round opens charts too - stamp the
+         busy marker so Follow cannot mistake our navigation for the doctor's. */
+      safe(dnoteStampDriving);
       safe(function () { _tnBackfill.attempted = Number(_tnBackfill.attempted || 0) + 1; });
       return Promise.resolve().then(function () { return item.attempt(); }).then(function (ok) {
         if (ok === true) {
@@ -8387,6 +8414,13 @@
        queued and somebody else may have filed the note in the meantime. */
     if (niNoteOnFile(row.p, row.d)) { row.s = "read"; row.c = "already-on-file"; niSave(); niSurface(); return Promise.resolve(null); }
     _ni.reading = true;
+    /* dnote-1.0.0 (b1184): WHICH row is being read, so the card can say
+       "reading" about that one row instead of a nameless "reading now". */
+    _ni.readingKey = String(row.p) + "|" + String(row.d);
+    /* dnote-1.1.0 (b1184): this lane is about to OPEN A CHART in athenaOne.
+       Say so on the busy stamp every follow/reload guard already consults, so
+       our own navigation can never move the doctor's active patient. */
+    dnoteStampDriving();
     _ni.state = "reading";
     niSurface();
     return niWebLockHeld().then(function (held) {
@@ -8568,12 +8602,24 @@
   function niRestampCard() {
     var s = safe(function () { return window.__mlsDayHistoryPull && window.__mlsDayHistoryPull.state; }, null);
     if (!s || s.running === true || !s.rows || !s.rows.length) return 0;
-    var flips = 0;
+    var flips = 0, stamps = 0;
     for (var i = 0; i < _ni.rows.length; i++) {
       var q = _ni.rows[i];
-      if (!q || q.s !== "read") continue;          /* "no-note"/"gave-up" are not a saved note */
+      if (!q) continue;
       var pid = String(q.p || ""), day = String(q.d || "");
       if (!pid || !day) continue;
+      /* ===== dnote-1.0.0 (b1184): the cell states the DEBT, not a failure ===
+         A row this queue is still holding was painting "today's note not read
+         this time (chart saved)" - the sentence the owner read as seven
+         failures on a finished pull. The queue knows the difference between a
+         note it has not got to yet, one it is reading, one athenaOne does not
+         have, and one whose retries are spent; the cell now says which. */
+      var want = "";
+      if (q.s === "read") want = "read";
+      else if (q.s === "no-note") want = "no-note";
+      else if (q.s === "gave-up") want = "unread:" + String(q.c || "unknown").slice(0, 60);
+      else if (_ni.reading === true && String(_ni.readingKey || "") === pid + "|" + day) want = "reading:" + String(q.c || "unknown").slice(0, 60);
+      else want = "queued:" + String(q.c || "unknown").slice(0, 60);
       /* LAST row wins: ppSettle pushes a new row per settle and the card
          paints the latest per key, so the latest is the cell on screen. */
       for (var j = s.rows.length - 1; j >= 0; j--) {
@@ -8581,13 +8627,22 @@
         if (!r || String(r.pid || "") !== pid) continue;
         if (!r.dnd || String(r.dnd) !== day) break;
         var was = String(r.dn || "");
-        if (was.indexOf("unread:") !== 0 && was.indexOf("retrying:") !== 0) break;
-        r.dn = "read"; r.dnLive = 1; r.dnLiveAt = Date.now();
-        flips++;
+        if (was === want) break;
+        /* the ownership law, widened by exactly the two dnote-1.0.0 debt
+           states and no further: an ORANGE cell (unread:/retrying:) and a
+           DEBT cell (queued:/reading:) are this lane's to move. A green
+           "read", a "not-yet" and a "future-day" are never touched, and
+           nothing here can move the saved/failed tally (dv3-1.0.0). */
+        if (was.indexOf("unread:") !== 0 && was.indexOf("retrying:") !== 0 &&
+            was.indexOf("queued:") !== 0 && was.indexOf("reading:") !== 0) break;
+        r.dn = want;
+        if (want === "read") { r.dnLive = 1; r.dnLiveAt = Date.now(); flips++; }
+        else stamps++;
         break;
       }
     }
     if (flips) _ni.cardFlips = Number(_ni.cardFlips || 0) + flips;
+    if (stamps) _ni.cardStamps = Number(_ni.cardStamps || 0) + stamps; /* dnote-1.0.0 */
     return flips;
   }
   /* ===== end lcd-1.0.0 (receipt -> card bridge) ===== */
@@ -8660,6 +8715,323 @@
     return niRunOne(true);
   }
   /* ===== end notes-idle-1.0.0 ===== */
+  /* ===== dnote-1.0.0 (b1184): THE PULLED DAY'S OWN NOTE IS A DEBT ===========
+     OWNER 2026-09-01, on a finished day pull whose sheet read "7 of 7 · 7
+     saved · 7 need attention · Result: 7 histories saved · 7 pulled-day notes
+     not read yet - everything verified": "what's going on here, did you forget
+     about the must-read visit note even if Full visit notes is turned off?"
+
+     MEASURED CAUSE, live, before a line of this was written. With bodies OFF
+     every row's own-day note had been DEFERRED to the notes-idle catch-up -
+     and that lane was sitting `stopped` with gateReason `stopped-by-user`. The
+     Stop that stopped it belonged to a DIFFERENT, EARLIER pull: stp-2.0.0's
+     "Stop means STOP" also stops the idle catch-up, and nothing ever started
+     it again. Fifteen queued notes for Sep 1 and the rows for 2026-08-27 were
+     never read, while the durable month job kept pulling days and deferring
+     more onto the same stopped queue.
+
+     THREE THINGS WERE WRONG AND ALL THREE ARE FIXED HERE.
+
+     1. A DEFERRED NOTE WAS BEING REPORTED AS A DONE. It is a DEBT. dnoteState
+        gives every row exactly one value from a CLOSED vocabulary -
+        read / no-note / queued / refused - and only "queued" is a debt. A day
+        with any debt is not complete, on the Done sheet or in the durable
+        range job, however green its histories are.
+
+     2. NOTHING DRAINED THE DEBT INSIDE THE PULL. The idle lane is a repair for
+        LEFTOVERS, not the mechanism. dnoteDrainNow runs on the pull's own
+        settle path - after runManagedAthenaOperation has released the lease
+        and cleared pullRunning, so it is the only Athena driver in the tab -
+        and it drives the two engines this app already has (the immediate
+        _tnDefer round, then forced notes-idle turns), one row at a time, until
+        the debt is zero or its wall clock and turn cap are spent. It adds no
+        driver, claims no lease of its own, and refuses outright after a Stop.
+
+     3. A STOP OF ONE PULL DISARMED THE NEXT ONE'S CATCH-UP FOREVER. A pull
+        START now arms a re-arm (dnoteArmIdle) and the pull's settle spends it:
+        an idle lane left `stopped` by an earlier pull's Stop is resumed once
+        THIS pull finishes without a Stop of its own. A Stop still stops the
+        pull it was pressed for, and still stops that pull's catch-up.
+
+     PHI-FREE: counts and the closed reason-code vocabulary only, exactly like
+     dnbf-1.0.0 and notes-idle-1.0.0. ES5, ASCII. */
+  var DNOTE_VERSION = "dnote-1.0.0";
+  var DNOTE_DRAIN_MS = 6 * 60 * 1000;   /* the whole in-pull drain, wall clock */
+  var DNOTE_MAX_TURNS = 80;             /* and a turn cap, so it can never spin */
+  /* a gate refusal this drain cannot clear by trying again. Anything else is
+     progress or a spent attempt, and the row ladder bounds those. */
+  var DNOTE_HARD_GATE = {
+    "stopped": 1, "visit-notes-unchosen": 1, "pull-running": 1,
+    "pull-running-other-tab": 1, "day-switch-busy": 1, "history-pull-running": 1,
+    "visits-backfill-running": 1, "recording": 1, "opnote-drafting": 1,
+    "athena-review-open": 1, "web-lock-held": 1, "athena-absent": 1, "nothing-due": 1
+  };
+  var _dnote = { draining: false, drains: 0, turns: 0, reads: 0, armIdle: false,
+    idleResumes: 0, lastReason: "", lastAt: 0, lastCensus: null };
+  /* does the persistent idle queue still OWE this row's note? */
+  function dnoteIdleOwes(pid, day) {
+    var p = String(pid || ""), d = normDate(day || "") || "";
+    if (!p) return false;
+    return safe(function () {
+      niLoad();
+      for (var i = 0; i < _ni.rows.length; i++) {
+        var r = _ni.rows[i];
+        if (!r || r.p !== p) continue;
+        if (d && r.d !== d) continue;
+        if (r.s === "queued") return true;
+      }
+      return false;
+    }, false);
+  }
+  /* THE CLOSED PER-ROW VOCABULARY. Every pulled-day note is exactly one of
+     four things, and the sheet, the receipt and the durable job all read the
+     SAME function - there is no second opinion about what a row owes.
+       read     the note is on file (this pull read it, an earlier read today
+                already had it, or Full notes ON read it as part of the bodies)
+       no-note  there is nothing in athenaOne to read: a future day, a slot
+                that has not happened yet, or the reader's own no-encounter
+       queued   still owed - deferred, handed off, or held by the idle queue
+       refused  a named refusal whose retries are spent. Needs attention. */
+  function dnoteState(p, day) {
+    if (!p) return "unknown";
+    if (p.todayNote === true || p.todayNote === "already-read") return "read";
+    if (p.todayNote === "future-day" || p.todayNote === "not-yet") return "no-note";
+    /* bodies ON has no separate day-note leg: the note rides the chart read,
+       so a COMPLETE row read it and an incomplete one still owes it
+       (onheal-1.0.0's premise, stated as a state instead of a queue rule). */
+    if (p.todayNote == null) return p.complete === true ? "read" : "queued";
+    if (p.todayNoteDeferred === true) return "queued";
+    if (p.todayNote === false) {
+      if (tnReasonCode(p.todayNoteReason) === "no-encounter") return "no-note";
+      if (p.todayNoteHandedOff === true) return "queued";
+      return dnoteIdleOwes(p.patientId, day) ? "queued" : "refused";
+    }
+    return "unknown";
+  }
+  function dnoteCensus(receipt, day) {
+    var c = { version: DNOTE_VERSION, day: normDate(day || (receipt && receipt.day) || "") || "",
+      total: 0, read: 0, noNote: 0, queued: 0, refused: 0, unknown: 0, pending: 0, complete: true };
+    safe(function () {
+      ((receipt && receipt.patients) || []).forEach(function (p) {
+        if (!p) return;
+        c.total++;
+        var s = dnoteState(p, c.day);
+        if (s === "read") c.read++;
+        else if (s === "no-note") c.noNote++;
+        else if (s === "queued") c.queued++;
+        else if (s === "refused") c.refused++;
+        else c.unknown++;
+      });
+    });
+    /* an UNKNOWN row is a debt, not a pass: a state nobody can name is exactly
+       the silence this whole block exists to stop reporting as done. */
+    c.pending = c.queued + c.unknown;
+    c.complete = c.pending === 0;
+    return c;
+  }
+  /* the census, stamped where the day's verdict is read from. */
+  function dnoteStamp(receipt, day) {
+    if (!receipt || typeof receipt !== "object") return null;
+    var c = dnoteCensus(receipt, day);
+    receipt.dayNotes = c;
+    receipt.dayNotesComplete = c.complete === true;
+    receipt.dayNotesPending = c.pending;
+    _dnote.lastCensus = c;
+    return c;
+  }
+  /* a settled pull result carries its history receipt; re-stamp BOTH so the
+     durable range job and the day sheet read one number, taken after the
+     drain rather than before it. */
+  function dnoteRestampSettled(value) {
+    if (!value || typeof value !== "object") return null;
+    var hr = (value.historyReceipt && typeof value.historyReceipt === "object") ? value.historyReceipt : null;
+    var target = hr || (Array.isArray(value.patients) ? value : null);
+    if (!target) return null;
+    var c = dnoteStamp(target, target.day || value.date || "");
+    if (hr && c) { value.dayNotes = c; value.dayNotesComplete = c.complete === true; value.dayNotesPending = c.pending; }
+    return c;
+  }
+  function dnoteOwesWork() {
+    if (_tnDefer.queue.length > 0 || _tnDefer.running === true) return true;
+    return safe(function () { niLoad(); return niOpenRows() > 0; }, false);
+  }
+  function dnoteStopRequested() {
+    return safe(function () { return window.__mlsPullStopRequested === true; }, false);
+  }
+  /* THE DRAIN. Serialized by construction: it only ever runs from the settle
+     path of runManagedAthenaOperation, where the Athena lease is released and
+     pullRunning is false, and it drives ONE engine at a time. Bounded by wall
+     clock, by a turn cap, and by each engine's own attempt ladder. */
+  function dnoteDrainNow(opts) {
+    opts = opts || {};
+    if (_dnote.draining === true) return Promise.resolve({ ok: false, reason: "already-draining", turns: 0, read: 0 });
+    if (dnoteStopRequested()) return Promise.resolve({ ok: false, reason: "stopped-by-user", turns: 0, read: 0 });
+    var deadlineAt = Date.now() + Math.max(0, Number(opts.budgetMs != null ? opts.budgetMs : DNOTE_DRAIN_MS));
+    var maxTurns = Math.max(1, Number(opts.maxTurns != null ? opts.maxTurns : DNOTE_MAX_TURNS));
+    _dnote.draining = true;
+    _dnote.drains = Number(_dnote.drains || 0) + 1;
+    var turns = 0, read = 0, spent = {};
+    /* ONE TURN PER ROW PER DRAIN. Forcing waives the idle threshold and the
+       backoff ladder; spending a row's WHOLE ladder here would turn a
+       transient athenaOne hiccup into "gave up" in four seconds. Each queued
+       row gets one fresh attempt inside the pull, and a row that still refuses
+       keeps its ladder and its place in the catch-up. */
+    function nextKey() {
+      for (var i = 0; i < _ni.rows.length; i++) {
+        var r = _ni.rows[i];
+        if (r && r.s === "queued") return String(r.p) + "|" + String(r.d);
+      }
+      return "";
+    }
+    /* FAIRNESS. The idle engine always takes the FIRST queued row, so a row
+       that refuses would be handed back on the next turn and every other row
+       on the day would go unread. A refused row moves to the back of the queue
+       instead - it keeps its ladder, and the rest of the day gets its turn
+       inside this same pull. Order only; no row is dropped or re-classified. */
+    function rotate(key) {
+      for (var i = 0; i < _ni.rows.length; i++) {
+        var q = _ni.rows[i];
+        if (q && q.s === "queued" && (String(q.p) + "|" + String(q.d)) === key) {
+          _ni.rows.push(_ni.rows.splice(i, 1)[0]);
+          return true;
+        }
+      }
+      return false;
+    }
+    function step() {
+      if (dnoteStopRequested()) return Promise.resolve("stopped-by-user");
+      if (Date.now() >= deadlineAt) return Promise.resolve("budget-spent");
+      if (turns >= maxTurns) return Promise.resolve("turn-cap");
+      /* the IMMEDIATE round still owns its rows - give it its turn first, so
+         this never becomes the third queue notes-idle exists to prevent. */
+      if (_tnDefer.queue.length > 0 && _tnDefer.running !== true) {
+        turns++;
+        return Promise.resolve().then(runDeferredTodayNoteRound).then(function () { return step(); }, function () { return "deferred-round-failed"; });
+      }
+      if (_tnDefer.running === true) return Promise.resolve("deferred-round-running");
+      niLoad();
+      if (_ni.stopped === true) return Promise.resolve("notes-idle-stopped");
+      if (!niOpenRows()) return Promise.resolve("drained");
+      var key = nextKey();
+      if (!key) return Promise.resolve("drained");
+      if (spent[key] === 1) return Promise.resolve("one-turn-each");
+      spent[key] = 1;
+      turns++;
+      return Promise.resolve().then(function () { return niRunOne(true); }).then(function (r) {
+        if (r && r.ok === true) read++;
+        safe(function () { rotate(key); });
+        if (!r && DNOTE_HARD_GATE[String(_ni.gateReason || "")] === 1) return "gate:" + String(_ni.gateReason || "");
+        return step();
+      }, function () { return "read-failed"; });
+    }
+    return Promise.resolve().then(step).then(function (reason) {
+      _dnote.draining = false;
+      _dnote.lastReason = String(reason || "");
+      _dnote.lastAt = Date.now();
+      _dnote.turns = Number(_dnote.turns || 0) + turns;
+      _dnote.reads = Number(_dnote.reads || 0) + read;
+      return { ok: reason === "drained", reason: String(reason || ""), turns: turns, read: read };
+    }, function (err) {
+      _dnote.draining = false;
+      _dnote.lastReason = "drain-failed";
+      _dnote.lastAt = Date.now();
+      return { ok: false, reason: "drain-failed", turns: turns, read: read, error: String((err && err.message) || err || "").slice(0, 80) };
+    });
+  }
+  /* A PULL START ARMS THE RE-ARM. Set where every managed operation really
+     begins, so the day pull, every durable-job day and the retry lane all arm
+     it identically. */
+  function dnoteArmIdleForNewPull() { _dnote.armIdle = true; return true; }
+  /* AND THE SETTLE SPENDS IT. A Stop stops the pull it was pressed for - and
+     only that one. Any later pull that finishes without a Stop of its own
+     un-stops the catch-up, which is the whole 2026-09-01 defect. */
+  function dnoteArmIdleAfterPull() {
+    if (_dnote.armIdle !== true) return false;
+    _dnote.armIdle = false;
+    if (dnoteStopRequested()) return false;   /* THIS pull was the one stopped */
+    niLoad();
+    if (_ni.stopped !== true) return false;
+    _dnote.idleResumes = Number(_dnote.idleResumes || 0) + 1;
+    safe(niResume);
+    return true;
+  }
+  /* the ONE settle hook: re-arm, then drain, then re-stamp what the day owes.
+     A pull with no note debt is untouched and pays nothing for this. */
+  function dnoteAfterSettle(value) {
+    safe(dnoteArmIdleAfterPull);
+    if (dnoteStopRequested() || !dnoteOwesWork()) { safe(function () { dnoteRestampSettled(value); }); return value; }
+    return Promise.resolve(dnoteDrainNow({})).then(function () {
+      safe(function () { dnoteRestampSettled(value); });
+      return value;
+    }, function () {
+      safe(function () { dnoteRestampSettled(value); });
+      return value;
+    });
+  }
+  function dnoteReceipt() {
+    var c = _dnote.lastCensus || null;
+    return { version: DNOTE_VERSION, draining: _dnote.draining === true,
+      drains: Number(_dnote.drains || 0), turns: Number(_dnote.turns || 0),
+      reads: Number(_dnote.reads || 0), idleResumes: Number(_dnote.idleResumes || 0),
+      armed: _dnote.armIdle === true, lastReason: String(_dnote.lastReason || ""),
+      lastAt: Number(_dnote.lastAt || 0), budgetMs: DNOTE_DRAIN_MS, maxTurns: DNOTE_MAX_TURNS,
+      lastCensus: c ? { day: c.day, total: c.total, read: c.read, noNote: c.noNote,
+        queued: c.queued, refused: c.refused, unknown: c.unknown, pending: c.pending,
+        complete: c.complete === true } : null };
+  }
+  /* ===== dnote-1.1.0 (b1184): MLS'S OWN DRIVING MUST NEVER "FOLLOW" ========
+     MEASURED live 2026-09-01 20:33, while this very lane was reading leftover
+     day-notes: the extension opened a patient's chart in athenaOne to read the
+     note, and the bidirectional Follow feature (af-1.0.0, LEG B: "athena chart
+     opened -> make that patient active in MLS") followed OUR OWN navigation.
+     The doctor was in another patient's History; the header card flipped to
+     the chart the extension had opened. That is the cross-patient class again,
+     caused this time by our own background driver.
+
+     THE RULE: only a chart the DOCTOR opened by hand in athenaOne may move the
+     active patient. Any navigation MLS performed - a day pull, a durable range
+     job, the day-note catch-up, the drain, the write lane - may not.
+
+     af-1.0.0 already refuses while `pullBusy()` (window.__mlsPullBusyAt fresh,
+     the pull button off idle, or the cross-tab stamp). The hole is everything
+     that drives athena WITHOUT being a managed pull: the notes-idle read and
+     the immediate deferred round both open charts and stamp nothing. Two
+     answers, and both are here because either alone leaves a gap:
+       (1) dnoteStampDriving() refreshes the SAME per-tab busy stamp the
+           shipped follow guard already reads, from every MLS-driven athena
+           read outside runManagedAthenaOperation. Nothing new to consult.
+       (2) dnoteFollowReceipt() is the ONE authoritative predicate - "is MLS
+           driving athena right now, and which lane" - published on the window
+           so the app-side follow guard (dnote-1.1.0 in mls-connect.js) can
+           ignore a chart-identity answer that our own driving produced.
+     Read-only, PHI-free, and it can never make a follow happen - only refuse
+     one. The cross-tab busy KEY is deliberately not written here: notes-idle's
+     own gate reads it (resumeBusyElsewhere) and would refuse itself. */
+  var DNOTE_FOLLOW_VERSION = "dnote-1.1.0";
+  function dnoteAthenaDriver() {
+    var who = "";
+    function claim(name, test) { if (!who && safe(test, false) === true) who = name; }
+    claim("day-pull", function () { return pullRunning === true; });
+    claim("patient-batch", function () { return window.__mlsSIBatchActive === true; });
+    claim("deferred-round", function () { return _tnDefer.running === true; });
+    claim("day-note-drain", function () { return _dnote.draining === true; });
+    claim("notes-idle", function () { niLoad(); return _ni.reading === true; });
+    claim("day-history-pull", function () { var d = window.__mlsDayHistoryPull; return !!(d && d.state && d.state.running === true); });
+    claim("month-pull", function () { var m = window.__mlsProvMonthPull; return !!(m && m.running === true); });
+    claim("range-job", function () { var r = window.__mlsP1RangeJobs; var s = (r && isFn(r.state)) ? r.state() : null; return !!(s && String(s.status || "") === "running"); });
+    claim("visits-backfill", function () { var b = window.__mlsVisitsBackfill; return !!(b && b.state && (b.state.running === true || b.state.inFlight === true)); });
+    claim("write-lane", function () { var w = window.__mlsWriteFlow, s = w && w.state; return !!(s && (s.running === true || s.busy === true || s.athenaBusy === true)); });
+    claim("other-tab", function () { return resumeBusyElsewhere() === true; });
+    return who;
+  }
+  function dnoteFollowReceipt() {
+    var by = dnoteAthenaDriver();
+    return { version: DNOTE_FOLLOW_VERSION, driving: by !== "", by: by, at: Date.now() };
+  }
+  function dnoteStampDriving() { safe(function () { window.__mlsPullBusyAt = Date.now(); }); }
+  safe(function () { window.__mlsAthenaDrivenByMls = dnoteFollowReceipt; });
+  /* ===== end dnote-1.1.0 (b1184) ===== */
+  /* ===== end dnote-1.0.0 (b1184) ===== */
   function runManagedAthenaOperation(task, busyFactory) {
     function busy(scope) {
       return isFn(busyFactory) ? busyFactory(scope || "same-tab") : { ok: false, complete: false, reason: "pull-in-flight", error: "Another explicit pull is already running." };
@@ -8686,6 +9058,10 @@
     function xtabBusyClear() { safe(function () { window.localStorage.removeItem(xtabBusyKey()); }); }
     function start() {
       operationStarted = true;
+      /* dnote-1.0.0 (b1184): a pull START arms the idle catch-up's re-arm. The
+         settle below spends it, so a Stop pressed for an EARLIER pull can no
+         longer leave the leftover-note lane stopped for good. */
+      safe(dnoteArmIdleForNewPull);
       safe(function () { window.__mlsPullBusyAt = Date.now(); });
       xtabBusyStamp();
       claimSiLease();
@@ -8740,7 +9116,11 @@
       /* p1-todaynote-deferred-retry-1.0.0: the lease this pull held is now
          released, so the rows that lost to it get their one retry round. */
       safe(tnScheduleDeferredRound);
-      return value;
+      /* dnote-1.0.0 (b1184): and the day's OWN notes are drained HERE, inside
+         the pull, before its result is handed to the day sheet or to the
+         durable range job. The lease is released and pullRunning is false, so
+         this is the only Athena driver in the tab - never a second one. */
+      return safe(function () { return dnoteAfterSettle(value); }, value);
     }, function (error) {
       pullRunning = false;
       if (leaseTouch != null) { safe(function () { clearInterval(leaseTouch); }); leaseTouch = null; }
@@ -8751,6 +9131,10 @@
       if (operationStarted) xtabBusyClear();
       if (operationStarted) releaseManagedAthenaWorkspace();
       safe(tnScheduleDeferredRound);
+      /* dnote-1.0.0 (b1184): a REJECTED operation still re-arms the catch-up
+         (the leftover notes are owed either way) but is never delayed by a
+         drain - the caller is handling a failure, not a finished day. */
+      safe(dnoteArmIdleAfterPull);
       throw error;
     });
   }
@@ -10540,6 +10924,16 @@
     return /sign-?in page|signed[- ]?out|sign in to athenaone|no signed-?in athenaone/i.test(String(receipt.error || ""));
   }
   /* ===== end p1-month-signout-1.0.0 ===== */
+  /* dnote-1.0.0 (b1184): the day's OWN-note debt, read off whichever receipt
+     shape the day produced. Bounded to 0-400 so a corrupt receipt cannot make
+     the durable job's arithmetic wander. */
+  function p1MonthDayNotesPending(receipt) {
+    if (!receipt || typeof receipt !== "object") return 0;
+    var hr = (receipt.historyReceipt && typeof receipt.historyReceipt === "object") ? receipt.historyReceipt : null;
+    var raw = (hr && hr.dayNotesPending != null) ? hr.dayNotesPending : receipt.dayNotesPending;
+    var n = Math.floor(Number(raw || 0) || 0);
+    return n > 0 ? Math.min(400, n) : 0;
+  }
   function p1MonthDayCheckpoint(callback, date, outcome) {
     var reason = String(outcome && outcome.reason || "no-result");
     if (!/^[a-z0-9][a-z0-9-]{0,79}$/.test(reason)) reason = "unclassified";
@@ -10549,7 +10943,11 @@
       complete: !!(outcome && outcome.complete === true),
       reason: reason,
       sessionExpired: reason === "athena-session-expired" || reason === "no-athena-tab" ||
-        p1MonthDaySignedOut(outcome && outcome.receipt)
+        p1MonthDaySignedOut(outcome && outcome.receipt),
+      /* dnote-1.0.0 (b1184): how many of this day's OWN visit notes are still
+         owed - a bounded PHI-free integer. The durable range job refuses to
+         call a day complete while it is above zero. */
+      dayNotesPending: p1MonthDayNotesPending(outcome && outcome.receipt)
     };
     /* This callback is a PHI-free durability seam for a caller that owns a
        larger range manifest. It is advisory to the month engine: a broken
@@ -11832,10 +12230,37 @@
       try { droppedNotes = tnDropDeferredQueue("stopped-by-user"); } catch (eStp) {}
       /* notes-idle-1.0.0: Stop means STOP. The idle catch-up is a background
          Athena driver too, so it stops with everything else rather than
-         restarting five seconds after the doctor pressed the button. */
+         restarting five seconds after the doctor pressed the button.
+         dnote-1.0.0 (b1184) scopes that stop to THIS pull: the stop stands for
+         the pull it was pressed for, and the next pull's settle re-arms the
+         catch-up (dnoteArmIdleAfterPull). Before this, one Stop on 2026-09-01
+         left the lane stopped through every later pull - fifteen queued notes
+         for Sep 1 and the 2026-08-27 rows were never read. */
       try { niStop("stopped-by-user"); } catch (eNi) {}
+      try { _dnote.armIdle = false; } catch (eDn) {}
       return { requested: true, deferredTodayNotesDropped: droppedNotes };
     },
+    /* ===== dnote-1.0.0 (b1184): the day-note DEBT, read-only ================
+       dayNotes() is the engine's own receipt; _dayNoteState/_dayNoteCensus are
+       the pure classifiers the sheet and the durable job both read; and
+       _dayNoteDrain is the bounded in-pull drain, exposed for diagnostics. It
+       claims no lease of its own and starts no pull. */
+    dayNotes: dnoteReceipt,
+    _dayNotes: dnoteReceipt,
+    _dayNoteState: dnoteState,
+    _dayNoteCensus: dnoteCensus,
+    _dayNoteStamp: dnoteStamp,
+    _dayNoteDrain: dnoteDrainNow,
+    _dayNoteArmIdle: dnoteArmIdleForNewPull,
+    _dayNoteAfterPull: dnoteArmIdleAfterPull,
+    _dayNoteConfig: function () {
+      return { version: DNOTE_VERSION, budgetMs: DNOTE_DRAIN_MS, maxTurns: DNOTE_MAX_TURNS,
+        hardGates: Object.keys(DNOTE_HARD_GATE) };
+    },
+    /* dnote-1.1.0 (b1184): "is MLS driving athenaOne right now, and which
+       lane". The one predicate the follow guard consults. Read-only. */
+    athenaDrivenByMls: dnoteFollowReceipt,
+    _athenaDriver: dnoteAthenaDriver,
     _dropDeferredTodayNotes: tnDropDeferredQueue,
     _warmUpDay: warmUpDay,
     /* p1-todaynote-deferred-retry-1.0.0: read-only view of the deferred

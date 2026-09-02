@@ -103,7 +103,18 @@ ok(/function niRestampCard\(/.test(bridge), 'niRestampCard is missing');
 /* IDENTITY LAW, as bytes */
 ok(/String\(r\.pid \|\| ""\) !== pid/.test(bridge), 'the bridge does not match a row by its OWN patient id');
 ok(/!r\.dnd \|\| String\(r\.dnd\) !== day/.test(bridge), 'the bridge does not refuse on a day mismatch or a missing day stamp');
-ok(/q\.s !== "read"/.test(bridge), 'the bridge flips on something other than a READ receipt');
+/* ===== dnote-1.0.0 (b1184): PIN RE-AIMED, and why ==========================
+   This read `q.s !== "read"` - the early `continue` that made the bridge skip
+   every queue row that was not already read. dnote-1.0.0 needs the bridge to
+   paint the DEBT states too ("queued to read" / "reading"), because a note the
+   catch-up is merely holding was being rendered as a failure ("7 need
+   attention" on the owner's finished pull). What this pin protects - only a
+   READ receipt may turn a cell GREEN, and only a real orange->green transition
+   may be recorded as a recovery - has not moved, and is asserted directly. */
+ok(/if \(q\.s === "read"\) want = "read";/.test(bridge),
+  'the bridge paints a cell green on something other than a READ receipt');
+ok(/if \(want === "read"\) \{ r\.dnLive = 1;/.test(bridge),
+  'the flip marker is recorded for a cell that did not actually go green');
 ok(/s\.running === true/.test(bridge), 'the bridge does not stand down while a pull is running');
 ok(/indexOf\("unread:"\) !== 0 && was\.indexOf\("retrying:"\) !== 0/.test(bridge),
   'the bridge does not restrict itself to a cell that is currently orange');
@@ -151,7 +162,15 @@ ok(/rr\.dnLive === 1 && String\(rr\.dn \|\| ''\) === 'read'/.test(liveCount),
 {
   /* it may never rise above the engine's own count */
   ok(/Math\.max\(0,/.test(liveCount), 'the live count is not floored at zero');
-  const doneLineTail = MC.slice(MC.indexOf('pulled-day note') - 400, MC.indexOf('pulled-day note') + 200);
+  /* dnote-1.0.0 (b1184): PIN RE-AIMED - anchor on the STATEMENT, not on the
+     first occurrence of a phrase. The block comment that introduces the
+     day-note DEBT states quotes the owner's own sheet verbatim ("7 pulled-day
+     notes not read yet"), so a phrase-first window now centres on ENGLISH
+     rather than on the code it is meant to read - the exact hazard the
+     __ppDoneRows pin two blocks above already names. Same two assertions. */
+  const doneLineAt = MC.indexOf('if (dvTnFailed > 0) doneLine +=');
+  ok(doneLineAt > 0, 'the Result line no longer states the unread pulled-day notes at all');
+  const doneLineTail = MC.slice(doneLineAt, doneLineAt + 600);
   ok(/dvTnFailed > 0/.test(doneLineTail), 'the Result line still tests the frozen dayVerdict stamp');
   ok(!/Number\(dv\.tnFailed \|\| 0\) === 1/.test(doneLineTail), 'the Result line still pluralises off the frozen stamp');
   ok(/var attnD = failed \+ dvTnFailed;/.test(MC), 'the "need attention" tally still counts the frozen stamp');
@@ -371,9 +390,23 @@ async function runtime() {
     eq(greenCount(card), 1, `expected 1 already-saved note cell, got ${greenCount(card)}`);
     ok(/today.s note not read this time \(chart saved\)/.test(noteOf(card, 'Quillon').note),
       `the deferred row does not carry the deferred wording: "${noteOf(card, 'Quillon').note}"`);
-    ok(/4 pulled-day notes not read yet/.test(card.result),
-      `the Result line does not count the 4 deferred notes: "${card.result}"`);
-    ok(/4 need attention/.test(card.tally), `the meta tally does not count the deferred notes: "${card.tally}"`);
+    /* ===== dnote-1.0.0 (b1184): PINS RE-AIMED, and why ====================
+       These read 4 and 4 - every non-green note cell, INCLUDING the row whose
+       retry had not had its turn yet ("retrying:find-open-deadline"). Owner
+       2026-09-01: a note that is merely queued or being read is a DEBT, not a
+       failure, and must never be counted in "need attention". Three of the
+       four cells here are refusals whose retries are spent; the fourth is the
+       retrying row, and it is now stated separately as still to read. Both
+       numbers together still account for all four. */
+    ok(/3 pulled-day notes not read yet/.test(card.result),
+      `the Result line does not count the 3 spent-retry notes: "${card.result}"`);
+    ok(/1 visit note still to read/.test(card.result),
+      `the Result line does not state the retrying note as a debt: "${card.result}"`);
+    ok(/reading 2 of 5/.test(card.result),
+      `the Result line does not say where the note reading has got to: "${card.result}"`);
+    ok(/3 need attention/.test(card.tally), `the meta tally does not count the spent-retry notes: "${card.tally}"`);
+    ok(!/4 need attention/.test(card.tally),
+      `a note that is merely retrying is still counted as needing attention: "${card.tally}"`);
     measured.a_baselineResult = card.result;
     const savedGreenPx = card.savedGreen;
     measured.a_savedGreenComputed = savedGreenPx;
@@ -387,10 +420,14 @@ async function runtime() {
     eq(flipped.note, 'note saved', `the flipped cell does not read as saved: "${flipped.note}"`);
     eq(flipped.noteColor, savedGreenPx, `the flipped cell is not the same green as the saved cell (${flipped.noteColor} vs ${savedGreenPx})`);
     eq(orangeCount(card), 3, `after one flip 3 cells should still be deferred, ${orangeCount(card)} were`);
-    /* the tally recounted */
-    ok(/3 pulled-day notes not read yet/.test(card.result),
+    /* the tally recounted. dnote-1.0.0 (b1184): PIN RE-AIMED - one of the
+       three remaining cells is the retrying row, which is a debt rather than a
+       failure, so the failure count is 2 and the debt is stated beside it. */
+    ok(/2 pulled-day notes not read yet/.test(card.result),
       `the Result line did not recount after the flip: "${card.result}"`);
-    ok(/3 need attention/.test(card.tally), `the meta tally did not recount after the flip: "${card.tally}"`);
+    ok(/1 visit note still to read/.test(card.result),
+      `the Result line dropped the retrying note's debt after the flip: "${card.result}"`);
+    ok(/2 need attention/.test(card.tally), `the meta tally did not recount after the flip: "${card.tally}"`);
     /* and the history verdict is untouched - the note lane is verdict-neutral */
     ok(/5 histories saved/.test(card.result), `the saved-history count moved when a note flipped: "${card.result}"`);
     eq(flipped.hist, '✓ saved', `the history verdict changed when the note flipped: "${flipped.hist}"`);

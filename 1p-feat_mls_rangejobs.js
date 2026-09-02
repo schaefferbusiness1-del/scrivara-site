@@ -103,7 +103,10 @@
     'complete-appointment-census-only': 1, 'complete-appointment-census-with-history': 1,
     'complete-appointment-census-history-partial': 1,
     'invalid-month': 1, 'month-exception': 1, 'schedule-parse-timeout': 1,
-    'account-scope-unverified': 1, unclassified: 1, 'needs-attention': 1
+    'account-scope-unverified': 1, unclassified: 1, 'needs-attention': 1,
+    /* dnote-1.0.0 (b1184): the day's charts landed but its OWN visit notes are
+       still owed. A real, attemptable verdict - never a completion. */
+    'day-notes-pending': 1
     /* ===== end p1-range-reasons-1.0.0 ===== */
   };
   /* A day whose Athena schedule was verified to hold no appointments. Both
@@ -864,13 +867,28 @@
     if (!month || !own(month.days, date)) return false;
     var day = month.days[date], first = !seen[date];
     seen[date] = 1;
-    var complete = payload.ok === true && payload.complete === true;
+    /* ===== dnote-1.0.0 (b1184): an unread OWN note is a DEBT, not a done =====
+       OWNER 2026-09-01: a finished pull reported "everything verified" with
+       seven of the day's own visit notes never read - they had been deferred
+       to a background catch-up that a previous pull's Stop had left stopped.
+       The durable job was checkpointing those days `complete`, so nothing
+       would ever return to them. A day is complete when its charts landed AND
+       its own notes are read or honestly classified (nothing in athenaOne, or
+       a named refusal whose retries are spent). While any note is merely
+       QUEUED the day keeps its charts, keeps its place, and stays retryable -
+       the ordinary attempt cap still bounds it, so this can never spin. */
+    var dayNotesPending = Math.max(0, Math.min(400, Math.floor(Number(payload.dayNotesPending || 0) || 0)));
+    var complete = payload.ok === true && payload.complete === true && dayNotesPending === 0;
     /* p1-range-reasons-1.0.0: keep the importer's OWN verdict on both arms. A
        complete day says HOW it completed (`empty-day`/`provider-empty` is the
        difference between "Athena verified no appointments" and "16 charts
        landed"), and a failed day keeps its specific cause instead of a
        generic one. */
     var code = reasonCode(payload.reason || (complete ? 'complete' : 'pull-failed'));
+    /* dnote-1.0.0 (b1184): a day the importer finished, held back ONLY by the
+       notes it still owes, says exactly that instead of borrowing a chart
+       failure's code. Every other verdict keeps its own cause. */
+    if (!complete && dayNotesPending > 0 && payload.ok === true && payload.complete === true) code = 'day-notes-pending';
     if (payload.loginExpired === true || payload.athenaSignedOutSuspected === true) code = 'no-athena-tab';
     /* ===== p1-range-signout-1.0.0 (a sign-out is a sign-in problem) =====
        Lead ruling 2026-08-17. `no-read`/`nav-failed` are ambiguous alone; the
@@ -938,7 +956,13 @@
            carries, read off the full day receipt on the settling path. */
         sessionExpired: row.sessionExpired === true || receipt.schedSessionLikelyExpired === true ||
           receipt.navSessionLikelyExpired === true || receipt.athenaSignedOutSuspected === true ||
-          !!(receipt.historyReceipt && receipt.historyReceipt.sessionExpired === true)
+          !!(receipt.historyReceipt && receipt.historyReceipt.sessionExpired === true),
+        /* dnote-1.0.0 (b1184): the settling path carries the day's own-note
+           debt too, so a month result and its per-day callback cannot disagree
+           about whether the day is finished. */
+        dayNotesPending: Number(row.dayNotesPending ||
+          (receipt.historyReceipt && receipt.historyReceipt.dayNotesPending) ||
+          receipt.dayNotesPending || 0)
       }, seen);
     }
     /* A day callback settles before the month owner's final release proof. If
@@ -1598,6 +1622,9 @@
     'history-store-empty': 'Charts were read but nothing was stored for that day. Check available storage, then Resume.',
     'history-store-unmeasured': 'MLS could not verify what was stored for that day. Resume re-reads it.',
     'schedule-parse-timeout': 'Reading that day’s schedule took too long. Check the Athena tab, then Resume.',
+    /* dnote-1.0.0 (b1184): the charts landed; the day still owes its own visit
+       notes, so it is not counted as done. */
+    'day-notes-pending': 'That day’s charts were saved, but its own visit notes are still to read. Resume finishes them.',
     'invalid-month': 'That month is not available to pull. Choose the current or a past month.',
     'month-exception': 'The month stopped safely after an unexpected error. Resume retries the remaining days.',
     'account-scope-unverified': 'MLS could not prove which signed-in account owns this pull. Sign in again, then Resume.',

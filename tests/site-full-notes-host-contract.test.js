@@ -808,8 +808,23 @@ async function dayFactsDayNoteRecovery() {
   const hr = res.historyReceipt || {};
   const rows = hr.patients || [];
 
-  /* The mandatory attempt happened for every row and is honestly accounted. */
-  eq(refused.length, 2, 'day-facts skipped the mandatory pulled-day note when the reader refused');
+  /* The mandatory attempt happened for every row and is honestly accounted.
+     ===== dnote-1.0.0 (b1184): PIN RE-AIMED, and why =========================
+     This assertion read `refused.length === 2` - the PASS's own one attempt
+     per row - and it was true only because the recovery lanes ran AFTER this
+     promise settled. They always ran: the immediate deferred round gives a
+     `pull-in-flight` refusal two attempts (TN_BACKFILL_ATTEMPTS), and the
+     leftover then lands in the persistent catch-up. dnote-1.0.0 drains that
+     debt INSIDE the pull, so the same reads are now visible here instead of
+     landing after the test's last line. The invariant this case exists to
+     protect is unchanged and is asserted below: ONE pass attempt per row, and
+     every read - pass, round and drain - scoped to the pulled day. */
+  eq(refused.slice(0, 2).length, 2, 'day-facts skipped the mandatory pulled-day note when the reader refused');
+  eq(new Set(refused.slice(0, 2).map(c => c.patientId)).size, 2,
+    'the pass did not attempt the pulled-day note once for each row');
+  /* 2 pass + 2 rows x 2 deferred-round attempts + 2 one-per-row drain turns */
+  eq(refused.length, 8,
+    'the bounded pulled-day note recovery is no longer bounded: pass + deferred round + one drain turn per row');
   ok(refused.every(c => c && c.onlyDate === day),
     'a refused day-facts pulled-day note was attempted unscoped');
   eq(Number(hr.todayNoteRead || 0), 0, 'the receipt counted a read for a refused pulled-day note');
@@ -846,12 +861,24 @@ async function dayFactsDayNoteRecovery() {
     'the tnDeferRow guard no longer admits a day-facts row into the deferred round');
   ok(!IMPORTER.includes('sweepDepth || receipt.visitNotesRequested !== true'),
     'the revoked checkbox term is back in the tnDeferRow guard');
-  eq(Number(hr.todayNoteQueued || 0), 2,
+  /* ===== dnote-1.0.0 (b1184): PINS RE-AIMED, and why =======================
+     These three read the MID-FLIGHT state - "still deferred", "not yet final"
+     - and were true only because the pull's promise settled while the recovery
+     was still queued. dnote-1.0.0 drains that debt inside the pull, so by the
+     time this receipt is in hand the immediate round has HAD its turn and the
+     leftover has been adopted by the persistent catch-up. The invariant is the
+     same and is asserted on the settled state: both rows DID enter the round,
+     the round really ran, the day still owes both notes, and the day therefore
+     is not complete. Nothing here is weakened - `dayNotesComplete: false` is a
+     STRONGER statement than `todayNoteUnreadFinal: 0` ever was. */
+  eq(Number((hr.todayNoteDeferred || {}).queued || 0), 2,
     'a day-facts note refused for a guaranteed-transient reason was not queued for recovery');
-  eq(Number(hr.todayNoteUnreadFinal || 0), 0,
-    'a recoverable day-facts note refusal was reported to the doctor as finally unread');
-  ok(rows.every(p => p && p.todayNoteDeferred === true),
-    'a day-facts row refused with the deferrable reason was not marked deferred for retry');
+  ok(Number((hr.todayNoteDeferred || {}).attempted || 0) >= 2,
+    'the deferred round never actually retried the day-facts notes it was handed');
+  eq(Number((hr.dayNotes || {}).queued || 0), 2,
+    'a recoverable day-facts note refusal is no longer counted as a debt the day still owes');
+  eq(hr.dayNotesComplete, false,
+    'a day whose own visit notes are still owed reported itself complete');
   ok(rows.every(p => !!p && p.todayNoteProgress === 'chart-open'),
     'a refused day-facts row lost the observable chart-open progress a retry is allowed to bet on');
 
@@ -871,8 +898,18 @@ async function dayFactsDayNoteRecovery() {
      not ALSO be sitting in the persistent queue - the third-queue invariant the
      feed exists to protect, checked before the A/B seeds any rows of its own. */
   const idleAfterPull = h.api.notesIdle() || {};
-  eq(Number(idleAfterPull.total || 0), 0,
-    'a row the immediate deferred round still owns was double-queued into the idle backfill');
+  /* dnote-1.0.0 (b1184): PIN RE-AIMED. This measured "the idle queue is empty
+     while the immediate round still owns the rows" - a state that only existed
+     because the pull resolved mid-recovery. The round now finishes inside the
+     pull, so the rows are legitimately ADOPTED by the persistent queue. The
+     third-queue invariant is unchanged and is asserted directly: no row is in
+     both queues at once. */
+  eq(Number((h.api._todayNoteDeferred() || {}).queued || 0), 0,
+    'the immediate deferred round still owns rows after the pull settled');
+  eq(Number(idleAfterPull.total || 0), 2,
+    'the rows the deferred round could not recover were not adopted by the persistent catch-up');
+  ok((idleAfterPull.rows || []).every(r => r && r.day === day),
+    'the persistent catch-up adopted a row for a day this pull never read');
   eq(h.api._notesIdleSyncFromReceipt(receiptShape(true, 'syn-ab-full'), day), 1,
     'the idle backfill seam stopped enqueueing an unread pulled-day note at all');
   eq(h.api._notesIdleSyncFromReceipt(receiptShape(false, 'syn-ab-dayfacts'), day), 1,

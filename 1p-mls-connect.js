@@ -5199,6 +5199,50 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (head.length > 160) head = head.slice(0, 160).replace(/\s+\S*$/, '') + '\u2026'; /* qol-2.2 D2: never print a mid-word stump as the verdict */
     return head || 'could not read';
   }
+  /* ===== dnote-1.0.0 (b1184): the day-note cell says WHAT refused ===========
+     OWNER 2026-09-01: "7 need attention" on a finished pull, with every row
+     saying only that the note was "not read this time". fnc-1.0.0's rule
+     stands - a raw reader message may never reach this cell - so the suffix is
+     drawn from the engine's OWN closed code vocabulary (notes-idle-1.0.0's
+     NI_PLAIN, verbatim) and anything outside it prints nothing at all. */
+  var DN_PLAIN = {
+    'no-encounter': 'no visit note in athenaOne for that day',
+    'safety-stop': 'athenaOne showed the visit but not its full note',
+    'deadline': 'athenaOne was too slow',
+    'no-athena-tab': 'athenaOne was not open',
+    'pull-in-flight': 'MLS was busy with another athenaOne read',
+    'pass-budget-exhausted': 'the pull ran out of its note budget',
+    'surface-race': 'athenaOne was showing a different patient',
+    'extension-too-old': 'MLS Assist needs updating',
+    'reader-unavailable': 'the visit reader was not loaded'
+  };
+  /* the engine's own classifier (tnReasonCode), restated as a CLOSED set of
+     patterns. A refusal that matches none of them prints NO reason at all -
+     never the raw text - so fnc-1.0.0's rule that a scoped-reader message may
+     not reach this cell holds by construction. */
+  var DN_CLASSES = [
+    [/no-encounter|encounter index without verified full detail|no-visits-for-date|encounter-index-empty/i, 'no-encounter'],
+    [/safety[- ]stop/i, 'safety-stop'],
+    [/pass-budget/i, 'pass-budget-exhausted'],
+    [/deadline|\btimed? ?out\b|\btimeout\b/i, 'deadline'],
+    [/no-athena-tab|no signed-?in athenaone|no athenaone tab/i, 'no-athena-tab'],
+    [/pull-in-flight/i, 'pull-in-flight'],
+    [/different patient|surface-race/i, 'surface-race'],
+    [/extension-predates|extension-too-old/i, 'extension-too-old'],
+    [/reader-unavailable/i, 'reader-unavailable']
+  ];
+  function dnRefusedSuffix(dnRaw) {
+    var raw = String(dnRaw == null ? '' : dnRaw);
+    if (raw.indexOf('unread:') !== 0) return '';
+    var body = raw.slice(7).trim();
+    var plain = DN_PLAIN[body];
+    if (!plain) {
+      for (var i = 0; i < DN_CLASSES.length && !plain; i++) {
+        if (DN_CLASSES[i][0].test(body)) plain = DN_PLAIN[DN_CLASSES[i][1]];
+      }
+    }
+    return plain ? ' — refused: ' + plain : '';
+  }
   function rowsHtml(S) {
     var latest = {}, order = [];
     (S.rows || []).forEach(function (r) {
@@ -5242,20 +5286,39 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
            and "not read" are the two phrases every failing row on this panel
            uses, and a calm state that borrows a failure's words is read as a
            failure. It now says what is true and what was kept. */
+        /* ===== dnote-1.0.0 (b1184): a QUEUED note is not a failed note ======
+           OWNER 2026-09-01, on a finished day pull: "did you forget about the
+           must-read visit note even if Full visit notes is turned off?" Seven
+           rows read "today's note not read this time (chart saved)" about
+           notes that were queued in the background catch-up - which was itself
+           stopped. Every state the engine can be in now has its own sentence,
+           and only a note whose retries are SPENT is a warning; a spent one
+           now names what refused it instead of leaving the doctor guessing. */
+        var dnQueuedCell = dnRaw.indexOf('queued:') === 0;
+        var dnReadingCell = dnRaw.indexOf('reading:') === 0;
+        var dnNoNoteCell = dnRaw === 'no-note' || dnRaw.indexOf('no-note:') === 0;
         var dnWhy = dnRaw === 'read' ? 'note saved'
           : dnRaw === 'not-yet' ? 'not seen yet'
           : dnRaw === 'future-day' ? 'visit hasn’t happened yet — nothing to read (chart saved)'
+          : dnNoNoteCell ? 'no note in athenaOne for this day'
+          : dnQueuedCell ? 'queued to read'
+          : dnReadingCell ? 'reading today’s note now'
           : dnRetrying ? 'today’s note not read yet — retrying'
-          : 'today’s note not read this time (chart saved)';
-        /* ===== end fdw-1.0.0 ===== */
-        var dnCls = dnRaw === 'read' ? 'pp-ok' : ((dnRaw === 'not-yet' || dnRaw === 'future-day' || dnRetrying) ? 'pp-wait' : 'pp-bad');
+          : 'today’s note not read this time (chart saved)' + dnRefusedSuffix(dnRaw);
+        /* ===== end fdw-1.0.0 / dnote-1.0.0 ===== */
+        var dnCls = dnRaw === 'read' ? 'pp-ok'
+          : ((dnRaw === 'not-yet' || dnRaw === 'future-day' || dnRetrying || dnQueuedCell || dnReadingCell || dnNoNoteCell) ? 'pp-wait' : 'pp-bad');
         /* fnc-1.0.0: the raw scoped-reader reason belongs in the durable
            receipt, not in a doctor-facing tooltip. In particular an OFF-mode
            onlyDate refusal could expose internals such as
            visit-bodies-incomplete/no-bound-clinical-detail even though this
            cell's honest verdict is simply that today's note was not read. */
-        var dnTitle = (dnRaw.indexOf('unread:') === 0 || dnRetrying)
-          ? ' title="' + esc(dnRetrying
+        var dnTitle = (dnRaw.indexOf('unread:') === 0 || dnRetrying || dnQueuedCell || dnReadingCell)
+          ? ' title="' + esc(dnQueuedCell
+            ? 'The chart was saved. This day’s own visit note is queued and will be read automatically.'
+            : dnReadingCell
+            ? 'MLS is reading this day’s own visit note now.'
+            : dnRetrying
             ? 'Today’s note is queued for another automatic read.'
             : 'The chart was saved. Today’s note could not be read this time; pull again later.') + '"'
           : '';
@@ -5418,7 +5481,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        counts - histories - and the pulled-day NOTE column gets its own count
        beside it, never inside the failure count. */
     var dnUnreadLive = 0, dnRetryLive = 0;
-    try { (S.rows || []).forEach(function (r) { var d = String((r && r.dn) || ''); if (d.indexOf('unread:') === 0) dnUnreadLive++; else if (d.indexOf('retrying:') === 0) dnRetryLive++; }); } catch (eDn) {}
+    /* dnote-1.0.0 (b1184): a note the engine has QUEUED (or is reading right
+       now) is a debt, not a failure, and never joins "need attention". */
+    var dnQueuedLive = 0;
+    try { (S.rows || []).forEach(function (r) { var d = String((r && r.dn) || ''); if (d.indexOf('unread:') === 0) dnUnreadLive++; else if (d.indexOf('retrying:') === 0 || d.indexOf('reading:') === 0) dnRetryLive++; else if (d.indexOf('queued:') === 0) dnQueuedLive++; }); } catch (eDn) {}
     /* ===== clunky2-pull-1.0.0 (CLUNKY 127) =====
        MEASURED on a seeded 23-patient run: this one line rendered as SIX
        clauses separated by middots, ending "... \u00B7 14 re-checking". It is all
@@ -5427,7 +5493,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        him - and the clause wall keeps every word behind a closed fold. The
        long line is unchanged apart from its address, so nothing is lost and
        the wording other suites pin still ships. */
-    var detailLine = '\u2713 ' + ok + ' histor' + (ok === 1 ? 'y' : 'ies') + ' saved' + (pendingLive ? ' \u00B7 ' + pendingLive + ' summar' + (pendingLive === 1 ? 'y' : 'ies') + ' pending' : '') + (dnRetryLive ? ' \u00B7 ' + dnRetryLive + ' today\u2019s note' + (dnRetryLive === 1 ? '' : 's') + ' retrying' : '') + (dnUnreadLive ? ' \u00B7 ' + dnUnreadLive + ' today\u2019s note' + (dnUnreadLive === 1 ? '' : 's') + ' not read this time' : '') + (failed ? ' \u00B7 \u26A0 ' + failed + ' chart' + (failed === 1 ? '' : 's') + ' not saved \u2014 each row below says why' + (chartOnly ? ' (' + chartOnly + ' saved the chart but not every note)' : '') : '') + (reChecking ? ' \u00B7 ' + reChecking + ' re-checking' : '');
+    var detailLine = '\u2713 ' + ok + ' histor' + (ok === 1 ? 'y' : 'ies') + ' saved' + (pendingLive ? ' \u00B7 ' + pendingLive + ' summar' + (pendingLive === 1 ? 'y' : 'ies') + ' pending' : '') + (dnQueuedLive ? ' \u00B7 ' + dnQueuedLive + ' today\u2019s note' + (dnQueuedLive === 1 ? '' : 's') + ' queued to read' : '') /* dnote-1.0.0 */ + (dnRetryLive ? ' \u00B7 ' + dnRetryLive + ' today\u2019s note' + (dnRetryLive === 1 ? '' : 's') + ' retrying' : '') + (dnUnreadLive ? ' \u00B7 ' + dnUnreadLive + ' today\u2019s note' + (dnUnreadLive === 1 ? '' : 's') + ' not read this time' : '') + (failed ? ' \u00B7 \u26A0 ' + failed + ' chart' + (failed === 1 ? '' : 's') + ' not saved \u2014 each row below says why' + (chartOnly ? ' (' + chartOnly + ' saved the chart but not every note)' : '') : '') + (reChecking ? ' \u00B7 ' + reChecking + ' re-checking' : '');
     var needAttention = failed + dnUnreadLive;
     setText(p, 'tally', '\u2713 ' + ok + ' saved' + (needAttention ? ' \u00B7 \u26A0 ' + needAttention + ' need attention' : ''));
     var hasMore = detailLine.indexOf('\u00B7') >= 0;
@@ -5463,7 +5529,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       ? 'reading today\u2019s notes'
       : String(S.current || 'opening the next chart'));
     /* Rows re-render ONLY when a row actually settles, never on the clock. */
-    var sig = done + '|' + ok + '|' + failed + '|' + pendingLive + '|' + dnRetryLive + '|' + dnUnreadLive + '|' + ((S.rows || []).length);
+    var sig = done + '|' + ok + '|' + failed + '|' + pendingLive + '|' + dnRetryLive + '|' + dnUnreadLive + '|' + dnQueuedLive /* dnote-1.0.0: a queued->read flip must repaint */ + '|' + ((S.rows || []).length);
     var rowsEl = p.querySelector('[data-pp="rows"]');
     if (rowsEl && p.__ppRowsSig !== sig) {
       p.__ppRowsSig = sig;
@@ -5525,6 +5591,36 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     } catch (eRec) {}
     var dvTnFailed = Math.max(0, (dv ? Number(dv.tnFailed || 0) : 0) - dnRecovered);
     /* ===== end lcd-1.0.0 (live count) ===== */
+    /* ===== dnote-1.0.0 (b1184): the day's own notes, counted by STATE =======
+       OWNER 2026-09-01: "7 of 7 · 7 saved · 7 need attention · Result: 7
+       histories saved · 7 pulled-day notes not read yet - everything verified".
+       Every one of those seven notes was QUEUED in the background catch-up (a
+       lane an earlier pull's Stop had left stopped). A queued note is a DEBT:
+       it is not a failure, so it may not join "need attention", and it is not
+       a done, so the Result line may not end "everything verified".
+       Counted the same way lcd-1.0.0 counts recoveries - only from what the
+       ROWS themselves prove, so this can never invent a number - and the
+       frozen stamp is only ever reduced, never raised. */
+    var dnQueuedDone = 0, dnReadingDone = 0, dnReadDone = 0, dnNoNoteDone = 0, dnCellsDone = 0;
+    try {
+      var dnLatest = {};
+      (S.rows || []).forEach(function (r) { if (r) dnLatest[r.k || r.name] = r; });
+      Object.keys(dnLatest).forEach(function (dk) {
+        var dnv = String((dnLatest[dk] || {}).dn || '');
+        if (!dnv) return;
+        dnCellsDone++;
+        if (dnv === 'read') dnReadDone++;
+        else if (dnv === 'no-note' || dnv.indexOf('no-note:') === 0) dnNoNoteDone++;
+        else if (dnv.indexOf('queued:') === 0) dnQueuedDone++;
+        else if (dnv.indexOf('reading:') === 0 || dnv.indexOf('retrying:') === 0) dnReadingDone++;
+      });
+    } catch (eDnDone) {}
+    var dnPendingDone = dnQueuedDone + dnReadingDone;
+    dvTnFailed = Math.max(0, dvTnFailed - dnPendingDone);
+    /* the day's own notes are DONE only when nothing is still owed - by the
+       rows AND by the engine's own stamp, whichever is less optimistic. */
+    var dnNotesDone = dnPendingDone === 0 && (!dv || dv.tnNotesComplete !== false);
+    /* ===== end dnote-1.0.0 (b1184) ===== */
     if (!p.__ppDoneApplied) {
       p.__ppDoneApplied = 1;
       api.doneShown = (api.doneShown || 0) + 1;
@@ -5583,7 +5679,21 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     /* ===== end fdw-1.0.0 ===== */
     if (dvTnFailed > 0) doneLine += ' \u00B7 ' + dvTnFailed + ' pulled-day note' + (dvTnFailed === 1 ? '' : 's') + ' not read yet'; /* lcd-1.0.0: dvTnFailed, not the frozen stamp */
     /* ===== end cap-1.0.0 + tny-1.0.0 ===== */
-    if (dv && dv.complete === true) doneLine += ' \u2014 everything verified';
+    /* dnote-1.0.0 (b1184): the debt is stated as a debt, with the read/total
+       the doctor can watch move, and "everything verified" is reserved for a
+       day that genuinely owes nothing. */
+    if (dnPendingDone > 0) {
+      doneLine += ' \u00B7 ' + dnPendingDone + ' visit note' + (dnPendingDone === 1 ? '' : 's') + ' still to read';
+      /* the denominator is every row that HAS a note column, so "reading 3 of
+         7" counts the day, not just the rows still outstanding. */
+      if (dnReadingDone > 0) doneLine += ' (reading ' + Math.min(dnCellsDone, dnReadDone + dnNoNoteDone + dnReadingDone) + ' of ' + dnCellsDone + ')';
+      else doneLine += ' (queued)';
+    }
+    if (dv && dv.complete === true) doneLine += (dnNotesDone && dvTnFailed === 0)
+      ? ' \u2014 everything verified'
+      : (!dnNotesDone
+        ? ' \u2014 histories verified; this day\u2019s own visit notes are still being read'
+        : ' \u2014 histories verified; the visit notes marked above still need attention');
     setText(p, 'done', String(S.done || 0));
     setText(p, 'total', String(total));
     var fillD = p.querySelector('.pp-fill');
@@ -5641,6 +5751,88 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   api.humanWhy = ppHumanWhy; /* qol-2.2 D6: one wording per reason code, both surfaces */
   window.__mlsPullProgress = api;
   window.__mlsPullProgress_revert = function () { stopped = true; try { var p = document.getElementById(PANEL); if (p) p.remove(); } catch (e) {} try { ensureFab(false); } catch (e) {} try { delete window.__mlsPullProgress; } catch (e) {} };
+})();
+
+/* =============================================================================
+ * __mlsFollowGuard  dnote-1.1.0 (b1184)  -- OUR OWN DRIVING MUST NOT "FOLLOW"
+ * -----------------------------------------------------------------------------
+ * MEASURED live 2026-09-01 20:33. While MLS was driving athenaOne itself (the
+ * day-note catch-up opening a patient's chart to read that day's note), the
+ * bidirectional Follow feature's LEG B - "an athenaOne chart is open, so make
+ * that patient active in MLS" (the Athena Follow module, af-1.0.0) - followed
+ * OUR OWN navigation. A toast appeared and the header card flipped to the chart
+ * the extension had opened while the doctor was reading a DIFFERENT patient's
+ * History. That is the cross-patient class, caused by our own background
+ * driver, and it is exactly the class that must never happen.
+ *
+ * THE RULE: only a chart the DOCTOR opened by hand in athenaOne may move the
+ * active patient. A chart MLS opened - day pull, durable range job, day-note
+ * catch-up, drain, write lane - may not.
+ *
+ * HOW, precisely. Leg B asks the extension `mlsAppChartIdentity` and acts on
+ * the `mlsAppChartIdentityResult` that comes back. This guard listens for that
+ * reply in the CAPTURE phase - which runs before any non-capturing listener on
+ * window, including the one af-1.0.0 registers per request - and, when MLS is
+ * the one driving athenaOne, stops the reply reaching the follow lane. Leg B's
+ * own promise then times out and it does nothing, which is its documented
+ * fail-closed behaviour for "no identity".
+ *
+ * IT IS SCOPED TO THE FOLLOW LANE ALONE. Only a reply whose requestId carries
+ * af-1.0.0's own 'af' prefix is stopped. Every other reader of this verb - the
+ * write lane above all - IS MLS driving athenaOne and needs its answer, so
+ * their replies pass untouched. Nothing here can cause a follow; it can only
+ * refuse one, and it refuses nothing while MLS is idle.
+ *
+ * The predicate itself lives in the engine (window.__mlsAthenaDrivenByMls,
+ * dnote-1.1.0), so "is MLS driving athenaOne" has exactly one answer. With no
+ * engine loaded this guard refuses nothing - fail-open toward the doctor's own
+ * feature, never toward a silent patient switch, because the engine that is
+ * absent is also the only thing that could have been driving.
+ *
+ * PHI-free (counts and a lane name), no timers, additive.
+ * Revert: window.__mlsFollowGuard.revert()
+ * ========================================================================== */
+(function () {
+  'use strict';
+  try { if (window.__mlsFollowGuard && window.__mlsFollowGuard.installed) return; } catch (eG0) { return; }
+  var VERSION = 'dnote-1.1.0';
+  var FOLLOW_RID_PREFIX = 'af';   /* af-1.0.0 bridgeOnce: 'af' + base36 + seq */
+  var ignored = 0, allowed = 0, lastAt = 0, lastBy = '';
+  function drivingBy() {
+    try {
+      var fn = window.__mlsAthenaDrivenByMls;
+      var r = (typeof fn === 'function') ? fn() : null;
+      return (r && r.driving === true) ? String(r.by || 'mls') : '';
+    } catch (eG1) { return ''; }
+  }
+  function shouldIgnoreChartIdentity() { return drivingBy() !== ''; }
+  function onMessage(ev) {
+    try {
+      var d = ev && ev.data;
+      if (!d || d.source !== 'mls-ext') return;
+      if (String(d.type || '') !== 'mlsAppChartIdentityResult') return;
+      if (String(d.requestId || '').indexOf(FOLLOW_RID_PREFIX) !== 0) return;
+      var by = drivingBy();
+      if (!by) { allowed++; return; }
+      ignored++; lastAt = Date.now(); lastBy = by;
+      if (typeof ev.stopImmediatePropagation === 'function') ev.stopImmediatePropagation();
+    } catch (eG2) {}
+  }
+  try { window.addEventListener('message', onMessage, true); } catch (eG3) { return; }
+  window.__mlsFollowGuard = {
+    installed: true, version: VERSION, followRidPrefix: FOLLOW_RID_PREFIX,
+    drivingBy: drivingBy,
+    shouldIgnoreChartIdentity: shouldIgnoreChartIdentity,
+    receipt: function () {
+      return { version: VERSION, ignored: ignored, allowed: allowed,
+        lastAt: lastAt, lastBy: lastBy, drivingNow: drivingBy() };
+    },
+    _onMessage: onMessage,
+    revert: function () {
+      try { window.removeEventListener('message', onMessage, true); } catch (eG4) {}
+      try { delete window.__mlsFollowGuard; } catch (eG5) {}
+    }
+  };
 })();
 
 /* feat_study_builder_v2.js  ->  window.__mlsStudyBuilderV2   (Run-a-Study: more

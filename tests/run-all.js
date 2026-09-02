@@ -24,6 +24,10 @@ const AUTOMATED_PROOF_FILES = new Set([
   /* writeui-1.0.0 (b1187): the Send-to-Athena sheet rebuilt around the step
      bar - presentation only, every gate region SHA-pinned unchanged. */
   'write-ui-proof.js',
+  /* dnote-1.0.0 / dnote-1.1.0 (b1188): the pulled day's own note is a debt the
+     pull drains on its settle path; a day with debt is never complete; the
+     Follow guard mutes only af-1.0.0 replies while MLS drives athenaOne. */
+  'day-note-proof.js',
   '1p-avatar-photo-framing-proof.js',
   '1p-avatar-professional-likeness-proof.js',
   /* avlook-1.0.0 (2026-08-17): the drawn face's proportions as eleven measured
@@ -1260,6 +1264,7 @@ const tests = [
   'month-report-surface.test.js',
   'reports-fixes-proof.js',
   'write-ui-proof.js',
+  'day-note-proof.js',
   'visit-walkthrough-proof.js',
   'phone-fixes-proof.js',
   'note-quality-proof.js',

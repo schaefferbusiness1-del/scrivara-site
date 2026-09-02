@@ -78,7 +78,12 @@ for (const [name, open, close] of BLOCKS) {
   ok(/dnRaw === 'read' \? 'note saved'/.test(MC), 'the read wording changed');
   /* fd-1.0.0 semantics are NOT touched: future-day stays a calm class, and is
      still never counted as a failure. */
-  ok(/dnCls = dnRaw === 'read' \? 'pp-ok' : \(\(dnRaw === 'not-yet' \|\| dnRaw === 'future-day' \|\| dnRetrying\) \? 'pp-wait'/.test(MC),
+  /* dnote-1.0.0 (b1184): PIN RE-AIMED. The calm class gained the two day-note
+     DEBT states (queued:/reading:) and the "no note in athenaOne" state, so the
+     literal expression moved. What this pin protects has NOT moved and is
+     still asserted exactly: read is pp-ok, and not-yet / future-day / retrying
+     are pp-wait, with everything else pp-bad. */
+  ok(/dnCls = dnRaw === 'read' \? 'pp-ok'\s*:\s*\(\(dnRaw === 'not-yet' \|\| dnRaw === 'future-day' \|\| dnRetrying[^)]*\) \? 'pp-wait' : 'pp-bad'\)/.test(MC),
     'a future-day row is no longer classed pp-wait — the stamp semantics moved');
   /* the Result line states the future day once */
   const res = MC.match(/if \(dv && Number\(dv\.tnFuture \|\| 0\) > 0\) doneLine \+= '([^']*)'/);
