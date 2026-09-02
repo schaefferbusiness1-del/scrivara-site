@@ -4363,7 +4363,18 @@
        wrong) pinned day; the rest are the patient's other scheduled days. Name
        each honestly - the doctor picks, MLS never chooses a day. */
     var pinnedDay = wfdxDayKey((visit && visit.visitDate) || '');
-    days.slice(0, 8).forEach(function (day) {
+    /* bindorder-1.0.0 (b1196, measured live 2026-09-02 00:1x on the test patient):
+       the candidates arrive pinned-day-first then ASCENDING, and the eight-button
+       cap cut off the NEWEST day - the 2026-08-31 encounter the note belonged
+       to was the ninth entry, so the cure could not be offered while eight
+       older days were. The pinned day stays first; every other day is offered
+       newest first, and the cap is twelve. */
+    var orderedDays = days.slice();
+    try {
+      var restDays = orderedDays.filter(function (d) { return !(pinnedDay && d === pinnedDay); }).sort().reverse();
+      orderedDays = (pinnedDay && days.indexOf(pinnedDay) >= 0 ? [pinnedDay] : []).concat(restDays);
+    } catch (eBindOrder) { orderedDays = days.slice(); }
+    orderedDays.slice(0, 12).forEach(function (day) {
       var isPinned = !!pinnedDay && day === pinnedDay;
       var b = wfbindButton('Bind to ' + day + ' — re-pulls this day',
         isPinned
