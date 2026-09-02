@@ -37,6 +37,12 @@ const AUTOMATED_PROOF_FILES = new Set([
      chart Follow adopts - not while the lane drives, and not in the quiet
      afterwards when the reader has finished and left the chart parked. */
   'follow-residue-proof.js',
+  /* vntpl-1.1.0 (2026-09-01): the standard visit note only ever takes a
+     VISIT-NOTE template. Nine straight backend refusals came from a
+     TEMPLATE_CONTRACT built out of an OPERATIVE REPORT; the op-note room keeps
+     those templates and the visit note is written in the note style instead,
+     with one plain sentence on the pick receipt. */
+  'visit-template-scope-proof.js',
   '1p-avatar-photo-framing-proof.js',
   '1p-avatar-professional-likeness-proof.js',
   /* avlook-1.0.0 (2026-08-17): the drawn face's proportions as eleven measured
@@ -1276,6 +1282,7 @@ const tests = [
   'day-note-proof.js',
   'refusal-visibility-proof.js',
   'follow-residue-proof.js',
+  'visit-template-scope-proof.js',
   'visit-walkthrough-proof.js',
   'phone-fixes-proof.js',
   'note-quality-proof.js',

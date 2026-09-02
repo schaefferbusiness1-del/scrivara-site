@@ -28610,6 +28610,35 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     return { allow: true, reason: "active template (auto-choose off), class " + tcls };
   }
 
+  /* ===== vntpl-1.1.0 - THE VISIT-NOTE SCOPE GATE, ASKED OF THE SHELL ======
+   * REUSE, NEVER RE-DERIVE. The shell owns the classifier (it lives with the
+   * generation contract it also guards); this overlay only asks it, because a
+   * second copy over here would drift from that one the first time either
+   * changed - the same reason _mlsTplKindOf and the exact-name decision are
+   * reached through window rather than reimplemented.
+   *
+   * THIS IS THE PATH THAT ACTUALLY DECIDES on the live SOAP lane: wrapResolve
+   * replaces window.resolveActiveTemplate outright, so the shell's own copy of
+   * this gate never runs in production. All three of the shipped pick paths
+   * below - exact name, class-aware match, and the doctor's explicit default -
+   * pass through it.
+   *
+   * With the shell export absent this returns '' and nothing changes, which is
+   * exactly what shipped before; the shell's _mlsResolveGenerationTemplate
+   * still gates the primary prompt in that case, so the defect cannot come
+   * back through this door alone. */
+  function vnScopeWhy(tpl) {
+    try { if (isFn(window._mlsGenTemplateScopeSkip)) return S(window._mlsGenTemplateScopeSkip(tpl)); } catch (eVnWhy) {}
+    return "";
+  }
+  function vnScopeRefuse(tpl, why) {
+    /* the shell recorder writes the receipt AND repaints #tplPickReceipt, so
+       the doctor reads one sentence whichever resolver ran */
+    try { if (isFn(window._mlsGenTemplateSkip)) window._mlsGenTemplateSkip(tpl, why); } catch (eVnRec) {}
+    logEvent("vntpl-scope", S(tpl && tpl.name), true, why);
+    return null;
+  }
+
   var _origResolve = null;
   function wrapResolve() {
     try {
@@ -28623,6 +28652,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           /* tplpick-1.0.0: every resolve is a fresh decision - an earlier
              generation's receipt must never be read as this one's. */
           try { window.__mlsLastTemplatePick = null; } catch (eClear) {}
+          /* vntpl-1.1.0: the skip receipt is this resolve's too */
+          try { window.__mlsLastGenTemplateSkip = null; } catch (eVnClear) {}
           if (autoOn) {
             /* vnfid-1.0.0: THE EXACT NAME IS NOT A SCORE - and this overlay,
                not the shell, is what actually decides on the live SOAP lane.
@@ -28637,6 +28668,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
             if (xnPick && xnPick.tpl) {
               var xnGate = gateActive(S(visitText), xnPick.tpl);
               if (xnGate.allow) {
+                /* vntpl-1.1.0: an exact NAME match is still not a licence to
+                   put an operative report on a standard visit note. */
+                var xnScope = vnScopeWhy(xnPick.tpl);
+                if (xnScope) return vnScopeRefuse(xnPick.tpl, xnScope);
                 try {
                   window.__mlsLastTemplatePick = { name: S(xnPick.tpl.name), id: S(xnPick.tpl.id),
                     kind: (isFn(window._mlsTplKindOf) ? window._mlsTplKindOf(xnPick.tpl) : ''),
@@ -28652,6 +28687,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
             }
             var pick = classAwarePick(S(visitText));
             if (pick.tpl) {
+              /* vntpl-1.1.0: THE MEASURED LIVE PATH. On 2026-09-01 this branch
+                 returned "Left knee intra-articular injection" - an operative
+                 report - for a standard visit note, and the backend refused
+                 the result nine times running. */
+              var pickScope = vnScopeWhy(pick.tpl);
+              if (pickScope) return vnScopeRefuse(pick.tpl, pickScope);
               /* SAY WHICH TEMPLATE AND WHY. A silent pick is how the wrong
                  template ships; the doctor's own keywords are the reason he
                  can check. Same receipt shape the shell's picker publishes,
@@ -28675,6 +28716,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           try { act = isFn(window.getTemplateById) && isFn(window.getActiveTemplateId) ? window.getTemplateById(window.getActiveTemplateId()) : null; } catch (e2) {}
           if (!act) { try { if (isFn(window._mlsRenderTplPickReceipt)) window._mlsRenderTplPickReceipt(); } catch (eR0) {} return null; }
           var d = gateActive(S(visitText), act);
+          /* vntpl-1.1.0: the doctor's explicit default is gated by the same
+             rule - on the owner's account it is itself a procedure template. */
+          var actScope = vnScopeWhy(act);
+          if (actScope) return vnScopeRefuse(act, actScope);
           if (d.allow) {
             /* no keyword match: the doctor's own default, named as such */
             try { if (isFn(window._mlsRenderTplPickReceipt)) window._mlsRenderTplPickReceipt(act); } catch (eR1) {}

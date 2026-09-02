@@ -26449,14 +26449,23 @@ function pickTemplateForVisit(visitText,ctx,kind){
 function _mlsRenderTplPickReceipt(fallbackTpl){
   var el=document.getElementById('tplPickReceipt');
   var pick=null; try{ pick=window.__mlsLastTemplatePick; }catch(e){}
+  /* vntpl-1.1.0: the resolve that REFUSED a template is a decision too, and
+     the only one the doctor cannot infer from the note in front of him. */
+  var skip=null; try{ skip=window.__mlsLastGenTemplateSkip; }catch(eVnSkipRead){}
   var text='';
   /* THE FALLBACK ARGUMENT WINS. It is only ever passed on the path that
      actually used the default template, and it must outrank any pick left on
      window - including a stale one from an earlier generation, which is what
      auto-choose being OFF leaves behind. */
   if(!(typeof useTemplatesOn==='function'&&useTemplatesOn())) text='';
+  /* vntpl-1.1.0: A TEMPLATE LEFT TO THE OP-NOTE ROOM IS THE FIRST THING TO
+     SAY. Without this line the receipt is BLANK on exactly the run where a
+     template was resolved and then deliberately not used - which reads as
+     "templates did nothing", the same silence that made nine backend refusals
+     look like the app simply not working. */
+  else if(skip&&skip.why&&!fallbackTpl) text=_mlsGenTemplateSkipSentence(skip);
   else if(fallbackTpl&&fallbackTpl.name) text='No template matched this visit - using your default: '+String(fallbackTpl.name);
-  else if(pick&&(pick.reason==='matched'||pick.reason==='exact-name'||pick.reason==='chosen')) text=_mlsTplPickSentence(pick);
+  else if(pick&&(pick.reason==='matched'||pick.reason==='exact-name'||pick.reason==='chosen')) text=_mlsTplPickSentence(pick)+_mlsTplActiveOverrideSentence(pick);
   else if(pick&&pick.reason==='no-candidate-of-this-kind') text='No template is set up for this note kind - the note was left unformatted.';
   else if(pick&&pick.reason!=='no-templates') text='No template matched this visit - the note was left unformatted.';
   if(el){
@@ -26502,6 +26511,36 @@ function _mlsRenderTplPickAlts(pick){
   el.style.display='flex';
   return lead.textContent+' '+names.join(', ');
 }
+/* ===== vntpl-1.1.0 - THE TWO SENTENCES THE RECEIPT OWES THE DOCTOR =======
+   Both live HERE, beside _mlsRenderTplPickReceipt, because this renderer is
+   the ONE place the shell's own resolver and the connect bundle's replacement
+   of it both arrive - the same reason the runner-ups ride with the receipt.
+   Text only: a template name is untrusted data and reaches the surface
+   through textContent, never markup. */
+function _mlsGenTemplateSkipSentence(skip){
+  if(!skip||!skip.why) return '';
+  var n=String(skip.name||'').replace(/[\r\n]+/g,' ').trim(), q=n?(' "'+n+'"'):'';
+  if(skip.why==='operative-report')
+    return 'Your procedure template'+q+' was left to the op note room, so this visit note was written in your note style instead.';
+  return 'Your template'+q+' is not laid out as a visit note, so this visit note was written in your note style instead.';
+}
+/* WHICH DEFAULT WAS OVERRIDDEN. Measured live 2026-09-01: the active template
+   was tms8w1uyl6tfx and the keyword matcher silently used a different one, and
+   nothing on screen named either. This names BOTH. It changes no matching
+   rule - it only stops the swap being silent. */
+function _mlsTplActiveOverrideSentence(pick){
+  try{
+    if(!pick||!pick.id) return '';
+    if(pick.reason!=='matched'&&pick.reason!=='exact-name') return '';
+    if(typeof getActiveTemplateId!=='function'||typeof getTemplateById!=='function') return '';
+    var activeId=String(getActiveTemplateId()||'');
+    if(!activeId||activeId===String(pick.id)) return '';
+    var act=getTemplateById(activeId), an=String((act&&act.name)||'').replace(/[\r\n]+/g,' ').trim();
+    if(!an) return '';
+    return ' Your own template "'+an+'" was set for this visit and was not the one used.';
+  }catch(eTplOvSent){ return ''; }
+}
+/* ===== end vntpl-1.1.0 receipt sentences ===== */
 
 /* Resolve which template (if any) to apply right now, honoring the toggle.
    When the toggle is OFF this returns null and the caller does nothing. */
@@ -26512,12 +26551,23 @@ function resolveActiveTemplate(visitText){
      picker does not run at all, and the stale pick would otherwise name a
      template this note never saw. */
   try{ window.__mlsLastTemplatePick=null; }catch(e){}
+  /* vntpl-1.1.0: and so is the skip receipt beside it - a refusal from an
+     earlier generation must never be read as this one's. */
+  try{ window.__mlsLastGenTemplateSkip=null; }catch(eVnClear){}
   if(templateAutoOn()){
     /* tplpick-1.0.0: the pick is now kind-gated and scored against the visit
        CONTEXT (booking reason as well as the transcript), and it announces
        the keywords that won - see _mlsTplPick. */
     const picked=pickTemplateForVisit(visitText,_mlsVisitTemplateContext(visitText),_mlsCurrentNoteKind());
     if(picked){
+      /* vntpl-1.1.0: THE STANDARD VISIT NOTE ONLY EVER TAKES A VISIT-NOTE
+         TEMPLATE. An operative report handed to this lane is what produced
+         nine straight backend refusals on 2026-09-01. Reached by name because
+         the two shipped suites that EXECUTE this function slice it away from
+         the classifier, which lives with the generation contract it also
+         guards - the same reason the exact-name decision travels by window. */
+      var vnSkip=''; try{ vnSkip=(typeof _mlsGenTemplateScopeSkip==='function')?_mlsGenTemplateScopeSkip(picked):''; }catch(eVnGate){ vnSkip=''; }
+      if(vnSkip){ try{ if(typeof _mlsGenTemplateSkip==='function') _mlsGenTemplateSkip(picked,vnSkip); }catch(eVnRec){} return null; }
       let why=''; try{ why=_mlsTplPickSentence(window.__mlsLastTemplatePick); }catch(e){}
       try{ _mlsRenderTplPickReceipt(); }catch(e){}
       toast('Auto-chose '+(why||('template: '+picked.name)),'');
@@ -26528,6 +26578,12 @@ function resolveActiveTemplate(visitText){
   /* NO MATCH IS NOT A GUESS. Exactly what this did before tplpick-1.0.0: the
      doctor's own default template, or nothing at all. */
   const fallback=getTemplateById(getActiveTemplateId());
+  /* vntpl-1.1.0: the doctor's own default is gated by the SAME rule. On the
+     owner's account every template in the library is a procedure template,
+     the active one included, so a gate that only covered the keyword match
+     would have changed nothing at all for him. */
+  var vnFbSkip=''; try{ vnFbSkip=(fallback&&typeof _mlsGenTemplateScopeSkip==='function')?_mlsGenTemplateScopeSkip(fallback):''; }catch(eVnGate2){ vnFbSkip=''; }
+  if(vnFbSkip){ try{ if(typeof _mlsGenTemplateSkip==='function') _mlsGenTemplateSkip(fallback,vnFbSkip); }catch(eVnRec2){} return null; }
   try{ _mlsRenderTplPickReceipt(fallback); }catch(e){}
   return fallback;
 }
@@ -32575,6 +32631,147 @@ function _mlsTplSectionLines(text){
   });
   return out;
 }
+/* ===== vntpl-1.1.0 - THE STANDARD VISIT NOTE ONLY EVER TAKES A VISIT-NOTE
+   TEMPLATE ==================================================================
+   MEASURED LIVE, 2026-09-01, in the owner's own tab, on his test patient
+   only. Nine standard visit-note generations in a row failed - backend 502
+   draft_quality_failed / unstructured_clinical_draft - including after the
+   bounded retry on a stronger model. The captured request showed the cause,
+   and it was ours: the payload carried a TEMPLATE_CONTRACT block built by
+   _mlsGenTemplateContract from "Left knee intra-articular injection", 994
+   characters that begin OPERATIVE REPORT and continue Patient: / Date of
+   procedure: / Type of Anesthesia: / PROCEDURE: / INDICATIONS: / CONSENT: /
+   ANESTHESIA: / DESCRIPTION OF PROCEDURE: / ESTIMATED BLOOD LOSS: /
+   COMPLICATIONS: / DISPOSITION:. The model did exactly what that contract
+   told it to and returned a twelve-line operative report; the backend's
+   narrative/SOAP structure check refused it, correctly. Replaying the
+   identical request with only the TEMPLATE_CONTRACT block removed passed
+   first time - 200, gpt-4o-mini, a 1,558-character narrative.
+
+   WHY A TEMPLATE WAS THERE AT ALL. "Use templates" is ON and EVERY template in
+   this doctor's library is a procedure/operative-report template - Caudal ESI,
+   Lumbar facet joint injection, Genicular nerve block, the Starter op notes,
+   Left L3-L4 TFESI. Those belong to the OP-NOTE ROOM, which has its own
+   generation path (_opRankTemplates ranks them, _genOpNote drafts from
+   _tplTextForDraft) and is untouched by every line below. They must never
+   govern the standard visit note, whose styles are SOAP, narrative, APSO,
+   problem-based and H&P.
+
+   THE RULE. A resolved template that is an operative report, or that carries
+   no visit-note section heading at all, is REFUSED for the standard visit
+   note: the resolver returns null, the note is written in the doctor's note
+   style, and #tplPickReceipt says so in one plain sentence.
+
+   IT REFUSES; IT NEVER REWRITES. Nothing here can change a template, a note,
+   an op note or any Athena field. Its only two outcomes are "hand this
+   template on unchanged" and "hand on nothing, and say why".
+
+   IT IS PURE AND PHI-FREE. It reads a template record - id, name, text - and
+   nothing else: never a transcript, never a note, never a patient. */
+function _mlsVnTplNorm(s){
+  return String(s==null?'':s).toLowerCase().replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();
+}
+/* An operative report titles itself. */
+var VNTPL_OP_TITLES=['operative report','operative note','procedure note','procedure report'];
+/* ...and it labels its fields. Both lists are normalised by the SAME function
+   that normalises the line they are compared against, so a hyphen, a stray
+   capital or a double space can never be the reason a procedure template
+   slips through. */
+var VNTPL_OP_LABELS=['date of procedure','type of anesthesia','anesthesia',
+  'description of procedure','estimated blood loss','indications','disposition',
+  'operating provider','surgeon','pre operative diagnosis','preoperative diagnosis',
+  'post operative diagnosis','postoperative diagnosis','specimens'];
+/* A visit note names at least one of these. */
+var VNTPL_VISIT_LABELS=['hpi','history of present illness','subjective','chief complaint',
+  'ros','review of systems','exam','physical exam','physical examination','objective',
+  'assessment','impression','plan','history'];
+/* The normalised label a LINE-LEADING heading carries, or ''. Two shapes only:
+   "Label:" (with or without text after it), and a short all-caps line with no
+   colon, which is how an operative report writes its own title. */
+function _mlsVnHeadingLabel(line){
+  var t=String(line==null?'':line).trim(); if(!t) return '';
+  var m=/^([A-Za-z][A-Za-z0-9 \/&()'-]{1,60})\s*:/.exec(t);
+  if(m) return _mlsVnTplNorm(m[1]);
+  if(t.length>60) return '';
+  if(!(t===t.toUpperCase()&&/[A-Z]/.test(t))) return '';
+  return _mlsVnTplNorm(t);
+}
+function _mlsVnHeadingLabels(text){
+  var out=[],seen=Object.create(null);
+  String(text==null?'':text).split(/\r?\n/).forEach(function(raw){
+    var l=_mlsVnHeadingLabel(raw);
+    if(!l||seen[l]) return;
+    seen[l]=1; out.push(l);
+  });
+  return out;
+}
+/* THE DECLARED KIND IS ASKED FIRST. It is the doctor's own answer, it is what
+   the op-note room's own ranker already filters on, and the text heuristic
+   below exists only for the library that declares nothing - which is every
+   library predating the kind field, including this one. */
+function _mlsTemplateIsOperativeReport(tpl){
+  if(!tpl||typeof tpl!=='object') return false;
+  var kind='';
+  try{ kind=(typeof _mlsTplKindOf==='function')?String(_mlsTplKindOf(tpl)||''):String(tpl.kind||'').trim().toLowerCase(); }
+  catch(eVnKind){ kind=''; }
+  if(kind==='op') return true;                        /* he declared it one */
+  if(kind==='soap'||kind==='insurance') return false; /* he declared it not one */
+  /* the packaged procedure starters, which are operative notes by
+     construction - feat_pkg_templates mints every one of them as pkg_<name> */
+  if(/^pkg_/.test(String(tpl.id||''))) return true;
+  var i,name=_mlsVnTplNorm(tpl.name);
+  for(i=0;i<VNTPL_OP_TITLES.length;i++)
+    if(name===VNTPL_OP_TITLES[i]||name.indexOf(VNTPL_OP_TITLES[i]+' ')===0) return true;
+  /* the title line: the FIRST non-empty line of the body, when it is a
+     heading at all. "Left knee intra-articular injection" is caught here and
+     nowhere earlier - its name says nothing, its first line says everything. */
+  var lines=String(tpl.text==null?'':tpl.text).split(/\r?\n/),first='';
+  for(i=0;i<lines.length;i++){ if(String(lines[i]).trim()){ first=_mlsVnHeadingLabel(lines[i]); break; } }
+  if(first) for(i=0;i<VNTPL_OP_TITLES.length;i++) if(first===VNTPL_OP_TITLES[i]) return true;
+  /* two or more operative field labels, as line-leading headings. One alone
+     is not enough: an office note may legitimately carry an Indications line. */
+  var labels=_mlsVnHeadingLabels(tpl.text),hits=0;
+  for(i=0;i<labels.length;i++) if(VNTPL_OP_LABELS.indexOf(labels[i])>=0) hits++;
+  return hits>=2;
+}
+function _mlsTemplateIsVisitNoteShaped(tpl){
+  if(!tpl||typeof tpl!=='object') return false;
+  var labels=_mlsVnHeadingLabels(tpl.text);
+  for(var i=0;i<labels.length;i++) if(VNTPL_VISIT_LABELS.indexOf(labels[i])>=0) return true;
+  return false;
+}
+/* ONE ANSWER FOR THE WHOLE LANE. '' means "this template may shape a visit
+   note"; anything else is the reason it may not. A template with no body at
+   all is not refused here - _mlsGenTemplateContract already returns null for
+   it, and refusing it twice would put a sentence on screen about a template
+   that could never have shaped anything. */
+function _mlsGenTemplateScopeSkip(tpl){
+  if(!tpl||typeof tpl!=='object'||!String(tpl.text||'').trim()) return '';
+  if(_mlsTemplateIsOperativeReport(tpl)) return 'operative-report';
+  if(!_mlsTemplateIsVisitNoteShaped(tpl)) return 'not-visit-note-shaped';
+  return '';
+}
+/* THE RECEIPT OF A REFUSAL, PHI-free by construction: a template id, a
+   template name, the reason and a timestamp. It also clears the pick receipt,
+   because a template that did NOT shape this note must not keep claiming it. */
+function _mlsGenTemplateSkip(tpl,why){
+  var rec={id:String((tpl&&tpl.id)||''),
+    name:String((tpl&&tpl.name)||'').replace(/[\r\n]+/g,' ').slice(0,120),
+    why:String(why||''),at:Date.now()};
+  try{ window.__mlsLastGenTemplateSkip=rec; }catch(eVnRec){}
+  try{ window.__mlsLastTemplatePick=null; }catch(eVnPick){}
+  try{ if(typeof _mlsRenderTplPickReceipt==='function') _mlsRenderTplPickReceipt(); }catch(eVnRender){}
+  return rec;
+}
+/* The connect bundle REPLACES resolveActiveTemplate outright, so it must be
+   able to ask THIS question rather than carry a second copy of the rule that
+   would drift the first time either changed. */
+try{ window._mlsTemplateIsOperativeReport=_mlsTemplateIsOperativeReport;
+  window._mlsTemplateIsVisitNoteShaped=_mlsTemplateIsVisitNoteShaped;
+  window._mlsGenTemplateScopeSkip=_mlsGenTemplateScopeSkip;
+  window._mlsGenTemplateSkip=_mlsGenTemplateSkip; }catch(eVnExport){}
+/* ===== end vntpl-1.1.0 classifier ===== */
+
 /* The block itself. Returns null - never a partial contract - whenever there
    is nothing real to state, so the caller's no-op path is a single test. */
 function _mlsGenTemplateContract(tpl){
@@ -32634,7 +32831,17 @@ function _mlsResolveGenerationTemplate(visitText){
   try{
     if(typeof useTemplatesOn!=='function'||!useTemplatesOn()) return null;
     if(typeof resolveActiveTemplate!=='function') return null;
-    return resolveActiveTemplate(visitText)||null;
+    var tpl=resolveActiveTemplate(visitText)||null;
+    if(!tpl) return null;
+    /* vntpl-1.1.0: THE LAST WORD, and the only gate guaranteed to run. The
+       connect bundle REPLACES resolveActiveTemplate outright, so a rule that
+       lived only inside the shell's copy of it would never fire in production
+       - verify the dispatch, not the mechanism. Asking again here costs one
+       pure comparison and closes that seam whatever the resolver turns out
+       to be. */
+    var vnSkip=_mlsGenTemplateScopeSkip(tpl);
+    if(vnSkip){ _mlsGenTemplateSkip(tpl,vnSkip); return null; }
+    return tpl;
   }catch(eGenTplResolve){ return null; }
 }
 /* MEASURE THE FIRST DRAFT, not only the reformat. b1144 grades the post-hoc
@@ -32665,8 +32872,10 @@ function _mlsRestorePrimaryTplNotice(){
   if(!info||!info.conformance) return '';
   try{ return _mlsRenderTplFidelityNotice(info); }catch(eGenRender){ return ''; }
 }
-try{ window.__mlsVisitTemplateContract={version:'vntpl-1.0.0',build:_mlsGenTemplateContract,
-  sanitize:_mlsTplPromptSanitize,sections:_mlsTplSectionLines,measure:_mlsMeasurePrimaryTemplateFidelity}; }catch(eVntplX){}
+try{ window.__mlsVisitTemplateContract={version:'vntpl-1.1.0',build:_mlsGenTemplateContract,
+  sanitize:_mlsTplPromptSanitize,sections:_mlsTplSectionLines,measure:_mlsMeasurePrimaryTemplateFidelity,
+  scopeSkip:_mlsGenTemplateScopeSkip,isOperativeReport:_mlsTemplateIsOperativeReport,
+  isVisitNoteShaped:_mlsTemplateIsVisitNoteShaped}; }catch(eVntplX){}
 /* ===== end vntpl-1.0.0 ===== */
 
 async function callOpenAI(transcript,key,options){
@@ -34987,7 +35196,7 @@ function pushSuperbillToAthena(){
 /* Preview a SAVED visit using the identity stored with that record. Never use
    whichever patient happens to be active when History is opened. */
 /* ===== histrefuse-1.0.0 begin ============================================
-   MEASURED 2026-09-01 in the owner's own tab on b1189, note id
+   MEASURED 2026-09-01 in the owner's own tab on b1188, note id
    n1788181673092neds (Adam J Schaeffer, his test patient). He pressed that
    row's "Review Athena actions". pushHistoryNoteToAthena refused - CORRECTLY -
    because the saved record no longer carries a current, verified five-section
@@ -45297,7 +45506,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1189';
+  window.__MLS_AV='b1190';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

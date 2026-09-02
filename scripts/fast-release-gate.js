@@ -70,7 +70,10 @@ const ROOT = path.resolve(__dirname, '..');
    + visit-timeline-not-shown-twice = 894 */
 /*   + studio-widget-bridge-contract = 895 */
 /*   + follow-residue-proof (residue-1.0.0, b1189) = 935 */
-const FULL_GATE_TESTS = 935;
+/*   + visit-template-scope-proof (vntpl-1.1.0, 2026-09-01) = 936 - the
+       standard visit note only ever takes a VISIT-NOTE template; an operative
+       report is left to the op-note room. */
+const FULL_GATE_TESTS = 936;
 const DEFAULT_BASE = 'origin/main';
 const DEFAULT_STEP_TIMEOUT_MS = 180000;
 const DEFAULT_TOTAL_TIMEOUT_MS = 300000;
