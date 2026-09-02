@@ -797,6 +797,62 @@ async function runtime() {
       await sleep(900);
       out.why = Array.prototype.slice.call(card.querySelectorAll('[data-mls-clunky-why="1"]')).map((n) => n.id);
       out.probePos = (function () { const n = document.getElementById('mlsAthenaUnifiedProbe'); return n ? getComputedStyle(n).position : null; })();
+      /* CLUNKY 3, re-aimed 2026-09-02 - see the note beside the assertions.
+         The reason strip must never become a SECOND pinned box, and nothing in
+         the sheet may be painted over the button it explains. */
+      out.whyPos = Array.prototype.slice.call(card.querySelectorAll('[data-mls-clunky-why="1"]'))
+        .map((n) => ({ id: n.id, pos: getComputedStyle(n).position }));
+      /* The CENTRE and both ends of the button's own midline - the exact
+         instrument sheetclar-1.0.0 used live. NOT C.coveredBy: it samples 2px
+         inside each corner, and Confirm & Send has an 11px border-radius, so
+         three of its five points legitimately land on the footer behind the
+         rounded corner and would red a perfectly clickable button. */
+      out.goHit = (function () {
+        const r = go ? go.getBoundingClientRect() : null;
+        if (!r || r.width < 40) return null;
+        return [[r.x + r.width / 2, r.y + r.height / 2], [r.x + 14, r.y + r.height / 2], [r.right - 14, r.y + r.height / 2]]
+          .map((p) => {
+            const t = document.elementFromPoint(p[0], p[1]);
+            if (!t) return 'null';
+            if (t === go || go.contains(t)) return 'self';
+            return t.id ? '#' + t.id : t.tagName;
+          });
+      })();
+      out.geom = (function () {
+        const footer = document.getElementById('mlsAthenaUnifiedFooter');
+        const body = document.getElementById('mlsAthenaUnifiedBody');
+        const sheetCard = footer ? footer.parentElement : null;
+        if (!footer || !sheetCard) return { footer: !!footer };
+        const r = (n) => { const b = n.getBoundingClientRect(); return { top: Math.round(b.top), bottom: Math.round(b.bottom), h: Math.round(b.height) }; };
+        const cr = sheetCard.getBoundingClientRect();
+        const gr = go ? go.getBoundingClientRect() : null;
+        return {
+          footer: true,
+          footerPos: getComputedStyle(footer).position,
+          footerIsLast: sheetCard.lastElementChild === footer,
+          footerInBody: !!(body && body.contains(footer)),
+          bodyIsFirst: !!(body && sheetCard.firstElementChild === body),
+          bodyScrolls: !!(body && body.scrollHeight > body.clientHeight + 2),
+          cardScrolls: sheetCard.scrollHeight > sheetCard.clientHeight + 2,
+          goInCard: !!(gr && gr.height > 0 && gr.top >= cr.top - 1 && gr.bottom <= cr.bottom + 1),
+          goOnScreen: !!(gr && gr.height > 0 && gr.top >= 0 && gr.bottom <= window.innerHeight + 1),
+          cardRect: r(sheetCard), footerRect: r(footer), goRect: gr ? { top: Math.round(gr.top), bottom: Math.round(gr.bottom), h: Math.round(gr.height) } : null
+        };
+      })();
+      out.reason = ['mlsAthenaUnifiedState', 'mlsAthenaUnifiedProbe', 'mlsAthenaUnifiedFix', 'mlsClunkyAthenaFooterLine'].map((id) => {
+        const n = document.getElementById(id);
+        if (!n) return { id, present: false };
+        const footer = document.getElementById('mlsAthenaUnifiedFooter');
+        const sheetCard = footer ? footer.parentElement : null;
+        const b = n.getBoundingClientRect();
+        const cr = sheetCard ? sheetCard.getBoundingClientRect() : { top: 0, bottom: window.innerHeight };
+        return { id, present: true, shown: C.visible(n), inFooter: !!(footer && footer.contains(n)),
+          onCard: b.height > 0 && b.bottom > cr.top + 1 && b.top < cr.bottom - 1,
+          text: (n.innerText || n.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 90),
+          rect: { top: Math.round(b.top), bottom: Math.round(b.bottom), h: Math.round(b.height) } };
+      });
+      out.detailsOpen = (function () { const d = document.getElementById('mlsAthenaUnifiedDetails'); return d ? !!d.open : null; })();
+      out.probeRole = (function () { const n = document.getElementById('mlsAthenaUnifiedProbe'); return n ? n.getAttribute('role') : null; })();
       /* 2 / 22: a receipt lands - the "nothing has changed yet" box and the
          footer verb must both stop lying. */
       const rec = document.getElementById('mlsAthenaUnifiedReceipt');
@@ -807,7 +863,11 @@ async function runtime() {
       try { window.__mlsWriteFlow.closeUnifiedConfirmation(); } catch (e) {}
       return out;
     });
-    measured.athena = { jargon: ath.jargon, openFolds: ath.openFolds, why: ath.why, goText: ath.goText };
+    measured.athena = { jargon: ath.jargon, openFolds: ath.openFolds, why: ath.why, goText: ath.goText,
+      /* CLUNKY 3 (2026-09-02): the shipped geometry, so a future reader can see
+         what "the reason travels with the button" measures now. */
+      probePos: ath.probePos, whyPos: ath.whyPos, goHit: ath.goHit, geom: ath.geom,
+      reason: ath.reason, detailsOpen: ath.detailsOpen, probeRole: ath.probeRole };
     ok(ath.api && ath.opened, 'the Athena review sheet did not open, so nothing below was measured');
     eq(ath.jargon && ath.jargon.length, 0,
       `the review sheet still reads: ${(ath.jargon || []).join(', ')} (CLUNKY 26)`);
@@ -815,7 +875,54 @@ async function runtime() {
     ok(ath.recheck, 'the fix strip has no permanent "Check Athena again", so the instruction points at nothing (CLUNKY 23)');
     ok(ath.why && ath.why.indexOf('mlsAthenaUnifiedProbe') >= 0,
       'a disabled Confirm & Send is shown with its reason left below the fold (CLUNKY 3)');
-    eq(ath.probePos, 'sticky', 'the read-only status line does not travel with the footer (CLUNKY 3)');
+    /* ====================================== CLUNKY 3, RE-AIMED 2026-09-02 ===
+     * This pin used to read one line:
+     *     eq(ath.probePos, 'sticky', 'the read-only status line does not
+     *        travel with the footer (CLUNKY 3)')
+     * That is a SPELLING, not a property (memory: a-test-that-pins-a-spelling-
+     * not-a-property), and the product abandoned the spelling ON PURPOSE:
+     *
+     *   sheetclar-1.0.0 (2026-08-31) measured the old shape LIVE -
+     *   document.elementFromPoint at the Confirm button's own centre returned
+     *   #mlsAthenaUnifiedFix, because the clunky-athena CSS turned the status
+     *   line and its fix strip into a SECOND sticky footer (bottom:0,
+     *   z-index:6) inside the same scrollport as the sheet's own sticky footer
+     *   (z-index:3). Two boxes pinned to one edge share their pixels and paint
+     *   order decides the hit test, so the owner's physical clicks on Confirm
+     *   & Send did nothing at all while the button looked enabled. The cure is
+     *   geometric: the card is a column flex container whose two in-flow
+     *   children are a scrolling #mlsAthenaUnifiedBody and a STATIC
+     *   #mlsAthenaUnifiedFooter, and the why strip is position:static again.
+     *   writeui-1.0.0 (b1187) then moved the scannable status into the
+     *   #mlsAthenaUnifiedState pill at the top of the body and left
+     *   #mlsAthenaUnifiedProbe one closed fold below it.
+     *
+     * `sticky` here would now RE-CREATE the defect this item was written to
+     * prevent. What CLUNKY 3 actually protects is pinned instead: Confirm &
+     * Send cannot scroll away from the doctor, nothing may be painted on top
+     * of it, and a disabled Confirm still shows a reason that is on the card
+     * and not folded away. */
+    const g = ath.geom || {};
+    ok(g.footer, 'the sheet has no #mlsAthenaUnifiedFooter, so Confirm & Send has no home (CLUNKY 3)');
+    eq(g.footerPos, 'static',
+      `the sheet footer computes position:${g.footerPos} - a positioned footer shares its pixels with the scrolling body, which is how Confirm & Send stopped receiving clicks on 2026-08-31 (CLUNKY 3)`);
+    ok(g.footerIsLast && !g.footerInBody,
+      `the footer is ${g.footerInBody ? 'inside the scrolling body' : 'not the card last flex child'}, so Confirm & Send can scroll out of view (CLUNKY 3)`);
+    ok(g.goInCard && g.goOnScreen,
+      `Confirm & Send sits at ${JSON.stringify(g.goRect)} in a card at ${JSON.stringify(g.cardRect)} - it is not on screen with its reason (CLUNKY 3)`);
+    for (const w of (ath.whyPos || [])) {
+      eq(w.pos, 'static',
+        `${w.id} carries the disabled-Confirm reason as a position:${w.pos} box - a second pinned strip is exactly what overlaid Confirm & Send (CLUNKY 3)`);
+    }
+    ok(ath.goHit && ath.goHit.length === 3 && ath.goHit.every((t) => t === 'self'),
+      `elementFromPoint along the midline of a disabled Confirm & Send returns ${JSON.stringify(ath.goHit)} - something in the sheet is painted over the button, which is the 2026-08-31 defect exactly (CLUNKY 3)`);
+    const whyVis = (ath.reason || []).filter((n) => n.present && n.shown && n.onCard && n.text);
+    ok(whyVis.length > 0,
+      `a disabled Confirm & Send shows no reason anywhere on the card: ${JSON.stringify(ath.reason)} (CLUNKY 3)`);
+    ok(whyVis.some((n) => n.id === 'mlsAthenaUnifiedState'),
+      'the status pill that never folds carries no visible reason, so a grey Confirm & Send explains itself only inside the closed "What MLS is doing, in full" fold (CLUNKY 3)');
+    eq(ath.probeRole, 'status',
+      'the read-only status line lost role="status", so a repaint under a grey Confirm & Send is announced to nobody (CLUNKY 3)');
     ok(!/Nothing has changed yet/.test(ath.safety),
       `after a VERIFIED receipt the sheet still says "${ath.safety.slice(0, 40)}..." (CLUNKY 2)`);
     eq(ath.goText, 'Done',
