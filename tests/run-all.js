@@ -41,6 +41,13 @@ const AUTOMATED_PROOF_FILES = new Set([
      doctor's active patient - it keeps every row, chart fact and visit it
      was already saving and skips ONLY the selection change. */
   'capture-keeps-selection-proof.js',
+  /* scoperec-1.0.0 / visitid-1.0.0 / scopeempty-1.0.0 (2026-09-01, measured
+     live): a provider-scoped pull of a day replaces only that provider's
+     rows and leaves every other clinician's row byte-identical; a re-pull
+     adds or confirms a visit's appointment/encounter id and can never blank
+     one; and a day whose calendar rendered other clinicians but not the
+     scoped provider is an honest EMPTY day, never needs-attention. */
+  'scoped-pull-keeps-others-proof.js',
   /* vntpl-1.1.0 (2026-09-01): the standard visit note only ever takes a
      VISIT-NOTE template. Nine straight backend refusals came from a
      TEMPLATE_CONTRACT built out of an OPERATIVE REPORT; the op-note room keeps
@@ -1294,6 +1301,7 @@ const tests = [
   'refusal-visibility-proof.js',
   'follow-residue-proof.js',
   'capture-keeps-selection-proof.js',
+  'scoped-pull-keeps-others-proof.js',
   'visit-template-scope-proof.js',
   'write-next-press-proof.js',
   'visit-walkthrough-proof.js',

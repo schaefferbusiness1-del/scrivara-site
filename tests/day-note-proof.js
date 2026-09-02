@@ -531,6 +531,13 @@ function partEDurableJob() {
     statement(RANGE, 'var DAY_ATTEMPT_CAP =', 'DAY_ATTEMPT_CAP'),
     balanced(RANGE, 'var REASONS = {', 'REASONS') + ';',
     balanced(RANGE, 'var EMPTY_REASONS = {', 'EMPTY_REASONS') + ';',
+    /* scopeempty-1.0.0 (2026-09-01): checkpointDay now also consults the
+       scoped-empty rule, so the lifted function needs its two symbols to run
+       at all. Every manifest built below is scope-less, so providerScopedJob
+       is false for all of them and every pin in this suite is unchanged - the
+       slice list grew, the behaviour under test did not. */
+    statement(RANGE, 'var SCOPED_EMPTY_REASON =', 'SCOPED_EMPTY_REASON'),
+    balanced(RANGE, 'function providerScopedJob(manifest)', 'providerScopedJob'),
     balanced(RANGE, 'var LOGIN_REASONS = {', 'LOGIN_REASONS') + ';',
     balanced(RANGE, 'var SIGNOUT_CANDIDATE_REASONS = {', 'SIGNOUT_CANDIDATE_REASONS') + ';',
     balanced(RANGE, 'var STORAGE_REASONS = {', 'STORAGE_REASONS') + ';',

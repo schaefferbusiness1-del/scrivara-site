@@ -81,7 +81,7 @@ const ROOT = path.resolve(__dirname, '..');
        press authorizes one section (or, on MLS Assist 3.0.108+, the ordered
        batch it minted), the sheet re-arms with the next section named, and a
        read-only stage that will not settle is bounded instead of hanging. */
-const FULL_GATE_TESTS = 938;
+const FULL_GATE_TESTS = 939;
 const DEFAULT_BASE = 'origin/main';
 const DEFAULT_STEP_TIMEOUT_MS = 180000;
 const DEFAULT_TOTAL_TIMEOUT_MS = 300000;

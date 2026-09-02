@@ -109,9 +109,36 @@
     'day-notes-pending': 1
     /* ===== end p1-range-reasons-1.0.0 ===== */
   };
-  /* A day whose Athena schedule was verified to hold no appointments. Both
-     codes come from the importer's own completion branch. */
-  var EMPTY_REASONS = { 'empty-day': 1, 'provider-empty': 1 };
+  /* A day whose Athena schedule was verified to hold no appointments. The
+     first two codes come from the importer's own completion branch.
+     scopeempty-1.0.0 (owner 2026-09-01) adds the third: see checkpointDay. */
+  var EMPTY_REASONS = { 'empty-day': 1, 'provider-empty': 1, 'provider-not-on-calendar': 1 };
+  /* ===== scopeempty-1.0.0 (a provider not on the calendar is an EMPTY DAY) ==
+     MEASURED 2026-09-01: a month job scoped to one PA settled 2026-08-28 and
+     2026-08-30 as 'needs-attention' with reason 'provider-not-on-calendar',
+     and the owner's bar is that needs-attention must be ZERO or the receipt is
+     not worth reading.
+
+     WHAT THAT CODE ACTUALLY MEANS. The importer emits it from exactly one
+     branch (provscope-1.0.0): the calendar RENDERED, other clinicians were
+     discovered on it, and the scoped provider was not among them. For a
+     PROVIDER-SCOPED job that is not a failure to read anything - it is the
+     honest answer that this clinician has no appointments on that day. So the
+     day is checkpointed COMPLETE and EMPTY (0 rows) and keeps its own reason
+     code, which is what records WHY it was empty.
+
+     WHAT STAYS ATTENTION, unchanged and deliberately: every code that means
+     the calendar itself did not render or navigation failed - 'no-read',
+     'nav-failed', 'wrong-day', 'unverified-day', 'schedule-incomplete',
+     'schedule-parse-timeout'. Those prove nothing about the day and must never
+     become a silent empty. This promotion is a CLOSED, one-code rule and it
+     applies only to a job whose provider scope is 'selected': an all-provider
+     job can never be honestly absent from its own calendar. */
+  var SCOPED_EMPTY_REASON = 'provider-not-on-calendar';
+  function providerScopedJob(manifest) {
+    return !!(manifest && manifest.provider && String(manifest.provider.mode || '') === 'selected');
+  }
+  /* ===== end scopeempty-1.0.0 ===== */
   var LOGIN_REASONS = {
     signin: 1, 'signin-expired': 1, 'session-expired': 1,
     'athena-session-expired': 1, 'no-athena-tab': 1
@@ -898,6 +925,12 @@
        reason is untouched and behaviour is exactly what it was. */
     if (payload.sessionExpired === true && SIGNOUT_CANDIDATE_REASONS[code] === 1) code = 'athena-session-expired';
     /* ===== end p1-range-signout-1.0.0 ===== */
+    /* scopeempty-1.0.0: the scoped provider is simply not on this day's
+       calendar. Complete and empty, with the reason kept - never attention.
+       Guarded on all three of: the exact code, a provider-SCOPED job, and no
+       outstanding own-note debt, so it can never promote a day that still owes
+       work or a day an all-provider job could not read. */
+    if (code === SCOPED_EMPTY_REASON && providerScopedJob(ctx.manifest) && dayNotesPending === 0) complete = true;
     /* p1-range-continue-1.0.0: only a day Athena was actually DRIVEN through
        spends an attempt, and only such a day can reach the cap. */
     var attemptable = !complete && NON_ATTEMPT_REASONS[code] !== 1 && !isLoginReason(code);
@@ -1622,6 +1655,9 @@
     'history-store-empty': 'Charts were read but nothing was stored for that day. Check available storage, then Resume.',
     'history-store-unmeasured': 'MLS could not verify what was stored for that day. Resume re-reads it.',
     'schedule-parse-timeout': 'Reading that day’s schedule took too long. Check the Athena tab, then Resume.',
+    /* scopeempty-1.0.0: this is now a COMPLETE, EMPTY day, so this sentence
+       explains a finished result rather than asking for a retry. */
+    'provider-not-on-calendar': 'Athena’s calendar for that day showed other clinicians but not this provider, so the day is recorded as empty for them — provider not on the calendar this day.',
     /* dnote-1.0.0 (b1184): the charts landed; the day still owes its own visit
        notes, so it is not counted as done. */
     'day-notes-pending': 'That day’s charts were saved, but its own visit notes are still to read. Resume finishes them.',

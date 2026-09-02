@@ -13203,6 +13203,81 @@ function __mlsTeamNotesCarry(dst,src){
   if(!Array.isArray(dst.teamNotes)){ dst.teamNotes=prev.slice(); return; }
   dst.teamNotes=__mlsTeamNotesUnion(dst.teamNotes,prev);
 }
+/* ===== visitid-1.0.0 (A RE-PULL MAY ADD AN ID, NEVER BLANK ONE) ============
+   MEASURED LIVE 2026-09-01 on the owner's account. A patient's visits held
+   2026-08-31 with appointmentId 16026279 and 2026-08-30 with 16026238. After a
+   re-pull of those two days the SAME visits read back with an EMPTY
+   appointmentId. Those ids are the write lane's binding keys: with them blank
+   the Send-to-Athena sheet cannot bind the visit to its encounter and every
+   row goes to CANNOT SEND.
+
+   A later read can only ever know MORE than an earlier one about which
+   appointment a visit belongs to, never less. So these fields are MONOTONE:
+     - incoming empty, stored non-empty  -> keep the stored id;
+     - incoming non-empty, stored empty  -> take the incoming id (a re-pull is
+       allowed to SUPPLY an id; that is the whole point of re-pulling);
+     - both non-empty and DIFFERENT      -> keep the STORED id and count the
+       disagreement. Two sources naming two different appointments for one
+       visit is a fact a human has to settle; silently adopting the newer one
+       would re-point a bound note at another encounter, which is the one
+       failure mode that is not recoverable by re-pulling.
+
+   The conflict counter is PHI-FREE by construction: a count and a timestamp,
+   no ids, no dates, no names. It is a window global so a diagnostic can read
+   it without a storage surface of its own.
+
+   Fill-only and non-destructive: it never creates a visit, never removes one,
+   never reorders the array, and never touches any field outside this closed
+   list. Visits are paired by their own stable identity (row id, then the
+   Athena stable aliases, then day+type) - never by array position, which two
+   different pulls do not agree on. */
+var __MLS_VISIT_ID_FIELDS=['appointmentId','athenaAppointmentId','encounterId','encounterUrl','athenaEncounterId'];
+function __mlsVisitIdNote(){
+  try{
+    var c=window.__mlsVisitIdConflicts;
+    if(!c||typeof c!=='object')c=window.__mlsVisitIdConflicts={count:0,lastAt:0};
+    c.count=(Number(c.count)||0)+1;c.lastAt=Date.now();
+  }catch(e){}
+}
+function __mlsVisitIdKeys(v){
+  if(!v||typeof v!=='object')return [];
+  var out=[],add=function(pfx,val){ val=String(val==null?'':val).trim().toLowerCase(); if(val)out.push(pfx+'|'+val); };
+  add('id',v.id);
+  add('svk',v.sourceVisitKey||v.rowKey);
+  add('enc',v.encounterId||v.encounterID);
+  add('appt',v.appointmentId||v.athenaAppointmentId);
+  var day=String(v.date==null?'':v.date).trim().toLowerCase();
+  if(day)out.push('dt|'+day+'|'+String(v.type==null?'':v.type).trim().toLowerCase());
+  return out;
+}
+function __mlsVisitIdCarry(dst,src){
+  if(!dst||!src)return 0;
+  var prev=Array.isArray(src.visits)?src.visits:null,next=Array.isArray(dst.visits)?dst.visits:null;
+  if(!prev||!prev.length||!next||!next.length)return 0;
+  var byKey=Object.create(null),i,j,k,keys;
+  for(i=0;i<prev.length;i++){
+    keys=__mlsVisitIdKeys(prev[i]);
+    for(j=0;j<keys.length;j++) if(byKey[keys[j]]===undefined) byKey[keys[j]]=prev[i];
+  }
+  var carried=0;
+  for(i=0;i<next.length;i++){
+    var v=next[i]; if(!v||typeof v!=='object')continue;
+    var stored=null;
+    keys=__mlsVisitIdKeys(v);
+    for(j=0;j<keys.length&&!stored;j++) if(byKey[keys[j]])stored=byKey[keys[j]];
+    if(!stored||stored===v)continue;
+    for(k=0;k<__MLS_VISIT_ID_FIELDS.length;k++){
+      var f=__MLS_VISIT_ID_FIELDS[k];
+      var was=String(stored[f]==null?'':stored[f]).trim();
+      var now=String(v[f]==null?'':v[f]).trim();
+      if(!was)continue;                      /* nothing stored to protect */
+      if(!now){ v[f]=stored[f]; carried++; continue; }
+      if(now!==was){ v[f]=stored[f]; carried++; __mlsVisitIdNote(); }
+    }
+  }
+  return carried;
+}
+/* ===== end visitid-1.0.0 ===== */
 /* ptfix-1.0.0 (b1169): id+revision signature of a thread. A carry that ADDS a
    note and a carry that upgrades one to a newer revision are both "the account
    has not seen this yet", and a length compare only catches the first - so the
@@ -13972,7 +14047,7 @@ function setActivePtId(id){
     catch(e3){ try{ var ev=new Event('mls:active-patient-changed'); ev.detail={previousId:String(previous||''),patientId:String(id||'')}; window.dispatchEvent(ev); }catch(e4){} }
   }
 }
-/* capsel-1.0.0 (b1194): AN MLS-DRIVEN READ NEVER CHANGES THE ACTIVE PATIENT.
+/* capsel-1.0.0 (b1192): AN MLS-DRIVEN READ NEVER CHANGES THE ACTIVE PATIENT.
    Measured live 2026-09-01 23:0x (b1191): while the August month pull ran, the
    Visit screen's active patient moved off the doctor's chosen chart and onto a
    row the capture had just minted. The one answer lives in the engine
@@ -14112,6 +14187,11 @@ function upsertPatient(p){
          human-authored text: a caller carrying an OLDER copy of teamNotes
          passes the ==null test and would silently drop a colleague's note. */
       __mlsTeamNotesCarry(p,__prev);
+      /* visitid-1.0.0: arr[i]=p replaces the record wholesale, so a caller
+         holding visits whose appointment/encounter ids were dropped somewhere
+         upstream would ERASE the write lane's binding keys. Monotone: an id is
+         added or confirmed here, never blanked. */
+      try{ __mlsVisitIdCarry(p,__prev); }catch(e){}
     }
     arr[i]=p;
   } else { p.created=Date.now(); arr.unshift(p); }
@@ -29125,7 +29205,7 @@ async function pullPatientChartViaAssist(btn, opts){
     }catch(eAsk){}
     try{ toast('Choose one MLS patient with a matching DOB or MRN before pulling history. Duplicate or name-only matches are not saved.','err'); }catch(e){} return false; }
   // Make this patient the active one so the pulled chart attaches to them + the UI follows.
-  /* capsel-1.0.0 (b1194): ...but only when the DOCTOR is the one pulling.
+  /* capsel-1.0.0 (b1192): ...but only when the DOCTOR is the one pulling.
      Every save below this line goes through pullTarget and saveRef, both
      locals frozen before the read, so a driven pull keeps all of its data
      work and skips only the selection change. Nothing is driving when the
@@ -45527,7 +45607,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1194';
+  window.__MLS_AV='b1195';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
@@ -63103,7 +63183,7 @@ html #calendarView[data-cal-mode="month"] .cx-card.cx-mini{ display:none !import
     var id = S(patientId);
     if (!id) id = safe(function () { return isFn(window.getActivePtId) ? S(window.getActivePtId()) : ''; }, '');
     if (!id) return false;
-    /* capsel-1.0.0 (b1194): the landing exists for the doctor who pressed
+    /* capsel-1.0.0 (b1192): the landing exists for the doctor who pressed
        the button. While an MLS lane drives, this would move his chart AND
        his view onto whatever the lane just imported, so the landing simply
        does not happen; the pull's own save receipt is unaffected. */

@@ -2288,6 +2288,96 @@
        subset from masquerading as "All providers" in schedule consumers. */
     return entry.all || null;
   }
+  /* ===== scoperec-1.0.0 (a scoped read owns its provider, never the day) ===
+     MEASURED LIVE 2026-09-01 on the owner's tab. A durable month job scoped to
+     ONE clinician re-ran 2026-08-31. Afterwards the Send-to-Athena sheet could
+     no longer offer "Bind to 2026-08-31" for a patient whose appointment that
+     day belongs to a DIFFERENT physician - the calendar row that bind reads
+     through was gone, an hour after the same bind had been offered and used.
+
+     THE RULE, and it is the whole rule:
+       - an ALL-provider snapshot enumerated the WHOLE day, so it is
+         authoritative for every row on that date - exactly as it is today;
+       - a SELECTED-provider snapshot enumerated ONE provider's calendar, so it
+         is authoritative for THAT provider's rows and SILENT about everyone
+         else's. Rows naming another provider, and rows carrying no provider
+         attribution at all (which can never be PROVED to belong to the scanned
+         provider), are OUT OF SCOPE: never deleted, never re-attributed, never
+         replaced;
+       - a DERIVED scope ("provider-from-all" membership borrowed for display)
+         is not a read of anything and is authoritative for nothing.
+
+     This is a PURE function over rows and one snapshot. It decides MEMBERSHIP
+     only - it never writes, never deletes, never touches storage - so every
+     caller keeps its own refusals and this can only ever KEEP a row.
+
+     `untouched` holds the SAME row objects in their original order, so a
+     caller (and the proof) can compare them byte-for-byte against what it
+     held before the snapshot landed. */
+  function scopedDayReconcile(storedRows, snapshot) {
+    var rows = Array.isArray(storedRows) ? storedRows : [];
+    var snap = snapshot && typeof snapshot === "object" ? snapshot : null;
+    var day = normDate(snap && snap.date) || "";
+    var mode = String((snap && snap.mode) || "");
+    var wantKey = String((snap && snap.providerKey) || "");
+    var out = {
+      date: day, mode: mode, providerKey: wantKey, authoritative: false,
+      reason: "snapshot-unverified",
+      inScope: [], untouched: [], keep: [], replace: [],
+      rowsOnDay: 0, inScopeCount: 0, outOfScopeCount: 0, keepCount: 0, replaceCount: 0
+    };
+    if (!snap || !day) { out.untouched = rows.slice(); out.outOfScopeCount = rows.length; out.rowsOnDay = rows.length; return out; }
+    if (mode !== "all" && mode !== "selected") {
+      /* provider-from-all and anything else: membership evidence, not a read. */
+      out.reason = "scope-not-authoritative";
+      out.untouched = rows.slice(); out.outOfScopeCount = rows.length; out.rowsOnDay = rows.length;
+      return out;
+    }
+    if (mode === "selected" && !wantKey) {
+      out.reason = "provider-key-unavailable";
+      out.untouched = rows.slice(); out.outOfScopeCount = rows.length; out.rowsOnDay = rows.length;
+      return out;
+    }
+    var wanted = {}, ids = Array.isArray(snap.backendIds) ? snap.backendIds : [];
+    for (var w = 0; w < ids.length; w++) wanted[String(ids[w])] = 1;
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i];
+      if (!row || localDayOf(row) !== day) continue;   /* a different day is never this snapshot's business */
+      out.rowsOnDay++;
+      var inScope;
+      if (mode === "all") inScope = true;
+      else {
+        var name = String(p1RowProviderName(row) || "").trim();
+        /* An unattributed row proves nothing about whose calendar it came
+           from, so a scoped read may not speak for it. */
+        inScope = !!name && providerKey(name) === wantKey;
+      }
+      if (!inScope) { out.untouched.push(row); continue; }
+      out.inScope.push(row);
+      if (wanted[backendRowId(row)]) out.keep.push(row); else out.replace.push(row);
+    }
+    out.authoritative = true;
+    out.reason = mode === "all" ? "whole-day" : "provider-scoped";
+    out.inScopeCount = out.inScope.length;
+    out.outOfScopeCount = out.untouched.length;
+    out.keepCount = out.keep.length;
+    out.replaceCount = out.replace.length;
+    return out;
+  }
+  /* The day's OTHER scopes, serialized. A SELECTED publish must leave this
+     byte-identical: it writes its own provider's slice and nothing else. */
+  function otherScopeSignature(entry, mode, providerKey_) {
+    var e = entry && typeof entry === "object" ? entry : { all: null, providers: {} };
+    var providers = e.providers && typeof e.providers === "object" ? e.providers : {};
+    var out = { all: e.all || null, providers: {} };
+    Object.keys(providers).sort().forEach(function (k) {
+      if (mode === "selected" && k === String(providerKey_ || "")) return;
+      out.providers[k] = providers[k];
+    });
+    if (mode !== "selected") out.all = null;   /* an all publish legitimately replaces entry.all */
+    return safe(function () { return JSON.stringify(out); }, "");
+  }
+  /* ===== end scoperec-1.0.0 ===== */
   function publishAuthoritativeSnapshot(input) {
     input = input || {};
     var date = normDate(input.date), scheduleReceipt = input.scheduleReceipt || null;
@@ -2342,10 +2432,23 @@
     if (!store || !store.days) { out.reason = "snapshot-copy-failed"; return out; }
     var entry = store.days[date] || { all: null, providers: {} };
     if (!entry.providers || typeof entry.providers !== "object") entry.providers = {};
+    /* scoperec-1.0.0: what this publish is NOT allowed to touch, recorded
+       BEFORE the mutation so the comparison below is against the day as it
+       stood. A selected publish owns its own provider slice; the all-provider
+       snapshot and every other provider's slice must survive byte-identical. */
+    var beforeOtherScopes = otherScopeSignature(entry, req.mode, req.key || "");
     var snap = { v: 1, date: date, mode: req.mode, providerKey: req.key || "", backendIds: backendIds, sourceCount: expected, updated: Date.now() };
     if (req.mode === "selected") { entry.providers[req.key] = snap; entry.active = { mode: "provider", key: req.key }; }
     else { entry.all = snap; entry.active = { mode: "all", key: "" }; }
     store.days[date] = entry;
+    /* Fail-closed: a publish that would have changed a scope it did not read
+       is refused outright rather than written and reported. */
+    if (otherScopeSignature(entry, req.mode, req.key || "") !== beforeOtherScopes) {
+      out.reason = "scope-would-replace-other-providers";
+      out.otherScopesPreserved = false;
+      return out;
+    }
+    out.otherScopesPreserved = true;
     var days = Object.keys(store.days).sort(function (a, b) {
       var aa = store.days[a], bb = store.days[b];
       var at = Number(aa && ((aa.all && aa.all.updated) || (aa.active && aa.providers && aa.providers[aa.active.key] && aa.providers[aa.active.key].updated)) || 0);
@@ -2405,6 +2508,18 @@
     }
     status.activeCount = rows.length; status.missingCount = missing; status.unclassifiedCount = unclassified;
     status.available = missing === 0; status.exact = status.available; status.reason = status.available ? (ids.length ? "exact" : "authoritative-empty") : "backend-rows-pending";
+    /* scoperec-1.0.0: how many rows on this date this snapshot is SILENT
+       about. `unclassifiedCount` counts rows the snapshot did not name, which
+       reads identically for "stale debris on a day we enumerated in full" and
+       "another clinician's appointment a scoped read never looked at". A
+       consumer that prunes MUST be able to tell those apart, so the scope rule
+       is answered here, once, beside the status it belongs to. */
+    var scopeRule = scopedDayReconcile(raw, snap);
+    status.scopeAuthoritative = scopeRule.authoritative === true;
+    status.scopeReason = scopeRule.reason;
+    status.outOfScopeCount = scopeRule.outOfScopeCount;
+    status.inScopeCount = scopeRule.inScopeCount;
+    status._rowsOutOfScope = scopeRule.untouched;
     status._rows = rows; return status;
   }
   function authoritativeRowsForDay(day, rawProvider) {
@@ -12436,9 +12551,12 @@
     _padoptResolve: padoptResolve, /* padopt-1.0.0: pure, extraction-executable */
     _padoptNameMatch: padoptNameMatch,
     authoritativeRowsForDay: authoritativeRowsForDay,
+    /* scoperec-1.0.0: the ONE membership rule, exported pure so a pruning
+       consumer asks it instead of re-deriving a second idea of "in scope". */
+    _scopedDayReconcile: scopedDayReconcile,
     authoritativeStatusForDay: function (day, provider) {
       var s = authoritativeStatusForDay(day, provider), out = {};
-      for (var k in s) if (s.hasOwnProperty(k) && k !== "_rows") out[k] = s[k];
+      for (var k in s) if (s.hasOwnProperty(k) && k !== "_rows" && k !== "_rowsOutOfScope") out[k] = s[k];
       return out;
     },
     appointmentCensusRowsForDay: appointmentCensusRowsForDay,
