@@ -31078,7 +31078,7 @@ function _mlsSavedAthenaCanonicalForWrite(n){
   if(!_mlsSavedAthenaFingerprintMatchesRecord(n.athenaNoteSourceFingerprint,n))return {required:true,ok:false,reason:'canonical-source-changed'};
   try{var valid=_mlsValidateAthenaNote(n.athenaNote);valid.required=true;valid.ok=true;return valid;}catch(e){return {required:true,ok:false,reason:'malformed-canonical-note'};}
 }
-/* reopen-1.0.0 (owner 2026-09-02, measured on his own tab at b1197): REOPENING
+/* reopen-1.0.0 (owner 2026-09-02, measured on his own tab 01:5x-02:1x): REOPENING
    A SAVED GENERATED VISIT NOTE THREW AWAY ITS ATHENA SIDECAR. The record he
    reopened carried athenaNote (1,603 chars), athenaNoteProvenance 'generated'
    and a matching athenaNoteSourceFingerprint - History's own review accepted

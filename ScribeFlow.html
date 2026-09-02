@@ -31078,7 +31078,7 @@ function _mlsSavedAthenaCanonicalForWrite(n){
   if(!_mlsSavedAthenaFingerprintMatchesRecord(n.athenaNoteSourceFingerprint,n))return {required:true,ok:false,reason:'canonical-source-changed'};
   try{var valid=_mlsValidateAthenaNote(n.athenaNote);valid.required=true;valid.ok=true;return valid;}catch(e){return {required:true,ok:false,reason:'malformed-canonical-note'};}
 }
-/* reopen-1.0.0 (owner 2026-09-02, measured on his own tab at b1198): REOPENING
+/* reopen-1.0.0 (owner 2026-09-02, measured on his own tab 01:5x-02:1x): REOPENING
    A SAVED GENERATED VISIT NOTE THREW AWAY ITS ATHENA SIDECAR. The record he
    reopened carried athenaNote (1,603 chars), athenaNoteProvenance 'generated'
    and a matching athenaNoteSourceFingerprint - History's own review accepted
@@ -45657,7 +45657,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1198';
+  window.__MLS_AV='b1199';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

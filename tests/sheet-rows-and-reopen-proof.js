@@ -646,7 +646,7 @@ async function settle(n) { for (let i = 0; i < (n || 300); i++) await new Promis
       ok(j > i, what + ': end marker missing');
       return src.slice(i, j);
     }
-    const REOPEN_START = '/* reopen-1.0.0 (owner 2026-09-02, measured on his own tab at b1197): REOPENING';
+    const REOPEN_START = '/* reopen-1.0.0 (owner 2026-09-02, measured on his own tab 01:5x-02:1x): REOPENING';
     const REOPEN_END = 'function _mlsAthenaCanonicalForWrite(){';
     const CALL_SITE = '  try{ _mlsReopenRestoreSavedAthenaSidecar(n); }catch(eReopenSidecar){}';
     const shellSlices = SHELLS.concat(['ScribeFlow.html', path.join('cloned', 'index.html')]).map(function (name) {
@@ -664,6 +664,19 @@ async function settle(n) { for (let i = 0; i < (n || 300); i++) await new Promis
       ok(loadAt > 0 && callAt > loadAt && callAt < speechAt,
         name + ': the reopen repair call is not inside loadRecordIntoEditor');
       return { name: name, body: body };
+    });
+    /* bumpsafe-1.0.0 (measured 2026-09-02, the b1198 bump, on this very hunk):
+       ScribeFlow.html is BOTH a scripts/bump-build.js TARGET and a DERIVED file.
+       replaceToken() rewrites every ISOLATED bNNNN occurrence in a target, so the
+       words 'measured on his own tab at b1197' inside this comment were rewritten
+       to b1198 in the derived shell alone - which is not a typo, it is DERIVATION
+       DRIFT: 1p still said b1197. That one line reddened 1p-preview-contract,
+       hex-colour-integrity and this suite, on origin/main. Prose that lands in
+       ScribeFlow.html may therefore never carry an isolated build token; name the
+       measurement by DATE instead. The check is on the hunk, where the rule bites. */
+    shellSlices.forEach(function (s0) {
+      eq(/(^|[^0-9a-zA-Z])b\d{3,5}([^0-9a-zA-Z]|$)/.test(s0.body), false,
+        s0.name + ': the reopen-1.0.0 hunk carries an isolated bNNNN build token, which the next build bump will rewrite in the DERIVED shell only - instant derivation drift');
     });
     shellSlices.slice(1).forEach(function (other) {
       eq(other.body, shellSlices[0].body,
