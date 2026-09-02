@@ -3468,6 +3468,24 @@
          a pre-3.0.98 extension have status "" and fold into total, never seen -
          fail-open, the report just says what it can prove. */
       safe(function () {
+        /* rptfix-1.0.0 (b1184): ONE NAMED SEEN-CLASS DEFINITION, AND IT IS THE
+           LIST THE CARD SHOWS THE DOCTOR. The writer used to count seven
+           status shapes while every sentence on the Month report named four,
+           so a doctor auditing the column against athenaOne counted by the
+           four words the card gave him and got a different number with no way
+           to reconcile it. SEEN_STATUS_WORDS below is the disclosed list, in
+           this order, and the Month report card prints exactly it (mrpt's own
+           SEEN_CLASS_WORDS, in the app bundle) - tests/reports-fixes-proof.js
+           pins the two lists against each other, so neither can widen alone.
+           The app bundle is NOT named by filename here on purpose: the lane
+           derivation rewrites a 1p- prefix, and a name in a comment would make
+           the promoted twin differ by three bytes.
+           The bare `seen` alternative is GONE: it was the loosest branch in
+           the regex (it matched "not seen" and "unseen" as SEEN) and it was
+           never disclosed anywhere. Everything still counted below is a real
+           athena state a human can look up. */
+        var SEEN_STATUS_WORDS = ["checked in", "checked out", "arrived", "in room", "roomed", "completed"];
+        var SEEN_STATUS_RE = /check(?:ed)?[ -]?out|check(?:ed)?[ -]?in|arrived|in[ -]?room|roomed|completed/;
         var agg = {};
         appts.forEach(function (a) {
           var dt = a._date || normDate(a.date) || target; if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dt || ""))) return;
@@ -3479,7 +3497,7 @@
           var b = d[pk] || (d[pk] = { name: pv || "", total: 0, seen: 0, statuses: {} });
           b.total++;
           if (st) b.statuses[st] = (b.statuses[st] || 0) + 1;
-          if (/check(?:ed)?[ -]?out|check(?:ed)?[ -]?in|arrived|in[ -]?room|roomed|completed|seen/.test(st)) b.seen++;
+          if (SEEN_STATUS_RE.test(st)) b.seen++;
         });
         var days = Object.keys(agg); if (!days.length) return;
         var k = isFn(window.uns) ? String(window.uns("mlsProvDayStatusV1") || "") : "";
@@ -3496,6 +3514,11 @@
           });
         });
         store.updated = new Date().toISOString();
+        /* rptfix-1.0.0 (b1184): the store carries the definition it was written
+           under, so the report can state the seen-class list as a FACT of the
+           pull rather than as a sentence somebody typed twice. PHI-free: six
+           athena status words. */
+        store.seenClass = SEEN_STATUS_WORDS;
         safe(function () { localStorage.setItem(k, JSON.stringify(store)); });
       });
       function stampProviders() {

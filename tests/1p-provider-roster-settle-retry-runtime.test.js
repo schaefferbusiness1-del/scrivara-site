@@ -49,10 +49,33 @@ assert(/if\s*\(S\.providerFilter\s*===\s*''\)\s*return\s*'all';/.test(easySource
   'the explicit All-provider state no longer reaches the Day pull as provider: all');
 assert(/S\.providerFilter\s*=\s*entry\.name;\s*S\.providerRef\s*=\s*entry\.stableKey/.test(easySource),
   'the explicit selected-provider control disappeared while making All the default');
-assert(/_resolveProviderRequest\(activeProviderRequest\(\),\s*\{\s*allowAll:\s*true,\s*requireRosterForAll:\s*false,\s*allowDetectedProvider:\s*true\s*\}/.test(easySource) &&
-  /exact\.pull\(\{[\s\S]{0,180}__p1DetectedProvider:\s*!!\(exactGate\.provider/.test(easySource),
-  'the Staff day-pull launcher does not preserve guarded detected-provider routing');
-assert(/exactGate\.provider\s*===\s*'all'\s*\?\s*'all'\s*:\s*exactGate\.provider\.name/.test(easySource),
+/* rptfix-1.0.0 (b1184) - THESE TWO PINS ARE RE-AIMED, NOT DELETED.
+ * They guard a PROPERTY: the Staff "Pull today only" lane must route a
+ * detected-only clinician through the guarded resolution, and it must hand the
+ * progress label the canonical internal 'all' rather than the visible default
+ * wording. They used to assert that property by pinning the SPELLING of a
+ * provider pre-gate that lived in 1p-mls-connect.js. That pre-gate has been
+ * removed deliberately: this was the last visible day pull that did not enter
+ * __mlsSI.dayPull, so it also skipped the storage/quota pre-flight, the one-tab
+ * advice, the warm-up that re-ingests the canonical roster, the
+ * p1-selected-no-widen refusal and the day-census token - the Calendar and
+ * Visit buttons imported a legacy one-column grid while THIS button refused
+ * provider-incomplete on the same grid in the same minute.
+ * The property did not leave the product, it moved INTO the guarded engine,
+ * where dayPull resolves the scope with the IDENTICAL options and stamps the
+ * same detected-provider flag. Both halves are pinned, in both files, so
+ * neither can drift away from the other. */
+const siGuardedDay = fs.readFileSync(path.join(root, '1p-feat_mls_schedimport_exact.js'), 'utf8');
+assert(/exact\.dayPull\(dpOpts\)/.test(easySource) &&
+  /var exactScope = safe\(function \(\) \{ return activeProviderRequest\(\); \}, null\);/.test(easySource) &&
+  /if \(exactScope\) dpOpts\.provider = exactScope;/.test(easySource),
+  'the Staff day-pull launcher no longer forwards the visible provider request into the guarded dayPull entry');
+assert(/function _resolveDayScope\(scope\) \{[\s\S]{0,220}allowAll: true, requireRosterForAll: false, allowDetectedProvider: true/.test(siGuardedDay) &&
+  /runOpts\.__p1DetectedProvider = !!\(provider && provider !== "all" && provider\.detectedOnly === true\);/.test(siGuardedDay),
+  'the guarded day entry does not preserve guarded detected-provider routing');
+assert(/var exactLabel = safe\(function \(\) \{ return activeProvider\(\) \|\| 'all'; \}, 'all'\) \|\| 'all';/.test(easySource) &&
+  /freshPull\(exactRange, exactLabel\)/.test(easySource) &&
+  !/freshPull\(exactRange,\s*DEFAULT_PROVIDER_SCOPE_LABEL/.test(easySource),
   'the visible default wording leaked into the canonical internal all progress value');
 
 /* Leaving Easy for Calendar/Task3 must not reintroduce the old promise. These

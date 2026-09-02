@@ -24273,12 +24273,26 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (!P) {
       try {
         var dur0 = p1RangeState();
-        if (dur0 && dur0.summary && /^(running|pending|paused|waiting-login|waiting-retry|storage-failed|needs-attention|complete|account-changed)$/.test(String(dur0.status || ''))) {
+        /* rptfix-1.0.0 (b1184): THE TILES BELONG TO THIS CARD'S MONTH OR TO
+           NOBODY. The manifest is never deleted, and summarize() sums EVERY
+           month in it, so a finished month job - or a YEAR job - repainted its
+           own totals over these four tiles on any later visit to this card
+           ("22 days with visits / 30 days saved" under a bar reading "1 of 1
+           days"). Nothing on screen said the numbers were a different pull's.
+           A year job is not this card's job at all: the Year pull card below
+           owns it, with its own bar, provider and Resume. */
+        var kind0 = dur0 ? String(dur0.kind || '') : '';
+        var mEl0 = $('ez3sMonth'), card0 = (mEl0 && mEl0.value) ? String(mEl0.value) : '';
+        var owns0 = !!(dur0 && kind0 === 'month' && String(dur0.target || '') && (!card0 || String(dur0.target || '') === card0));
+        if (owns0 && dur0.summary && /^(running|pending|paused|waiting-login|waiting-retry|storage-failed|needs-attention|complete|account-changed)$/.test(String(dur0.status || ''))) {
           var ds0 = dur0.summary;
           pTile('ez3cFound', ds0.withRows, 'days with visits');
           pTile('ez3cSaved', ds0.complete, 'days saved');
           pTile('ez3cDup', ds0.empty, 'verified empty');
           pTile('ez3cFail', ds0.needsAttention, 'need attention');
+        } else if (dur0 && kind0 === 'year' && (p1RangeRunning(dur0) || p1RangeResumable(dur0))) {
+          /* a saved YEAR job blocks a month start, so do not offer one. */
+          var bs0 = $('ez3PullStart'); if (bs0) { bs0.disabled = true; }
         }
       } catch (eHt0) {}
       return;
@@ -24300,6 +24314,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        Pause and Cancel. */
     var durable = p1RangeState(), live = p1RangeRunning(durable), resumable = p1RangeResumable(durable);
     var durableStatus = durable ? String(durable.status || '') : '';
+    /* rptfix-1.0.0 (b1184): does the SAVED job describe what this card is
+       showing? A month job for the month in the picker, with this tab's run
+       on that same month, does. A year job, another month, or a day pull
+       running under a month manifest does NOT. Computed with no new helper -
+       pCounts is lifted verbatim into two suites' hosts. */
+    var durableCardMonth = '';
+    try { var mEl = $('ez3sMonth'); durableCardMonth = (mEl && mEl.value) ? String(mEl.value) : ''; } catch (eCm) {}
+    if (!durableCardMonth && P && P.range) durableCardMonth = String(P.range.ym || '');
+    var durableOwnsCard = !!(durable && String(durable.kind || '') === 'month' && String(durable.target || '') &&
+      durableCardMonth && String(durable.target || '') === durableCardMonth &&
+      (!P || !P.range || String(P.range.ym || '') === String(durable.target || '')));
     /* ===== honest-tiles-1.0.0 (owner 2026-09-01: "this is unacceptable and
        has to be better") =====
        With a durable month job on this card, the four tiles kept painting the
@@ -24310,13 +24335,32 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        too - and the retry queue is a QUEUE, not a failure, so nothing unretried
        ever wears the word "failed" again. Legacy pulls (no durable job) keep
        the legacy tiles untouched. */
+    /* rptfix-1.0.0 (b1184): ...AND IT PAINTS ONLY WHEN THE SAVED JOB IS THIS
+       CARD'S RUN. The manifest is never deleted and its summary sums every
+       month in it, so a COMPLETE month job kept repainting its totals over
+       every later pull on this card - a doctor pulling today's schedule read
+       "22 days with visits / 30 days saved" beneath a progress line saying "1
+       of 1 days", with nothing to say the numbers were a finished job's. The
+       job owns the tiles only when it is a MONTH job, for the month in the
+       picker, and this tab's live run is that same month (a day pull carries
+       no ym, so its own numbers stand). Otherwise the legacy numbers above
+       stand and the four labels are put back - pTile writes a label with its
+       number, so leaving them alone would leave "days saved" over a FOUND
+       count. */
     try {
-      if (durable && durable.summary && (live || resumable || /^(complete|needs-attention|waiting-retry)$/.test(durableStatus))) {
+      if (durable && durable.summary && durableOwnsCard && (live || resumable || /^(complete|needs-attention|waiting-retry)$/.test(durableStatus))) {
         var dsum = durable.summary;
         pTile('ez3cFound', dsum.withRows, 'days with visits');
         pTile('ez3cSaved', dsum.complete, 'days saved');
         pTile('ez3cDup', dsum.empty, 'verified empty');
         pTile('ez3cFail', dsum.needsAttention, 'need attention');
+      } else {
+        var legacyLabels = [['ez3cFound', 'found'], ['ez3cSaved', 'saved'], ['ez3cDup', 'already there'], ['ez3cFail', 'failed days']];
+        for (var li = 0; li < legacyLabels.length; li++) {
+          var lel = $(legacyLabels[li][0]);
+          var lsp = (lel && lel.parentNode && lel.parentNode.querySelector) ? lel.parentNode.querySelector('span') : null;
+          if (lsp) lsp.textContent = legacyLabels[li][1];
+        }
       }
     } catch (eHt) {}
     /* ===== end honest-tiles-1.0.0 ===== */
@@ -24325,14 +24369,22 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        safe resume() of the same manifest - only the sentence differs, and only
        one of them is ever on screen. */
     var settledWithFailures = durableStatus === 'waiting-retry' || durableStatus === 'needs-attention';
-    var btnP = $('ez3PullPause'); if (btnP) btnP.style.display = (durable && live) ? '' : 'none';
+    /* rptfix-1.0.0 (b1184): this card's controls speak for a MONTH job only.
+       A paused YEAR job used to be offered here as "Resume month pull", under
+       a 31-day bar and year-wide tiles - a button whose label was false about
+       the job it would resume. The Year pull card below already renders that
+       job's own progress, provider and Resume, so it keeps it. Start is still
+       blocked by ANY saved job, because the engine refuses one either way. */
+    var durableForCard = (durable && String(durable.kind || '') === 'month') ? durable : null;
+    var liveCard = p1RangeRunning(durableForCard), resumableCard = p1RangeResumable(durableForCard);
+    var btnP = $('ez3PullPause'); if (btnP) btnP.style.display = (durableForCard && liveCard) ? '' : 'none';
     var btnU = $('ez3PullResume');
-    if (btnU) btnU.style.display = (resumable && !settledWithFailures) ? '' : 'none';
+    if (btnU) btnU.style.display = (resumableCard && !settledWithFailures) ? '' : 'none';
     var btnR = $('ez3PullRetry');
-    if (btnR) btnR.style.display = durable
-      ? ((resumable && settledWithFailures) ? '' : 'none')
+    if (btnR) btnR.style.display = durableForCard
+      ? ((resumableCard && settledWithFailures) ? '' : 'none')
       : ((!P.running && P.failedDays.length) ? '' : 'none');
-    var btnC = $('ez3PullCancel'); if (btnC) btnC.style.display = (durable ? (live || resumable) : P.running) ? '' : 'none';
+    var btnC = $('ez3PullCancel'); if (btnC) btnC.style.display = (durableForCard ? (liveCard || resumableCard) : P.running) ? '' : 'none';
     var btnS = $('ez3PullStart');
     if (btnS) {
       var blockedByJob = durable ? (live || resumable) : !!P.running;
@@ -24653,7 +24705,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function p1RangeReceiptLine(st) {
     var s = (st && st.summary) || null, run = (st && st.run) || null;
     if (!s) return '';
-    return s.complete + ' of ' + s.days + ' days done · ' + s.withRows + ' with appointments · ' +
+    /* rptfix-1.0.0 (b1184): name the job's OWN scope. This line is the only
+       sentence on the month card that can describe a saved YEAR pull, and it
+       used to read exactly like a month's. */
+    var scope = (String(st.kind || '') === 'year') ? (String(st.target || '') + ' year pull · ')
+      : (String(st.kind || '') === 'month' ? (String(st.target || '') + ' · ') : '');
+    return scope + s.complete + ' of ' + s.days + ' days done · ' + s.withRows + ' with appointments · ' +
       s.empty + ' verified empty · ' + s.failed + ' still to retry · ' + s.needsAttention + ' need attention · ' +
       (run ? run.skippedComplete : 0) + ' skipped as already verified.';
   }
@@ -24762,6 +24819,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (!p1RangeApi() || (P && P.running)) return P;
     var st = p1RangeState();
     if (!st || st.status === 'cancelled') return P;
+    /* rptfix-1.0.0 (b1184): A YEAR JOB IS NOT THE MONTH CARD'S JOB. Adopting
+       one built a MONTH-scoped P out of st.currentMonth, so the card painted a
+       31-day bar ("18 of 31 days") beside tiles summarize() had computed
+       across the WHOLE year ("212 days saved"), under a button labelled
+       "Resume month pull" for a job that is a year. The Year pull card owns a
+       year job and already renders its progress, provider, status and Resume
+       correctly, so this card declines it instead of describing it wrongly. */
+    if (String(st.kind || '') === 'year') return P;
     var monthKey = st.kind === 'month' ? String(st.target || '') : String(st.currentMonth || '');
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(monthKey)) {
       var keys = Object.keys(st.months || {}).sort();
@@ -25042,41 +25107,44 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       admitStaffVisitChoice(function (on) { startDayPull(retryOnly, rosterRetried, true, on); });
       return;
     }
+    /* ===== rptfix-1.0.0 (b1184) - ONE GUARDED DAY LANE, THIS BUTTON TOO ====
+       "Pull today only" was the last visible day pull that did NOT go through
+       __mlsSI.dayPull. It resolved a provider here and called si.pull()
+       directly, so it skipped every guard the converged entry adds: the
+       storage/quota pre-flight (this lane could start an Athena read on a
+       device whose writes are failing), the one-tab advice, the warm-up that
+       opens the day and re-ingests the canonical roster, the
+       p1-selected-no-widen refusal, the resume-scope source - and, decisively,
+       the __p1DayCensusToken. Without that token p1AppointmentCensusDecision
+       answers "no" on its first line, so on the legacy one-column athena Day
+       grid the census exception was written for, the Calendar and Visit
+       buttons imported the day while THIS button refused provider-incomplete
+       on the same grid in the same minute.
+       The local _resolveProviderRequest pre-gate is gone because dayPull's own
+       _resolveDayScope calls it with the identical options
+       ({allowAll:true, requireRosterForAll:false, allowDetectedProvider:true})
+       and its warm-up performs the same Day-schedule re-read the local
+       auto-recovery did, then names its own refusal. What this lane keeps is
+       what it alone knows: the Staff Prep provider picker is the visible owner
+       of this pull, so its request is passed as the scope - exactly as the
+       Visit strip passes its selector and the Calendar hero passes its chip.
+       The synchronous si.pull fallback stays for an engine that predates
+       dayPull. */
     var exact = safe(function () { return window.__mlsSI; }, null), exactDay = todayLocal();
-    if (!(exact && isFn(exact.pull) && isFn(exact._resolveProviderRequest))) { pSet('ez3PullNow', "The Athena pull is not ready yet. Give it a moment, then try again."); return; }
-    var exactGate = exact._resolveProviderRequest(activeProviderRequest(), { allowAll: true, requireRosterForAll: false, allowDetectedProvider: true });
-    if (!exactGate || !exactGate.ok) {
-      /* smp-1.1.0 parity (owner ask 2026-07-17): the DAY pull stages Athena
-         itself too - same auto-recovery the month pull got. Drive athenaOne to
-         the Day schedule (read-only date nav), re-read the roster, retry ONCE. */
-      if (!rosterRetried) {
-        pSet('ez3PullNow', 'Setting up Athena automatically…');
-        pSet('ez3PullNow2', 'MLS is opening the Athena Day schedule and verifying your provider - no clicks needed.');
-        var canonicalD = safe(function () { return window.__mlsProviderRoster; }, null);
-        var ownedRosterD=armRosterRead(canonicalD,todayLocal(),'all',null);
-        if(!ownedRosterD){pSet('ez3PullNow','The provider reader could not establish an account-owned request.');return;}
-        gotoDate(todayLocal(), false, function (m0) { if (m0) pSet('ez3PullNow2', String(m0)); }).then(function () {
-          return rosterCurrent(canonicalD,ownedRosterD.owner)?readSchedule(null,ownedRosterD.requestId):null;
-        }).then(function (r0) {
-          if (rosterCurrent(canonicalD,ownedRosterD.owner)&&r0 && r0.ok === true && isFn(canonicalD.ingestResp)) safe(function () { canonicalD.ingestResp(r0,ownedRosterD.owner); });
-        }).then(null, function () {}).then(function () { if(rosterCurrent(canonicalD,ownedRosterD.owner))startDayPull(retryOnly, true, choiceAdmitted, fullNotesChoice); });
-        return;
-      }
-      pSet('ez3PullNow', (exactGate && exactGate.error) || 'The selected provider is not verified.');
-      pSet('ez3PullNow2', 'MLS tried to verify automatically but could not read the Athena Day schedule - check that athenaOne is signed in, then press the pull again.');
-      return;
-    }
+    if (!(exact && (isFn(exact.dayPull) || isFn(exact.pull)))) { pSet('ez3PullNow', "The Athena pull is not ready yet. Give it a moment, then try again."); return; }
+    var exactScope = safe(function () { return activeProviderRequest(); }, null);
+    var exactLabel = safe(function () { return activeProvider() || 'all'; }, 'all') || 'all';
     var exactRange = { ym: null, from: exactDay, to: exactDay, keys: [exactDay], label: 'Today' };
-    P = freshPull(exactRange, exactGate.provider === 'all' ? 'all' : exactGate.provider.name); P.running = true; P.cancelled = false; P.pullVisitBodies = typeof fullNotesChoice === 'boolean' ? fullNotesChoice : p1RangeFullNotes();
+    P = freshPull(exactRange, exactLabel); P.running = true; P.cancelled = false; P.pullVisitBodies = typeof fullNotesChoice === 'boolean' ? fullNotesChoice : p1RangeFullNotes();
     pSet('ez3PullNow', 'Starting verified exact day pull...'); pSet('ez3PullNow2', 'History and old visits are required for every exact patient.'); pCounts();
-    Promise.resolve(exact.pull({
+    var dpOpts = {
       date: exactDay,
-      provider: exactGate.provider,
-      __p1DetectedProvider: !!(exactGate.provider && exactGate.provider !== 'all' && exactGate.provider.detectedOnly === true),
       includeHistory: true,
       pullVisitBodies: P.pullVisitBodies === true,
       onStatus: function (m, kind) { pSet('ez3PullNow', String(m || '')); if (m) plog(String(m), kind === 'err' ? 'err' : (kind === 'ok' ? 'ok' : '')); }
-    })).then(function (res) {
+    };
+    if (exactScope) dpOpts.provider = exactScope;
+    Promise.resolve(isFn(exact.dayPull) ? exact.dayPull(dpOpts) : exact.pull(dpOpts)).then(function (res) {
       res = res || {}; var cr = res.calendarReceipt || {}, hr = res.historyReceipt || {};
       P.found = Number(cr.attempted || 0); P.saved = Number(res.created || 0); P.dups = Number(res.skipped || 0);
       P.dayStatus[exactDay] = { status: res.complete ? ((res.reason === 'empty-day' || res.reason === 'provider-empty') ? 'empty' : 'done') : 'failed', error: res.complete ? '' : res.reason };
@@ -25189,11 +25257,60 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       render();
     });
   }
+  /* ===== rattr-1.0.0 (b1184): "Pull <month> for <clinician>", handed over ===
+     The Month report cannot open Staff Prep - Staff Prep has exactly ONE
+     activation owner (the topbar Menu row) and that ownership is pinned by
+     tests/canonical-ui-ownership-runtime.test.js. So the report opens the real
+     Menu and leaves this preselection behind: the month for the picker and the
+     clinician for the provider selector, both validated HERE against the
+     roster this module already trusts. It starts nothing - the doctor still
+     presses Start - and it expires, so a hand-over the doctor walked away from
+     cannot silently re-aim a pull half an hour later. */
+  var p1PendingPullMonth = null;
+  var P1_PENDING_MONTH_TTL = 10 * 60 * 1000;
+  function p1TakePendingMonth() {
+    var pending = p1PendingPullMonth;
+    p1PendingPullMonth = null;
+    if (!pending || !pending.ym) return '';
+    if (Date.now() - Number(pending.at || 0) > P1_PENDING_MONTH_TTL) return '';
+    return pending.ym;
+  }
+  window.__mlsStaffPrepPreselect = function (opts) {
+    return safe(function () {
+      opts = opts || {};
+      var out = { ok: false, month: '', provider: '', reason: '' };
+      var ym = String(opts.month || '');
+      if (/^\d{4}-(0[1-9]|1[0-2])$/.test(ym)) {
+        p1PendingPullMonth = { ym: ym, at: Date.now() };
+        out.month = ym;
+        safe(function () { var mEl = $('ez3sMonth'); if (mEl) mEl.value = ym; });
+      }
+      var want = String(opts.provider || '').trim();
+      if (want) {
+        var rp = safe(function () { return window.__mlsProviderRoster; }, null);
+        var entry = (rp && isFn(rp.resolve)) ? safe(function () { return rp.resolve(want); }, null) : null;
+        if (!entry) {
+          var list = safe(function () { return providerList() || []; }, []) || [];
+          for (var i = 0; i < list.length; i++) {
+            if (String((list[i] && list[i].name) || '').toLowerCase() === want.toLowerCase()) { entry = list[i]; break; }
+          }
+        }
+        if (entry && entry.name) {
+          S.providerFilter = String(entry.name);
+          S.providerRef = String(entry.stableKey || '');
+          out.provider = String(entry.name);
+        } else out.reason = 'provider-not-resolved';
+      }
+      out.ok = !!(out.month || out.provider);
+      safe(function () { if (isFn(render)) render(); });
+      return out;
+    }, { ok: false, month: '', provider: '', reason: 'preselect-failed' });
+  };
   function pullPanelHtml() {
     /* p1-durable-month-1.0.0: a saved job is adopted before the panel is
        built, so a reload lands on the unfinished month with its progress. */
     p1RangeAdopt();
-    var ymVal = ($('ez3sMonth') && $('ez3sMonth').value) || (P && P.range && P.range.ym) || prevYm();
+    var ymVal = p1TakePendingMonth() || ($('ez3sMonth') && $('ez3sMonth').value) || (P && P.range && P.range.ym) || prevYm();
     var running = !!(P && P.running);
     return '<div class="ez3-card ez3-pull">' +
       '<div class="ph">📥 Pull a month from Athena</div>' +
@@ -42407,96 +42524,31 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
 /* ===== end feat_queue_fixes_0703 ===== */
 
-/* ===== feat_days_worked (inlined) ===== */
-/* feat_days_worked — "Days worked / patient volume" tool on the Analysis page (2026-07-03, Dad's request:
-   "how some doctors get paid"). Adds a card to #analysisView; opens a monthly table showing DAYS WORKED
-   (distinct appointment dates) and PATIENTS SEEN (distinct patients) per provider (separately) AND combined,
-   computed client-side from window._calAppts. Fills in as more months are pulled from Athena. Read-only/safe. */
-(function(){
-  "use strict";
-  if(window.__mlsDaysWorked) return;
-  var api={installed:true,version:'dw-1.1.0'}; window.__mlsDaysWorked=api;
-
-  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
-
-  function compute(){
-    var a=(window._calAppts||[]).filter(function(x){ return x&&x.provider&&x.appt_date; });
-    var months={}, provs={};
-    a.forEach(function(x){
-      var mo=String(x.appt_date).slice(0,7);
-      var pr=x.provider; provs[pr]=1;
-      var pat=x.patient_external_id||x.mrn||x.name||x.id||'?';
-      months[mo]=months[mo]||{};
-      months[mo][pr]=months[mo][pr]||{days:{},pats:{}};
-      months[mo][pr].days[x.appt_date]=1; months[mo][pr].pats[pat]=1;
-      months[mo].__all=months[mo].__all||{days:{},pats:{}};
-      months[mo].__all.days[x.appt_date]=1; months[mo].__all.pats[pat]=1;
-    });
-    return { months:months, providers:Object.keys(provs).sort() };
-  }
-  function monthName(mo){ try{ return new Date(mo+'-01T12:00:00').toLocaleDateString('en-US',{month:'long',year:'numeric'}); }catch(e){ return mo; } }
-
-  function openModal(){
-    if(document.getElementById('mlsDWBack')) return;
-    var c=compute(), provs=c.providers, months=Object.keys(c.months).sort().reverse();
-    var back=document.createElement('div'); back.id='mlsDWBack';
-    back.style.cssText='position:fixed;inset:0;background:rgba(10,30,60,.5);z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:16px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif';
-    var box=document.createElement('div');
-    box.style.cssText='background:#fff;border-radius:16px;max-width:860px;width:100%;max-height:86vh;overflow:auto;padding:22px;box-shadow:0 12px 44px rgba(0,0,0,.32)';
-    var h='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><div style="font-weight:800;font-size:18px;color:#204034">📊 Days worked / patient volume</div><button id="mlsDWClose" style="border:none;background:#eef4fc;color:#204034;border-radius:8px;padding:6px 12px;font-weight:700;cursor:pointer">Close</button></div>';
-    h+='<div style="font-size:12.5px;color:#5b6b7c;margin-bottom:14px">Days worked = distinct appointment dates. Patients seen = distinct patients. Per provider and combined, by month. Pull past months from Athena to fill in history.</div>';
-    if(!months.length){
-      h+='<div style="padding:22px;text-align:center;color:#5b6b7c">No provider-linked appointment data yet.<br>Pull today’s / past months’ patients from Athena, then reopen this.</div>';
-    } else {
-      h+='<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:#204034"><th style="padding:6px 8px;border-bottom:2px solid #E7E5DD">Month</th>';
-      provs.forEach(function(p){ h+='<th style="padding:6px 8px;border-bottom:2px solid #E7E5DD" colspan="2">'+esc(p)+'</th>'; });
-      h+='<th style="padding:6px 8px;border-bottom:2px solid #E7E5DD" colspan="2">Combined</th></tr>';
-      h+='<tr style="text-align:left;color:#5b6b7c;font-size:11px"><th></th>';
-      provs.forEach(function(){ h+='<th style="padding:2px 8px">Days</th><th style="padding:2px 8px">Patients</th>'; });
-      h+='<th style="padding:2px 8px">Days</th><th style="padding:2px 8px">Patients</th></tr></thead><tbody>';
-      months.forEach(function(mo){
-        h+='<tr><td style="padding:6px 8px;border-bottom:1px solid #F4F2EC;font-weight:700">'+esc(monthName(mo))+'</td>';
-        provs.forEach(function(p){ var d=c.months[mo][p]; h+='<td style="padding:6px 8px;border-bottom:1px solid #F4F2EC">'+(d?Object.keys(d.days).length:0)+'</td><td style="padding:6px 8px;border-bottom:1px solid #F4F2EC">'+(d?Object.keys(d.pats).length:0)+'</td>'; });
-        var all=c.months[mo].__all;
-        h+='<td style="padding:6px 8px;border-bottom:1px solid #F4F2EC;font-weight:700">'+(all?Object.keys(all.days).length:0)+'</td><td style="padding:6px 8px;border-bottom:1px solid #F4F2EC;font-weight:700">'+(all?Object.keys(all.pats).length:0)+'</td></tr>';
-      });
-      h+='</tbody></table>';
-    }
-    box.innerHTML=h; back.appendChild(box); document.body.appendChild(back);
-    function close(){ var b=document.getElementById('mlsDWBack'); if(b) b.remove(); }
-    box.querySelector('#mlsDWClose').onclick=close;
-    back.addEventListener('click',function(e){ if(e.target===back) close(); });
-  }
-
-  function inject(){
-    try{
-      var grid=document.getElementById('analysisView');
-      if(!grid) return;
-      if(document.getElementById('mlsDWCard')) return;
-      var model=[].slice.call(grid.children).filter(function(c){ return /(^|\s)card(\s|$)/.test((c.className||'').toString()); })[0];
-      var card = (model && model.cloneNode) ? model.cloneNode(false) : document.createElement('div');
-      if(!card.className) card.className='card';
-      card.id='mlsDWCard';
-      card.innerHTML='<div style="font-weight:800;color:#204034;font-size:14px">📊 Days worked/patient volume</div><div style="font-size:12px;color:#5b6b7c;margin:6px 0 10px">Days worked &amp; patients seen per provider, by month — separately &amp; combined.</div><button id="mlsDWOpen" type="button" style="border:none;background:#2E6A4B;color:#fff;border-radius:8px;padding:7px 13px;font-weight:700;cursor:pointer;font-family:inherit">Open</button>';
-      card.querySelector('#mlsDWOpen').addEventListener('click',function(e){ e.preventDefault(); e.stopPropagation(); openModal(); });
-      grid.appendChild(card);
-    }catch(e){}
-  }
-
-  function onViewClick(ev){
-    try{ if(ev.target&&ev.target.closest&&ev.target.closest('#nav_analysis')) setTimeout(inject,0); }catch(e){}
-  }
-  function boot(){ inject(); document.addEventListener('click',onViewClick,true); }
-  api.refresh=inject;
-  api.revert=function(){
-    document.removeEventListener('click',onViewClick,true);
-    try{ var card=document.getElementById('mlsDWCard'); if(card) card.remove(); }catch(e){}
-    api.installed=false;
-  };
-  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',boot,{once:true}); else boot();
-})();
-
-/* ===== end feat_days_worked ===== */
+/* ===== feat_days_worked (dw-1.1.0) - RETIRED 2026-09-01 (rptfix-1.0.0, b1184) =
+ * THE SECOND, LESS HONEST CARD ON THIS PAGE IS GONE.
+ *
+ * dw-1.1.0 injected a "Days worked / patient volume" card into the same
+ * #analysisView the Month & year report lives in, and answered the owner's
+ * question with a DIFFERENT derivation that contradicts every honesty rule
+ * mrpt states:
+ *   - it filtered to rows that already carry a provider, so every
+ *     provider-blank row was silently DROPPED rather than reported;
+ *   - it keyed on the raw provider string with no provKey fold, so one
+ *     clinician spelled two ways became two people;
+ *   - and a month with nothing imported printed a literal 0, under a column
+ *     header reading "Days worked" - the exact claim mrpt refuses to make.
+ * On one screen the doctor saw two cards disagreeing, and the older one told
+ * him a clinician worked ZERO days in a month MLS had simply never imported.
+ * If anyone is paid off that table they are paid off a fabricated zero.
+ *
+ * mrpt (below) answers the same question honestly and the Year view
+ * supersedes the month-rows layout, so the card is removed rather than
+ * repaired. The standalone dw satellite file is not referenced by any surface
+ * and is left on disk untouched; nothing injects #mlsDWCard any more. (Its
+ * filename is deliberately NOT spelled here: tests/boot-script-budget.test.js
+ * counts every feat_*.js name that appears anywhere in this bundle, comments
+ * included, and a retired module must not cost a boot-budget slot.)
+ * ========================================================================= */
 
 /* ===== mrpt-1.0.0 - MONTH REPORT (per provider) =============================
  * Owner ask 2026-09-01 ("the monthly thing"): for one month, per provider,
@@ -42570,12 +42622,33 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   "use strict";
   if (window.__mlsMonthReport && window.__mlsMonthReport.installed) return;
 
-  var VERSION = 'mrpt-1.0.0';
+  /* rptfix-1.0.0 (b1184): api.version rides on every report object and told
+     the reader 'mrpt-1.0.0' while the code had been through 1.1.0 (the
+     seen-day join), 1.1.1 (the ghost fold) and now the honesty pass below -
+     so a receipt could not say which derivation produced it. The BANNER
+     comments keep their original spelling on purpose: two suites slice this
+     module by them. */
+  var VERSION = 'mrpt-1.2.0';
   var STORE_SUFFIX = 'mlsMonthReportV1';
   var MAX_MONTHS = 24;
   /* same credential token set _calProvKey uses in the shell, so a provider key
      built here agrees with the one the calendar filter builds. */
   var CRED = ['md', 'do', 'pa', 'pac', 'pa-c', 'np', 'crna', 'aprn', 'dpm', 'dds', 'dmd', 'crnp', 'dr'];
+  /* rptfix-1.0.0 (b1184): THE DISCLOSED SEEN-CLASS LIST IS THE DEFINITION.
+     The writer counted seven status shapes (including a bare "seen", which
+     matched "not seen") while every sentence here named four, so a doctor
+     auditing the column against athenaOne could never reconcile it. This
+     array is the same list, in the same order, as SEEN_STATUS_WORDS in
+     feat_mls_schedimport_exact.js, every sentence about the column is
+     generated from it, and tests/reports-fixes-proof.js pins the two files
+     against each other. A pull written by 3.0.98+ also records its own list
+     in the histogram, and that recorded list wins when present - the card
+     then states what the pull actually did, not what this build believes. */
+  var SEEN_CLASS_WORDS = ['checked in', 'checked out', 'arrived', 'in room', 'roomed', 'completed'];
+  function seenClassPhrase(pstat) {
+    var words = (pstat && Array.isArray(pstat.seenClass) && pstat.seenClass.length) ? pstat.seenClass : SEEN_CLASS_WORDS;
+    return words.join(' / ');
+  }
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
@@ -42602,6 +42675,22 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   function isoMonth(v) { var s = String(v == null ? '' : v).slice(0, 7); return /^\d{4}-(?:0[1-9]|1[0-2])$/.test(s) ? s : ''; }
   function isoDay(v) { var s = String(v == null ? '' : v).slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : ''; }
+  /* rptfix-1.0.0 (b1184): the fold merges the ghost header spelling into the
+     real clinician (provKey strips a leading "Provider " column label), but
+     the ROW kept whichever name arrived first - so the table, the year grid,
+     the capture receipt and every recipe sentence could read "Provider
+     MATTHEW SCHAEFFER, MD", a name that does not exist in the athenaOne
+     picker. Row order must not decide a person's name: prefer the roster
+     spelling, else the candidate that is not the scraped column label. The
+     KEY never changes, so no count ever moves. */
+  function isScrapedLabel(v) { return /^\s*provider\s+/i.test(String(v == null ? '' : v)); }
+  function preferName(current, candidate) {
+    var a = String(current == null ? '' : current).trim(), b = String(candidate == null ? '' : candidate).trim();
+    if (!a) return b;
+    if (!b) return a;
+    if (isScrapedLabel(a) && !isScrapedLabel(b)) return b;
+    return a;
+  }
 
   /* ---------------------------------------------------------------- compute
    * PURE. Given the month, the appointment rows and a roster of known provider
@@ -42617,7 +42706,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       month: month,
       generatedAt: intOf(opts.now),
       providers: [],
-      unattributed: { days: 0, appointments: 0, dates: [] },
+      /* rattr-1.0.0: byDate is how many provider-less rows fall on each day -
+         the per-day quantity the re-attribution plan reports and moves. It is
+         never persisted (sanitize builds the stored record field by field). */
+      unattributed: { days: 0, appointments: 0, dates: [], byDate: {} },
       notImported: [],
       totals: { days: 0, appointments: 0 },
       provenance: {
@@ -42626,6 +42718,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         monthRows: 0,
         attributedRows: 0,
         unattributedRows: 0,
+        /* rattr-1.0.0: rows the import stored with NO provider that a saved
+           pull receipt moved to one. Counted apart from attributedRows on
+           purpose - the doctor must always be able to see how many of a
+           clinician's numbers came from the row itself. */
+        reattributedRows: 0,
         duplicateRowsIgnored: 0,
         undatedRowsIgnored: 0,
         rosterCount: roster.length,
@@ -42633,6 +42730,21 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       }
     };
     if (!month) { out.provenance.reason = 'no-month'; return out; }
+
+    /* rptfix-1.0.0: the roster's own spelling of a name, by key. */
+    var rosterName = {}, rn0, rk0;
+    for (var r0 = 0; r0 < roster.length; r0++) {
+      rn0 = String(roster[r0] == null ? '' : roster[r0]).trim();
+      rk0 = provKey(rn0);
+      if (rn0 && rk0 && !rosterName[rk0] && !isScrapedLabel(rn0)) rosterName[rk0] = rn0;
+    }
+    /* rattr-1.0.0: the re-attribution overlay, day -> {name, key}. It is
+       applied ONLY to a row that carries NO provider of its own, and only for
+       a day whose saved pull receipt named exactly one verified provider (see
+       reattributePlan below). It never overrides a provider the import
+       actually stored, and it is a pure input here - compute() stays a
+       function of its arguments. */
+    var attribution = (opts.attribution && typeof opts.attribution === 'object') ? opts.attribution : null;
 
     var byKey = {}, seenId = {}, monthDates = {}, unattrDates = {};
     function bump(bucket, dates, day) {
@@ -42651,14 +42763,24 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       }
       out.provenance.monthRows++;
       monthDates[day] = 1;
-      var name = rowProvider(a), key = provKey(name);
+      var name = rowProvider(a), key = provKey(name), reattributed = false;
+      if ((!name || !key) && attribution) {
+        var att = attribution[day];
+        var attName = att ? String(att.name || '').trim() : '';
+        var attKey = attName ? provKey(attName) : '';
+        if (attName && attKey) { name = attName; key = attKey; reattributed = true; }
+      }
       if (!name || !key) {
         out.provenance.unattributedRows++;
         bump(out.unattributed, unattrDates, day);
+        out.unattributed.byDate[day] = (out.unattributed.byDate[day] || 0) + 1;
         continue;
       }
-      out.provenance.attributedRows++;
-      if (!byKey[key]) byKey[key] = { name: name, key: key, days: 0, appointments: 0, dates: [], _seen: {} };
+      if (reattributed) out.provenance.reattributedRows++;
+      else out.provenance.attributedRows++;
+      if (!byKey[key]) byKey[key] = { name: rosterName[key] || name, key: key, days: 0, appointments: 0, dates: [], reattributed: 0, _seen: {} };
+      else byKey[key].name = rosterName[key] || preferName(byKey[key].name, name);
+      if (reattributed) byKey[key].reattributed++;
       bump(byKey[key], byKey[key]._seen, day);
     }
 
@@ -42757,13 +42879,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if (!byKey[key]) {
         byKey[key] = { name: name, key: key, cells: {}, days: 0, appointments: 0, monthsImported: 0, monthsMissing: 0 };
         order.push(key);
-      }
+      /* rptfix-1.0.0: a later month may carry the real spelling of a name the
+         first month only had as a scraped column label. The key is the same,
+         so upgrading the label moves no count. */
+      } else byKey[key].name = preferName(byKey[key].name, name);
       return byKey[key];
     }
     for (mi = 1; mi <= 12; mi++) {
       monthKey = monthKeyOf(year, mi);
       out.months.push(monthKey);
-      rep = compute({ month: monthKey, rows: rows, roster: roster, now: when });
+      rep = compute({ month: monthKey, rows: rows, roster: roster, now: when, attribution: opts.attribution });
       var imported = rep.provenance.monthRows > 0;
       out.monthImported[monthKey] = imported;
       out.byMonth[monthKey] = {
@@ -42877,7 +43002,33 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (!parsed || parsed.v !== 1 || !parsed.months || typeof parsed.months !== 'object' || Array.isArray(parsed.months)) return { v: 1, months: {} };
     return parsed;
   }
-  function capture(report) {
+  /* rptfix-1.0.0 (b1184): THE FIGURES A RECEIPT IS A RECEIPT OF. Two records
+     agree when every number a doctor could read off them agrees; the stamp
+     and the date lists are not part of that comparison. */
+  function sameFigures(a, b) {
+    if (!a || !b) return false;
+    if (intOf(a.totals && a.totals.days) !== intOf(b.totals && b.totals.days)) return false;
+    if (intOf(a.totals && a.totals.appointments) !== intOf(b.totals && b.totals.appointments)) return false;
+    if (intOf(a.unattributed && a.unattributed.days) !== intOf(b.unattributed && b.unattributed.days)) return false;
+    if (intOf(a.unattributed && a.unattributed.appointments) !== intOf(b.unattributed && b.unattributed.appointments)) return false;
+    function sig(rec) {
+      var list = Array.isArray(rec.providers) ? rec.providers.slice() : [];
+      return list.map(function (p) { return provKey(p && p.name) + ':' + intOf(p && p.days) + ':' + intOf(p && p.appointments); }).sort().join('|');
+    }
+    return sig(a) === sig(b);
+  }
+  /* THE RECEIPT MAY NOT BE DESTROYED BY THE ACT OF READING IT (rptfix-1.0.0).
+     paintMonth reads the stored receipt and then captured over it with the
+     CURRENT figures on every single open, so a silent row loss - reconcile
+     deleting stale rows, a retirement pass - was visible exactly ONCE. Close
+     the modal and reopen it and the "captured on Jul 6 as 2 days / 20" note
+     was gone forever, and the shrunken month looked like it had always been
+     that size. There was then no way to answer "did we lose rows?".
+     The rule is first-write-wins WHILE THE FIGURES DISAGREE: a repeat read of
+     an unchanged month still refreshes the stamp (nothing is lost by that),
+     but a read that DISAGREES with the receipt leaves the receipt standing and
+     says so. recapture() below is the explicit, doctor-driven re-baseline. */
+  function capture(report, force) {
     var rec = sanitize(report);
     if (!rec.month) return { written: false, reason: 'no-month', record: rec };
     /* A month with nothing imported has nothing to be an as-of receipt FOR, and
@@ -42887,11 +43038,20 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var k = storeKey();
     if (!k) return { written: false, reason: 'no-account-scope', record: rec };
     var store = readStore();
+    var prior = store.months[rec.month];
+    if (prior && typeof prior === 'object' && force !== true && !sameFigures(prior, rec)) {
+      return { written: false, reason: 'receipt-held', record: rec, prior: prior };
+    }
     store.months[rec.month] = rec;
     var keys = Object.keys(store.months).sort();
     while (keys.length > MAX_MONTHS) delete store.months[keys.shift()];
     var ok = safe(function () { localStorage.setItem(k, JSON.stringify(store)); return true; }, false);
-    return { written: !!ok, reason: ok ? 'captured' : 'storage-refused', record: rec };
+    return { written: !!ok, reason: ok ? (force === true ? 'recaptured' : 'captured') : 'storage-refused', record: rec };
+  }
+  /* the ONLY way a standing receipt is replaced, and it is a visible control. */
+  function recapture(month) {
+    var m = isoMonth(month); if (!m) return { written: false, reason: 'no-month' };
+    return capture(report(m), true);
   }
   function storedFor(month) {
     var m = isoMonth(month); if (!m) return null;
@@ -42925,11 +43085,221 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     safe(function () { (window._calApptProviders || []).forEach(function (p) { add(p && (p.label || p.provider_key)); }); });
     return names;
   }
+  /* ===== rattr-1.0.0 (b1184) - RE-ATTRIBUTE FROM A SAVED PULL RECEIPT =====
+   * THE ROW ON SCREEN TODAY: "No provider recorded - 5 days - 64 appointments
+   * - imported from a day view with no provider column, so MLS stored no
+   * provider - these are NOT counted for anyone." That row is HONEST and it
+   * stays. MLS Assist 3.0.106 now attaches the provider heading to every row
+   * on that surface, so new imports carry a provider; this is the one-click
+   * repair for the rows already in the store.
+   *
+   * THE RULE, and it is the whole feature: a day's rows move to a clinician
+   * ONLY when a receipt MLS itself wrote at pull time names exactly one
+   * verified provider for that WHOLE day. Never by guessing, never by "who
+   * usually works Tuesdays", never from a name on the calendar.
+   *
+   * The two receipts, both read-only:
+   *   - THE DURABLE JOB MANIFEST (uns 'p1RangeJobV1'). A month or year job
+   *     whose provider.mode is 'selected' AND whose scope stamp records a
+   *     VERIFIED selected scope proves every day it marked 'complete' was
+   *     read on that one clinician's own schedule. The manifest stores an id
+   *     and a stable key, never a name, so the name comes from the roster -
+   *     if the roster cannot name it, nothing moves and the card says why.
+   *   - THE PER-DAY AUTHORITATIVE SNAPSHOT (uns 'schedAuthoritativeDaysV1').
+   *     A day holding exactly ONE provider-scoped snapshot and NO all-scope
+   *     snapshot was read for that clinician alone.
+   * A day whose receipts name two different clinicians, or that carries an
+   * all-scope read, is REFUSED and listed by name. A day with an import
+   * ledger (uns 'schedImportIndexV1::<day>') but no provider receipt is
+   * reported as exactly that, so the doctor knows the difference between "MLS
+   * cannot prove it" and "MLS never read this day".
+   *
+   * WHAT IT WRITES: an account-scoped, PHI-free overlay of day -> provider
+   * name, applied at report time by compute(). It never rewrites an
+   * appointment row, never touches the backend, and never overrides a
+   * provider the import actually stored. Undo removes the month's overlay
+   * days and the report goes straight back to "No provider recorded".
+   * ===================================================================== */
+  var ATTR_SUFFIX = 'mlsProvDayAttributionV1';
+  var ATTR_MAX_DAYS = 400;
+  function scopedKey(suffix) {
+    return safe(function () {
+      if (typeof window.unsResolved === 'function' && !window.unsResolved()) return '';
+      return (typeof window.uns === 'function') ? String(window.uns(suffix) || '') : '';
+    }, '');
+  }
+  function readJson(key) {
+    if (!key) return null;
+    var raw = safe(function () { return localStorage.getItem(key); }, null);
+    return raw ? safe(function () { return JSON.parse(raw); }, null) : null;
+  }
+  function readAttrStore() {
+    var parsed = readJson(scopedKey(ATTR_SUFFIX));
+    if (!parsed || parsed.v !== 1 || !parsed.days || typeof parsed.days !== 'object' || Array.isArray(parsed.days)) return { v: 1, days: {} };
+    return parsed;
+  }
+  /* day -> {name, source, at} for one month; the shape compute() consumes. */
+  function attributionFor(month) {
+    var m = isoMonth(month), out = {};
+    if (!m) return out;
+    var store = readAttrStore();
+    Object.keys(store.days).forEach(function (day) {
+      if (!isoDay(day) || day.slice(0, 7) !== m) return;
+      var rec = store.days[day];
+      var name = rec && String(rec.name || '').trim();
+      if (name) out[day] = { name: name, source: String((rec && rec.source) || ''), at: intOf(rec && rec.at), rows: intOf(rec && rec.rows) };
+    });
+    return out;
+  }
+  function attributionForYear(year) {
+    var y = isoYear(year), out = {};
+    if (!y) return out;
+    var store = readAttrStore();
+    Object.keys(store.days).forEach(function (day) {
+      if (!isoDay(day) || day.slice(0, 4) !== y) return;
+      var rec = store.days[day];
+      var name = rec && String(rec.name || '').trim();
+      if (name) out[day] = { name: name, source: String((rec && rec.source) || ''), at: intOf(rec && rec.at) };
+    });
+    return out;
+  }
+  function rosterNameFor(ref) {
+    if (!ref) return '';
+    return safe(function () {
+      var rp = window.__mlsProviderRoster;
+      var e = (rp && typeof rp.resolve === 'function') ? rp.resolve(ref) : null;
+      return e ? String(e.name || '').trim() : '';
+    }, '') || '';
+  }
+  /* the durable month/year job's own receipt */
+  function manifestClaims(month) {
+    var out = { claims: {}, note: '' };
+    var job = readJson(scopedKey('p1RangeJobV1'));
+    if (!job || !job.months || typeof job.months !== 'object') return out;
+    var prov = job.provider;
+    if (!prov || typeof prov !== 'object' || String(prov.mode || '') !== 'selected') {
+      out.note = (prov && String(prov.mode || '') === 'all') ? 'the saved pull was an all-provider job, which names nobody' : '';
+      return out;
+    }
+    var scope = job.scope;
+    if (!(scope && Number(scope.v) === 1 && scope.verified === true && String(scope.mode || '') === 'selected')) {
+      out.note = 'the saved pull has no verified provider-scope stamp';
+      return out;
+    }
+    var name = rosterNameFor(prov.stableKey || prov.id);
+    if (!name) { out.note = 'the saved pull names a provider this device\'s roster cannot resolve'; return out; }
+    var m = job.months[month];
+    if (!m || !m.days || typeof m.days !== 'object') return out;
+    Object.keys(m.days).forEach(function (day) {
+      var d = m.days[day];
+      if (!isoDay(day) || !d || typeof d !== 'object' || String(d.status || '') !== 'complete') return;
+      out.claims[day] = { name: name, key: provKey(name), source: 'the saved month pull receipt', at: intOf(job.updatedAt) };
+    });
+    return out;
+  }
+  /* the per-day snapshot the importer publishes for a verified read */
+  function authorityClaims(month) {
+    var out = { claims: {}, refused: {} };
+    var store = readJson(scopedKey('schedAuthoritativeDaysV1'));
+    if (!store || store.v !== 1 || !store.days || typeof store.days !== 'object') return out;
+    Object.keys(store.days).forEach(function (day) {
+      if (!isoDay(day) || day.slice(0, 7) !== month) return;
+      var e = store.days[day];
+      if (!e || typeof e !== 'object') return;
+      var provs = (e.providers && typeof e.providers === 'object' && !Array.isArray(e.providers)) ? Object.keys(e.providers) : [];
+      if (e.all) { out.refused[day] = 'this day was also read as a whole-clinic view, which names nobody'; return; }
+      if (provs.length > 1) { out.refused[day] = 'this day carries reads for ' + provs.length + ' different clinicians'; return; }
+      if (provs.length !== 1) return;
+      var name = rosterNameFor(provs[0]);
+      if (!name) { out.refused[day] = 'the day\'s read names a provider this device\'s roster cannot resolve'; return; }
+      out.claims[day] = { name: name, key: provKey(name), source: 'the provider-scoped day read', at: intOf(e.providers[provs[0]] && e.providers[provs[0]].updated) };
+    });
+    return out;
+  }
+  function importLedgerHas(day) {
+    var k = scopedKey('schedImportIndexV1::' + day);
+    if (!k) return false;
+    return safe(function () { return localStorage.getItem(k) != null; }, false);
+  }
+  function reattributePlan(month, repIn) {
+    var m = isoMonth(month);
+    var plan = { month: m, ready: [], blocked: [], days: 0, rows: 0, providers: [], applied: null, reason: '' };
+    if (!m) { plan.reason = 'no-month'; return plan; }
+    if (!scopedKey(ATTR_SUFFIX)) { plan.reason = 'no-account-scope'; return plan; }
+    /* the report the doctor is looking at, so the plan can never disagree with
+       the row it sits under. Recomputed only when it was not handed in. */
+    var rep = (repIn && repIn.month === m && repIn.unattributed) ? repIn : report(m);
+    plan.applied = appliedSummary(m);
+    var byDate = (rep.unattributed && rep.unattributed.byDate) || {};
+    var mc = manifestClaims(m), ac = authorityClaims(m), names = {};
+    Object.keys(byDate).sort().forEach(function (day) {
+      var rows = intOf(byDate[day]);
+      if (ac.refused[day]) { plan.blocked.push({ day: day, rows: rows, why: ac.refused[day] }); return; }
+      var keys = {};
+      if (mc.claims[day]) keys[mc.claims[day].key] = mc.claims[day];
+      if (ac.claims[day]) keys[ac.claims[day].key] = ac.claims[day];
+      var uniq = Object.keys(keys);
+      if (uniq.length === 1) {
+        var c = keys[uniq[0]];
+        names[c.name] = 1;
+        plan.ready.push({ day: day, rows: rows, name: c.name, key: c.key, source: c.source });
+        plan.days++; plan.rows += rows;
+        return;
+      }
+      if (uniq.length > 1) { plan.blocked.push({ day: day, rows: rows, why: 'two saved receipts name different clinicians for this day' }); return; }
+      /* WHAT IS MISSING, said in full: whether MLS ever imported this day at
+         all, and - separately - why the saved job cannot speak for it. */
+      var why = importLedgerHas(day)
+        ? 'this day was imported with no provider-scoped pull receipt'
+        : 'MLS holds no import receipt for this day at all';
+      if (mc.note) why += ' - ' + mc.note;
+      plan.blocked.push({ day: day, rows: rows, why: why });
+    });
+    plan.providers = Object.keys(names).sort();
+    if (!plan.ready.length && !plan.blocked.length) plan.reason = 'nothing-unattributed';
+    return plan;
+  }
+  function appliedSummary(month) {
+    var applied = attributionFor(month), days = Object.keys(applied).sort();
+    if (!days.length) return null;
+    var byName = {}, rows = 0;
+    days.forEach(function (d) { var n = applied[d].name; byName[n] = (byName[n] || 0) + intOf(applied[d].rows); rows += intOf(applied[d].rows); });
+    return { days: days.length, rows: rows, dates: days, providers: Object.keys(byName).sort(), at: intOf(applied[days[0]].at), source: applied[days[0]].source };
+  }
+  function applyReattribution(month) {
+    var plan = reattributePlan(month);
+    if (plan.reason) return { ok: false, reason: plan.reason, plan: plan, moved: { days: 0, rows: 0, providers: [] } };
+    if (!plan.ready.length) return { ok: false, reason: 'no-receipt', plan: plan, moved: { days: 0, rows: 0, providers: [] } };
+    var k = scopedKey(ATTR_SUFFIX);
+    if (!k) return { ok: false, reason: 'no-account-scope', plan: plan, moved: { days: 0, rows: 0, providers: [] } };
+    var store = readAttrStore(), at = Date.now(), moved = { days: 0, rows: 0, providers: [] }, names = {};
+    plan.ready.forEach(function (r) {
+      store.days[r.day] = { name: String(r.name).slice(0, 80), source: String(r.source).slice(0, 60), rows: intOf(r.rows), at: at };
+      moved.days++; moved.rows += intOf(r.rows); names[r.name] = 1;
+    });
+    var keys = Object.keys(store.days).sort();
+    while (keys.length > ATTR_MAX_DAYS) delete store.days[keys.shift()];
+    var ok = safe(function () { localStorage.setItem(k, JSON.stringify(store)); return true; }, false);
+    moved.providers = Object.keys(names).sort();
+    return { ok: !!ok, reason: ok ? 'moved' : 'storage-refused', plan: plan, moved: moved, at: at };
+  }
+  function clearReattribution(month) {
+    var m = isoMonth(month), k = scopedKey(ATTR_SUFFIX);
+    if (!m || !k) return { ok: false, reason: m ? 'no-account-scope' : 'no-month', cleared: 0 };
+    var store = readAttrStore(), cleared = 0;
+    Object.keys(store.days).forEach(function (day) {
+      if (isoDay(day) && day.slice(0, 7) === m) { delete store.days[day]; cleared++; }
+    });
+    var ok = safe(function () { localStorage.setItem(k, JSON.stringify(store)); return true; }, false);
+    return { ok: !!ok, reason: ok ? 'cleared' : 'storage-refused', cleared: cleared };
+  }
+  /* ===== end rattr-1.0.0 ================================================ */
+
   function report(month) {
-    return compute({ month: month, rows: liveRows(), roster: liveRoster(), now: Date.now() });
+    return compute({ month: month, rows: liveRows(), roster: liveRoster(), now: Date.now(), attribution: attributionFor(month) });
   }
   function yearReport(year) {
-    return computeYear({ year: year, rows: liveRows(), roster: liveRoster(), now: Date.now() });
+    return computeYear({ year: year, rows: liveRows(), roster: liveRoster(), now: Date.now(), attribution: attributionForYear(year) });
   }
 
   /* -------------------------------------------------------------------- UI */
@@ -42940,28 +43310,55 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (!ms) return '';
     return safe(function () { return new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); }, '') || '';
   }
+  /* rptfix-1.0.0 (b1184): NEVER DROP A MONTH THAT HAS ROWS. The list was
+     sorted descending and then sliced to MAX_MONTHS, so once a forward-booked
+     month plus the thirteen synthetic recent months plus the imported history
+     exceeded the cap, the OLDEST IMPORTED months fell off the picker with no
+     message at all - a month the doctor spent hours pulling simply was not
+     there, and the Year grid's imported cells are not clickable. Every month
+     that has rows is now always offered; only the synthetic recent-window
+     entries are capped. */
   function monthOptions() {
-    var months = {}, i;
+    var withRows = {}, months = {}, i;
     var rows = liveRows();
     for (i = 0; i < rows.length; i++) {
       var m = isoMonth(rowDate(rows[i]));
-      if (m) months[m] = 1;
+      if (m) { withRows[m] = 1; months[m] = 1; }
     }
     var now = new Date();
     for (i = 0; i < 13; i++) {
       var d = new Date(now.getFullYear(), now.getMonth() - i, 1);
       months[d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2)] = 1;
     }
-    return Object.keys(months).sort().reverse().slice(0, MAX_MONTHS);
+    var all = Object.keys(months).sort().reverse(), out = [];
+    for (i = 0; i < all.length; i++) {
+      if (withRows[all[i]]) { out.push(all[i]); continue; }
+      if (out.length < MAX_MONTHS) out.push(all[i]);
+    }
+    return out;
   }
+  function thisMonthKey() {
+    var d = new Date();
+    return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2);
+  }
+  /* rptfix-1.0.0 (b1184): DO NOT OPEN ON A MONTH THAT HAS NOT HAPPENED. `best`
+     was the MAXIMUM month across all stored rows, and a practice calendar
+     always holds forward bookings - one patient booked ahead moved the card a
+     year away from the data. MEASURED: August fully imported plus ONE row in
+     March 2027 opened the card on March 2027 with one appointment, every
+     clinician listed as "not imported yet", and an as-of receipt captured for
+     that phantom month. Land on the newest month with rows that is not in the
+     future, else this month. Future months stay SELECTABLE - only the landing
+     changes. */
   function defaultMonth() {
     var opts = monthOptions();
-    var rows = liveRows(), best = '';
+    var rows = liveRows(), cap = thisMonthKey(), best = '';
     for (var i = 0; i < rows.length; i++) {
       var m = isoMonth(rowDate(rows[i]));
-      if (m && m > best) best = m;
+      if (!m || m > cap) continue;
+      if (m > best) best = m;
     }
-    return best || opts[0] || '';
+    return best || cap || opts[0] || '';
   }
 
   /* yrpt-1.0.0. The year axis is fixed (Jan..Dec); the CHOICE is which year.
@@ -42979,13 +43376,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     for (i = 0; i < YEAR_WINDOW; i++) years[String(now - i)] = 1;
     return Object.keys(years).sort().reverse();
   }
+  /* rptfix-1.0.0: the same clamp as defaultMonth - a 2027 booking must not
+     open the Year report on 2027. */
   function defaultYear() {
-    var rows = liveRows(), best = '';
+    var rows = liveRows(), cap = String(new Date().getFullYear()), best = '';
     for (var i = 0; i < rows.length; i++) {
       var y = isoYear(rowDate(rows[i]));
-      if (y && y > best) best = y;
+      if (!y || y > cap) continue;
+      if (y > best) best = y;
     }
-    return best || yearOptions()[0] || '';
+    return best || cap || yearOptions()[0] || '';
   }
 
   var RECIPE_HEAD = 'To import a month for one provider:';
@@ -43025,29 +43425,187 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
    * arrived, in room) - captured by MLS Assist 3.0.98+ at read time. Months
    * pulled with an older extension have no histogram and honestly show a dash.
    * Read-only here; joined at render so compute() stays pure. */
-  function provStatusFor(month) {
-    var out = { any: false, byKey: {} };
+  /* rptfix-1.0.0 (b1184) THREE FIXES LIVE IN THIS ONE READER.
+   *
+   * 1. A BUCKET WITH NO STATUS IS NOT A MEASURED ZERO. The writer mints a
+   *    bucket for EVERY imported day whether or not athena printed a status,
+   *    so a day whose rows all carried "" was stored as {total:12, seen:0,
+   *    statuses:{}} and this reader counted it as "status captured, zero
+   *    seen". The table then printed a confident bold 0 in the seen column -
+   *    the exact false zero the card exists to refuse - under a provenance
+   *    paragraph asserting the column was captured by 3.0.98+. A day now
+   *    counts only when its bucket PROVES a status was read (statuses has at
+   *    least one key), and a month with no such day reports any:false so the
+   *    card keeps the honest dash and the pre-3.0.98 wording.
+   *
+   * 2. FOLD BY DAY, NOT BY BUCKET. The histogram is written under the RAW
+   *    lowercased provider name and read after the provKey fold, so two
+   *    spellings of one clinician on ONE day (the "Provider MATTHEW
+   *    SCHAEFFER, MD" ghost header is exactly such a second spelling) counted
+   *    as TWO days - and "Days with seen visits" could print higher than
+   *    "Days with appointments", an impossible row. Days are collected in a
+   *    set per key and counted once.
+   *
+   * 3. CLAMP TO THE MONTH ACTUALLY IMPORTED. `allow` (optional) is the day
+   *    set compute() proved for each provider key. With it, a day the
+   *    calendar reconcile has since deleted, or a day belonging to a
+   *    different clinician, cannot be counted for anybody - so seenDays <=
+   *    statusDays <= that provider's days with appointments, always. Called
+   *    with one argument the reader behaves exactly as before the clamp.
+   */
+  function provStatusFor(month, allow) {
+    var out = { any: false, byKey: {}, seenClass: null };
     try {
       if (typeof window.uns !== 'function') return out;
       var k = String(window.uns('mlsProvDayStatusV1') || ''); if (!k) return out;
       var raw = localStorage.getItem(k); if (!raw) return out;
       var store = JSON.parse(raw);
       if (!store || store.v !== 1 || !store.days) return out;
+      if (Array.isArray(store.seenClass)) out.seenClass = store.seenClass.slice(0, 12).map(function (w) { return String(w == null ? '' : w).slice(0, 40); });
+      var clamp = (allow && allow.byKey && typeof allow.byKey === 'object') ? allow.byKey : null;
       Object.keys(store.days).forEach(function (dt) {
         if (String(dt).slice(0, 7) !== month) return;
         var provs = store.days[dt]; if (!provs || typeof provs !== 'object') return;
         Object.keys(provs).forEach(function (pk) {
           var b = provs[pk]; if (!b || typeof b !== 'object') return;
+          /* the bucket must PROVE a status was read before it may say anything
+             about a seen day. No statuses = nothing was captured. */
+          var st = b.statuses, hasStatus = false, sk;
+          if (st && typeof st === 'object') { for (sk in st) if (Object.prototype.hasOwnProperty.call(st, sk)) { hasStatus = true; break; } }
+          if (!hasStatus) return;
           var key = provKey(b.name || pk); if (!key) key = String(pk);
-          var t = out.byKey[key] || (out.byKey[key] = { seenDays: 0, statusDays: 0, seenAppts: 0 });
+          /* rattr-1.0.0: the histogram's provider-less bucket follows the same
+             receipt the appointments followed. Only a bucket with NO name of
+             its own can be moved, and only for a day the receipt named. */
+          if (allow && allow.attribution && !String(b.name || '').trim()) {
+            var moved = allow.attribution[dt];
+            var movedKey = moved ? provKey(moved.name || moved) : '';
+            if (movedKey) key = movedKey;
+          }
+          if (clamp && !(clamp[key] && clamp[key][dt])) return;
+          var t = out.byKey[key] || (out.byKey[key] = { seenDays: 0, statusDays: 0, seenAppts: 0, _sd: {}, _td: {} });
           out.any = true;
-          t.statusDays++;
+          if (!t._td[dt]) { t._td[dt] = 1; t.statusDays++; }
           var seen = intOf(b.seen);
-          if (seen > 0) { t.seenDays++; t.seenAppts += seen; }
+          if (seen > 0) {
+            t.seenAppts += seen;
+            if (!t._sd[dt]) { t._sd[dt] = 1; t.seenDays++; }
+          }
         });
       });
+      Object.keys(out.byKey).forEach(function (key) { delete out.byKey[key]._sd; delete out.byKey[key]._td; });
     } catch (e) {}
     return out;
+  }
+  /* rptfix-1.0.0: the day set compute() proved, per provider key - the clamp
+     provStatusFor above intersects with. Built from the SAME report the table
+     renders, so the two can never disagree about which days exist. */
+  function allowedDaysFor(rep) {
+    var allow = { byKey: {} };
+    var list = (rep && rep.providers) || [], i, j;
+    for (i = 0; i < list.length; i++) {
+      var p = list[i], set = allow.byKey[p.key] || (allow.byKey[p.key] = {});
+      for (j = 0; j < (p.dates || []).length; j++) set[p.dates[j]] = 1;
+    }
+    return allow;
+  }
+
+  /* ---- rattr-1.0.0 UI: the one-click repair, and an honest refusal ------- */
+  function dayPhrase(list, cap) {
+    var days = (list || []).slice(0, cap || 8).map(function (d) { return esc(d); });
+    var more = (list || []).length - days.length;
+    return days.join(', ') + (more > 0 ? (' and ' + more + ' more') : '');
+  }
+  function reattributeHtml(rep) {
+    var applied = appliedSummary(rep.month);
+    if (!rep.unattributed.appointments && !applied) return '';
+    var plan = reattributePlan(rep.month, rep);
+    var h = '<div style="margin-top:14px;padding:12px 14px;border:1px solid #f3d9a6;background:#fff8ea;border-radius:10px">' +
+      '<div style="font-weight:700;color:#7a5b16;font-size:13px">Rows with no provider recorded</div>';
+    if (applied) {
+      h += '<div style="font-size:12.5px;color:#5b6b7c;margin:5px 0 6px">' +
+        '<b>' + applied.rows + ' appointment' + (applied.rows === 1 ? '' : 's') + ' on ' + applied.days + ' day' + (applied.days === 1 ? '' : 's') +
+        '</b> are counted for <b>' + esc(applied.providers.join(', ')) + '</b>' +
+        (applied.at ? (' &mdash; moved on ' + esc(dayLabel(applied.at))) : '') +
+        ' from ' + esc(applied.source || 'a saved pull receipt') + ' (' + esc(dayPhrase(applied.dates, 6)) + ').</div>' +
+        '<button type="button" id="mlsMRAttrUndo" style="border:none;background:#eef4fc;color:#204034;border-radius:8px;padding:6px 12px;font-weight:700;cursor:pointer;font-family:inherit">Undo re&#8209;attribution</button>';
+    }
+    if (plan.reason === 'no-account-scope') {
+      h += '<div style="font-size:12.5px;color:#5b6b7c;margin:5px 0 0">Sign in to MLS to repair these rows &mdash; the receipt is stored against your account.</div></div>';
+      return h;
+    }
+    if (plan.ready.length) {
+      var byName = {};
+      plan.ready.forEach(function (r) { byName[r.name] = (byName[r.name] || 0) + r.rows; });
+      h += '<div style="font-size:12.5px;color:#5b6b7c;margin:7px 0 8px">MLS can prove who ' + plan.rows + ' of these appointment' +
+        (plan.rows === 1 ? '' : 's') + ' belong to: on ' + plan.days + ' day' + (plan.days === 1 ? '' : 's') +
+        ' (' + esc(dayPhrase(plan.ready.map(function (r) { return r.day; }), 6)) + ') the saved pull receipt names exactly one verified provider &mdash; ' +
+        esc(Object.keys(byName).sort().join(', ')) + '. Nothing is guessed: a day whose receipt names nobody, or two clinicians, is left exactly as it is.</div>' +
+        '<button type="button" id="mlsMRAttrGo" style="border:none;background:#2E6A4B;color:#fff;border-radius:8px;padding:7px 13px;font-weight:700;cursor:pointer;font-family:inherit">' +
+        'Re&#8209;attribute rows from a provider&#8209;scoped pull</button>';
+    }
+    if (plan.blocked.length) {
+      h += '<div style="font-size:12.5px;color:#5b6b7c;margin:9px 0 4px"><b>' +
+        (plan.ready.length ? 'These days stay unattributed' : 'MLS cannot prove who these rows belong to') + ':</b></div>' +
+        '<ul style="margin:0 0 6px 18px;padding:0;font-size:12.5px;color:#5b6b7c;line-height:1.5">';
+      for (var i = 0; i < plan.blocked.length && i < 12; i++) {
+        h += '<li><b>' + esc(plan.blocked[i].day) + '</b> &middot; ' + plan.blocked[i].rows + ' appointment' +
+          (plan.blocked[i].rows === 1 ? '' : 's') + ' &middot; ' + esc(plan.blocked[i].why) + '</li>';
+      }
+      if (plan.blocked.length > 12) h += '<li>&hellip; and ' + (plan.blocked.length - 12) + ' more day' + ((plan.blocked.length - 12) === 1 ? '' : 's') + '</li>';
+      h += '</ul>';
+      var who = liveRoster();
+      if (who.length) {
+        var sel = '<select id="mlsMRAttrWho" aria-label="Provider to pull this month for" style="border:1px solid #d5e2f2;border-radius:8px;padding:6px 9px;font-size:12.5px;font-family:inherit">';
+        for (var w = 0; w < who.length; w++) sel += '<option value="' + esc(who[w]) + '">' + esc(who[w]) + '</option>';
+        sel += '</select>';
+        h += '<div style="font-size:12.5px;color:#5b6b7c;margin:6px 0 6px">The only honest repair for those days is to read them again on one clinician\'s own schedule:</div>' +
+          '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' + sel +
+          '<button type="button" id="mlsMRAttrPull" style="border:none;background:#2E6A4B;color:#fff;border-radius:8px;padding:7px 13px;font-weight:700;cursor:pointer;font-family:inherit">Pull ' +
+          esc(monthLabel(rep.month)) + ' for this provider</button></div>' +
+          '<div style="font-size:12px;color:#5b6b7c;margin:6px 0 0">That opens the Menu with <b>' + esc(monthLabel(rep.month)) +
+          '</b> and that clinician already chosen in <b>Staff prep &amp; Athena month pull</b>.</div>';
+      }
+    }
+    return h + '</div>';
+  }
+  function wireReattribute(box, rep) {
+    var go = box.querySelector('#mlsMRAttrGo');
+    if (go) go.onclick = function () {
+      var res = applyReattribution(rep.month);
+      safe(function () {
+        if (typeof window.toast === 'function') {
+          window.toast(res.ok
+            ? ('Moved ' + res.moved.rows + ' appointment' + (res.moved.rows === 1 ? '' : 's') + ' on ' + res.moved.days +
+               ' day' + (res.moved.days === 1 ? '' : 's') + ' to ' + res.moved.providers.join(', ') + '.')
+            : 'Nothing was moved - no saved receipt names one provider for those days.', res.ok ? '' : 'err');
+        }
+      });
+      paint(box, rep.month);
+    };
+    var undo = box.querySelector('#mlsMRAttrUndo');
+    if (undo) undo.onclick = function () {
+      clearReattribution(rep.month);
+      paint(box, rep.month);
+    };
+    var pull = box.querySelector('#mlsMRAttrPull');
+    if (pull) pull.onclick = function () {
+      var picked = safe(function () { var s = box.querySelector('#mlsMRAttrWho'); return s ? String(s.value || '') : ''; }, '');
+      var handed = safe(function () {
+        return (typeof window.__mlsStaffPrepPreselect === 'function')
+          ? window.__mlsStaffPrepPreselect({ month: rep.month, provider: picked })
+          : null;
+      }, null);
+      var menu = safe(function () { return document.getElementById('mlsTbMenuBtn'); }, null);
+      if (menu) { close(); safe(function () { menu.click(); }); }
+      safe(function () {
+        if (typeof window.toast === 'function') {
+          window.toast((handed && handed.ok)
+            ? ('Staff prep is set to ' + monthLabel(rep.month) + ' for ' + (handed.provider || picked) + ' - choose Staff prep & Athena month pull.')
+            : ('Open Staff prep & Athena month pull, choose ' + picked + ', set the month to ' + monthLabel(rep.month) + ', then press Start.'), '');
+        }
+      });
+    };
   }
 
   function tableHtml(rep, stored, pstat) {
@@ -43083,10 +43641,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         note += '; captured on ' + esc(dayLabel(stored.at)) + ' as ' + intOf(was.days) + ' day' + (intOf(was.days) === 1 ? '' : 's') + ' / ' + intOf(was.appointments);
       }
       var ps = pstat.byKey[p.key] || null;
+      /* rptfix-1.0.0: a MEASURED zero says how much it measured, so it can
+         never be read as the missing-status dash's silent twin. */
       var seenCell = ps && ps.statusDays > 0
-        ? '<b>' + intOf(ps.seenDays) + '</b>'
+        ? '<b>' + intOf(ps.seenDays) + '</b><div style="font-size:11px;color:#5b6b7c;line-height:1.2;font-weight:400">of ' + intOf(ps.statusDays) + ' day' + (intOf(ps.statusDays) === 1 ? '' : 's') + ' with a status</div>'
         : '<span title="No athena status captured for these rows yet. Re-pull this month with MLS Assist 3.0.98 or newer to fill this in.">&mdash;</span>';
-      if (ps && ps.statusDays > 0) note += '; seen = at least one checked-in/out, arrived or in-room row that day (athena status, captured at pull time)';
+      if (ps && ps.statusDays > 0) note += '; seen = at least one ' + seenClassPhrase(pstat) + ' row that day (athena status, captured at pull time)';
+      if (intOf(p.reattributed) > 0) {
+        note += '; includes ' + intOf(p.reattributed) + ' row' + (intOf(p.reattributed) === 1 ? '' : 's') +
+          ' the import stored with no provider, moved here from a provider-scoped pull receipt';
+      }
       h += '<tr>' +
         '<td style="padding:6px 8px;border-bottom:1px solid #F4F2EC;font-weight:700">' + esc(p.name) + '</td>' +
         '<td style="padding:6px 8px;border-bottom:1px solid #F4F2EC;font-weight:700">' + p.days + '</td>' +
@@ -43242,14 +43806,18 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     return h;
   }
 
-  function provenanceHtml(rep, cap) {
+  function provenanceHtml(rep, cap, pstat) {
     var pv = rep.provenance;
     var lines = [];
     lines.push('Read from ' + pv.monthRows + ' appointment row' + (pv.monthRows === 1 ? '' : 's') + ' MLS has imported for this month (' +
-      pv.attributedRows + ' with a provider, ' + pv.unattributedRows + ' without).');
+      pv.attributedRows + ' with a provider, ' + pv.unattributedRows + ' without' +
+      (intOf(pv.reattributedRows) ? (', ' + intOf(pv.reattributedRows) + ' moved to a provider by a saved pull receipt') : '') + ').');
     lines.push('MLS does not read a month directly from athenaOne. Every number here comes from appointments already imported into MLS, so a month you have not pulled reads as missing, never as zero.');
-    if (cap && cap.pstatAny) lines.push('An appointment is a BOOKED SLOT; "days with seen visits" is stronger - it counts only days where at least one row carried a seen-class athena status (checked in / checked out / arrived / in room), captured at pull time by MLS Assist 3.0.98+. A dash means the rows were pulled before status capture existed - re-pull that month to fill it in.');
-    else lines.push('An appointment is a BOOKED SLOT. These rows were pulled before MLS Assist 3.0.98, which now captures each row\'s athena status (arrived / checked in / checked out) at read time - re-pull the month with 3.0.98+ and this report gains a "days with seen visits" column that IS proof of a day worked.');
+    if (cap && cap.pstatAny) lines.push('An appointment is a BOOKED SLOT; "days with seen visits" is stronger - it counts only days where at least one row carried a seen-class athena status (' + seenClassPhrase(pstat) + '), captured at pull time by MLS Assist 3.0.98+. The cell says how many days it measured; a dash means NO status was captured for those rows at all - re-pull that month to fill it in.');
+    else lines.push('An appointment is a BOOKED SLOT. These rows were pulled before MLS Assist 3.0.98, which now captures each row\'s athena status (' + seenClassPhrase(pstat) + ') at read time - re-pull the month with 3.0.98+ and this report gains a "days with seen visits" column that IS proof of a day worked.');
+    if (intOf(pv.reattributedRows)) {
+      lines.push('Re-attributed rows carried NO provider from the import. They are counted for a clinician only because a pull receipt MLS wrote at read time names that one verified clinician for that whole day. Undo puts them back under "No provider recorded".');
+    }
     /* reconcile-1.0.0: where the row COUNT came from is only half the recipe -
        the other half is what was taken away. A day is reconciled only after
        athenaOne answered for that whole day with a full coverage receipt, so
@@ -43270,6 +43838,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     }
     if (cap && cap.written) lines.push('Captured as an as-of receipt for ' + esc(rep.month) + ' (provider names, dates and counts only).');
     else if (cap && cap.reason === 'no-account-scope') lines.push('Not captured: no signed-in account to scope the receipt to.');
+    /* rptfix-1.0.0: the receipt is NOT overwritten by the act of reading it.
+       Say that it is standing and that it disagrees, or a doctor will read the
+       kept older figures as today's. */
+    else if (cap && cap.reason === 'receipt-held') {
+      lines.push('This month now reads differently from the as-of receipt captured on ' + esc(dayLabel(intOf(cap.prior && cap.prior.at))) +
+        ' (' + intOf(cap.prior && cap.prior.totals && cap.prior.totals.days) + ' day' + (intOf(cap.prior && cap.prior.totals && cap.prior.totals.days) === 1 ? '' : 's') +
+        ' / ' + intOf(cap.prior && cap.prior.totals && cap.prior.totals.appointments) + ' appointments, against ' +
+        rep.totals.days + ' / ' + rep.totals.appointments + ' now). The ORIGINAL receipt is kept, not overwritten, so the difference stays provable. ' +
+        'Use "Re-baseline this month" once you know why it changed.');
+    }
     var h = '<div style="margin-top:16px;padding:11px 13px;border-top:1px solid #F4F2EC;font-size:12px;color:#5b6b7c;line-height:1.5">';
     for (var i = 0; i < lines.length; i++) h += '<div style="margin-bottom:4px">&middot; ' + lines[i] + '</div>';
     return h + '</div>';
@@ -43311,7 +43889,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var rep = report(month);
     var stored = storedFor(month);
     var cap = capture(rep);
-    var pstat = provStatusFor(rep.month);
+    /* rptfix-1.0.0: the seen-day join is clamped to the days THIS report
+       proved for each clinician (and follows the same re-attribution receipt
+       the appointments follow), so "days with seen visits" can never exceed
+       "days with appointments". */
+    var allow = allowedDaysFor(rep);
+    allow.attribution = attributionFor(rep.month);
+    var pstat = provStatusFor(rep.month, allow);
     if (cap) cap.pstatAny = !!pstat.any; /* mrpt-1.1.0: provenance wording switch only; never stored */
     var opts = monthOptions(), i, sel = '';
     for (i = 0; i < opts.length; i++) {
@@ -43321,9 +43905,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     box.innerHTML = headHtml('Month report',
       '<select id="mlsMRMonth" aria-label="Month to report" style="border:1px solid #d5e2f2;border-radius:8px;padding:6px 9px;font-size:13px;font-family:inherit">' + sel + '</select>') +
       '<div style="font-size:12.5px;color:#5b6b7c;margin-bottom:14px">Days with appointments and appointment volume, per provider, for one month &mdash; with where every number came from.</div>' +
-      tableHtml(rep, stored, pstat) + missingHtml(rep) + provenanceHtml(rep, cap);
+      tableHtml(rep, stored, pstat) + reattributeHtml(rep) + missingHtml(rep) + provenanceHtml(rep, cap, pstat) +
+      /* rptfix-1.0.0: the ONE control that may replace a standing receipt. */
+      ((cap && cap.reason === 'receipt-held')
+        ? '<div style="margin-top:8px"><button type="button" id="mlsMRRebase" style="border:none;background:#eef4fc;color:#204034;border-radius:8px;padding:6px 12px;font-weight:700;cursor:pointer;font-family:inherit">Re&#8209;baseline this month</button></div>'
+        : '');
     var msel = box.querySelector('#mlsMRMonth');
     if (msel) msel.onchange = function () { paint(box, msel.value); };
+    var rebase = box.querySelector('#mlsMRRebase');
+    if (rebase) rebase.onclick = function () { recapture(rep.month); paint(box, rep.month); };
+    wireReattribute(box, rep);
     wireCommon(box);
     return rep;
   }
@@ -43412,8 +44003,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     computeYear: computeYear,
     sanitize: sanitize,
     capture: capture,
+    recapture: recapture, /* rptfix-1.0.0: the explicit re-baseline of a held receipt */
     stored: storedFor,
     provStatusFor: provStatusFor, /* mrpt-1.1.0: read-only seen-day join, exposed for extraction-executed proof */
+    allowedDaysFor: allowedDaysFor, /* rptfix-1.0.0: the clamp the join is intersected with */
+    /* rattr-1.0.0: the receipt-driven repair, exposed so it can be proved */
+    reattributePlan: reattributePlan,
+    applyReattribution: applyReattribution,
+    clearReattribution: clearReattribution,
+    attributionFor: attributionFor,
+    seenClassWords: SEEN_CLASS_WORDS.slice(),
     report: report,
     yearReport: yearReport,
     yearOptions: yearOptions,

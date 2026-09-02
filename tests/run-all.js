@@ -17,6 +17,10 @@ const AUTOMATED_PROOF_FILES = new Set([
   'review-write-fixes-proof.js',
   'review-workspace-proof.js',
   'pull-resume-proof.js',
+  /* rptfix-1.0.0 / rattr-1.0.0 (b1186): the Month & year report and the pull
+     card beside it - eleven measured defects pinned against the real builders
+     plus the receipt-only re-attribution of provider-less rows. */
+  'reports-fixes-proof.js',
   '1p-avatar-photo-framing-proof.js',
   '1p-avatar-professional-likeness-proof.js',
   /* avlook-1.0.0 (2026-08-17): the drawn face's proportions as eleven measured
@@ -1251,6 +1255,7 @@ const tests = [
   'fill-ux-clarity.test.js',
   'write-auto-chain.test.js',
   'month-report-surface.test.js',
+  'reports-fixes-proof.js',
   'visit-walkthrough-proof.js',
   'phone-fixes-proof.js',
   'note-quality-proof.js',
