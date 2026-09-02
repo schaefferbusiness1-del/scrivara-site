@@ -296,6 +296,19 @@ function testPatientUpsertEventContract() {
       getPatients() { return patients; },
       __mlsAthenaProofGuard() {},
       __mlsAthenaCarryAttested() {},
+      /* The shell's upsertPatient gained a third carry collaborator,
+         __mlsTeamNotesCarry(p, __prev), which unions the previous record's
+         teamNotes forward. It is a lifted-slice DEPENDENCY here, not this
+         suite's subject: without it the slice died with "__mlsTeamNotesCarry is
+         not defined" at production-patient-upsert.js:75 and NONE of the upsert
+         event assertions ran (the A RED SUITE MAY NEVER HAVE RUN shape - a
+         ReferenceError means the subject was never reached). Stubbed inert
+         alongside its two sibling carries above, never re-implemented: the
+         team-notes carry is owned and proven by tests/shared-notes.test.js and
+         tests/patients-merge-fixes-proof.js, and a weaker second copy of that
+         union here is the thing that would rot. This suite asserts only which
+         events upsertPatient emits and when. */
+      __mlsTeamNotesCarry() {},
       savePatients() { if (failSave) throw new Error('persistence refused'); },
       backendMode() { return false; },
       bkToken() { return ''; },

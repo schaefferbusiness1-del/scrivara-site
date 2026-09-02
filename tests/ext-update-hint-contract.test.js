@@ -27,8 +27,24 @@ assert(/^p1-/.test(p1Build || '') && /^main-/.test(productionBuild || ''),
   'promoted lane build identities must remain readable before comparing the importer');
 assert(si.includes('var VERSION = "si-1.7.22-p1-census1"'),
   'promoted si-1.7.22-p1-census1 release marker missing');
+/* The lane-identity rewrite below is an INDEPENDENT re-implementation of
+   scripts/derive-production-from-1p.js `laneIdentity()`, and it was missing that
+   function's THIRD substitution - the bundle loader `1p-mls-connect.js` ->
+   `mls-connect.js`. dnote-1.1.0 (2026-09-01) added the first prose reference to
+   the app-side follow guard's own file inside this importer, so the 1p copy says
+   `1p-mls-connect.js` and the derived production copy correctly says
+   `mls-connect.js`. Both files are RIGHT for their lane; this test's recipe was
+   the incomplete one, and it reported the gap as production drift (a 3-byte
+   diff at offset 596153 inside a comment).
+   Re-aimed to mirror all three of the authoritative rewrites, in the same order,
+   so this stays a real derivation check: production must still be the promoted
+   1p source byte-for-byte modulo lane identity, and any OTHER difference - a
+   hand-edit to production, a 1p change never re-derived - still reds it. If this
+   ever fails again, diff the two files before touching this line: NEVER hand-edit
+   production, edit 1p and re-derive. */
 assert.strictEqual(si, si1p.replace(/__MLS_P1_PREVIEW/g, '__MLS_MAIN')
   .replace(/1p-feat_/g, 'feat_')
+  .split('1p-mls-connect.js').join('mls-connect.js')
   .split(p1Build).join(productionBuild)
   .replace('A p1 local metadata write failed during this pull.',
     'A local metadata write failed during this pull.'),

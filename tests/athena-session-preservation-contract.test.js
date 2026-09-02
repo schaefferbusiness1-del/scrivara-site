@@ -14,7 +14,19 @@ function between(begin, end) {
   return source.slice(a, b);
 }
 
-const recovery = between('async function mlsRecoverAthenaTab(tabId)', '/* Session ownership stays with Athena.');
+/* recover-1.1.0 (extension 3.0.107): the recovery grew a SECOND parameter -
+   `async function mlsRecoverAthenaTab(tabId, ownerToken)`, the day-schedule
+   lease holder asking for its own reload. The anchor here pinned the exact
+   argument list `(tabId)`, so a signature change that touched none of this
+   suite's guarantees made `between()` throw "missing async function
+   mlsRecoverAthenaTab(tabId)" - the extractor never reached the subject and
+   every assertion below stopped running (A RED SUITE MAY NEVER HAVE RUN).
+   Re-aimed at the function's NAME, which is the property this suite is about;
+   the parameter list is not. Every guarantee below was re-measured against the
+   3.0.110 bytes and holds unchanged: 9 returns, 8 refusals, 4 declaring the tab
+   untouched, 2 handing sign-in to the owner, no reload, and no call into the
+   interstitial handler from the recovery path at all. */
+const recovery = between('async function mlsRecoverAthenaTab(', '/* Session ownership stays with Athena.');
 assert(!/chrome\.tabs\.reload\s*\(/.test(recovery), 'read recovery must never reload the Athena tab');
 assert(!/mlsAthenaContinueFn\s*\(/.test(recovery), 'read recovery must not click through a session interstitial');
 /* recovervocab-1.0.0 (2026-08-28): this pinned ONE skip token,
@@ -80,8 +92,56 @@ assert(!/mlsAthenaContinueFn\s*\(/.test(recovery), 'read recovery must not click
 assert(/tabUntouched:\s*true/.test(recovery));
 
 const interstitial = between('function mlsAthenaContinueFn()', '/* Worker-scope: session-safe recovery');
-assert(!/\.click\s*\(/.test(interstitial), 'the extension must not click through Athena session/CSRF screens');
-assert(/manualActionRequired:\s*true/.test(interstitial));
+/* contfix-1.0.0 (extension 3.0.100, measured live 2026-09-01): this handler used
+   to only REPORT athena's CSRF retry interstitial. Reporting without acting was
+   the wedge - every goHome/gotoDate round re-detected the same page and did
+   nothing, and a month pull burned whole days until a human clicked Continue
+   (~10 wedges in one pull, each cured by exactly that click). The handler now
+   presses athena's OWN Continue, which re-issues the SAME read-only navigation
+   with a fresh CSRF token.
+
+   The blanket `no .click( anywhere in this function` pin below could not tell
+   that apart from clicking through a sign-out, so it read a fix as a violation.
+   It is re-aimed at the rule this suite is actually about - MLS never disposes
+   of the owner's session and never presses a transactional control - by pinning
+   the four narrowing guards CLOSED instead of banning the verb:
+     1. exactly ONE click exists in the whole handler;
+     2. it is reachable only on the exact retry page;
+     3. never on a page carrying sign/order/billing/payment/prescribing words;
+     4. only a control whose whole label is "Continue"; and
+     5. a session-EXPIRED variant still falls to the manual path.
+   Order is pinned too, so a later edit cannot hoist the click above its guards.
+   Anything broader than this - a second click, a looser label match, a lost ban
+   token - reds this suite. Signing back in stays the owner's click, always. */
+{
+  const clicks = interstitial.match(/\.click\s*\(/g) || [];
+  assert.strictEqual(clicks.length, 1,
+    'the interstitial handler no longer presses exactly ONE control - a second click path is a new way ' +
+    'to press something that is not athena\'s read-only Continue');
+  const iRetryPage = interstitial.indexOf('var retryPage = /unable to complete the requested action/i.test(body);');
+  assert(iRetryPage >= 0,
+    'the click is no longer gated on the exact CSRF retry page - a session-expired screen could now be clicked through');
+  /* The ban list IS the safety property here, so it is pinned as the exact
+     guard expression rather than by loose word search - "sign" and "billing"
+     both occur in this handler's own prose, so a substring scan would stay
+     green after the real guard was deleted (a green canary that means
+     UNREACHABLE, not untested). Verified by mutation: dropping any one token
+     from the shipped guard reds this line. */
+  const BAN_GUARD = "!/sign\\s*&?\\s*save|place order|billing|payment|prescri/i.test(body)";
+  const iBan = interstitial.indexOf(BAN_GUARD, iRetryPage);
+  assert(iBan > 0,
+    'the transactional-vocabulary ban changed shape. The handler may now press Continue on a page that ' +
+    'signs, orders, bills or prescribes. Re-read the guard, confirm every one of sign&save / place order / ' +
+    'billing / payment / prescri is still refused, then move this pin deliberately. Expected: ' + BAN_GUARD);
+  const iExact = interstitial.indexOf('/^continue$/i.test(v)', iBan);
+  const iClick = interstitial.indexOf('.click(', iExact);
+  assert(iExact > iBan && iBan > iRetryPage,
+    'the retry-page gate and the transactional ban no longer precede the label match');
+  assert(iClick > iExact,
+    'the click no longer sits BEHIND the exact-label match - a hoisted click presses whatever the page offers first');
+}
+assert(/manualActionRequired:\s*true/.test(interstitial),
+  'a session-expired interstitial no longer falls to the manual path - signing back in is the owner\'s click, never ours');
 
 const keepAlive = between('function mlsKeepAlivePageFn()', 'async function mlsArmKeepAlive');
 assert(!/MouseEvent|scrollBy|dispatchEvent|new\s+Worker/.test(keepAlive), 'MLS must not synthesize activity to defeat Athena session policy');
@@ -92,4 +152,6 @@ assert(!/chrome\.tabs\.update\s*\([^)]*\{\s*url\s*:/.test(backup), 'backup must 
 assert(!/roster\s*\[/.test(backup), 'backup must not walk chart links in the user\'s Athena tab');
 assert(/navigationDisabled:\s*true/.test(backup));
 
-console.log('PASS Athena session preservation: no automatic reload, interstitial click-through, or background chart walking');
+console.log('PASS Athena session preservation: no automatic reload of the owner\'s tab, no background chart walking, ' +
+  'and the ONE interstitial press is athena\'s own read-only Continue behind every narrowing guard (retry page, ' +
+  'transactional-vocabulary ban, exact label, click ordered behind all of them, manual path for session-expired)');

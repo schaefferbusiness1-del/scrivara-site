@@ -390,13 +390,21 @@ async function trustedClick(cdp, selector) {
   return observed;
 }
 
+/* The label match is CASE-INSENSITIVE (2026-09-02). #settingsTabBar has two
+   writers: the legacy builder labels each tab from its section's .set-head
+   ("(emoji) Integrations"), and the settings organizer then renames the rail in
+   place from its own LABELS table ("Connections & integrations"). Whichever ran
+   last decides the capital I, so a case-sensitive substring could resolve zero
+   buttons and fail with count:0 through no fault of the app. Only the letters
+   are relaxed: this still requires EXACTLY ONE visible matching button, so an
+   ambiguous or wrong label is still a loud failure rather than a stray click. */
 async function clickButtonText(cdp, containerSelector, text) {
   const result = await evaluate(cdp, `(() => {
     const root=document.querySelector(${JSON.stringify(containerSelector)});if(!root)return {ok:false,reason:'missing-container'};
     const shown=el=>{const s=getComputedStyle(el),r=el.getBoundingClientRect();return !el.hidden&&s.display!=='none'&&s.visibility!=='hidden'&&r.width>0&&r.height>0};
-    const norm=value=>String(value||'').replace(/\\s+/g,' ').trim();
+    const norm=value=>String(value||'').replace(/\\s+/g,' ').trim().toLowerCase();
     const all=[...root.querySelectorAll('button')];
-    const nodes=all.filter(el=>shown(el)&&norm(el.textContent).includes(${JSON.stringify(text)}));
+    const nodes=all.filter(el=>shown(el)&&norm(el.textContent).includes(${JSON.stringify(String(text).toLowerCase())}));
     if(nodes.length!==1)return {ok:false,count:nodes.length,labels:all.map(el=>{const s=getComputedStyle(el),r=el.getBoundingClientRect();return {text:norm(el.textContent),shown:shown(el),display:s.display,visibility:s.visibility,rect:[r.x,r.y,r.width,r.height]}})};
     nodes[0].click();return {ok:true,label:norm(nodes[0].textContent)};
   })()`);

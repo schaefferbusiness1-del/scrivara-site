@@ -111,10 +111,22 @@ const doc = {
     '10:15 AM\tBravo Sample\tAvery Stone MD\tChecked in'
   ].join('\n');
   const text = mlsProv.fromText(browserInnerText);
-  assert.deepStrictEqual(plain(text.appts), [
+  /* This compared the WHOLE row object, so it doubled as an accidental "the
+     text lane may never learn a new field" pin - and the text lane did learn
+     one: every tabular mint now carries athena's appointment status
+     (mlsApptStatusFromRaw). That is a strengthening, and it matters (a
+     checked-in row is exactly the row the write lane has to recognise), so the
+     status is pinned as its own property below rather than being allowed to red
+     an echo-reconciliation suite. The three fields this suite is actually about
+     - the isolated Time cell, the patient name, the provider - stay pinned
+     exactly, and a lost AM/PM still reds here. */
+  assert.deepStrictEqual(plain(text.appts.map(a => ({ time: a.time, name: a.name, provider: a.provider }))), [
     { time: '8:30 AM', name: 'Alpha Sample', provider: 'Avery Stone MD' },
     { time: '10:15 AM', name: 'Bravo Sample', provider: 'Avery Stone MD' }
   ]);
+  assert.deepStrictEqual(plain(text.appts.map(a => a.status)), ['scheduled', 'checked in'],
+    'the text lane must read athena\'s own appointment status off the row it minted - "Checked in" is not ' +
+    'the same visit state as "Scheduled" and a row that loses it looks bookable when it is already in progress');
   assert.strictEqual(text.diag.tabularHeaderCount, 1);
   assert.strictEqual(text.diag.tabularRowCount, 2);
 

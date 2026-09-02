@@ -17,9 +17,24 @@ const bg = fs.readFileSync(path.join(path.resolve(__dirname, '..'), 'background.
 assert.ok(bg.includes('if (ln.search(RE_TIME) > 2) { out.diag.timeMidlineRowsSkipped++; }'),
   'the mid-line time gate is gone - comment prose can mint phantom appointments again');
 
-/* the gated mint is still the same mint (nothing else weakened) */
-assert.ok(bg.includes("if (nm) out.appts.push({ time: firstTime(ln), name: nm, provider: current || '' });"),
+/* the gated mint is still the same mint (nothing else weakened).
+   This pinned the mint's ENTIRE argument literal, so it also silently pinned the
+   row's field list closed - and the free-line lane later learned athena's
+   appointment status (mlsApptStatusFromRaw, the same additive change that
+   reached mlsProv.fromText). The pin named a SPELLING; the property it is
+   defending is that a time-LEADING free line still mints a row carrying its
+   time, its name and its section provider. Re-aimed at that: the call and its
+   three original fields are pinned individually, so a mint that drops the time,
+   forgets the provider or disappears entirely still reds, while an added field
+   does not. The MINT_CALL prefix keeps the gate-adjacency check below exact. */
+const MINT_CALL = 'if (nm) out.appts.push({ time: firstTime(ln), name: nm, ';
+assert.ok(bg.includes(MINT_CALL),
   'the free-line mint itself vanished - real time-leading text rows would be lost');
+assert.ok(bg.includes(MINT_CALL + "provider: current || ''"),
+  'the free-line mint stopped carrying its section provider - rows would arrive unattributed');
+assert.strictEqual(bg.split(MINT_CALL).length - 1, 1,
+  'the free-line mint is no longer the single writer on this path - a second, ungated mint is exactly ' +
+  'the phantom-appointment class this suite exists to prevent');
 
 /* skips are visible in the receipt, never silent */
 assert.ok(bg.includes('timeMidlineRowsSkipped: 0,'),
@@ -27,7 +42,7 @@ assert.ok(bg.includes('timeMidlineRowsSkipped: 0,'),
 
 /* the gate lives INSIDE the hasTime branch, before patientNameFromRow */
 const gateAt = bg.indexOf('if (ln.search(RE_TIME) > 2)');
-const mintAt = bg.indexOf("if (nm) out.appts.push({ time: firstTime(ln), name: nm, provider: current || '' });");
+const mintAt = bg.indexOf(MINT_CALL);
 assert.ok(gateAt > 0 && mintAt > gateAt && (mintAt - gateAt) < 400,
   'the gate no longer guards the free-line mint');
 

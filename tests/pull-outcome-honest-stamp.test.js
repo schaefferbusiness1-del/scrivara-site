@@ -70,7 +70,23 @@ function buildWrapper(env) {
     'function claimSiLease() {}\n' +
     'function releaseSiLease() {}\n' +
     'function tnScheduleDeferredRound() {}\n' +
-    'function releaseManagedAthenaWorkspace() {}\n';
+    'function releaseManagedAthenaWorkspace() {}\n' +
+    /* dnote-1.0.0 (b1184, 2026-09-01) hung three NEW collaborators off this
+       wrapper's start/settle/reject paths: the pulled day's own note debt is
+       armed when a pull starts and drained on the way out. They are lifted-slice
+       DEPENDENCIES here, not this suite's subject - without them the extraction
+       died with "dnoteArmIdleAfterPull is not defined" and NONE of the six stamp
+       cases ran (the A RED SUITE MAY NEVER HAVE RUN shape: a ReferenceError
+       means the subject was never reached).
+       They are stubbed INERT, never re-implemented: the day-note behaviour is
+       owned and proven by tests/day-note-proof.js (registered), and a second,
+       weaker copy of it here would be the thing that rots. dnoteAfterSettle is
+       the settle path's return value, so its stub must pass the receipt through
+       untouched - case 1's `value === LIVE_FAILURE_RECEIPT` is exactly the
+       assertion that catches a stub which starts editing the receipt. */
+    'function dnoteArmIdleForNewPull() { return true; }\n' +
+    'function dnoteArmIdleAfterPull() { return false; }\n' +
+    'function dnoteAfterSettle(value) { return value; }\n';
   const f = new Function('env',
     prelude + helperSrc + '\n' + wrapperSrc + '\nreturn runManagedAthenaOperation;');
   return f(env);
