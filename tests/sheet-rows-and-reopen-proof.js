@@ -622,9 +622,17 @@ function whatHappenedRow(html, label) {
     v.patientLabel = record.patient;
     s.currentAthenaNote = ''; s.currentAthenaNoteProvenance = 'none'; s.currentAthenaNoteSourceFingerprint = '';
     api.restore(record);
-    eq(s.currentAthenaNoteProvenance, 'stale',
-      file + ': the premise is invalid - the shipped restore no longer goes stale on a reopen');
-    eq(s.currentAthenaNote, '', file + ': the premise is invalid - the stale restore kept executable text');
+    /* label-1.0.0 (owner 2026-09-02: "whoever I have up needs to be consistent
+       everywhere"): the premise this step used to pin - that the shipped restore
+       goes STALE on a label-only reopen - is exactly the defect label-1.0.0
+       removes. #patientLabel is a free-text input, not identity, so the restore
+       now keeps the sidecar when every identity and clinical field matches.
+       reopen-1.0.0 below stays as the belt to this brace and is asserted
+       unchanged; tests/reopen-label-identity-proof.js pins that every
+       non-label difference still refuses. */
+    eq(s.currentAthenaNoteProvenance, 'generated',
+      file + ': label-1.0.0 - the restore must keep a sidecar whose only drift is the free-text patient label');
+    eq(s.currentAthenaNote, record.athenaNote, file + ': label-1.0.0 - the restored sidecar must be the saved payload');
 
     /* ...and reopen-1.0.0 puts it back, because the record proves itself. */
     eq(api.reopen(record), true, file + ': THE MEASURED DEFECT - a record with a matching fingerprint was not restored on reopen');

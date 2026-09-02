@@ -169,7 +169,13 @@ const ROOT = path.resolve(__dirname, '..');
    poll of the SAME shipped lookup (15 looks, 800 ms apart, 12 s ceiling) and
    the flat 1600 ms post-click sleep into a bounded poll of the shipped
    read-only findNamedNoteAction (400 ms, 8 s ceiling). It grants nothing. */
-const FULL_GATE_TESTS = 962;
+/* +1 label-1.0.0 (owner 2026-09-02: "whoever I have up needs to be consistent
+   everywhere"): tests/reopen-label-identity-proof.js - #patientLabel is a
+   free-text input compared by neither sidecar door; every identity and
+   clinical field still refuses. Measured: the test patient's saved sidecar
+   carried the up-now patient's name in its fingerprint and the reopen went
+   stale over that one field. */
+const FULL_GATE_TESTS = 963;
 const DEFAULT_BASE = 'origin/main';
 const DEFAULT_STEP_TIMEOUT_MS = 180000;
 const DEFAULT_TOTAL_TIMEOUT_MS = 300000;

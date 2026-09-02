@@ -231,6 +231,13 @@ const AUTOMATED_PROOF_FILES = new Set([
      And every ready write row shows the exact text that will land, in reading
      type with its line breaks, byte for byte the string the execute sends. */
   'write-sheet-agreement-proof.js',
+  /* label-1.0.0 (owner 2026-09-02: "whoever I have up needs to be consistent
+     everywhere"; measured 2026-09-02 13:4x): the saved sidecar's fingerprint carried the
+     up-now patient's NAME in patientLabel while every identity and clinical
+     field was the test patient's own, so the reopen went stale and the sheet
+     demanded a regenerate. #patientLabel is a free-text input, compared by
+     neither sidecar door; every non-label field still refuses. */
+  'reopen-label-identity-proof.js',
   /* retryvis-1.0.0 (owner-measured 2026-09-02 05:1x): the month card said
      "Finished, with days that still need attention - press Retry" while
      #ez3PullRetry computed display:none, because pCounts returns before it
@@ -1575,6 +1582,7 @@ const tests = [
      not have is covered, not owed; and each write row shows the exact text that
      will land (owner, same day: "actually showing what's going to be written"). */
   'write-sheet-agreement-proof.js',
+  'reopen-label-identity-proof.js',
   'retry-visible-proof.js',
   'visit-template-scope-proof.js',
   'write-next-press-proof.js',

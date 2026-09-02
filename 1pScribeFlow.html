@@ -31056,7 +31056,28 @@ function _mlsAthenaSourceState(binding,includeDisplay){
 }
 function _mlsAthenaSourceFingerprint(binding){var state=_mlsAthenaSourceState(binding,true);try{return state?JSON.stringify(state):'';}catch(e){return '';}}
 function _mlsAthenaGenerationSourceFingerprint(binding){var state=_mlsAthenaSourceState(binding,false);try{return state?JSON.stringify(state):'';}catch(e){return '';}}
-function _mlsAthenaFingerprintMatchesCurrent(expected){return !!String(expected||'')&&String(expected)===_mlsAthenaSourceFingerprint();}
+function _mlsAthenaFingerprintMatchesCurrent(expected){
+  var want=String(expected||''); if(!want)return false;
+  var live=_mlsAthenaSourceFingerprint(); if(want===live)return true;
+  /* label-1.0.0 (owner 2026-09-02: "whoever I have up needs to be consistent
+     everywhere"; measured on his tab 2026-09-02 13:4x, the build after the
+     batch write proof: the test patient's saved sidecar
+     carried the up-now patient's NAME in patientLabel from generation time while
+     its activePatientId, patient id/name/DOB/MRN, visit and every clinical field
+     were the test patient's own, so the reopen marked it stale and the sheet
+     demanded a regenerate). #patientLabel is a free-text input, never identity:
+     a fingerprint that differs ONLY in patientLabel still matches. Every identity
+     field and every clinical field stays byte-compared, in _mlsAthenaLabelOnlyDrift. */
+  return _mlsAthenaLabelOnlyDrift(want,live);
+}
+function _mlsAthenaLabelOnlyDrift(a,b){
+  try{
+    var x=JSON.parse(String(a||'')),y=JSON.parse(String(b||''));
+    if(!x||!y||typeof x!=='object'||typeof y!=='object'||x.v!==2||y.v!==2)return false;
+    delete x.patientLabel; delete y.patientLabel;
+    return JSON.stringify(x)===JSON.stringify(y);
+  }catch(e){return false;}
+}
 function _mlsAthenaNoteWithVisitComment(text){
   /* The display note's legacy comment is a two-line tail (`COMMENT:\n...`),
      while the canonical Plan uses one normalized line. Strip any app-owned
@@ -31197,7 +31218,7 @@ function _mlsSavedAthenaFingerprintMatchesRecord(expected,n){
     var state=JSON.parse(String(expected||'')); if(!state||state.v!==2)return false;
     var p=state.patient||{},v=state.visit||{};
     return state.transcript===String(n.transcript||'')&&state.context===String(n.context||'')&&state.visitComment===String(n.visitComment||'')&&state.standardNote===String(n.soap||'')&&
-      Object.prototype.hasOwnProperty.call(n,'patientLabel')&&typeof n.patientLabel==='string'&&state.patientLabel===n.patientLabel&&state.activePatientId===String(n.patientId||'')&&p.patientId===String(n.patientId||'')&&p.name===String(n.patient||'')&&p.dob===String(n.patientDob||n.dob||'')&&p.mrn===String(n.patientMrn||n.mrn||'')&&
+      Object.prototype.hasOwnProperty.call(n,'patientLabel')&&typeof n.patientLabel==='string'&&/* label-1.0.0: the label is not identity; the id, name, DOB and MRN below are */state.activePatientId===String(n.patientId||'')&&p.patientId===String(n.patientId||'')&&p.name===String(n.patient||'')&&p.dob===String(n.patientDob||n.dob||'')&&p.mrn===String(n.patientMrn||n.mrn||'')&&
       v.visitDate===String(n.visitDate||'')&&v.provider===String(n.provider||'')&&v.appointmentId===String(n.appointmentId||'')&&v.encounterId===String(n.encounterId||'')&&v.encounterUrl===String(n.encounterUrl||'');
   }catch(e){return false;}
 }
