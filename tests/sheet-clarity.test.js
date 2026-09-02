@@ -141,6 +141,25 @@ const HEAD_REGIONS = [
   /* the zero-checked refusal keeps its exact shipped sentence (sheetux-1.0.0) */
   ok(FLOW.indexOf("var SHEETUX_ZERO_REASON = 'Check at least one READY note section first - this button sends only the sections you have checked. Nothing was changed.';") > 0,
     'the zero-checked refusal changed its wording out from under the sheet-ux suite');
+
+  /* wfarm-1.0.0 (measured on the owner's tab 2026-09-01 22:50-22:56, six
+     checked sections and ONE trusted press; sections 2 and 3 refused this way).
+     The spent-or-expired write authorization had no clarity entry, so
+     resultToUnifiedReceipt fell through to the extension's own raw string,
+     "Click the matching Athena action button again before continuing." That is
+     the one instruction that REPRODUCES the refusal - the button he is told to
+     press again is the button he just pressed - and he read it, pressed again,
+     and got the same row indefinitely. This pins the literal at text level; the
+     shipped seam is exercised in tests/write-next-press-proof.js. */
+  ok(FLOW.indexOf("'fresh-trusted-click-required': { fix: true,") > 0,
+    'the spent/expired write-arm refusal lost its clarity entry and prints the extension raw string again');
+  ok(FLOW.indexOf('the one-use write authorization that press carried was already spent') > 0,
+    'the spent-arm sentence changed out from under the clarity suite');
+  eq(/'fresh-trusted-click-required':\s*\{[^}]*open:\s*true/.test(FLOW), false,
+    'the spent-arm refusal was given the read-only open ladder - there is nothing to navigate, the encounter is already open');
+  eq(FLOW.indexOf("'fresh-trusted-click-required': { fix: true,") > FLOW.indexOf('var WFCLAR = {') &&
+    FLOW.indexOf("'fresh-trusted-click-required': { fix: true,") < FLOW.indexOf('  function validatedUnifiedProbe(patient, probe) {'), true,
+    'the entry was written into a pinned write-path region instead of the clarity table');
 }
 
 /* ------------------------------------------------------------------ DOM shim

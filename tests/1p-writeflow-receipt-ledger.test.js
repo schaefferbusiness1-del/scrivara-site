@@ -230,8 +230,25 @@ function openReview(wf, sessionId) {
   ok(host.innerHTML.indexOf('Everything on this review is in Athena') < 0,
     'with a row still unwritten there is NO completion banner');
   ok(host.innerHTML.indexOf('What happened') >= 0, 'but the receipt list itself renders (an outcome exists)');
-  ok(batchBtn2.disabled === false && batchBtn2.textContent === 'Confirm & Send to Athena',
-    'and the merged send button stays live');
+  /* RE-AIMED, wfdone-1.0.0 (2026-09-02). This case guards ONE property:
+     completion may never be claimed early. It used to check that by asserting
+     the send button was still LIVE - but this fixture's review is UNBOUND, and
+     case 8 below proves not one of its rows is sendable, so unifiedPrimaryPlan
+     has always answered 'none' for it. The button was live here only because
+     this case forced it live two lines up and nothing re-synced it: a live
+     Confirm the plan refuses, which is precisely the defect wfdone-1.0.0
+     exists to kill. The receipt render now hands such a button the plan's OWN
+     reason. The guarded property is unchanged and is what is asserted instead -
+     a partly written review is never dressed up as a finished one, and the
+     "nothing to send" it is given is the unbound one, not the finished one. */
+  ok(batchBtn2.textContent === 'Confirm & Send to Athena',
+    'with a row still unwritten the send button was relabelled as though the review were finished');
+  ok(batchBtn2.textContent !== 'Nothing left to send',
+    'COMPLETION CLAIMED EARLY: a partly written review told the doctor there was nothing left to send');
+  ok(batchBtn2.disabled === true &&
+    batchBtn2.getAttribute('data-mls-primary-blocked') === wf.diagnostics.sheetClarity.noneReadyReason,
+    'a button the plan refuses is still live, or is dead without carrying the plan\'s own reason (got "' +
+      batchBtn2.getAttribute('data-mls-primary-blocked') + '")');
   ok(cancelBtn2.textContent === 'Close review (writes stay in Athena)',
     'once anything landed the exit button stops reading like an undo (got "' + cancelBtn2.textContent + '")');
 

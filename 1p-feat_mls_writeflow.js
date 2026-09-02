@@ -1702,6 +1702,11 @@
        the batch driver waits on this settle latch (and on the recheck-button
        latch for refusals) instead of any timer heuristics. */
     try { if (rowId && unifiedAthenaState) unifiedAthenaState.probeSettled = unifiedAthenaState.probeGeneration; } catch (eBx) {}
+    /* wfatt-1.0.0 (2026-09-02): this is the READY terminal, so a wfauto
+       re-check or a manual "Check Athena again" that finally succeeds erases
+       the section's old failure and the row goes back to WAITING FOR YOUR
+       PRESS. Self-correcting, with no timer of its own. */
+    try { if (rowId && unifiedAthenaState) forgetRowAttempt(unifiedAthenaState, rowId); } catch (eAtt) {}
     try {
       var ticks = document.querySelectorAll('[data-mls-ready-tick]');
       for (var i = 0; i < ticks.length; i++) {
@@ -1985,6 +1990,11 @@
        so an automatic re-check can repaint the state line later WITHOUT
        inventing a severity of its own or touching this message. */
     try { state.wfautoLastKind = kind; } catch (eKind2) {}
+    /* wfatt-1.0.0 (2026-09-02): the reason the doctor just read on screen IS
+       the reason for that row. Capture the message HERE, where it is still a
+       plain string, rather than reading el.textContent later - by then the
+       recheck button and the fix strip have been appended to this same node. */
+    try { state.wfattLastMessage = message; } catch (eAtt) {}
     /* sheetclar-1.0.0: the scannable state word above the same honest sentence.
        It reads state, not this message, so it cannot contradict the gates. */
     try { paintSheetclarState(state, kind); } catch (eState) {}
@@ -1998,6 +2008,11 @@
     /* bx-1.0.0: every settled probe refusal offers this button, so it doubles
        as the refusal settle latch the batch driver waits on. */
     try { state.probeSettled = state.probeGeneration; } catch (eBx) {}
+    /* wfatt-1.0.0 (2026-09-02): this function is the settle latch EVERY probe
+       refusal already passes through - batch queue and single press alike -
+       which is why recording the outcome needs no change inside the pinned
+       queue. It records; it decides nothing. */
+    try { rememberRowAttempt(state, rowId, WFATT_REFUSED, S(state.wfattLastMessage) || WFATT_REFUSED_FALLBACK); } catch (eAtt) {}
     /* wfprog-1.1.0: a settled refusal dismisses the pre-write progress; the
        amber or red status line and the fix strip carry the outcome. A run that
        already holds write verdicts keeps its surface. */
@@ -2206,7 +2221,10 @@
   }
   function wfnextButtonLabel(state) {
     var total = wfnextCheckedRows(state).length, remaining = wfnextRemainingRows(state);
-    if (!total || !remaining.length) return '';
+    /* an all-unchecked sheet still leaves the label alone; a FINISHED one says
+       so, in the same words renderUnifiedReceipts already writes (wfdone-1.0.0) */
+    if (!total) return '';
+    if (!remaining.length) return WFDONE_NOTHING_LEFT_LABEL;
     var next = remaining[0];
     if (wfnextBatchArmReady() && remaining.length > 1) {
       return 'Confirm & write all ' + remaining.length + ', starting with ' + wfnextShortName(next);
@@ -2678,6 +2696,24 @@
       say: 'One step needed: athenaOne did not finish opening the chart in time. MLS can try the read-only open again, or open it yourself and press Check Athena again.' },
     'no-response': { fix: true,
       say: 'One step needed: MLS Assist did not answer the read-only check. Reload MLS Assist at chrome://extensions, make sure athenaOne is open and signed in, then press Check Athena again.' },
+    /* wfarm-1.0.0 - THE SPENT OR EXPIRED WRITE AUTHORIZATION. Measured on the
+       owner's own tab 2026-09-01 22:50-22:56 (six checked sections, ONE trusted
+       press; sections 2 and 3 refused this way) and re-derived from source
+       2026-09-02. MLS Assist mints the write authorization from one trusted
+       click: single-use and 20 s on an older extension, 600 s / 24 sections on
+       a batch arm (content.js). The read-only stage of the SAME run can outlast
+       it, so the execute can arrive with the arm already spent or timed out and
+       is refused BEFORE athenaOne is touched - nothing was written, and
+       WFCLAR_NOTHING below says exactly that. Until this entry existed the code
+       fell through to the extension's own raw string, "Click the matching
+       Athena action button again before continuing.", which is the one
+       instruction that REPRODUCES the refusal: the button he is told to press
+       again is the button he just pressed. No `open` here, because there is
+       nothing to navigate - the encounter is already open; no `copy`, because
+       wfClarityRefusal (the only renderer of the copy button) is on the probe
+       path and this execute-only code never reaches it. */
+    'fresh-trusted-click-required': { fix: true,
+      say: 'One step needed: the one-use write authorization that press carried was already spent or had timed out before this section went out, so MLS Assist refused it before touching Athena. Pressing Confirm again on its own refuses the same way. Re-run the read-only check for this section first - press Check Athena again, or select the section again - and wait for READY, then press Confirm; that press is the one that carries the fresh authorization.' },
     /* ---- a real conflict (red, no shortcut) ------------------------- */
     'patient-mismatch': { fix: false,
       say: 'The chart athenaOne has open is not this patient. MLS will not write into it and there is no shortcut past this. Open the correct chart yourself, then press Check Athena again.' },
@@ -3238,6 +3274,37 @@
      sendable. */
   var sectionLedger = Object.create(null);
   function ledgerKey(state, rowId) { return S(state.manifest && state.manifest.receiptSessionId) + '||' + S(rowId); }
+  /* wfatt-1.0.0 - A SETTLED ATTEMPT IS AN OUTCOME (owner ruling 2026-09-01
+     23:05, verbatim: "nothing here should be blocked or manual or not attempted
+     once its run"). MEASURED 2026-09-02: a section whose read-only check was
+     refused, or ran out its bound TWICE across five minutes, wrote no receipt
+     at all - runUnifiedBatchSend paints only a progress phase for it - so the
+     "What happened" panel reported it as "Checked and ready. Nothing has been
+     attempted for this section", and the next press called wfprogStart, which
+     replaced the progress list and erased the only surface that had said
+     otherwise. The doctor was told the software had not tried, while it had
+     tried twice, and the one fact that would have helped him - the destination
+     does not exist on this A/P surface - was gone.
+     This ledger records those settled outcomes and nothing else. It can never
+     make a row sendable, never enables a control, never sends, and is keyed
+     receiptSessionId+rowId exactly as sectionLedger is, so it survives a sheet
+     reopen for the life of the review. A real receipt always outranks it. */
+  var attemptLedger = Object.create(null);
+  var WFATT_REFUSED = 'not sent - read-only check refused';
+  var WFATT_CHECK_TIMEOUT = 'not sent - did not answer in time';
+  var WFATT_WRITE_TIMEOUT = 'not sent - the write left no receipt';
+  var WFATT_CHECK_TIMEOUT_MSG = 'MLS checked Athena for this section twice and it did not answer in time. Nothing was written for it; press Confirm again to retry it.';
+  var WFATT_WRITE_TIMEOUT_MSG = 'The write for this section did not answer in time and left no receipt. Look at that exact Athena field in athenaOne before you press again for it.';
+  var WFATT_REFUSED_FALLBACK = 'The read-only check refused this section, so nothing was written for it.';
+  function rememberRowAttempt(state, rowId, status, message) {
+    try {
+      if (!state || state.closed || !S(rowId)) return;
+      if (state.receipts && state.receipts[rowId]) return;   /* a real receipt always outranks an attempt */
+      attemptLedger[ledgerKey(state, rowId)] = { status: S(status), message: S(message) };
+    } catch (e) {}
+  }
+  function forgetRowAttempt(state, rowId) { try { if (state && S(rowId)) delete attemptLedger[ledgerKey(state, rowId)]; } catch (e) {} }
+  function rowAttempt(state, rowId) { try { return (state && attemptLedger[ledgerKey(state, rowId)]) || null; } catch (e) { return null; } }
   function rememberRowOutcome(state, rowId, receipt) {
     try { if (receipt && (receipt.status === 'verified' || receipt.status === 'uncertain')) sectionLedger[ledgerKey(state, rowId)] = receipt; } catch (e) {}
   }
@@ -3265,11 +3332,20 @@
        as that choice. ROWSEL_* below are the only two sentences this adds; the
        renderer still decides nothing - it reads the checkbox and the receipts. */
     if (row.capability === 'ready' && row.action) {
+      /* wfatt-1.0.0 (2026-09-02): a section this run already PROBED and settled
+         without landing has an outcome, and it outranks "nothing has been
+         attempted for this section" - which was a false statement about what
+         the software did. DELIBERATE: an UNCHECKED row keeps ROWSEL_NOT_SELECTED
+         even with an attempt on file. The rowsel-1.0.0 ruling - the doctor's own
+         choice, and the "Not written - N of M" count that reads it - is not
+         re-opened by this lane. */
+      var att = rowAttempt(state, row.id);
       var box = bxBoxForRow(row.id);
       if (box) {
-        if (box.checked) return { status: 'waiting for your press', message: 'Checked and ready. Nothing has been attempted for this section - your next Confirm press writes it, and MLS reads it back before it says so.' };
+        if (box.checked) return att || { status: 'waiting for your press', message: 'Checked and ready. Nothing has been attempted for this section - your next Confirm press writes it, and MLS reads it back before it says so.' };
         return { status: ROWSEL_NOT_SELECTED, message: ROWSEL_NOT_SELECTED_MSG };
       }
+      if (att) return att;
     }
     return { status: 'not attempted', message: 'Ready, but not attempted in this receipt.' };
   }
@@ -3297,10 +3373,19 @@
        outcome record: it appears only once there IS an outcome. */
     /* wfsum-1.0.0: the ledger keeps earlier outcomes visible after reopens, so
        the receipt renders whenever ANY outcome exists for this review. */
+    /* wfatt-1.0.0 (2026-09-02): the panel still appears only once there IS an
+       outcome - and a section that RAN and settled without landing is one. It
+       is not "nothing happened yet"; it is the one thing the doctor most needs
+       to read. A row nobody has pressed for still records nothing, so an
+       untouched sheet keeps its blank panel. */
     var anyOutcome = Object.keys(state.receipts).length > 0 ||
-      state.manifest.rows.some(function (row) { return !!sectionLedger[ledgerKey(state, row.id)]; });
+      state.manifest.rows.some(function (row) { return !!sectionLedger[ledgerKey(state, row.id)] || !!rowAttempt(state, row.id); });
     if (!anyOutcome) { host.innerHTML = ''; return; }
-    var colors = { verified: '#205c43', rehearsed: '#204034', uncertain: '#8b2525', blocked: '#8b2525', manual: '#6d5010', 'not attempted': '#52675c', 'already in Athena': '#205c43', 'waiting for your press': '#52675c', 'not selected': '#52675c' };
+    /* wfatt-1.0.0: the three settled-attempt statuses share the red WFPROG_PHASE
+       already paints 'not sent' / 'timed out' in, so the progress surface and
+       the receipt panel cannot drift into two colours for one fact. */
+    var colors = { verified: '#205c43', rehearsed: '#204034', uncertain: '#8b2525', blocked: '#8b2525', manual: '#6d5010', 'not attempted': '#52675c', 'already in Athena': '#205c43', 'waiting for your press': '#52675c', 'not selected': '#52675c',
+      'not sent - read-only check refused': '#8b2525', 'not sent - did not answer in time': '#8b2525', 'not sent - the write left no receipt': '#8b2525' };
     /* wfsum-1.0.0 completion banner: when every note-write row is in Athena
        (verified now, verified earlier, or its field already holds text), say so
        ONCE in green - the owner asked for one glanceable "everything is
@@ -3364,7 +3449,27 @@
       } else if (cancelBtn && anyLanded) {
         cancelBtn.textContent = 'Close review (writes stay in Athena)';
       }
-      if (batchBtn2 && banner && !state.batchRunning && !state.running) { batchBtn2.disabled = true; batchBtn2.setAttribute('aria-disabled', 'true'); batchBtn2.textContent = 'Nothing left to send'; }
+      /* wfdone-1.0.0 (2026-09-02): ONE state, ONE sentence. This renderer and
+         wfnextButtonLabel now write the same shared constant, so the finished
+         button can never say two different things depending on which surface
+         got the last word. */
+      if (batchBtn2 && banner && !state.batchRunning && !state.running) { batchBtn2.disabled = true; batchBtn2.setAttribute('aria-disabled', 'true'); batchBtn2.textContent = WFDONE_NOTHING_LEFT_LABEL; }
+      /* wfdone-1.0.0 (2026-09-02): A DEAD BUTTON CARRIES THE PLAN'S OWN REASON.
+         executeUnifiedSelection disarms Confirm after a write but has no plan
+         to quote, and with note rows left unchecked the green banner above
+         never fires - so a finished sheet could leave a grey button with
+         nothing to say for itself, which is the half of the defect the doctor
+         only meets by hovering. Ask the SAME plan unifiedSyncPrimaryButton
+         asks, and act only where it says there is nothing to send: this branch
+         can disable, never enable, and it invents no sentence of its own. */
+      if (batchBtn2 && !state.batchRunning && !state.running && !state.generating) {
+        var donePlan = null;
+        try { donePlan = unifiedPrimaryPlan(state); } catch (ePlan2) { donePlan = null; }
+        if (donePlan && donePlan.mode === 'none') {
+          batchBtn2.disabled = true; batchBtn2.setAttribute('aria-disabled', 'true');
+          batchBtn2.setAttribute('data-mls-primary-blocked', donePlan.reason); batchBtn2.title = donePlan.reason;
+        }
+      }
       /* writeui-1.0.0 (b1184): once EVERY note section is in Athena the
          "Sections to write" checklist is describing work that is finished -
          checked boxes and READY pills over a green "everything is in Athena"
@@ -3494,8 +3599,17 @@
   }
   function wfprogPhase(state, rowId, phase) {
     if (!state || state.closed || !state.prog) return;
-    var list = state.prog.rows;
-    for (var i = 0; i < list.length; i++) if (list[i].id === S(rowId)) list[i].phase = S(phase);
+    var list = state.prog.rows, prev = '';
+    for (var i = 0; i < list.length; i++) if (list[i].id === S(rowId)) { prev = S(list[i].phase); list[i].phase = S(phase); }
+    /* wfatt-1.0.0 (2026-09-02): a timed-out section writes NO receipt, and the
+       next press replaces this whole progress list - so the outcome would be
+       gone. Record it durably. The PREVIOUS phase is the only thing that tells
+       a read-only check that ran out from a write that ran out, and the queue
+       already supplies both calls; nothing else in this function changes. */
+    if (phase === 'timeout') {
+      rememberRowAttempt(state, rowId, prev === 'write' ? WFATT_WRITE_TIMEOUT : WFATT_CHECK_TIMEOUT,
+        prev === 'write' ? WFATT_WRITE_TIMEOUT_MSG : WFATT_CHECK_TIMEOUT_MSG);
+    }
     if (phase === 'check' || phase === 'write') state.prog.secs = 0;
     wfprogPaint(state);
   }
@@ -3831,6 +3945,17 @@
      doctor to tick a control that does not exist anywhere on the page. Same
      fail-closed refusal, honest words: name what is actually true. */
   var SHEETCLAR_NONE_READY_REASON = 'Nothing here can be sent yet - no note section has passed its read-only Athena check. Fix the reason shown above, then press Check Athena again. Nothing was changed.';
+  /* wfdone-1.0.0 (measured 2026-09-02, adversarial replay of the one-press
+     lane): with some note rows left unchecked - or any note row blocked or
+     manual - every CHECKED section could land verified while the primary
+     button still read "Confirm & write 2 of 2: Physical Exam" and stayed
+     live, three inches under "All 2 checked sections are in Athena and
+     verified". Pressing it was refused. Nothing to send is a DEAD button
+     carrying the plan's own reason - the shape tests/write-ui-proof.js
+     primaryFollowsPlan already pins - so the PLAN says so, and the label
+     follows it. */
+  var WFDONE_NOTHING_LEFT_LABEL = 'Nothing left to send';
+  var WFDONE_NOTHING_LEFT_REASON = 'Every checked note section is already in Athena and verified. There is nothing left to send; Save and Sign stay yours in athenaOne.';
   function bxCheckBoxes() {
     try { return document.querySelectorAll('#mlsAthenaUnifiedConfirm input.mls-bx-check') || []; } catch (e) { return []; }
   }
@@ -3845,6 +3970,14 @@
     }
     var rows = bxCheckedRows(state);
     if (!rows.length) return { mode: 'none', rows: [], reason: SHEETUX_ZERO_REASON };
+    /* wfdone-1.0.0: every checked section already has a verified receipt, so
+       this press has nothing to authorize. Unchecked, blocked and manual rows
+       are untouched, and re-ticking a section puts it back in `rows`, so the
+       very next change event returns mode 'batch' - unifiedSyncFromIncludeCheckbox
+       re-enables the button and wfnextPaintPrimary renames it, exactly as
+       before. This decides one word on one button; it sends nothing. */
+    var wfdoneOwed = rows.filter(function (r) { var rec = state.receipts[r.id]; return !(rec && rec.status === 'verified'); });
+    if (!wfdoneOwed.length) return { mode: 'none', rows: [], reason: WFDONE_NOTHING_LEFT_REASON };
     /* EXACTLY ONE checked section that is already the selected row and already
        bound to this review's fresh validated probe IS the legacy single-row
        press. Route it there, so its receipt AND its request count are what
@@ -7920,6 +8053,12 @@
          same functions the sheet paints with. Nothing here can write. */
       receiptLedger: { v: 'wfsum-1.0.0', key: ledgerKey, remember: rememberRowOutcome,
         rowState: receiptStateForRow, render: renderUnifiedReceipts },
+      /* wfatt-1.0.0 read-only seam: the settled-attempt record. remember()/forget()
+         are the SAME calls the settle latches make; nothing here can send, probe,
+         check a box, or change a verdict. */
+      attemptLedger: { v: 'wfatt-1.0.0', refused: WFATT_REFUSED, checkTimeout: WFATT_CHECK_TIMEOUT, writeTimeout: WFATT_WRITE_TIMEOUT,
+        checkTimeoutMsg: WFATT_CHECK_TIMEOUT_MSG, writeTimeoutMsg: WFATT_WRITE_TIMEOUT_MSG, refusedFallback: WFATT_REFUSED_FALLBACK,
+        remember: rememberRowAttempt, forget: forgetRowAttempt, get: rowAttempt },
       /* rowsel-1.0.0 read-only seam: the two sentences an UNCHECKED row is
          reported with. Nothing here can send, check a box, or change a verdict. */
       rowSel: { v: 'rowsel-1.0.0', status: ROWSEL_NOT_SELECTED, message: ROWSEL_NOT_SELECTED_MSG,

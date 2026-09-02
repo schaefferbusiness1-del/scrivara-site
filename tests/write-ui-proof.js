@@ -137,9 +137,25 @@ const KEEP_REGIONS = [
   ['the arrival default (unifiedDefaultChecked)',
     '  function unifiedDefaultChecked(row) {', '  function unifiedReadyRowHtml(',
     '3e76777a9a083c3630ef38fe5d0d03425ed7176863574806ba4dbe8422d87971'],
+  /* RE-AIMED DELIBERATELY, wfdone-1.0.0 (measured 2026-09-02, adversarial
+     replay of the one-press lane). This digest pins that a PRESENTATION pass
+     did not quietly re-decide the button. wfdone-1.0.0 is not a presentation
+     pass: it is a reviewed change to the decider itself, made because the
+     painter could not tell the truth without it. With note rows left unchecked,
+     every CHECKED section landed verified while the plan still answered
+     'batch', so unifiedSyncPrimaryButton re-enabled a button reading
+     "Confirm & write 2 of 2: Physical Exam" three inches under "All 2 checked
+     sections are in Athena and verified" - and the press it invited was
+     refused. ONE branch was added, immediately after the zero-checked refusal:
+     if every checked row already carries a verified receipt the plan returns
+     mode 'none' with its own reason. It can only ever DISABLE - there is no new
+     path to 'batch' or 'single', no new row ever joins `rows`, and
+     unifiedSyncPrimaryButton is byte-identical - which is exactly what
+     planNeverEnablesOnDone below asserts against the shipped function. None of
+     the seven SHA-pinned write-path regions moved. */
   ['the primary button plan and its sync (unifiedPrimaryPlan + unifiedSyncPrimaryButton)',
     '  function unifiedPrimaryPlan(state) {', "  /* rwfix-1.0.0 (b1169): the include checkboxes' ONE handler",
-    '0aa5ea5d6215d8d3bc59bac0de6ee23ec78bb70dfb215e9015163817147ab6df'],
+    '1e76307534521b476feef2608f57b29d98b1e823f3e4a0d3a62b86e6985cf4a5'],
   ['the state derivation (sheetclarStateBase)',
     '  function sheetclarStateBase(state, kind) {', '  function paintSheetclarState(state, kind) {',
     '7a1442c1edd6955ea03080d777ac98d48b7a72f52922e6ac4b4b5d99d8a52de3']
@@ -152,6 +168,36 @@ KEEP_REGIONS.forEach(function (r) {
   eq(crypto.createHash('sha256').update(FLOW.slice(i, j), 'utf8').digest('hex'), r[3],
     'WRITEUI RE-DECIDED SOMETHING IT MAY ONLY REPAINT: ' + r[0]);
 });
+
+/* wfdone-1.0.0 (2026-09-02): the plan digest above was re-aimed once, on
+   purpose, so these are the properties it can no longer carry by itself. They
+   are read off the SHIPPED source, and they are the whole of what the re-aim
+   is allowed to have changed: ONE branch was added, it can only ever return a
+   DEAD plan, no new row ever joins the sendable list, and the half that
+   actually touches the button did not move a byte. */
+{
+  const PLAN_AT = FLOW.indexOf('  function unifiedPrimaryPlan(state) {');
+  const SYNC_AT = FLOW.indexOf('  function unifiedSyncPrimaryButton(state) {');
+  const END_AT = FLOW.indexOf("  /* rwfix-1.0.0 (b1169): the include checkboxes' ONE handler");
+  ok(PLAN_AT > 0 && SYNC_AT > PLAN_AT && END_AT > SYNC_AT, 'the plan and its sync are no longer adjacent where this suite reads them');
+  const PLAN = FLOW.slice(PLAN_AT, SYNC_AT), SYNC = FLOW.slice(SYNC_AT, END_AT);
+  ok(PLAN.indexOf('var wfdoneOwed = rows.filter(') > 0,
+    'THE FINISHED-SHEET BRANCH IS GONE - a live Confirm can again name a write that cannot happen');
+  ok(PLAN.indexOf("if (!wfdoneOwed.length) return { mode: 'none', rows: [], reason: WFDONE_NOTHING_LEFT_REASON };") > 0,
+    'the finished-sheet branch no longer returns a dead plan carrying its own reason');
+  eq((PLAN.match(/mode: 'none'/g) || []).length, 4, 'the plan gained or lost a refusal branch beyond the one wfdone-1.0.0 added');
+  eq((PLAN.match(/mode: 'batch'/g) || []).length, 1, 'THE FINISHED-SHEET BRANCH CAN NOW ENABLE THE BUTTON - it may only ever make it dead');
+  eq((PLAN.match(/mode: 'single'/g) || []).length, 3, 'the plan gained a new legacy-single path - wfdone may only ever refuse');
+  eq(crypto.createHash('sha256').update(SYNC, 'utf8').digest('hex'),
+    '894175be89041031f2d705337318289c7f6a5c85ea485e79eb6010d6c84eb63a',
+    'THE BUTTON SYNC CHANGED - wfdone-1.0.0 moved the PLAN and nothing else; enabling and disabling still happen in exactly the code that always did it');
+  ok(FLOW.indexOf("var WFDONE_NOTHING_LEFT_LABEL = 'Nothing left to send';") > 0,
+    'the finished-sheet label stopped being the SAME shared constant renderUnifiedReceipts already writes - one state, two sentences');
+  eq((FLOW.match(/'Nothing left to send'/g) || []).length, 1,
+    'the "nothing left to send" wording exists as a second string literal instead of coming from the one shared constant - one state may not have two sentences');
+  ok(FLOW.indexOf('batchBtn2.textContent = WFDONE_NOTHING_LEFT_LABEL;') > 0,
+    'the receipt renderer stopped writing the shared constant, so the button and the plan can drift apart again');
+}
 
 /* ================================================= 1. THE SHIPPED MARKUP ===
  * Static shape pins that hold whether or not the runtime below ever runs. */

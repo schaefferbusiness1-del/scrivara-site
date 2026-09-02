@@ -293,7 +293,12 @@ function makeHarness(options) {
   }
   function route(m) {
     if (!m || m.source !== 'mls-app') return;
-    if (m.type === 'mlsAppAthenaActionV2') return deliver('mlsAppAthenaActionV2Result', m.requestId, defaultAction(m));
+    /* wfatt-1.0.0: `onAction` lets a case answer the SHIPPED bridge the way
+       athenaOne answered the owner's tab - a read-only check that refuses. It
+       is the only way to reach the settle latch through the real code path
+       instead of poking the ledger by hand. */
+    if (m.type === 'mlsAppAthenaActionV2') return deliver('mlsAppAthenaActionV2Result', m.requestId,
+      (typeof options.onAction === 'function' ? options.onAction(m, defaultAction) : defaultAction(m)));
     if (m.type === 'mlsAppSearchOpenPatient') return deliver('mlsAppSearchOpenResult', m.requestId, { ok: true, opened: true, via: 'appointment-id' });
     if (m.type === 'mlsAppGotoDate') return deliver('mlsAppGotoDateResult', m.requestId, { ok: true, supported: true, via: 'weekstrip', schedDate: m.date });
     if (m.type === 'mlsPing') return deliverRaw({ source: 'mls-ext', type: 'mlsPong', requestId: m.requestId, version: '3.0.108', buildId: '3.0.108', batchArm: '1.0.0', capabilities: { supervisedOrderPlacementV2: true, destinationTeachingV2: true, athenaFinalActionsV1: true, phoneConfirmedWriteV1: true, batchArmV1: true } });
@@ -323,6 +328,18 @@ function makeHarness(options) {
   };
 }
 async function settle(n) { for (let i = 0; i < (n || 300); i++) await new Promise(r => setImmediate(r)); }
+
+/* wfatt-1.0.0: ONE row's own block inside the "What happened" list. Every row
+   there is emitted as <b>label</b><span>STATUS</span><div>message</div>, so a
+   status or a sentence that is true of some OTHER row can never satisfy - or
+   mask - an assertion about this one. */
+function whatHappenedRow(html, label) {
+  const at = String(html).indexOf('<b>' + label + '</b><span');
+  assert.ok(at >= 0, 'the "What happened" list no longer carries a block for ' + label);
+  checks++;
+  const next = String(html).indexOf('<b>', at + 3);
+  return String(html).slice(at, next > at ? next : undefined);
+}
 
 (async function run() {
 
@@ -658,7 +675,115 @@ async function settle(n) { for (let i = 0; i < (n || 300); i++) await new Promis
       file + ': a typed record was forced through the generated-sidecar repair');
   });
 
-  /* ============================ 6. THE TWINS, AND THE DERIVED LANES ========
+  /* ===== 6. A SECTION THAT RAN AND DID NOT LAND NEVER READS AS NEVER-RUN ===
+   * wfatt-1.0.0. MEASURED 2026-09-02: six sections checked, one press. The
+   * Assessment narrative check ran out its bound TWICE - about five minutes -
+   * and the progress panel briefly read "timed out". A check-stage refusal or
+   * timeout inside runUnifiedBatchSend writes NO receipt, so the moment the
+   * doctor pressed Confirm again wfprogStart replaced the progress list and
+   * erased the only line that had said so. The "What happened" panel then told
+   * him "WAITING FOR YOUR PRESS - Checked and ready. Nothing has been attempted
+   * for this section". That is a false statement about what the software did:
+   * it attempted it twice. It also hid the one fact that would have helped him.
+   * A settled attempt is an outcome, and it is reported as one. */
+  {
+    const h = makeHarness({});
+    const manifest = h.wf.openUnifiedConfirmation({ patient: PATIENT, sections: THREE, expectedContext: BOUND, receiptSessionId: 'wfatt-one' });
+    await settle(160);
+    const noteRows = manifest.rows.filter(r => r.action === 'write_note' && r.capability === 'ready');
+    eq(noteRows.length, 3, 'the three-section fixture did not build three READY note rows');
+    const seam = h.ledger(), att = h.wf.diagnostics.attemptLedger, state = h.state();
+    eq(att && att.v, 'wfatt-1.0.0', 'the settled-attempt seam is not exported by the shipped module');
+
+    /* one section landed; the next one ran twice and never answered */
+    seam.remember(state, noteRows[0].id, { status: 'verified', message: 'Inserted into the exact Athena field and read back successfully.' });
+    att.remember(state, noteRows[1].id, att.checkTimeout, att.checkTimeoutMsg);
+    seam.render(state);
+
+    eq(seam.rowState(state, noteRows[1]).status, 'not sent - did not answer in time',
+      'a section the run probed twice and settled is still reported as an attempt that never happened');
+    eq(seam.rowState(state, noteRows[1]).message, att.checkTimeoutMsg,
+      'the settled section does not say, in the doctor\'s words, what the software actually did');
+
+    const rec = h.receiptHtml();
+    /* THE DEFECT ITSELF - read off ONE row's own block in "What happened", so
+       a sentence that is still true of a DIFFERENT row cannot mask it. */
+    const timedOut = whatHappenedRow(rec, noteRows[1].label);
+    eq(timedOut.indexOf('Nothing has been attempted for this section'), -1,
+      'THE MEASURED DEFECT: a section MLS probed twice across five minutes is reported to the doctor as never attempted');
+    ok(timedOut.indexOf('NOT SENT - DID NOT ANSWER IN TIME') > 0,
+      'the receipt does not name the outcome the run actually reached for that section');
+    ok(timedOut.indexOf(att.checkTimeoutMsg) > 0, 'the row does not carry the settled sentence in the doctor\'s own words');
+    ok(rec.indexOf('<b>' + noteRows[1].label + '</b> &mdash; ' + att.checkTimeoutMsg) > 0,
+      'the section that ran and did not land is not named under "Not written" carrying its own reason');
+    ok(/Not written &mdash; 2 of 3/.test(rec), 'a settled failed attempt stopped counting as work still owed');
+
+    /* CONTROL - the ruling this may not break: a row genuinely not reached yet
+       keeps wfnext-1.0.0's exact words, in its own block. */
+    eq(seam.rowState(state, noteRows[2]).status, 'waiting for your press',
+      'a section nothing has run for yet lost the words that are still true of it');
+    const untouched = whatHappenedRow(rec, noteRows[2].label);
+    ok(untouched.indexOf('WAITING FOR YOUR PRESS') > 0 && untouched.indexOf('Nothing has been attempted for this section') > 0,
+      'a section nothing has run for yet was swept into the new settled-attempt wording');
+
+    /* a later successful check erases the stale failure - self-correcting */
+    att.forget(state, noteRows[1].id);
+    eq(seam.rowState(state, noteRows[1]).status, 'waiting for your press',
+      'a section that finally passed its read-only check is still wearing its old failure');
+
+    /* PRECEDENCE: a real receipt always outranks an attempt */
+    att.remember(state, noteRows[2].id, att.refused, 'The read-only check refused this section.');
+    seam.remember(state, noteRows[2].id, { status: 'verified', message: 'Inserted into the exact Athena field and read back successfully.' });
+    eq(seam.rowState(state, noteRows[2]).status, 'verified',
+      'a stale attempt outranked the durable read-back receipt for the same section');
+
+    /* ROWSEL UNTOUCHED: the doctor's own choice is not re-opened by this lane */
+    att.remember(state, noteRows[1].id, att.refused, 'The read-only check refused this section.');
+    h.box(noteRows[1].id).checked = false;
+    eq(seam.rowState(state, noteRows[1]).status, 'not selected',
+      'a row the doctor unchecked was re-reported as a failed attempt - the rowsel-1.0.0 ruling was re-opened');
+    eq(seam.rowState(state, noteRows[1]).message, 'You left this section unchecked; nothing was sent for it.',
+      'the unchecked row lost its exact pinned sentence');
+    h.box(noteRows[1].id).checked = true;
+
+    /* an attempt can never make a row sendable, exactly as sectionLedger cannot */
+    eq(noteRows[1].capability, 'ready', 'the fixture row changed capability under the ledger');
+    eq(att.get(state, 'row-that-never-ran'), null, 'the ledger invented a record for a row nothing ran for');
+  }
+
+  /* == 6b. END TO END: THE SHIPPED REFUSAL PATH, NO SEAM CALLS AT ALL ========
+   * The reachability half. Nothing below pokes the ledger: athenaOne answers
+   * the read-only check the way it answered the owner's tab, the doctor presses
+   * the primary once, and the receipt is read back. This is what proves the
+   * settle latch really is on the path every refusal takes. */
+  {
+    const h = makeHarness({
+      onAction: (m, dflt) => (m.mode === 'probe' ? { ok: false, blocked: true, reason: 'note-section-not-on-surface' } : dflt(m))
+    });
+    const manifest = h.wf.openUnifiedConfirmation({ patient: PATIENT, sections: THREE, expectedContext: BOUND, receiptSessionId: 'wfatt-live' });
+    await settle(220);
+    const noteRows = manifest.rows.filter(r => r.action === 'write_note' && r.capability === 'ready');
+    const go = h.el('mlsAthenaUnifiedGo');
+    go.click();
+    await settle(900);
+
+    eq(h.executes().length, 0, 'a section whose read-only check refused was WRITTEN');
+    const state = h.state();
+    eq(Object.keys(state.receipts).length, 0, 'the refused run minted a receipt - the premise of this whole case is that it does not');
+    const rec = h.receiptHtml();
+    ok(rec.length > 0, 'the run settled with no receipt panel at all, so the doctor is told nothing');
+    eq(rec.indexOf('Nothing has been attempted for this section'), -1,
+      'THE MEASURED DEFECT, END TO END: a section the shipped run just probed and refused reads as never attempted');
+    ok(rec.indexOf('NOT SENT - READ-ONLY CHECK REFUSED') > 0,
+      'the refused section does not carry the outcome the shipped settle latch recorded');
+    ok(rec.indexOf('could not resolve one exact editor') > 0,
+      'the row does not carry the reason the doctor just read on screen - the one fact that would help him');
+    const live = h.wf.diagnostics.attemptLedger.get(state, noteRows[0].id);
+    ok(live && live.status === 'not sent - read-only check refused',
+      'the shipped refusal path recorded no attempt, so nothing but a seam call could ever have made this panel honest');
+  }
+
+  /* ============================ 7. THE TWINS, AND THE DERIVED LANES ========
    * The reopen hunks are INLINE in both 1p shells (they are not byte-identical
    * files, so the shared hunk is what must match), and every derived lane
    * carries the same write-flow bytes. */

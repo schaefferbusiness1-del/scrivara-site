@@ -413,6 +413,11 @@ function makeHarness(options) {
   };
 }
 async function settle(n) { for (let i = 0; i < (n || 400); i++) await new Promise(r => setImmediate(r)); }
+/* wfdone-1.0.0: the DOM shim's checkboxes expose `handlers` but no
+   dispatchEvent, so this is how the doctor's own tick reaches the SHIPPED
+   change handler (unifiedSyncFromIncludeCheckbox) rather than a test calling it
+   directly. */
+function fireChange(box) { ((box.handlers && box.handlers.change) || []).forEach(function (fn) { fn({ target: box }); }); }
 
 (async function run() {
 
@@ -526,6 +531,56 @@ async function settle(n) { for (let i = 0; i < (n || 400); i++) await new Promis
     eq(h.arms().length, 0, 'the sheet armed the extension itself at some point during the run');
   }
 
+  /* ===== 4b. EVERYTHING CHECKED IS WRITTEN, BUT NOT EVERYTHING IS CHECKED ==
+   * wfdone-1.0.0, measured 2026-09-02 by adversarial replay of the one-press
+   * lane. Section 4 above only ever exercised the case where EVERY note row is
+   * checked, and there the green completion banner relabels and kills the
+   * button. Leave one row unchecked - which is exactly what the doctor does
+   * with an A/P row that cannot bind - and that banner never fires, because it
+   * requires every write_note row in the manifest to be in Athena. finish()
+   * then restored the label the button carried at press time and
+   * unifiedSyncPrimaryButton re-ENABLED it, because the plan still read the
+   * checked set without excluding rows that had already landed. The result was
+   * a live button reading "Confirm & write 2 of 2: Physical Exam" three inches
+   * under "All 2 checked sections are in Athena and verified", and pressing it
+   * was refused with "Check at least one READY note section" - which was false.
+   * The PLAN decides this, not the painter, and it is reversible. */
+  {
+    const h = makeHarness({});
+    h.wf.openUnifiedConfirmation({ patient: PATIENT, sections: SECTIONS, expectedContext: BOUND, receiptSessionId: 'next-partial' });
+    await settle(160);
+    const go = h.el('mlsAthenaUnifiedGo'), boxes = h.boxes();
+    eq(boxes.length, 3, 'the fixture did not render one include checkbox per READY note row');
+
+    /* he unticks the middle section and presses until nothing is left */
+    boxes[1].checked = false; fireChange(boxes[1]);
+    await settle(60);
+    for (let p = 1; p <= 3 && !go.disabled; p++) { go.click(); await settle(700); }
+
+    eq(h.executes().length, 2, 'the two checked sections did not both land');
+    eq(go.disabled, true, 'THE MEASURED DEFECT: every checked section landed and the primary button is still live');
+    eq(go.textContent, 'Nothing left to send', 'THE MEASURED DEFECT: the button still names a write that cannot happen');
+    const plan = h.wf.diagnostics.sheetUx.plan(h.wf.diagnostics.state());
+    eq(plan.mode, 'none', 'the plan still claims a batch to send when every checked section is verified');
+    eq(go.getAttribute('data-mls-primary-blocked'), plan.reason, 'the dead button does not carry the plan\'s own reason');
+    eq(h.planText(), 'All 2 checked sections are in Athena and verified. Save and Sign stay yours in athenaOne.',
+      'the up-front line and the button no longer agree');
+    eq(h.el('mlsAthenaUnifiedReceipt').innerHTML.indexOf('Everything on this review is in Athena'), -1,
+      'the green banner fired with a note row still not in Athena');
+
+    /* reversible - the doctor may still change his mind */
+    boxes[1].checked = true; fireChange(boxes[1]);
+    await settle(60);
+    eq(go.disabled, false, 're-checking a section left the button dead');
+    eq(go.textContent, 'Confirm & write 3 of 3: Review of Systems',
+      'the revived button does not name the section the next press writes');
+    go.click();
+    await settle(900);
+    eq(h.executes().length, 3, 'the re-checked section was not written by its own press');
+    eq(go.disabled, true, 'the finished sheet left the button live again');
+    eq(go.textContent, 'Nothing left to send', 'the finished sheet does not say there is nothing left');
+  }
+
   /* ================== 5. A SECTION THAT NEVER ANSWERS SETTLES, AND RE-ARMS ==
    * The measured hang: a read-only stage nothing will ever settle. The queue
    * retries it once, then says so in the doctor's words and gives him the
@@ -609,5 +664,45 @@ async function settle(n) { for (let i = 0; i < (n || 400); i++) await new Promis
       'the batch lane does not say done when it is done');
   }
 
-  console.log('PASS write-next-press-proof: ' + checks + ' checks - the seven write-path regions are byte-identical to the digests sheet-clarity and write-auto-chain both carry; the sheet never arms MLS Assist itself; the number of checked sections and the cost in presses are stated before the first press; one press writes exactly one section and neither probes nor writes anything for a section nobody pressed for; the sheet stays open, re-arms with the next section named, accumulates one receipt and reaches DONE; a read-only stage nothing will settle is retried once and then settled in the doctor\'s words with the button live again; and on an extension that can take a batch authorization the ordered list is on the button before the trusted click and one press writes all of them, one section per execute');
+  /* ===== 7. THE SPENT OR EXPIRED WRITE ARM IS SAID IN WORDS THAT WORK ======
+   * wfarm-1.0.0. Section 1 above pins that the extension still owns the trusted
+   * click and still refuses a spent arm with its own sentence, "Click the
+   * matching Athena action button again before continuing." The defect was that
+   * the SHEET printed that sentence: 'fresh-trusted-click-required' was in
+   * WFDX_KNOWN_REASONS but had no WFCLAR entry, so resultToUnifiedReceipt fell
+   * through to the raw string. Following it reproduces the refusal - the button
+   * he is told to press again is the one he just pressed - which is exactly
+   * what the owner reported at 22:50 on 2026-09-01 for sections 2 and 3.
+   * Exercised through the SHIPPED seam, not a copy of the table. */
+  {
+    const CODE = 'fresh-trusted-click-required';
+    const seam = makeHarness({}).wf.diagnostics;
+    eq(seam.reason(CODE), CODE,
+      'wfdxReason folds the spent-arm refusal to unlisted, so every receipt and clarity lookup loses it');
+    const clar = seam.clarity.classify(CODE);
+    ok(clar && clar.fix === true,
+      'the spent-arm refusal has no clarity entry - it keeps the extension raw sentence that reproduces the failure');
+    eq(!!clar.open, false, 'the spent-arm refusal was given the read-only open ladder - there is nothing to navigate');
+    eq(!!clar.copy, false,
+      'the spent-arm refusal offers a copy button that can never render - wfClarityRefusal is on the probe path and this code is execute-only');
+
+    const say = seam.clarity.say(clar, { destination: 'Athena encounter > HPI', label: 'Write reviewed HPI' });
+    ok(/Nothing was changed and nothing was sent\.$/.test(say), 'the sentence does not end in the no-change guarantee');
+    eq(/Click the matching Athena action button/.test(say), false,
+      'THE MEASURED DEFECT: the sheet still prints the extension instruction that reproduces the refusal');
+    ok(say.indexOf('Check Athena again') > 0, 'the sentence does not name the control that re-binds the section');
+    ok(/spent or had timed out/.test(say), 'the sentence does not say what actually happened');
+    eq(/Pressing Confirm again on its own refuses the same way/.test(say), true,
+      'the sentence does not warn him off the one move that loops');
+
+    /* the three closed sets stay clean: a spent arm is not a surface that will
+       change on its own, so nothing may put it into an automatic ladder */
+    eq(seam.autoChain.retryable[CODE], undefined, 'the spent-arm refusal is on the automatic re-check allowlist - that is a loop');
+    eq(seam.autoChain.painting[CODE], undefined, 'the spent-arm refusal is on the "still painting" set - the surface is not painting');
+    eq(seam.autoChain.positive[CODE], undefined, 'the spent-arm refusal latches the whole sheet out of automatic re-checking');
+    ok(FLOW.indexOf("var AUTO_OPEN_REASONS = { 'context-unverified': 1, 'context-mismatch': 1 };") > 0,
+      'the auto-open allowlist was rewritten - a spent arm must never drive athenaOne navigation');
+  }
+
+  console.log('PASS write-next-press-proof: ' + checks + ' checks - the seven write-path regions are byte-identical to the digests sheet-clarity and write-auto-chain both carry; the sheet never arms MLS Assist itself; the number of checked sections and the cost in presses are stated before the first press; one press writes exactly one section and neither probes nor writes anything for a section nobody pressed for; the sheet stays open, re-arms with the next section named, accumulates one receipt and reaches DONE; a read-only stage nothing will settle is retried once and then settled in the doctor\'s words with the button live again; and on an extension that can take a batch authorization the ordered list is on the button before the trusted click and one press writes all of them, one section per execute; with a section left unchecked the finished sheet kills its own button from the PLAN and says "Nothing left to send" instead of naming a write that would be refused, and re-ticking that section revives it; and the spent or expired write arm is said in words that name the fresh-check step instead of the extension instruction that reproduces it');
 })().catch(err => { console.error('FAIL: ' + (err && err.message ? err.message : err)); process.exit(1); });
