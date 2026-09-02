@@ -139,6 +139,76 @@
     return !!(manifest && manifest.provider && String(manifest.provider.mode || '') === 'selected');
   }
   /* ===== end scopeempty-1.0.0 ===== */
+  /* ===== attn-1.0.0 (needs-attention must mean "the owner has to act") =====
+     MEASURED 2026-09-02 on the August month job scoped to one PA, after three
+     Retry passes on extension 3.0.107: 25 days complete, 4 in needs-attention
+     (calendar-partial, nav-failed, and TWO history-partial), and 2 days
+     (2026-08-28, 2026-08-30) cycling 'retry' for ever even though
+     scopeempty-1.0.0 shipped in b1195 to settle exactly those.
+
+     (R0) THE WEDGE, measured by EXECUTING checkpointDay + processMonthResult
+     on the live shape: the scoped-empty promotion WAS applied by the per-day
+     callback, and then processMonthResult's final-retry reconciliation UNDID
+     it. The importer counts a provider-not-on-calendar day as a failure
+     (day.ok !== true), so it lands in result.retry.dates; the reconciliation
+     loop skips only days the walk left NOT complete, so a day the JOB had
+     deliberately completed fell through and was re-checkpointed with the
+     month-level reason. It spent no attempt either way (first === false), so
+     it could never reach the cap: retry -> promoted -> demoted -> retry, for
+     ever. That loop exists for ONE thing - a failed month-owner RELEASE PROOF
+     - so it is now gated on that proof instead of on "the month is not
+     complete", which is a strictly narrower condition and the original intent.
+
+     (R1) A day whose stored verdict is already the scoped-empty code resolves
+     complete/empty on its next checkpoint WITHOUT a re-read, and the evidence
+     (how many OTHER clinicians the calendar painted) is kept on the day.
+
+     (R2) PER-CHART REFUSALS ARE NOT A DAY FAILURE. A chart refused because
+     its DOB did not match the row must STAY refused - and the day must
+     finish, naming the refusal. A day whose every unread chart is a closed
+     refusal completes at once and can never be attention.
+
+     (R3) 'history-partial' IS ATTENTION ONLY WHEN NO CHART COULD BE READ. A
+     day that read charts and then spent its attempts is finished, with the
+     charts it could not read recorded; a day that read NOTHING still settles
+     needs-attention at the cap, exactly as before.
+
+     (R4) 'calendar-partial' STAYS ATTENTION - athena showed rows this day did
+     not account for, and only the owner can look. The day now records HOW
+     MANY rows were missing so the card can say it and point at Resume.
+
+     (R5) 'nav-failed' is unchanged and pinned: a driven day, one attempt each
+     time, attention only at DAY_ATTEMPT_CAP. */
+  var CHART_REFUSAL_CODES = {
+    'dob-mismatch': 1, ambiguous: 1, 'chart-parse-failed': 1, 'chart-parse-timeout': 1
+  };
+  /* The month-level codes the reconciliation paths write onto a day. A day
+     that already carries its OWN proven verdict is not re-opened by one of
+     these; every real day verdict is deliberately absent. */
+  var GENERIC_MONTH_REASONS = {
+    'month-partial': 1, 'month-stopped-systemic': 1, 'month-exception': 1, 'not-attempted': 1
+  };
+  function boundedCount(value, max) {
+    value = Math.floor(Number(value || 0) || 0);
+    return value > 0 ? Math.min(max || 400, value) : 0;
+  }
+  /* A bounded PHI-free map of refusal code -> count. Unknown codes are dropped
+     rather than stored, so the durable manifest can only ever hold names this
+     build knows how to say in English. */
+  function sanitizeRefusalCodes(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    var out = null, keys = Object.keys(raw).sort();
+    for (var i = 0; i < keys.length && i < 6; i++) {
+      var code = String(keys[i] || '').toLowerCase();
+      if (CHART_REFUSAL_CODES[code] !== 1) continue;
+      var n = boundedCount(raw[keys[i]]);
+      if (!n) continue;
+      if (!out) out = {};
+      out[code] = n;
+    }
+    return out;
+  }
+  /* ===== end attn-1.0.0 vocabulary ===== */
   var LOGIN_REASONS = {
     signin: 1, 'signin-expired': 1, 'session-expired': 1,
     'athena-session-expired': 1, 'no-athena-tab': 1
@@ -369,8 +439,12 @@
      summary can never claim more than the days themselves prove. Counts and
      bounded codes only - no identity, no PHI. */
   function summarize(manifest) {
+    /* attn-1.0.0: chartsRefused/refused report the charts a COMPLETE day could
+       not read. They are counted apart from needsAttention on purpose - a
+       refused chart is a fact about that chart, never work for the owner. */
     var out = { days: 0, complete: 0, empty: 0, withRows: 0, failed: 0, pending: 0,
-      needsAttention: 0, months: 0, completeMonths: 0, attention: [] };
+      needsAttention: 0, months: 0, completeMonths: 0, attention: [],
+      chartsRefused: 0, refusedDays: 0, refused: [] };
     if (!manifest || !manifest.months) return out;
     var monthKeys = Object.keys(manifest.months);
     out.months = monthKeys.length;
@@ -384,11 +458,22 @@
         if (day.status === 'complete') {
           out.complete++;
           if (EMPTY_REASONS[day.reason] === 1) out.empty++; else out.withRows++;
+          /* attn-1.0.0: a finished day that could not read every chart says so
+             here, with its bounded refusal codes, so the card can name it. */
+          var dayUnread = Number(day.chartsUnread || 0), dayRefused = Number(day.chartsRefused || 0);
+          if (dayUnread > 0 || dayRefused > 0) {
+            out.chartsRefused += dayRefused; out.refusedDays++;
+            if (out.refused.length < 20) {
+              out.refused.push({ date: dayKeys[di], refused: dayRefused, unread: dayUnread, codes: copy(day.refused) });
+            }
+          }
         } else if (day.status === 'needs-attention') {
           /* p1-range-continue-1.0.0: the receipt LISTS these - a date and a
-             bounded code, nothing else - so the doctor can act on them. */
+             bounded code, nothing else - so the doctor can act on them.
+             attn-1.0.0 adds ONE bounded integer: how many schedule rows a
+             calendar-partial day never accounted for. */
           out.needsAttention++;
-          if (out.attention.length < 60) out.attention.push({ date: dayKeys[di], reason: day.reason });
+          if (out.attention.length < 60) out.attention.push({ date: dayKeys[di], reason: day.reason, missing: Number(day.calendarMissing || 0) || 0 });
         } else if (day.status === 'retry') out.failed++;
         else out.pending++;
       }
@@ -523,12 +608,35 @@
            stored status says - including manifests written before the cap
            existed. The cap is enforced on READ as well as on write. */
         if (dayStatus === 'retry' && dayAttempts >= DAY_ATTEMPT_CAP) dayStatus = 'needs-attention';
+        var dayReason = reasonCode(dayRaw.reason);
+        /* attn-1.0.0 R1: scopeempty-1.0.0's ruling, enforced on READ as well
+           as on write, exactly like the attempt cap above. A provider-scoped
+           job whose stored verdict for a day is the scoped-empty code has
+           already proved that day empty for that provider - a manifest
+           written before this build (where the reconciliation could demote it
+           again) settles with no second read of athena. */
+        if (dayStatus !== 'complete' && provider.mode === 'selected' && dayReason === SCOPED_EMPTY_REASON) dayStatus = 'complete';
         var dayOut = {
           status: dayStatus,
-          reason: reasonCode(dayRaw.reason),
+          reason: dayReason,
           attempts: dayAttempts,
           updatedAt: finiteStamp(dayRaw.updatedAt)
         };
+        /* attn-1.0.0: the PHI-free record of what the day could NOT read, and
+           the evidence a scoped-empty day settles on. Written only when there
+           is something to say, so every manifest written before attn-1.0.0
+           keeps its exact stored shape. */
+        var dayUnread = boundedCount(dayRaw.chartsUnread);
+        var dayRefused = Math.min(dayUnread, boundedCount(dayRaw.chartsRefused));
+        var dayRefusalCodes = sanitizeRefusalCodes(dayRaw.refused);
+        var dayMissingRows = boundedCount(dayRaw.calendarMissing, 4000);
+        var daySurface = boundedCount(dayRaw.surfaceProviders);
+        if (dayUnread) dayOut.chartsUnread = dayUnread;
+        if (dayRefused) dayOut.chartsRefused = dayRefused;
+        if (dayRefusalCodes) dayOut.refused = dayRefusalCodes;
+        if (dayMissingRows) dayOut.calendarMissing = dayMissingRows;
+        if (dayRaw.scopedEmpty === 1 || dayRaw.scopedEmpty === true) dayOut.scopedEmpty = 1;
+        if (daySurface) dayOut.surfaceProviders = daySurface;
         /* pullheal-1.0.0: the extension version that spent this day's newest
            attempt. Written only when it is a real dotted version, so every
            manifest written before pullheal keeps its exact stored shape and a
@@ -931,6 +1039,24 @@
        outstanding own-note debt, so it can never promote a day that still owes
        work or a day an all-provider job could not read. */
     if (code === SCOPED_EMPTY_REASON && providerScopedJob(ctx.manifest) && dayNotesPending === 0) complete = true;
+    /* ===== attn-1.0.0 R1 (the scoped-empty verdict is kept ON THE DAY) =====
+       provscope-1.0.0 emits this code from exactly one branch: the calendar
+       RENDERED, other clinicians were discovered on it, and the scoped
+       provider was not among them. Record that evidence durably, so the next
+       checkpoint of this day can settle it with no second read of athena. */
+    var scoped = providerScopedJob(ctx.manifest);
+    var surfaceProviders = boundedCount(payload.surfaceProviders);
+    if (code === SCOPED_EMPTY_REASON && scoped) {
+      day.scopedEmpty = 1;
+      if (surfaceProviders > 0) day.surfaceProviders = surfaceProviders;
+    }
+    /* A day already proved empty for this provider is not re-opened by a
+       MONTH-level code. It keeps its own verdict and completes with no
+       re-read. A day-level verdict of its own (no-read, nav-failed, ...) is
+       deliberately absent from GENERIC_MONTH_REASONS and still stands. */
+    if (!complete && scoped && day.scopedEmpty === 1 && dayNotesPending === 0 &&
+        GENERIC_MONTH_REASONS[code] === 1) { complete = true; code = SCOPED_EMPTY_REASON; }
+    /* ===== end attn-1.0.0 R1 ===== */
     /* p1-range-continue-1.0.0: only a day Athena was actually DRIVEN through
        spends an attempt, and only such a day can reach the cap. */
     var attemptable = !complete && NON_ATTEMPT_REASONS[code] !== 1 && !isLoginReason(code);
@@ -943,6 +1069,37 @@
       var spentUnder = currentExtVersion();
       if (spentUnder) day.attemptExtV = spentUnder;
     }
+    /* ===== attn-1.0.0 R2/R3/R4 (what the day could NOT read, recorded) =====
+       Run AFTER the attempt is spent, so the cap is judged on the same number
+       the status line below uses. */
+    var chartsRead = boundedCount(payload.chartsRead);
+    var chartsUnread = boundedCount(payload.chartsUnread);
+    var chartsRefused = Math.min(chartsUnread, boundedCount(payload.chartsRefused));
+    var refusalCodes = sanitizeRefusalCodes(payload.chartsRefusedCodes);
+    if (!complete && code === 'history-partial' && dayNotesPending === 0) {
+      var atCap = Number(day.attempts || 0) >= DAY_ATTEMPT_CAP;
+      /* R2: every chart this day did not read was REFUSED for a cause no
+         re-read can cure. Re-reading would return the same refusal, so the
+         day is finished NOW and the refusals travel on the day record. */
+      var refusalsOnly = chartsUnread > 0 && chartsRefused >= chartsUnread;
+      /* R3: attention is for a day NOTHING could be read on. A day that read
+         charts and has spent its attempts is finished, with the charts it
+         could not read recorded - it is not something the owner can act on. */
+      if (refusalsOnly || (atCap && chartsRead > 0)) {
+        complete = true;
+        day.chartsUnread = chartsUnread;
+        if (chartsRefused > 0) day.chartsRefused = chartsRefused;
+        if (refusalCodes) day.refused = refusalCodes;
+      }
+    }
+    /* R4: a calendar-partial day STAYS attention - athena showed rows this
+       day did not account for and only the owner can look at that. Record how
+       many, so the card can say it instead of "not all saved". */
+    if (!complete && code === 'calendar-partial') {
+      var missingRows = boundedCount(payload.calendarMissing, 4000);
+      if (missingRows > 0) day.calendarMissing = missingRows;
+    }
+    /* ===== end attn-1.0.0 R2/R3/R4 ===== */
     day.status = complete ? 'complete'
       : (attemptable && Number(day.attempts || 0) >= DAY_ATTEMPT_CAP ? 'needs-attention' : 'retry');
     day.reason = code;
@@ -974,10 +1131,32 @@
     if (ctx.control) stopImporter();
     return persisted;
   }
+  /* ===== attn-1.0.0 R0 (only a failed OWNER PROOF re-opens a completed day)
+     The two reconciliation paths below exist for exactly one situation: the
+     importer's final month-owner RELEASE proof failed after the per-day
+     callbacks had already settled, and an apparently green last day must not
+     promote an unverified month. They were gated on "the month result is not
+     complete", which is much broader - and once scopeempty-1.0.0 let the JOB
+     complete a day the IMPORTER counts as a failure, that breadth silently
+     demoted the job's own promotion on every single pass. Gate them on the
+     proof itself. The importer sets reason 'month-owner-unverified' (and a
+     monthOwnerReceipt) whenever that proof fails, so this is the same
+     condition the guards were written for, said exactly. */
+  function monthOwnerUnproven(result) {
+    if (!result || typeof result !== 'object') return true;
+    if (result.monthOwnerReceipt && typeof result.monthOwnerReceipt === 'object' &&
+        result.monthOwnerReceipt.complete !== true) return true;
+    var reason = String(result.reason || '');
+    return reason === 'month-owner-unverified' || reason === 'month-exception';
+  }
   function processMonthResult(ctx, monthKey, dates, result, seen) {
     var rows = result && Array.isArray(result.days) ? result.days : [];
     for (var i = 0; i < rows.length && !ctx.storageFailure; i++) {
       var row = rows[i] || {}, receipt = row.receipt || {};
+      /* attn-1.0.0: the importer stamps its own PHI-free classification on the
+         settling row (the identical object its per-day callback carried), so
+         the settling path and the callback cannot disagree about a day. */
+      var stamp = row.checkpoint && typeof row.checkpoint === 'object' ? row.checkpoint : {};
       checkpointDay(ctx, monthKey, {
         date: row.date,
         ok: row.ok === true,
@@ -995,7 +1174,15 @@
            about whether the day is finished. */
         dayNotesPending: Number(row.dayNotesPending ||
           (receipt.historyReceipt && receipt.historyReceipt.dayNotesPending) ||
-          receipt.dayNotesPending || 0)
+          receipt.dayNotesPending || 0),
+        /* attn-1.0.0: the day's chart census, unaccounted rows and painted
+           clinicians - counts and closed codes, never PHI. */
+        chartsRead: stamp.chartsRead,
+        chartsUnread: stamp.chartsUnread,
+        chartsRefused: stamp.chartsRefused,
+        chartsRefusedCodes: stamp.chartsRefusedCodes,
+        calendarMissing: stamp.calendarMissing,
+        surfaceProviders: stamp.surfaceProviders
       }, seen);
     }
     /* A day callback settles before the month owner's final release proof. If
@@ -1015,6 +1202,11 @@
       var retryMonth = ctx.manifest.months[monthKey];
       var retryDay = retryMonth && own(retryMonth.days, retryDate) ? retryMonth.days[retryDate] : null;
       if (seen[retryDate] && retryDay && retryDay.status !== 'complete') continue;
+      /* attn-1.0.0 R0: a day THIS run completed is re-opened only when the
+         month-owner release proof actually failed. Without this the job's own
+         verdicts (a scoped-empty day, a day whose only unread charts were
+         refused) were demoted on every pass and cycled 'retry' for ever. */
+      if (seen[retryDate] && retryDay && retryDay.status === 'complete' && !monthOwnerUnproven(result)) continue;
       checkpointDay(ctx, monthKey, {
         date: retryDate, ok: false, complete: false,
         reason: result.reason || 'month-partial'
@@ -1026,7 +1218,11 @@
         reason: result && result.stoppedByUser ? 'stopped-by-user' : 'not-attempted'
       }, seen);
     }
-    if (!ctx.storageFailure && result && result.complete !== true && monthComplete(ctx.manifest.months[monthKey])) {
+    /* attn-1.0.0 R0: same gate. A month every day of which the job has proved
+       is only re-opened by a failed owner proof - never because the importer
+       counted a scoped-empty or refusal-settled day as one of its failures. */
+    if (!ctx.storageFailure && result && result.complete !== true &&
+        monthOwnerUnproven(result) && monthComplete(ctx.manifest.months[monthKey])) {
       checkpointDay(ctx, monthKey, {
         date: dates[dates.length - 1], ok: false, complete: false,
         reason: result.reason || 'month-partial'
@@ -1649,8 +1845,11 @@
     'month-stopped-systemic': 'The month stopped before all days were verified. Resume retries the remaining work.',
     'month-partial': 'Some days still need verification. Resume retries only those days.',
     /* p1-range-reasons-1.0.0: the importer's own day verdicts, said plainly. */
-    'history-partial': 'Some charts on that day did not finish reading. Resume retries only those days.',
-    'calendar-partial': 'That day’s appointments were not all saved. Resume retries only those days.',
+    /* attn-1.0.0: a history-partial day only reaches the doctor when NOTHING
+       on it could be read - a day that read charts and could not read the rest
+       finishes and names them instead of asking for a retry. */
+    'history-partial': 'No chart on that day could be read. Check the athenaOne tab for those days, then press Resume to re-pull them.',
+    'calendar-partial': 'Athena showed appointments that day which were not all saved — the count is beside each date above. Press Resume to re-pull just those days.',
     'identity-bootstrap-partial': 'Some patients on that day could not be identified exactly. Check Athena, then Resume.',
     'history-store-empty': 'Charts were read but nothing was stored for that day. Check available storage, then Resume.',
     'history-store-unmeasured': 'MLS could not verify what was stored for that day. Resume re-reads it.',
@@ -1681,15 +1880,50 @@
     return receipt.complete + ' of ' + receipt.days + ' days done · ' +
       receipt.withRows + ' with appointments · ' + receipt.empty + ' verified empty · ' +
       receipt.failed + ' still to retry · ' + receipt.needsAttention + ' need attention · ' +
-      run.skippedComplete + ' skipped as already verified.';
+      run.skippedComplete + ' skipped as already verified.' + uiRefusedCopy(manifest);
   }
+  /* ===== attn-1.0.0 (a refused chart, said in English) =====================
+     A CLOSED map - the same four codes the durable manifest is allowed to
+     hold, so the card can never print a raw machine code at the doctor. */
+  var UI_REFUSAL_COPY = {
+    'dob-mismatch': 'patient identity did not match',
+    ambiguous: 'two charts answer to that patient',
+    'chart-parse-failed': 'that chart could not be read',
+    'chart-parse-timeout': 'that chart did not finish loading'
+  };
+  function uiRefusedCopy(manifest) {
+    var receipt = (manifest && manifest.summary) || summarize(manifest);
+    var list = receipt.refused || [];
+    if (!list.length) return '';
+    var shown = list.slice(0, 3).map(function (row) {
+      var refused = Number(row.refused || 0) || 0, unread = Number(row.unread || 0) || 0;
+      var codes = row.codes && typeof row.codes === 'object' ? Object.keys(row.codes).sort() : [];
+      var why = codes.map(function (code) { return UI_REFUSAL_COPY[code] || ''; })
+        .filter(function (text) { return !!text; }).join('; ');
+      if (refused > 0) {
+        return row.date + ' complete — ' + refused + ' chart' + (refused === 1 ? '' : 's') +
+          ' refused' + (why ? ': ' + why : '');
+      }
+      return row.date + ' complete — ' + unread + ' chart' + (unread === 1 ? '' : 's') +
+        ' not read after ' + DAY_ATTEMPT_CAP + ' tries';
+    });
+    return ' ' + shown.join('. ') + '.' +
+      (list.length > shown.length ? ' (' + list.length + ' days in all.)' : '') +
+      ' A refused chart stays refused — nothing was guessed, and those days are finished.';
+  }
+  /* ===== end attn-1.0.0 card copy ===== */
   /* p1-range-continue-1.0.0: the days that hit the attempt cap, named. Dates
-     and bounded codes only. */
+     and bounded codes only. attn-1.0.0 adds the one number a calendar-partial
+     day is unactionable without: how many appointments were never accounted. */
   function uiAttentionCopy(manifest) {
     var receipt = (manifest && manifest.summary) || summarize(manifest);
     var list = receipt.attention || [];
     if (!list.length) return '';
-    var shown = list.slice(0, 6).map(function (row) { return row.date + ' (' + String(row.reason || '').replace(/-/g, ' ') + ')'; });
+    var shown = list.slice(0, 6).map(function (row) {
+      var missing = Number(row.missing || 0) || 0;
+      return row.date + ' (' + String(row.reason || '').replace(/-/g, ' ') +
+        (missing > 0 ? ', ' + missing + ' appointment' + (missing === 1 ? '' : 's') + ' missing' : '') + ')';
+    });
     return 'Needs attention: ' + shown.join('; ') + (list.length > shown.length ? '; …' : '') +
       (receipt.needsAttention > list.length ? ' (' + receipt.needsAttention + ' total)' : '') + '.';
   }

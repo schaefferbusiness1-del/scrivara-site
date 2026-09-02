@@ -707,6 +707,23 @@ async function settle(n) { for (let i = 0; i < (n || 300); i++) await new Promis
         'the reopen-1.0.0 hunk is NOT byte-identical between ' + shellSlices[0].name + ' and ' + other.name);
     });
 
+    /* bumpsafe-1.1.0 (measured 2026-09-02 again, one build later, on the
+       reopen-1.1.0 comment): the SAME drift class recurred because the 1.0.0
+       check only looked at its own hunk. The rule is general and it is about
+       ONE token: the 1p twins may name PAST builds in prose, but never the
+       CURRENT one, because scripts/bump-build.js rewrites exactly that token
+       and rewrites it in the derived shell alone. Checked against
+       app-version.json, so it bites in the worktree before the bump runs. */
+    const curTok = (function () {
+      try { return String(JSON.parse(read('app-version.json')).build || '').match(/(b\d{3,5})$/)[1]; } catch (e) { return ''; }
+    })();
+    ok(!!curTok, 'app-version.json names the current build token (bumpsafe-1.1.0)');
+    ['1pScribeFlow.html', '1p/index.html'].forEach(function (rel) {
+      const re = new RegExp('(^|[^0-9a-zA-Z])' + curTok + '([^0-9a-zA-Z]|$)');
+      eq(re.test(read(rel)), false,
+        rel + ' carries the CURRENT build token ' + curTok + ' in prose - the next bump rewrites it in the derived shell only, which is derivation drift (bumpsafe-1.1.0)');
+    });
+
     const FLOW_LANES = ['1p-feat_mls_writeflow.js', 'feat_mls_writeflow.js', 'cloned-feat_mls_writeflow.js'];
     const rowselSlices = [], regenSlices = [];
     FLOW_LANES.forEach(function (name) {

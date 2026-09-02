@@ -248,11 +248,18 @@ async function microtasks() { await Promise.resolve(); await Promise.resolve(); 
   assert.strictEqual(release.ok, false, 'owner read failure was reported as released');
   assert.strictEqual(month.store.has(readOwner), true, 'read-failure cleanup guessed and deleted owner state');
 
-  /* The range checkpoint contains exactly five PHI-free fields and is
-     non-breaking. p1-month-signout-1.0.0 added the fifth: ONE boolean saying
-     whether the bounded session probe proved athenaOne signed out, so a
-     durable range caller can tell a sign-in problem from an unread grid. It
-     is a boolean by construction - no error text, no identity, ever. */
+  /* The range checkpoint is a CLOSED PHI-free contract and is non-breaking.
+     p1-month-signout-1.0.0 added the session-probe boolean, so a durable range
+     caller can tell a sign-in problem from an unread grid; dnote-1.0.0 (b1184)
+     added the day's own-note debt; attn-1.0.0 (2026-09-02) added the day's
+     chart census, its unaccounted schedule rows and how many other clinicians
+     its calendar painted, so the durable job can tell a per-chart refusal from
+     a day nothing could be read on. MEASURED 2026-09-02: this list had stood
+     at five since b1184 shipped the sixth, so the suite was RED at b1199
+     against an untouched baseline - the pin is re-aimed at the shipped list
+     here and strengthened below with the property it was really for. Every
+     member is a date, a count, a bounded code or a boolean BY CONSTRUCTION -
+     no error text, no identity, ever. */
   const checkpointStart = source.indexOf('function p1MonthDaySignedOut');
   const checkpointEnd = source.indexOf('/* One exact month route', checkpointStart);
   assert(checkpointStart >= 0 && checkpointEnd > checkpointStart, 'the month day-checkpoint block could not be isolated');
@@ -260,8 +267,40 @@ async function microtasks() { await Promise.resolve(); await Promise.resolve(); 
   const checkpoint = runBlock('function safe(fn,d){try{return fn();}catch(e){return d;}} function isFn(f){return typeof f === "function";}\n' + source.slice(checkpointStart, checkpointEnd), ctx, 'p1MonthDayCheckpoint');
   let delivered = null;
   const returned = checkpoint(value => { delivered = value; throw new Error('caller failure'); }, '2026-03-08', { ok: true, complete: true, reason: 'complete', patientName: 'Never Expose', error: 'secret' });
-  assert.deepStrictEqual(Object.keys(returned).sort(), ['complete', 'date', 'ok', 'reason', 'sessionExpired'], 'checkpoint exposed fields outside its PHI-free contract');
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(delivered)), { date: '2026-03-08', ok: true, complete: true, reason: 'complete', sessionExpired: false }, 'checkpoint content was not minimal and exact');
+  assert.deepStrictEqual(Object.keys(returned).sort(),
+    ['calendarMissing', 'chartsRead', 'chartsRefused', 'chartsRefusedCodes', 'chartsUnread',
+      'complete', 'date', 'dayNotesPending', 'ok', 'reason', 'sessionExpired', 'surfaceProviders'],
+    'checkpoint exposed fields outside its PHI-free contract');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(delivered)), {
+    date: '2026-03-08', ok: true, complete: true, reason: 'complete', sessionExpired: false,
+    dayNotesPending: 0, chartsRead: 0, chartsUnread: 0, chartsRefused: 0, chartsRefusedCodes: {},
+    calendarMissing: 0, surfaceProviders: 0
+  }, 'checkpoint content was not minimal and exact');
+  /* THE PROPERTY THE KEY LIST IS FOR: nothing from the outcome that is not a
+     date, a count, a bounded code or a boolean may cross this seam. */
+  const leaky = checkpoint(null, '2026-03-08', {
+    ok: false, complete: false, reason: 'history-partial', patientName: 'Never Expose', error: 'secret',
+    receipt: {
+      historyReceipt: {
+        storeCensus: { measured: true, targets: 3, withContent: 2 },
+        patients: [
+          { complete: true, name: 'Never Expose', mrn: '99887', dob: '1970-01-02' },
+          { complete: true, name: 'Also Secret' },
+          { complete: false, name: 'Refused Secret', reason: 'dob-mismatch' }
+        ]
+      },
+      calendarReceipt: { attempted: 4, accounted: 3 },
+      providerReceipt: { surfaceProviders: ['Another Clinician, MD'] }
+    }
+  });
+  const leakyText = JSON.stringify(leaky);
+  for (const secret of ['Never Expose', 'Also Secret', 'Refused Secret', '99887', '1970-01-02', 'secret', 'Another Clinician'])
+    assert(leakyText.indexOf(secret) < 0, 'PHI crossed the range checkpoint seam: ' + secret);
+  assert.strictEqual(leaky.chartsRead, 2, 'the checkpoint cannot count the charts of the day that landed');
+  assert.strictEqual(leaky.chartsRefused, 1, 'the checkpoint cannot count the charts of the day that were refused');
+  assert.strictEqual(leaky.calendarMissing, 1, 'the checkpoint cannot count the schedule rows the day never accounted for');
+  assert.strictEqual(leaky.surfaceProviders, 1, 'the checkpoint cannot count the other clinicians the calendar painted');
+  assert.strictEqual(JSON.stringify(leaky.chartsRefusedCodes), '{"dob-mismatch":1}', 'the refusal cause did not cross as a bounded code');
   assert.strictEqual(checkpoint(null, 'bad-date', { reason: 'Patient Name' }).reason, 'unclassified', 'unsafe checkpoint reason was not collapsed');
 
   /* the probe crosses as a boolean, from every place the day receipt can prove
@@ -276,7 +315,13 @@ async function microtasks() { await Promise.resolve(); await Promise.resolve(); 
   signedOutCases.forEach((receipt, index) => {
     const out = checkpoint(null, '2026-03-09', { ok: false, complete: false, reason: 'no-read', receipt: receipt });
     assert.strictEqual(out.sessionExpired, true, 'sign-out evidence #' + index + ' did not reach the checkpoint');
-    assert.deepStrictEqual(Object.keys(out).sort(), ['complete', 'date', 'ok', 'reason', 'sessionExpired'], 'a sign-out checkpoint grew extra fields');
+    /* attn-1.0.0: the same re-aimed closed list as above - one shape for every
+       exit of this seam, so a sign-out checkpoint can never be the one that
+       grows a field nothing bounded. */
+    assert.deepStrictEqual(Object.keys(out).sort(),
+      ['calendarMissing', 'chartsRead', 'chartsRefused', 'chartsRefusedCodes', 'chartsUnread',
+        'complete', 'date', 'dayNotesPending', 'ok', 'reason', 'sessionExpired', 'surfaceProviders'],
+      'a sign-out checkpoint grew extra fields');
     assert(!/sign-in page|athenaOne showed/.test(JSON.stringify(out)), 'the sign-out checkpoint carried the raw error text');
   });
   const ambiguous = checkpoint(null, '2026-03-10', { ok: false, complete: false, reason: 'no-read', receipt: { error: 'The athenaOne schedule grid did not answer.' } });

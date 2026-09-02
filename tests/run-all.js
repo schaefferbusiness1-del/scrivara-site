@@ -66,6 +66,16 @@ const AUTOMATED_PROOF_FILES = new Set([
      model call; and the sheet's Regenerate keeps the exact visit the doctor
      just bound by hand instead of resetting the review to the creation day. */
   'sheet-rows-and-reopen-proof.js',
+  /* attn-1.0.0 (owner-measured 2026-09-02, the August month pull for one PA):
+     needs-attention must mean the owner has to act. A day the job completed is
+     re-opened by the month reconciliation only when the month-owner RELEASE
+     proof failed (two scoped-empty days cycled retry -> complete -> retry for
+     ever without it); a chart refused because its DOB did not match its row
+     stays refused and FINISHES its day, named on the card; history-partial
+     reaches the owner only when NO chart of the day could be read;
+     calendar-partial stays attention and says how many appointments were
+     missing; nav-failed is retried to the attempt cap and no further. */
+  'attention-days-proof.js',
   /* vntpl-1.1.0 (2026-09-01): the standard visit note only ever takes a
      VISIT-NOTE template. Nine straight backend refusals came from a
      TEMPLATE_CONTRACT built out of an OPERATIVE REPORT; the op-note room keeps
@@ -1322,6 +1332,7 @@ const tests = [
   'scoped-pull-keeps-others-proof.js',
   'assessment-probe-proof.js',
   'sheet-rows-and-reopen-proof.js',
+  'attention-days-proof.js',
   'visit-template-scope-proof.js',
   'write-next-press-proof.js',
   'visit-walkthrough-proof.js',

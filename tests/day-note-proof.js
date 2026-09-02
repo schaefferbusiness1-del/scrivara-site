@@ -538,6 +538,15 @@ function partEDurableJob() {
        slice list grew, the behaviour under test did not. */
     statement(RANGE, 'var SCOPED_EMPTY_REASON =', 'SCOPED_EMPTY_REASON'),
     balanced(RANGE, 'function providerScopedJob(manifest)', 'providerScopedJob'),
+    /* attn-1.0.0 (2026-09-02): checkpointDay now classifies the day's PHI-free
+       chart census through these bounded helpers before it settles a status,
+       so the lifted slice needs them to execute. Pin RE-AIMED at the same
+       behaviour - nothing this suite asserts was relaxed. */
+    balanced(RANGE, 'var CHART_REFUSAL_CODES = {', 'CHART_REFUSAL_CODES') + ';',
+    balanced(RANGE, 'var GENERIC_MONTH_REASONS = {', 'GENERIC_MONTH_REASONS') + ';',
+    balanced(RANGE, 'function boundedCount(value, max)', 'boundedCount'),
+    balanced(RANGE, 'function sanitizeRefusalCodes(raw)', 'sanitizeRefusalCodes'),
+    balanced(RANGE, 'function copy(value)', 'copy'),
     balanced(RANGE, 'var LOGIN_REASONS = {', 'LOGIN_REASONS') + ';',
     balanced(RANGE, 'var SIGNOUT_CANDIDATE_REASONS = {', 'SIGNOUT_CANDIDATE_REASONS') + ';',
     balanced(RANGE, 'var STORAGE_REASONS = {', 'STORAGE_REASONS') + ';',

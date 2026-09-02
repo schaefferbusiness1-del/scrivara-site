@@ -233,7 +233,12 @@ async function testContinuousCheckpointAndPhiFreeManifest() {
   const result = await job;
   assert.strictEqual(result.status, 'needs-attention', 'a day that failed to its attempt cap did not settle as needs-attention');
   assert.strictEqual(r.manifest().months['2026-10'].days['2026-10-02'].attempts, 3, 'the per-day attempt cap did not hold at 3');
-  assert.deepStrictEqual(r.manifest().summary.attention, [{ date: '2026-10-02', reason: 'wrong-day' }],
+  /* attn-1.0.0 (2026-09-02): the attention row carries ONE more bounded
+     integer - how many appointments a calendar-partial day never accounted for
+     - because the card could not tell the owner what to look at without it. A
+     wrong-day failure never accounted for any, so it reads 0. Pin RE-AIMED at
+     the same rule: a capped day is listed with its OWN reason, nothing else. */
+  assert.deepStrictEqual(r.manifest().summary.attention, [{ date: '2026-10-02', reason: 'wrong-day', missing: 0 }],
     'the receipt does not list the capped day with its own reason');
   assert.strictEqual(monthCalls, 3, 'the range did not come back for the unproved day exactly to the cap');
   const raw = r.store.get(r.manifestKey());

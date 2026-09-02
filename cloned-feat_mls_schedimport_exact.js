@@ -11131,9 +11131,98 @@
     var n = Math.floor(Number(raw || 0) || 0);
     return n > 0 ? Math.min(400, n) : 0;
   }
+  /* ===== attn-1.0.0 (a day's REFUSALS are not the day's failure) ===========
+     OWNER 2026-09-02, on the August month pull scoped to one PA: four days sat
+     in needs-attention and two more cycled 'retry' for ever, and the receipt
+     could not tell him which of those were HIS problem. Two of the four were a
+     'history-partial' whose only unread chart was an honest PER-CHART refusal
+     - on 2026-08-12 a chart whose DOB did not match its schedule row. That
+     refusal must STAND (it is the wrong-patient gate working), and it must not
+     hold the whole DAY in attention for ever.
+
+     The durable range job cannot classify what it cannot see: this seam
+     carried ok/complete/reason and two integers, so every history-partial day
+     looked identical to it. These measurements cross it, all PHI-free bounded
+     integers and CLOSED bounded codes - never a name, an id, or error prose:
+       chartsRead        charts of the day that landed with clinical content
+       chartsUnread      charts of the day that did not land
+       chartsRefused     of those, the ones refused for a cause a re-read
+                         cannot cure (the closed set below)
+       chartsRefusedCodes  up to six of those causes, as bounded codes
+       calendarMissing   schedule rows athena showed that were not accounted
+       surfaceProviders  how many OTHER clinicians the calendar painted, which
+                         is the exact evidence provscope-1.0.0 refuses on
+     A refusal is CLOSED by name. The importer's own transient vocabulary
+     (AUTOMATIC_HISTORY_RETRY_REASON) wins over every heuristic here: anything
+     the importer re-reads by itself is a transient, never a refusal. */
+  var P1_CHART_REFUSAL_CODES = {
+    /* athena produced a chart for the row and its DATE OF BIRTH disagreed.
+       That is the wrong-patient gate doing its job; a re-read returns the same
+       answer, so the chart stays unread and the DAY is still finished. */
+    "dob-mismatch": 1,
+    /* two charts answer to one identity (the duplicate-chart class). The
+       resolver refuses rather than guess, and a re-read cannot pick either. */
+    "ambiguous": 1,
+    /* the chart opened and its content could not be parsed, or the parse spent
+       its whole budget. Both are recorded against the chart, not the day. */
+    "chart-parse-failed": 1,
+    "chart-parse-timeout": 1
+  };
+  function p1ChartRefusalCode(raw) {
+    var text = String(raw == null ? "" : raw).trim();
+    if (!text) return "";
+    var code = text.toLowerCase().slice(0, 60);
+    if (P1_CHART_REFUSAL_CODES[code] === 1) return code;
+    /* Never re-classify something this importer retries on its own. */
+    if (AUTOMATIC_HISTORY_RETRY_REASON.test(code)) return "";
+    /* A parse that ran out of time and is NOT in that transient vocabulary is
+       a spent parse timeout, whatever prose the throw arrived as. */
+    return /timeout|timed out|deadline/i.test(text) ? "chart-parse-timeout" : "";
+  }
+  function p1MonthDayCharts(receipt) {
+    var out = { read: 0, unread: 0, refused: 0, codes: {} };
+    var hr = (receipt && receipt.historyReceipt && typeof receipt.historyReceipt === "object") ? receipt.historyReceipt : null;
+    if (!hr) return out;
+    var patients = Array.isArray(hr.patients) ? hr.patients : [];
+    for (var i = 0; i < patients.length; i++) {
+      var p = patients[i];
+      if (!p) continue;
+      if (p.complete === true) { out.read++; continue; }
+      out.unread++;
+      var refusal = p1ChartRefusalCode(p.reason || p.chartReason || p.visitsReason || "");
+      if (!refusal) continue;
+      out.refused++;
+      if (out.codes[refusal] != null || Object.keys(out.codes).length < 6) {
+        out.codes[refusal] = Number(out.codes[refusal] || 0) + 1;
+      }
+    }
+    /* b752: the store census is the stronger measurement of "landed with
+       content" whenever it actually ran; the walk counters are the fallback. */
+    var census = hr.storeCensus && hr.storeCensus.measured === true ? hr.storeCensus : null;
+    if (census) out.read = Math.floor(Number(census.withContent || 0) || 0);
+    out.read = Math.max(0, Math.min(400, out.read));
+    out.unread = Math.min(400, out.unread);
+    out.refused = Math.min(out.unread, out.refused);
+    return out;
+  }
+  function p1MonthDayCalendarMissing(receipt) {
+    var cr = (receipt && receipt.calendarReceipt && typeof receipt.calendarReceipt === "object") ? receipt.calendarReceipt : null;
+    if (!cr) return 0;
+    var missing = Math.floor(Number(cr.attempted || 0) || 0) - Math.floor(Number(cr.accounted || 0) || 0);
+    return missing > 0 ? Math.min(4000, missing) : 0;
+  }
+  function p1MonthDaySurfaceProviders(receipt) {
+    var pr = (receipt && receipt.providerReceipt && typeof receipt.providerReceipt === "object") ? receipt.providerReceipt : null;
+    if (!pr) return 0;
+    var list = Array.isArray(pr.surfaceProviders) ? pr.surfaceProviders
+      : (Array.isArray(pr.discoveredProviders) ? pr.discoveredProviders : null);
+    return list ? Math.min(400, list.length) : 0;
+  }
+  /* ===== end attn-1.0.0 measurements ===== */
   function p1MonthDayCheckpoint(callback, date, outcome) {
     var reason = String(outcome && outcome.reason || "no-result");
     if (!/^[a-z0-9][a-z0-9-]{0,79}$/.test(reason)) reason = "unclassified";
+    var charts = p1MonthDayCharts(outcome && outcome.receipt);
     var checkpoint = {
       date: /^\d{4}-\d{2}-\d{2}$/.test(String(date || "")) ? String(date) : "",
       ok: !!(outcome && outcome.ok === true),
@@ -11144,7 +11233,16 @@
       /* dnote-1.0.0 (b1184): how many of this day's OWN visit notes are still
          owed - a bounded PHI-free integer. The durable range job refuses to
          call a day complete while it is above zero. */
-      dayNotesPending: p1MonthDayNotesPending(outcome && outcome.receipt)
+      dayNotesPending: p1MonthDayNotesPending(outcome && outcome.receipt),
+      /* attn-1.0.0: the day's chart census, its unaccounted schedule rows, and
+         how many other clinicians its calendar painted. Counts and closed
+         codes only - the durable job classifies the day off these. */
+      chartsRead: charts.read,
+      chartsUnread: charts.unread,
+      chartsRefused: charts.refused,
+      chartsRefusedCodes: charts.codes,
+      calendarMissing: p1MonthDayCalendarMissing(outcome && outcome.receipt),
+      surfaceProviders: p1MonthDaySurfaceProviders(outcome && outcome.receipt)
     };
     /* This callback is a PHI-free durability seam for a caller that owns a
        larger range manifest. It is advisory to the month engine: a broken
@@ -11333,7 +11431,11 @@
               if (breaker.streak >= 3) breaker.tripped = true;
             } else { breaker.reason = ""; breaker.streak = 0; }
           }
-          p1MonthDayCheckpoint(onDayCheckpoint, date, settledDay);
+          /* attn-1.0.0: the settling row carries the SAME PHI-free
+             classification the per-day callback just sent, so the month result
+             and that callback can never disagree about a day. The row is
+             already in result.days; this is the one object. */
+          settledDay.checkpoint = p1MonthDayCheckpoint(onDayCheckpoint, date, settledDay);
         }, function (err) {
           /* A day must never close silently: this rejection path previously
              recorded the exception into result.days and emitted NOTHING, so a

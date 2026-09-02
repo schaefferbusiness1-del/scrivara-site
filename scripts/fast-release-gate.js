@@ -85,8 +85,13 @@ const ROOT = path.resolve(__dirname, '..');
        regenkeep-1.0.0, 2026-09-02) = 941 - an unchecked section reads NOT
        SELECTED and is in neither half of "Not written - N of M", a reopened
        saved note keeps the canonical Athena sidecar it already carries, and the
-       sheet's Regenerate keeps the exact visit the doctor just bound. */
-const FULL_GATE_TESTS = 941;
+       sheet's Regenerate keeps the exact visit the doctor just bound.
+       +1 (attention-days-proof.js, attn-1.0.0, 2026-09-02) = 942 - a day the
+       durable job completed survives the month reconciliation unless the
+       month-owner release proof failed, a chart refused on identity finishes
+       its day instead of holding it in needs-attention for ever, and
+       calendar-partial says how many appointments it was missing. */
+const FULL_GATE_TESTS = 942;
 const DEFAULT_BASE = 'origin/main';
 const DEFAULT_STEP_TIMEOUT_MS = 180000;
 const DEFAULT_TOTAL_TIMEOUT_MS = 300000;
