@@ -50,7 +50,15 @@ assert(/isTrusted\s*!==\s*true/.test(clickGate), 'note-lane mutation gate lost i
    action from ITS OWN confirm button - place_order included - and advertises
    athenaFinalActionsV1 so the 1p site turns its order rows into typed rows. */
 assert(/\^\(write_note\|save_draft\|stage_billing\|sign_encounter\|place_order\)\$/.test(clickGate), 'trusted-click gate must arm every supervised action (wsg-2.0.0), place_order included');
-assert(!/\^\(write_note\|save_draft\)\$/.test(clickGate), 'the wsg-1.0.0 note-only arm list must be gone');
+/* batcharm-1.0.0 (MLS Assist 3.0.108, owner 2026-09-01 "nothing blocked or not attempted once its
+   run"): the SAME trusted click may also mint a batch authorization, and that mint is deliberately
+   limited to the two executable note actions, so the note-only literal legitimately reappears INSIDE
+   the gate block. The wsg-1.0.0 property this pin guards is that the ARM LINE itself covers every
+   supervised action - so measure the arm line, not the whole block. */
+const armLine = (clickGate.split(/\r?\n/).find(function (l) { return /actionable\s*&&\s*\/\^\(/.test(l); }) || '');
+assert(armLine, 'the arm line (actionable && /^(...)$/) must exist in the click gate');
+assert(!/\^\(write_note\|save_draft\)\$/.test(armLine), 'the wsg-1.0.0 note-only arm list must be gone from the arm line');
+assert(/batch/.test(clickGate) ? /\^\(write_note\|save_draft\)\$/.test(clickGate) : true, 'a batch mint, when present, is limited to write_note|save_draft');
 const capabilityObject = /capabilities:\s*\{([^}]*)\}/.exec(content);
 assert(capabilityObject && /supervisedOrderPlacementV2:\s*true/.test(capabilityObject[1]), 'current extension does not explicitly advertise the supervised-order capability');
 assert(capabilityObject && /destinationTeachingV2:\s*true/.test(capabilityObject[1]), 'current extension does not explicitly advertise exact destination teaching');

@@ -13972,7 +13972,7 @@ function setActivePtId(id){
     catch(e3){ try{ var ev=new Event('mls:active-patient-changed'); ev.detail={previousId:String(previous||''),patientId:String(id||'')}; window.dispatchEvent(ev); }catch(e4){} }
   }
 }
-/* capsel-1.0.0 (b1193): AN MLS-DRIVEN READ NEVER CHANGES THE ACTIVE PATIENT.
+/* capsel-1.0.0 (b1194): AN MLS-DRIVEN READ NEVER CHANGES THE ACTIVE PATIENT.
    Measured live 2026-09-01 23:0x (b1191): while the August month pull ran, the
    Visit screen's active patient moved off the doctor's chosen chart and onto a
    row the capture had just minted. The one answer lives in the engine
@@ -29125,7 +29125,7 @@ async function pullPatientChartViaAssist(btn, opts){
     }catch(eAsk){}
     try{ toast('Choose one MLS patient with a matching DOB or MRN before pulling history. Duplicate or name-only matches are not saved.','err'); }catch(e){} return false; }
   // Make this patient the active one so the pulled chart attaches to them + the UI follows.
-  /* capsel-1.0.0 (b1193): ...but only when the DOCTOR is the one pulling.
+  /* capsel-1.0.0 (b1194): ...but only when the DOCTOR is the one pulling.
      Every save below this line goes through pullTarget and saveRef, both
      locals frozen before the read, so a driven pull keeps all of its data
      work and skips only the selection change. Nothing is driving when the
@@ -45527,7 +45527,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1193';
+  window.__MLS_AV='b1194';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
@@ -63103,7 +63103,7 @@ html #calendarView[data-cal-mode="month"] .cx-card.cx-mini{ display:none !import
     var id = S(patientId);
     if (!id) id = safe(function () { return isFn(window.getActivePtId) ? S(window.getActivePtId()) : ''; }, '');
     if (!id) return false;
-    /* capsel-1.0.0 (b1193): the landing exists for the doctor who pressed
+    /* capsel-1.0.0 (b1194): the landing exists for the doctor who pressed
        the button. While an MLS lane drives, this would move his chart AND
        his view onto whatever the lane just imported, so the landing simply
        does not happen; the pull's own save receipt is unaffected. */
