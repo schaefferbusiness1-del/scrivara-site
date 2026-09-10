@@ -39,6 +39,12 @@ function tuningBlock(source, file) {
   assert(start >= 0 && end > start, file + ': generation tuning block missing');
   return source.slice(start, end);
 }
+function generationBlock(source, file) {
+  const start = source.indexOf('async function generateNote()');
+  const end = source.indexOf('\n/* =========================================================\n   AUTO-POPULATE EXTRAS', start);
+  assert(start >= 0 && end > start, file + ': generateNote block missing');
+  return source.slice(start, end);
+}
 function rejected(api, note, expected, label) {
   let error = null;
   try { api.validate({ note }, tuning); } catch (caught) { error = caught; }
@@ -60,6 +66,41 @@ function rejected(api, note, expected, label) {
     ok(source.includes('draftTuningResolved:!!options.resolvedDraftTuning'), file + ': request did not mark the resolved tuning snapshot');
     ok(source.includes("if(opts.draftTuningResolved!==true&&typeof _dt.autoRoute==='function')"), file + ': transport can reroute the frozen tuning snapshot');
     ok(source.includes("opts.draftTuningResolved===true&&_draftFamily==='soap'"), file + ': transport can rebuild the frozen structured tuning snapshot');
+    ok(!source.includes('function _mlsDocumentedOnlyNoteResult('), file + ': failed hosted routes can still become a documented-only success');
+    {
+      const transcriptEl = { value: 'Synthetic source retained byte for byte.' };
+      const noteEl = { value: 'PRIOR DISPLAY NOTE' };
+      const genBtn = { disabled: false, innerHTML: 'Generate' };
+      const genError = { textContent: '', style: { display: 'none' } };
+      const settled = [], toasts = [];
+      const failure = Object.assign(new Error('quality refused'), { mlsAi: { code: 'draft_quality_failed', issues: ['unsupported_clinical_claim'] } });
+      const lifecycle = {
+        window: {}, document: { getElementById(id) { return ({ transcript: transcriptEl, noteBox: noteEl, genBtn, genError, noteGenError: genError })[id] || null; } },
+        _mlsGenerationEvidenceDecision: () => ({ ok: true }), _mlsExactScheduledClinicalAction: () => true,
+        _athenaGuardBoundEditor: () => true, hasAI: () => true,
+        _mlsStartGeneration: () => ({ id: 7, controller: { signal: null }, abortReason: '' }),
+        refreshGenSectionProfiles() {}, autoFillVisitComment() {},
+        _athenaBindingForCurrentVisit: () => ({ id: 'binding-one' }), _mlsAthenaGenerationSourceFingerprint: () => 'source-fp',
+        _mlsAthenaGenerationKey: () => 'generation-key', _athenaEditorFingerprint: () => 'editor-fp',
+        _mlsGenerationFingerprintRest: () => 'editor-rest', _mlsGenerationSourceRest: () => 'source-rest',
+        getGenStyle: () => 'soap', getKey: () => 'synthetic-key', _mlsResolvedGenerationDraftTuning: () => Object.freeze({}),
+        _mlsAwaitGeneration: async (_run, promise) => await promise, _mlsGenerationTimeoutMs: () => 10,
+        callOpenAI: async () => { throw failure; }, friendlyError: () => 'Generation could not finish. Your prior draft was retained.',
+        toast: (message, kind) => toasts.push({ message, kind }),
+        _mlsSettleGeneration: (_run, outcome, code, message) => settled.push({ outcome, code, message })
+      };
+      vm.createContext(lifecycle);
+      vm.runInContext("var currentVisitAthenaBinding={id:'binding-one'},currentVisitAthenaEpoch=1,currentFormat='soap',currentOpt=null,currentSoap='PRIOR CANONICAL NOTE',currentNoteProvenance='generated_soap',currentAthenaNote='PRIOR ATHENA NOTE',_mlsActiveGeneration=null;" +
+        generationBlock(source, file) + '\nthis.__generate=generateNote;this.__state=function(){return {soap:currentSoap,provenance:currentNoteProvenance,athena:currentAthenaNote};};', lifecycle, { filename: file + ':failed-generation' });
+      eq(await lifecycle.__generate(), false, file + ': two failed hosted routes were reported as generation success');
+      assert.deepStrictEqual(JSON.parse(JSON.stringify(lifecycle.__state())), { soap: 'PRIOR CANONICAL NOTE', provenance: 'generated_soap', athena: 'PRIOR ATHENA NOTE' }); checks += 1;
+      eq(noteEl.value, 'PRIOR DISPLAY NOTE', file + ': failed generation changed the displayed prior note');
+      eq(transcriptEl.value, 'Synthetic source retained byte for byte.', file + ': failed generation changed the source');
+      eq(settled.length, 1, file + ': failed generation did not settle exactly once');
+      eq(settled[0].outcome, 'failed', file + ': failed generation emitted a success lifecycle');
+      eq(settled[0].code, 'draft_quality_failed', file + ': failed generation lost the backend quality code');
+      ok(toasts.some(item => item.kind === 'err' && /prior draft was retained/i.test(item.message)), file + ': failed generation did not explain retained prior draft');
+    }
     let repairContent = '', stripCalls = 0;
     const sandbox = {
       window: {},
