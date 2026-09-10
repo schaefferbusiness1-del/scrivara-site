@@ -136,6 +136,22 @@ const cssText = cssBlock[1]
   .map((l) => l.replace(/^'/, '').replace(/',?$/, ''))
   .join('');
 
+/* walknav-1.0.0: the note-ready demotion rule formerly forced a hidden
+   Generate button back on screen with display:inline-flex!important.
+   Inspect the emitted display rules, including rules inside media wrappers. */
+let generateDisplayRules = 0;
+cssText.split('}').forEach((chunk) => {
+  if (!/display\s*:\s*(?!none\b)[a-z-]+\s*!important/.test(bodyOf(chunk))) return;
+  selectorOf(chunk).split(',').forEach((selector) => {
+    if (!/#ez3flGen(?=[:\s{]|$)/.test(selector)) return;
+    if (!/#ez3flGen[^\s]*\s*$/.test(selector)) return;
+    generateDisplayRules++;
+    assert(/#ez3flGen:not\(\[hidden\]\)\s*$/.test(selector),
+      'a display override resurrects hidden Generate: ' + selector);
+  });
+});
+assert(generateDisplayRules > 0, 'the visible Generate demotion rule disappeared');
+
 cssText.split('}').forEach((chunk) => {
   const selector = selectorOf(chunk);
   if (!selector) return;

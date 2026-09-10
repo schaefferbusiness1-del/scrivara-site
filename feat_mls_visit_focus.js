@@ -336,7 +336,7 @@
       'font-weight:750!important;border-radius:16px!important;flex-basis:100%;' +
       'box-shadow:0 6px 18px -8px rgba(32,64,52,.55)!important}',
     'body.' + BODY + ' #visitView #mlsEz3Body:has(#ez3flNoteWrap:not([hidden])) #ez3Rec,' +
-    'body.' + BODY + ' #visitView #mlsEz3Body:has(#ez3flNoteWrap:not([hidden])) #ez3flGen{' +
+    'body.' + BODY + ' #visitView #mlsEz3Body:has(#ez3flNoteWrap:not([hidden])) #ez3flGen:not([hidden]){' +
       /* not merely smaller - a different SHAPE. Left as a full-width block it
          still measured 720x60 = 43,200px^2 against the hero's 42,780, i.e. a
          dead heat a doctor would have to compare. A demoted action should not
@@ -491,7 +491,7 @@
     '@media (max-width:760px){' +
       'body.' + BODY + ' #visitView #mlsEz3Body:has(#ez3flGen:not([hidden])) #ez3Rec,' +
       'body.' + BODY + ' #visitView #mlsEz3Body:has(#ez3flNoteWrap:not([hidden])) #ez3Rec,' +
-      'body.' + BODY + ' #visitView #mlsEz3Body:has(#ez3flNoteWrap:not([hidden])) #ez3flGen{' +
+      'body.' + BODY + ' #visitView #mlsEz3Body:has(#ez3flNoteWrap:not([hidden])) #ez3flGen:not([hidden]){' +
         'min-height:44px!important}' +
     '}'
   ].join('\n');

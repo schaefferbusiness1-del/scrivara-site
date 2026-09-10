@@ -8087,6 +8087,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function $(id) { try { return document.getElementById(id); } catch (e) { return null; } }
   function setReviewStepOpen(open) {
     open = !!open;
+    if (!open && typeof openReviewStep === 'function' && openReviewStep.pending) openReviewStep.pending.cancel();
     var changed = _reviewStepOpen !== open;
     _reviewStepOpen = open;
     try {
@@ -8594,6 +8595,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      to press, parked under floating chrome) returns silently. */
   var REVIEW_FIXED_FURNITURE = ['mlsVoiceCluster', 'mlsCopVoiceBtn'];
   function openReviewStep() {
+    /* walknav-1.0.0: a review press belongs to this note and this visit. A
+       later press replaces it; leaving or changing the work cancels it. */
+    if (openReviewStep.pending) openReviewStep.pending.cancel();
     /* p1-review-note-source-1.0.0 (owner 2026-08-13: "the review and send to
        athena byutton isnt working"). He pressed it with a fully generated note
        ON SCREEN and got "Generate the note first" — the refusal for an empty
@@ -8656,20 +8660,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
     var wasOpen = false;
     try { wasOpen = document.body.classList.contains('ez3adv'); } catch (e) {}
-    var reviewScrollX = 0, reviewScrollY = null;
-    try { reviewScrollX = window.scrollX || 0; reviewScrollY = window.scrollY || 0; } catch (eScroll) {}
-    function restoreReviewScroll() {
-      if (reviewScrollY == null) return;
-      try {
-        if (Math.abs((window.scrollY || 0) - reviewScrollY) > 1) window.scrollTo(reviewScrollX, reviewScrollY);
-      } catch (eRestore) {}
-    }
     /* owner 2026-07-16: the advanced workspace only needs to EXIST so the send
        button is live — do NOT move the viewport to it. The flow lane up top
        already shows everything; jumping the page down to "Advanced tools" on
        review/send was disorienting. Focus without scrolling keeps
        Enter-to-send working from where the doctor already is. */
-    if (!wasOpen) { try { window.__mlsAdvQuietOpen = true; var adv = $('ez3Adv'); if (adv) adv.click(); } catch (e) {} }
+    if (!wasOpen) {
+      var priorQuiet = window.__mlsAdvQuietOpen;
+      try { window.__mlsAdvQuietOpen = true; var adv = $('ez3Adv'); if (adv) adv.click(); } catch (e) {}
+      finally { window.__mlsAdvQuietOpen = priorQuiet; }
+    }
     /* Mark the actual transition after the advanced toggle has been requested.
        The flow lane yields its entire prior-step note block in this state and
        the shared formatter keeps only the lower #noteBox mount actionable; no
@@ -8677,17 +8677,67 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     /* The standalone handoff contract extracts this function with a tiny
        sandbox; the live module always provides the transition helper. */
     if (typeof setReviewStepOpen === 'function') setReviewStepOpen(true);
-    /* Opening the advanced card changes document height. Restore the exact
-       pre-click viewport after that synchronous layout pass and again when the
-       engine's delayed render settles; this prevents scroll anchoring/focus
-       from walking the doctor to the lower note. */
-    restoreReviewScroll();
-    setTimeout(restoreReviewScroll, wasOpen ? 100 : 700);
-    setTimeout(function () {
+    /* Do not rewind the viewport after a delay: the doctor may have scrolled
+       intentionally while the workspace was settling. The modal owns focus. */
+    function contextKey() {
       try {
-        restoreReviewScroll();
+        return JSON.stringify([
+          typeof window.getActivePtId === 'function' ? window.getActivePtId() : '',
+          typeof currentNoteId !== 'undefined' ? currentNoteId : '',
+          typeof _mlsConsentEpoch !== 'undefined' ? _mlsConsentEpoch : '',
+          typeof currentVisitAthenaBinding !== 'undefined' ? currentVisitAthenaBinding : null
+        ]);
+      } catch (eContext) { return null; }
+    }
+    var originalContext = contextKey(), originalNote = String(note.value || '');
+    var originalTranscript = $('transcript') ? String($('transcript').value || '') : '';
+    var originalInputs = {};
+    ['noteBox', 'ez3flNote', 'ez3Note', 'transcript', 'ez3flTranscript', 'ez3Transcript', 'contextBox', 'visitComment'].forEach(function (id) {
+      var input = $(id); originalInputs[id] = input ? String(input.value || '') : '';
+    });
+    var intent = { timer: null, cancelled: false, cancel: cancelIntent };
+    var signals = ['mls:active-patient-changed', 'mls:easy-visit-day-changed',
+      'mls:easy-mode-changed', 'mls:generation-started', 'mls:session-boundary'];
+    function cancelIntent(keepReview) {
+      intent.cancelled = true;
+      if (intent.timer != null) { try { clearTimeout(intent.timer); } catch (eTimer) {} intent.timer = null; }
+      try { signals.forEach(function (name) { window.removeEventListener(name, cancelIntent); }); } catch (eSignals) {}
+      try { window.removeEventListener('mls:view-changed', onReviewView); } catch (eView) {}
+      try { document.removeEventListener('input', onReviewInput, true); } catch (eInput) {}
+      if (openReviewStep.pending === intent) openReviewStep.pending = null;
+      if (keepReview !== true && typeof setReviewStepOpen === 'function') setReviewStepOpen(false);
+    }
+    function onReviewView(ev) {
+      var view = String(ev && ev.detail && ev.detail.view || window.__mlsCurrentView || '');
+      if (view && view !== 'visit') cancelIntent();
+    }
+    function onReviewInput(ev) {
+      var id = ev && ev.target && ev.target.id;
+      if (Object.prototype.hasOwnProperty.call(originalInputs, id) && String(ev.target.value || '') !== originalInputs[id]) cancelIntent();
+    }
+    function intentCurrent() {
+      if (intent.cancelled || openReviewStep.pending !== intent || originalContext === null || contextKey() !== originalContext) return false;
+      if (window.__mlsCurrentView && window.__mlsCurrentView !== 'visit') return false;
+      var view = $('visitView'); if (view && view.style && view.style.display === 'none') return false;
+      if (!document.body.classList.contains('ez3adv')) return false;
+      if (typeof _reviewStepOpen !== 'undefined' && !_reviewStepOpen) return false;
+      try { if (_genRun && _genRun.active) return false; } catch (eRun) {}
+      var door = $('pushAllEmrBtn');
+      if (!door || door.disabled || (door.style && door.style.display === 'none')) return false;
+      var current = $('noteBox'), tx = $('transcript');
+      return !!current && String(current.value || '') === originalNote && String(tx && tx.value || '') === originalTranscript;
+    }
+    openReviewStep.pending = intent;
+    try { signals.forEach(function (name) { window.addEventListener(name, cancelIntent); }); } catch (eSignals) {}
+    try { window.addEventListener('mls:view-changed', onReviewView); } catch (eView) {}
+    try { document.addEventListener('input', onReviewInput, true); } catch (eInput) {}
+    intent.timer = setTimeout(function () {
+      var current = intentCurrent();
+      cancelIntent(current);
+      if (!current) return;
+      try {
         var send = $('pushAllEmrBtn');
-        if (send) {
+        if (send && !send.disabled && !(send.style && send.style.display === 'none')) {
           /* The 2026-07-16 decision above was against JUMPING the page down to
              "Advanced tools". It was NOT a decision that this click should have
              no visible effect — but that is what it became: the doctor pressed
@@ -8791,14 +8841,20 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
              has already been answered before this line is reached. */
           var reviewDoor = $('ez3Send') || send;
           var reviewOpened = false;
-          try { reviewDoor.click(); reviewOpened = true; } catch (eDoor) { reviewOpened = false; }
+          var confirmOpened = false;
+          try {
+            reviewDoor.click();
+            reviewOpened = !!$('mlsAthenaUnifiedConfirm');
+            confirmOpened = !!$('ez3Confirm');
+          } catch (eDoor) { reviewOpened = false; }
           /* Name what actually happened. Focus alone is not feedback — a doctor
              who did not see the highlight move has no way to know the click
              registered, and this is the last gate before Athena. */
           flowToast(reviewOpened
             ? 'Athena review opened — nothing is sent until you confirm it there.'
-            : ('The review could not be opened from here.' + reviewReachNote +
-               ' Use "Review Athena actions" on the note card.'), reviewOpened ? '' : 'err');
+            : (confirmOpened ? 'Confirm the note\u2019s patient to continue to Athena review. Nothing has been sent.'
+              : ('The review could not be opened from here.' + reviewReachNote +
+               ' Use "Review Athena actions" on the note card.')), reviewOpened || confirmOpened ? '' : 'err');
           /* rvack-1.0.0 (owner 2026-08-20: "the review and send to athena
              doesnt work at all"): with scrolling ruled out (b940) and the toast
              routable to the quiet tray, a click could complete with NOTHING the
@@ -8823,7 +8879,6 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
            dead button — the exact complaint, three times now. Name it. */
         try { flowToast('The review step hit an error and stopped: ' + (e && e.message ? e.message : e) + ' — the note is safe in MLS.', 'err'); } catch (e6) {}
       }
-      window.__mlsAdvQuietOpen = false;
     }, wasOpen ? 100 : 700);
   }
   function setLaneHidden(el, value) {
@@ -24447,45 +24502,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var later = window.requestAnimationFrame || function (cb) { Promise.resolve().then(cb); };
     later(function () { try { fn(); } catch (e2) { toast('That tool could not open. Try again.'); } });
   }
-  /* UI rework (owner /goal 2026-07-24: "free the doctor from all the
-     buttons"): the core loop advances itself. When the doctor STOPS a
-     recording that captured a real conversation (>=12 words), the note starts
-     generating with no extra press — same warn-and-proceed gate as the manual
-     button, so cross-patient safety is identical. Opt-out:
-     uns('ez3AutoGenerate')='0'. Review, Sign and Send remain human-only. */
-  (function installAutoAdvance() {
-    if (window.__ez3AutoGenWrap) return;
-    var orig = window.stopCapture;
-    if (!isFn(orig)) { setTimeout(installAutoAdvance, 1500); return; }
-    window.__ez3AutoGenWrap = true;
-    window.stopCapture = function () {
-      var out = orig.apply(this, arguments);
-      var advance = function () { try {
-        var enabled = true;
-        try { enabled = localStorage.getItem(uns('ez3AutoGenerate')) !== '0'; } catch (eA) {}
-        var t = document.getElementById('transcript');
-        var words = (t && String(t.value || '').trim().split(/\s+/).filter(Boolean).length) || 0;
-        if (enabled && words >= 12 && S && S.appt && !S.genClickedAt && !S._discarding && !S._switchingAfterStop) {
-          setTimeout(function () {
-            try {
-              if (S._discarding || S._switchingAfterStop) return; /* discard/switch won the race after the stop */
-              if (!requireExactScheduledBinding(S.appt, 'note generation')) return;
-              var g = genBtnResolve();
-              if (!g) return;
-              if (typeof ez3StampGenClick === 'function') ez3StampGenClick(); g.click(); render();
-            } catch (eG) {}
-          }, 900);
-        }
-      } catch (eW) {} };
-      /* Direct iPhone recording returns a promise that settles only after its
-         final self-contained audio segment is uploaded and the last transcript
-         tail is applied. Generating before that receipt silently drops the end
-         of the visit, so auto-advance waits for the actual capture owner. */
-      if (out && isFn(out.then)) out.then(advance, function () {});
-      else advance();
-      return out;
-    };
-  })();
+  /* walknav-1.0.0: Pause keeps the transcript available for Resume. Generate
+     is an explicit action. Low-level stops also run during patient switches,
+     History restore and session teardown, so they never schedule generation. */
   function wireVisitQuickTools() {
     on('ez3QToolsToggle', function () {
       var cur = false; try { cur = localStorage.getItem(uns('ez3ToolsOpen')) === '1'; } catch (eT1) {}

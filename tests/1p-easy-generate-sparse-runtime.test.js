@@ -251,33 +251,11 @@ lockRenders = lockRendersBeforeRefusals;
 assert.strictEqual(lockSandbox.S.lastWarn, '', 'lockAndStart fabricated a connection/refusal diagnosis');
 assert.strictEqual(lockRenders, 0, 'throwing engine path rendered fabricated lifecycle state');
 
-const autoAdvanceSource = between(source, '(function installAutoAdvance() {', '\n  function wireVisitQuickTools()');
-const queuedTimers = [];
-let autoRenders = 0, autoToasts = 0;
-const autoTranscript = { value: 'one two three four five six seven eight nine ten eleven twelve' };
-const autoSandbox = {
-  window: null,
-  S: { appt: { id: 'synthetic-appointment' }, phase: 'idle', genClickedAt: 0, signedAt: 0, lastWarn: '', _discarding: false },
-  isFn: value => typeof value === 'function',
-  setTimeout(fn) { queuedTimers.push(fn); return queuedTimers.length; },
-  localStorage: { getItem: () => '1' },
-  uns: value => value,
-  document: { getElementById: id => id === 'transcript' ? autoTranscript : null },
-  requireExactScheduledBinding: () => true,
-  genBtnResolve: () => ({ click() { throw new Error('synthetic engine throw before lifecycle'); } }),
-  toast: () => { autoToasts += 1; },
-  render: () => { autoRenders += 1; }
-};
-autoSandbox.window = autoSandbox;
-autoSandbox.stopCapture = () => true;
-vm.runInNewContext(autoAdvanceSource, autoSandbox, { filename: '1p-auto-generate-after-stop.js' });
-autoSandbox.stopCapture();
-assert.strictEqual(queuedTimers.length, 1, 'auto-generate did not schedule its shipped post-stop dispatch');
-queuedTimers.shift()();
-assert.strictEqual(autoSandbox.S.genClickedAt, 0, 'auto-generate fabricated an in-flight timestamp without an engine event');
-assert.strictEqual(autoSandbox.S.phase, 'idle', 'auto-generate fabricated a generation phase without an engine event');
-assert.strictEqual(autoSandbox.S.lastWarn, '', 'auto-generate fabricated a connection/refusal diagnosis');
-assert.strictEqual(autoRenders, 0, 'auto-generate rendered fabricated lifecycle state');
-assert.strictEqual(autoToasts, 0, 'auto-generate claimed generation before the engine accepted it');
+/* walknav-1.0.0: Stop no longer owns a generation facade. Its old deferred
+   dispatch used a later patient's state and raced Resume. The real Pause,
+   Resume and changed-visit cases are executed in visit-navigation-intent-runtime. */
+const afterStop = between(source, '  function withAdvancedWorkspace(fn)', '\n  function wireVisitQuickTools()');
+assert(!/installAutoAdvance|__ez3AutoGenWrap|window\.stopCapture\s*=/.test(afterStop),
+  'Pause reinstalled an automatic generation facade');
 
 console.log('PASS 1p-easy-generate-sparse-runtime: visible and indirect facades delegate without fabricating lifecycle state');
