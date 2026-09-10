@@ -9036,7 +9036,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var _noteTranscriptProof = { ready: false, patientId: '', recordId: '', note: '', transcript: '' };
   var _noteGenerationAccepted = false;
   var _noteManualEditPending = false;
-  var NOTE_TRANSCRIPT_STALE_WHY = 'New dictation was added after this note was created. Generate the note again before reviewing.';
+  var NOTE_TRANSCRIPT_STALE_WHY = 'New visit text was added after this note was created. Update the note before reviewing.';
   function noteRecordIdentity() {
     try { if (typeof currentNoteId !== 'undefined' && currentNoteId != null && String(currentNoteId)) return 'note:'+String(currentNoteId); } catch (eNoteId) {}
     try { if (typeof currentVisitAthenaBinding !== 'undefined' && currentVisitAthenaBinding) return 'binding:'+JSON.stringify(currentVisitAthenaBinding); } catch (eBinding) {}
@@ -9288,7 +9288,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          the single writer of those on this button and runs immediately below,
          and two writers on one attribute is a defect this repo already pays
          for elsewhere. */
-      setLaneText(gb, (_genRun.active || (genReal && genReal.disabled)) ? 'Generating note...' : (noteTranscriptStale ? '\u2728 Update note with new dictation' : '\u2728 Generate one note'));
+      setLaneText(gb, (_genRun.active || (genReal && genReal.disabled)) ? 'Generating note...' : (noteTranscriptStale ? '\u2728 Update note with new visit text' : '\u2728 Generate one note'));
     }
     syncTopGenerationOwnership(rec, gb);
     /* gcx-1.0.0: the top lane's Generate carries the same read-only evidence
@@ -9561,8 +9561,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           rec.appendChild(failRow);
           var txWrap = document.createElement('div');
           txWrap.className = 'ez3fl-transcript';
-          txWrap.innerHTML = '<div class="ez3fl-txhead"><label for="ez3flTranscript">Visit transcript</label><span>Type, paste, pause, and resume without losing anything</span></div>' +
-            '<textarea class="ez3fl-tx" id="ez3flTranscript" placeholder="The visit conversation appears here as you speak. You can also type or paste text."></textarea>' +
+          txWrap.innerHTML = '<div class="ez3fl-txhead"><label for="ez3flTranscript">Visit transcript or doctor dictation</label><span>Record the visit, dictate your post-visit summary, or type/paste notes here.</span></div>' +
+            '<textarea class="ez3fl-tx" id="ez3flTranscript" placeholder="Record the visit, dictate your post-visit summary, or type/paste notes here."></textarea>' +
             '<div class="ez3fl-txmeta"><span id="ez3flCount">0 words captured</span><span>Every segment is combined into one note.</span></div>';
           rec.appendChild(txWrap);
           var topTx = txWrap.querySelector('#ez3flTranscript');
@@ -24705,10 +24705,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        always editable before generation and mirrors #transcript both ways. */
     if (a && S.phase !== 'gen' && S.phase !== 'note') {
       h += '<div class="ez3-card ez3-transcript-card">' +
-             '<div class="ez3-transcript-head"><label for="ez3Transcript">Visit transcript</label>' +
-               '<span>' + (S.phase === 'rec' ? '🔴 Recording now' : 'Type, paste, or resume recording') + '</span></div>' +
+             '<div class="ez3-transcript-head"><label for="ez3Transcript">Visit transcript or doctor dictation</label>' +
+               '<span>' + (S.phase === 'rec' ? '🔴 Recording now' : 'Record the visit, dictate your post-visit summary, or type/paste notes here.') + '</span></div>' +
              (S.phase === 'rec' ? '<div class="ez3-timer">' + fmtTimer() + '</div>' : '') +
-             '<textarea class="ez3-transcript" id="ez3Transcript" placeholder="The visit conversation appears here. You can also type or paste notes before generating."></textarea>' +
+             '<textarea class="ez3-transcript" id="ez3Transcript" placeholder="Record the visit, dictate your post-visit summary, or type/paste notes here."></textarea>' +
              '<div class="ez3-transcript-meta"><span id="ez3TranscriptCount">0 words captured</span>' +
                '<span><strong>Every recording segment is combined</strong> into one note.</span></div>' +
            '</div>';

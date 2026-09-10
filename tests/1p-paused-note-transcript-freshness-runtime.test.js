@@ -22,17 +22,17 @@ assert.strictEqual(ctx.noteTranscriptOutdated(TX, NOTE, 'patient-a', 'note:recor
   'restoring a matching note/transcript state was called stale');
 assert.strictEqual(ctx.noteTranscriptOutdated(TX, NOTE, 'patient-a', 'note:record-a'), false,
   'an unchanged paused visit was called stale');
-assert.strictEqual(ctx.noteTranscriptOutdated(TX + ' added dictation', NOTE, 'patient-a', 'note:record-a'), true,
-  'dictation appended after the note was not detected');
-assert.strictEqual(ctx.noteTranscriptOutdated(TX + ' added dictation', 'Background-formatted synthetic note', 'patient-a', 'note:record-a'), true,
-  'a background note formatting change laundered known stale dictation');
+assert.strictEqual(ctx.noteTranscriptOutdated(TX + ' added visit text', NOTE, 'patient-a', 'note:record-a'), true,
+  'visit text appended after the note was not detected');
+assert.strictEqual(ctx.noteTranscriptOutdated(TX + ' added visit text', 'Background-formatted synthetic note', 'patient-a', 'note:record-a'), true,
+  'a background note formatting change laundered known stale visit text');
 ctx._noteManualEditPending = true;
-assert.strictEqual(ctx.noteTranscriptOutdated(TX + ' added dictation', 'Manually updated synthetic note', 'patient-a', 'note:record-a'), false,
+assert.strictEqual(ctx.noteTranscriptOutdated(TX + ' added visit text', 'Manually updated synthetic note', 'patient-a', 'note:record-a'), false,
   'an explicit manual note edit did not establish a fresh baseline');
-assert.strictEqual(ctx.noteTranscriptOutdated(TX + ' added dictation plus more', 'Manually updated synthetic note', 'patient-a', 'note:record-a'), true,
-  'dictation after the manual note edit was not detected');
+assert.strictEqual(ctx.noteTranscriptOutdated(TX + ' added visit text plus more', 'Manually updated synthetic note', 'patient-a', 'note:record-a'), true,
+  'visit text after the manual note edit was not detected');
 ctx._noteGenerationAccepted = true;
-assert.strictEqual(ctx.noteTranscriptOutdated(TX + ' added dictation plus more', 'Generated synthetic note', 'patient-a', 'note:record-a'), false,
+assert.strictEqual(ctx.noteTranscriptOutdated(TX + ' added visit text plus more', 'Generated synthetic note', 'patient-a', 'note:record-a'), false,
   'a successful generation receipt did not establish a fresh baseline');
 /* Same patient, different saved History record: record identity, not changed
    note bytes, proves this is a valid restore and establishes a new baseline. */
@@ -55,11 +55,20 @@ assert.strictEqual(ctx.noteTranscriptOutdated('Different synthetic transcript pl
 assert(source.includes("var rbResumable = !!(text.trim() && _recSessionSeen);"),
   'Resume recording depends on note presence/freshness instead of the prior recording session and preserved transcript');
 assert(source.includes("setLaneHidden(gb, live || !text.trim() || (!!noteText.trim() && !noteTranscriptStale));"),
-  'Generate is not offered when new dictation makes an existing note stale');
-assert(source.includes("noteTranscriptStale ? '\\u2728 Update note with new dictation'"),
+  'Generate is not offered when new visit text makes an existing note stale');
+assert(source.includes("noteTranscriptStale ? '\\u2728 Update note with new visit text'"),
   'the regeneration action does not explain why the old note needs updating');
+assert(source.includes("var NOTE_TRANSCRIPT_STALE_WHY = 'New visit text was added after this note was created. Update the note before reviewing.';"),
+  'the stale-note explanation assumes the transcript came only from dictation');
+assert(source.includes('<label for="ez3flTranscript">Visit transcript or doctor dictation</label><span>Record the visit, dictate your post-visit summary, or type/paste notes here.</span>') &&
+       source.includes('id="ez3flTranscript" placeholder="Record the visit, dictate your post-visit summary, or type/paste notes here."'),
+  'the flow-lane transcript does not explain its conversation, dictation, and typed/pasted input options');
+assert(source.includes('<label for="ez3Transcript">Visit transcript or doctor dictation</label>') &&
+       source.includes("S.phase === 'rec' ? '🔴 Recording now' : 'Record the visit, dictate your post-visit summary, or type/paste notes here.'") &&
+       source.includes('id="ez3Transcript" placeholder="Record the visit, dictate your post-visit summary, or type/paste notes here."'),
+  'the Easy transcript does not explain its conversation, dictation, and typed/pasted input options');
 assert(source.includes('var rvBlocked = rvRun || !noteText.trim() || rvRefusal || noteTranscriptStale;'),
-  'Review still appears available for a note that predates the latest dictation');
+  'Review still appears available for a note that predates the latest visit text');
 const reviewGate = source.slice(source.indexOf('function openReviewStep()'), source.indexOf('function setLaneHidden('));
 assert(reviewGate.includes('noteTranscriptOutdated(genTranscriptText(), note.value, reviewPatientId, noteRecordIdentity())') &&
        reviewGate.includes('flowToast(NOTE_TRANSCRIPT_STALE_WHY'),
@@ -67,4 +76,4 @@ assert(reviewGate.includes('noteTranscriptOutdated(genTranscriptText(), note.val
 assert(source.includes("ev.type === 'input' && ev.isTrusted === true && (t.id === 'noteBox' || t.id === 'ez3flNote')"),
   'background note changes can masquerade as explicit manual note edits');
 
-console.log('PASS paused note transcript freshness: Resume remains visible, appended dictation requires explicit note update, Review refuses stale notes, and patient switches reset the baseline');
+console.log('PASS paused note transcript freshness: Resume remains visible, appended visit text requires explicit note update, Review refuses stale notes, and patient switches reset the baseline');
