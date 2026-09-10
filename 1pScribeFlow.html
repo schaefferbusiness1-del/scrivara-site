@@ -27902,6 +27902,7 @@ function _mlsContinueSavedRecord(n){
     const p=typeof findPatient==='function'?findPatient(n.patientId):null;
     if(!p){ try{ toast('This saved draft is not attached to a patient chart, so it was not loaded into the editor.','err'); }catch(e){} return false; }
     if(String(getActivePtId()||'')!==String(p.id)) setActivePtId(p.id);
+    if(String(getActivePtId()||'')!==String(p.id)) return false;
   }
   showView('visit');
   loadRecordIntoEditor(n);
@@ -27914,8 +27915,7 @@ function _mlsContinueSavedRecord(n){
 function reopenViewed(){
   const n=getNotes().find(x=>x.id===viewingId);
   if(!n) return;
-  closeView();
-  _mlsContinueSavedRecord(n);
+  if(_mlsContinueSavedRecord(n)) closeView();
 }
 
 function loadRecordIntoEditor(n){

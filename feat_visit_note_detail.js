@@ -296,8 +296,7 @@
           resume.textContent = "↩ Continue this draft";
           resume.addEventListener("click", function (e) {
             e.stopPropagation();
-            closeModal(false);
-            window._mlsContinueSavedRecord(note);
+            if (window._mlsContinueSavedRecord(note)) closeModal(false);
           });
           acts.insertBefore(resume, acts.firstChild || null);
         }

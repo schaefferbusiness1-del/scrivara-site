@@ -22,11 +22,13 @@ for (const rel of shells) {
   const calls = [];
   const noteCard = { scrollIntoView(opts) { calls.push(['scroll', opts]); } };
   const patient = { id: 'patient-local-1', name: 'Synthetic Patient' };
+  let activeId = 'other-patient';
+  let allowSwitch = false;
   const context = {
     _mlsIsChartImportNote(n) { return n.cc === 'Athena chart import'; },
     findPatient(id) { return String(id) === patient.id ? patient : null; },
-    getActivePtId() { return 'other-patient'; },
-    setActivePtId(id) { calls.push(['patient', id]); },
+    getActivePtId() { return activeId; },
+    setActivePtId(id) { calls.push(['patient', id]); if (allowSwitch) activeId = String(id); },
     showView(view) { calls.push(['view', view]); },
     loadRecordIntoEditor(note) { calls.push(['load', note.id, note.appointmentId]); },
     renderPatientBar() { calls.push(['bar']); },
@@ -42,8 +44,13 @@ for (const rel of shells) {
     noteProvenance: 'generated_soap'
   };
   assert.strictEqual(context._mlsSavedRecordCanReopen(generated), true, rel + ': generated SOAP was not recognized as editor-owned');
+  const refusedAt = calls.length;
+  assert.strictEqual(context._mlsContinueSavedRecord(generated), false, rel + ': refused patient switch reported a successful continuation');
+  assert.deepStrictEqual(calls.slice(refusedAt), [['patient', patient.id]], rel + ': refused switch mutated the current Visit draft');
+
+  allowSwitch = true;
   assert.strictEqual(context._mlsContinueSavedRecord(generated), true, rel + ': generated note did not continue');
-  assert.deepStrictEqual(calls.slice(0, 4), [
+  assert.deepStrictEqual(calls.slice(refusedAt + 1, refusedAt + 5), [
     ['patient', patient.id], ['view', 'visit'], ['load', generated.id, generated.appointmentId], ['bar']
   ], rel + ': continuation did not restore patient, route, and exact saved record in order');
   assert.strictEqual(calls.filter(x => x[0] === 'scroll').length, 1, rel + ': continuation has more than one scroll owner');
@@ -62,7 +69,7 @@ for (const rel of shells) {
 assert(detail.includes('↩ Continue this draft'), 'rich saved-note detail has no clear continuation action');
 assert(detail.includes('editorPatient && canContinueInVisitEditor(note) && isFn(window._mlsContinueSavedRecord)'),
   'rich detail does not require both exact patient identity and editor-owned record evidence');
-assert(detail.includes('window._mlsContinueSavedRecord(note);'), 'rich detail does not dispatch the exact saved record to the canonical editor loader');
+assert(detail.includes('if (window._mlsContinueSavedRecord(note)) closeModal(false);'), 'rich detail closes before a refused patient switch can be reported');
 assert(!/function canContinueInVisitEditor[\s\S]*?note\.text/.test(detail), 'arbitrary clinical-history text can qualify as an editable Visit draft');
 
 console.log('PASS History generated-note continuation: exact patient and appointment restore, clinical-history exclusion, and one scroll owner');
