@@ -1270,6 +1270,7 @@ const tests = [
   'commercial-hardening-contract.test.js',
   'visit-draft-lifecycle-runtime.test.js',
   'history-raw-note-wrapper-runtime.test.js',
+  'history-generated-note-continuation.test.js',
   'quick-find-lifecycle-runtime.test.js',
   'find-canonical-route-runtime.test.js',
   'athena-adversarial-contract.test.js',

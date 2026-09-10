@@ -22,8 +22,9 @@
  *   3) Renders the §45 detail card (reusing __mlsVisitDetail.buildRead/buildEdit/
  *      applyEdit/readForm) inside a self-contained modal, with INLINE EDIT and a
  *      working "✨ Regenerate AI summary" (correct __mlsVisitModel transport — not
- *      the §45 buildCard signature bug), plus a "📝 Edit raw note" escape hatch
- *      that opens the original editor (#viewModal) so nothing is lost.
+ *      the §45 buildCard signature bug), plus a "Continue this draft" action for
+ *      records that the canonical Visit editor itself saved and a "📝 Edit raw
+ *      note" escape hatch that opens the original editor (#viewModal).
  *   4) Also routes the 🗂 Visit history card click path (model visits) to the SAME
  *      modal, so the detail UI is consistent everywhere.
  *
@@ -40,7 +41,7 @@
   "use strict";
   if (window.__mlsVisitNoteDetail && window.__mlsVisitNoteDetail.installed) return;
 
-  var VERSION = "1.1.0";
+  var VERSION = "1.2.0";
   var isFn = function (f) { return typeof f === "function"; };
   var S = function (x) { return x == null ? "" : String(x); };
 
@@ -73,6 +74,23 @@
   function getNote(id) {
     try { return (window.getNotes() || []).find(function (n) { return n && n.id === id; }) || null; }
     catch (e) { return null; }
+  }
+  /* The History list also carries pulled clinical-history receipts. Those are
+     readable records, not Visit-editor drafts. Reuse the shell's canonical
+     discriminator when available and keep the local fallback limited to the
+     fields noteRecordFromState writes; never infer editability from prose. */
+  function canContinueInVisitEditor(note) {
+    try {
+      if (isFn(window._mlsSavedRecordCanReopen)) return window._mlsSavedRecordCanReopen(note) === true;
+      if (!note || !note.id) return false;
+      if (isFn(window._mlsIsChartImportNote) && window._mlsIsChartImportNote(note)) return false;
+      return !!(S(note.soap).trim() || S(note.transcript).trim() || S(note.athenaNote).trim() ||
+        /^(typed|saved|generated_soap|edited_generated_soap|generated_nonsoap)$/.test(S(note.noteProvenance)));
+    } catch (e) { return false; }
+  }
+  function exactEditorPatient(note) {
+    if (!note || !note.patientId || !isFn(window.findPatient)) return null;
+    try { return window.findPatient(note.patientId) || null; } catch (e) { return null; }
   }
   function resolvePatient(note) {
     try { if (note && note.patientId && isFn(window.findPatient)) { var p = window.findPatient(note.patientId); if (p) return p; } } catch (e) {}
@@ -271,6 +289,18 @@
       // escape hatch: open the original raw-note editor (only when backed by a note)
       var acts = r.body.querySelector(".mlsvd-acts");
       if (acts && note) {
+        var editorPatient = exactEditorPatient(note);
+        if (editorPatient && canContinueInVisitEditor(note) && isFn(window._mlsContinueSavedRecord)) {
+          var resume = document.createElement("button");
+          resume.className = "mlsvd-btn mlsvnd-continue";
+          resume.textContent = "↩ Continue this draft";
+          resume.addEventListener("click", function (e) {
+            e.stopPropagation();
+            closeModal(false);
+            window._mlsContinueSavedRecord(note);
+          });
+          acts.insertBefore(resume, acts.firstChild || null);
+        }
         var raw = document.createElement("button");
         raw.className = "mlsvd-btn";
         raw.textContent = "📝 Edit raw note";
