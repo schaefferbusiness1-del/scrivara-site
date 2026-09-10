@@ -1,8 +1,8 @@
 'use strict';
 
-/* A lagging /api/generate deployment may return a valid flat SOAP `note`
- * without the newer `athena_note` sidecar. The browser may reuse that note
- * only after the exact five-destination validator accepts it. */
+/* The fixed five-field display is the reviewed Athena source, whether a
+ * deployment omits `athena_note` or returns a different sidecar. It may be
+ * reused only after the exact display validator accepts it. */
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
@@ -36,25 +36,22 @@ function extractFunction(source, marker) {
 let checks = 0;
 for (const file of shells) {
   const source = fs.readFileSync(path.join(root, file), 'utf8');
-  /* re-pinned to autodraft-1.1.0: the legacy fallback still validates the
-     display note, but strips the marked carried-history appendix (display-only
-     by contract) before it can become athena_note. The real sidecar is never
-     cleaned - a leaked marker there fails validation closed. */
-  assert(source.includes("result.athena_note==null?(typeof _autoDraftStripCarried==='function'?_autoDraftStripCarried(result.note):result.note):result.athena_note"), file + ': legacy sidecar fallback missing');
+  assert(source.includes("generationStyle==='soap'?_mlsAthenaCanonicalFromStandardNote(result.note):_mlsValidateAthenaNote("),
+    file + ': fixed-format generation does not validate the displayed note first');
   checks += 1;
-  const sandbox = {};
+  const sandbox = { stripSignatureBlock: text => String(text), _autoDraftStripCarried: text => String(text) };
   const canonicalStart = source.indexOf('function _mlsAthenaNoteQualityError(reason)');
   const canonicalEnd = source.indexOf('\nfunction _mlsAthenaSourceState(', canonicalStart);
   assert(canonicalStart >= 0 && canonicalEnd > canonicalStart, file + ': canonical validator block missing');
   vm.runInNewContext(source.slice(canonicalStart, canonicalEnd) +
-    '\nthis.validate=_mlsValidateAthenaNote;', sandbox, { filename: file });
-  const fallback = sandbox.validate(flat);
-  assert.strictEqual(fallback.text, flat, file + ': valid flat SOAP was not accepted as fallback');
+    '\nthis.fromDisplay=_mlsAthenaCanonicalFromStandardNote;', sandbox, { filename: file });
+  const fallback = sandbox.fromDisplay(flat);
+  assert.strictEqual(fallback.text, flat, file + ': valid flat displayed note was not accepted');
   checks += 1;
-  assert.throws(() => sandbox.validate('HPI: symptoms.\nROS: denies.\nAssessment: stable.\nPlan: follow-up.'),
-    file + ': incomplete sidecar fallback was accepted');
+  assert.throws(() => sandbox.fromDisplay('HPI: symptoms.\nROS: denies.\nAssessment: stable.\nPlan: follow-up.'),
+    file + ': incomplete displayed note was accepted');
   checks += 1;
 }
 
 console.log('PASS generation-legacy-athena-sidecar-runtime: ' + checks +
-  ' checks — valid flat SOAP can bridge an older /api/generate response, while incomplete/narrative payloads remain fail-closed');
+  ' checks — valid reviewed flat SOAP is canonical regardless of sidecar transport, while incomplete/narrative displays remain fail-closed');
