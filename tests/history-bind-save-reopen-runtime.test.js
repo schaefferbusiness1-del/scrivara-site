@@ -122,6 +122,15 @@ const legacyRecordState = { v: 2, transcript: legacySaved.transcript, context: l
 assert.strictEqual(context._mlsAthenaBindClinicalPatientSame(legacyState, legacyRecordState), true, 'fixture legacy source/patient proof is invalid');
 assert.strictEqual(context._mlsAthenaBindClinicalPatientSame(legacyRecordState, context._mlsAthenaSourceState(context._athenaGetVisitBinding(), true)), true, 'fixture live source/patient proof is invalid');
 assert.strictEqual(context._mlsAthenaBindDayKey(legacyRecordState.visit.visitDate), context._mlsAthenaBindDayKey(context._mlsAthenaSourceState(context._athenaGetVisitBinding(), true).visit.visitDate), 'fixture saved/live dates do not identify the same day');
+const eligibilityBefore = JSON.stringify({ binding: context._athenaGetVisitBinding(), note: context.currentAthenaNote,
+  provenance: context.currentAthenaNoteProvenance, fingerprint: context.currentAthenaNoteSourceFingerprint,
+  transcript: nodes.transcript.value, noteBox: nodes.noteBox.value, soap: context.currentSoap });
+assert.strictEqual(context._mlsAthenaCanRecoverExplicitBinding(context._athenaGetVisitBinding()), true,
+  'exact legacy saved binding is not visible to the pure recovery eligibility check');
+assert.strictEqual(JSON.stringify({ binding: context._athenaGetVisitBinding(), note: context.currentAthenaNote,
+  provenance: context.currentAthenaNoteProvenance, fingerprint: context.currentAthenaNoteSourceFingerprint,
+  transcript: nodes.transcript.value, noteBox: nodes.noteBox.value, soap: context.currentSoap }), eligibilityBefore,
+  'read-only recovery eligibility mutated binding, canonical state, or clinical source');
 assert.strictEqual(context.wfbindCommitCanonical(state, { expectedContext, visitTimestamp: 1787659200000 }), true,
   'fresh explicit re-bind of the exact saved appointment was refused');
 assert.strictEqual(context.currentAthenaNoteProvenance, 'edited', 'exact saved-note recovery did not restore a current canonical sidecar');
@@ -205,7 +214,7 @@ active = Object.assign({}, patient, { id: 'different-patient', patientId: 'diffe
 assert.strictEqual(context.wfbindCommitCanonical(state, { expectedContext }), false, 'same-name different-ID patient was allowed to bind');
 assert.strictEqual(context._athenaGetVisitBinding(), accepted, 'patient-refusal changed the prior binding');
 
-assert.strictEqual((writeflow.match(/if \(!wfbindCommitCanonical\(state, /g) || []).length, 3,
+assert.strictEqual((writeflow.match(/if \(!wfbindCommitCanonical\(state, /g) || []).length, 4,
   'not every explicit day/appointment Bind success is gated by canonical binding readback');
 for (const rel of ['1p/index.html', '1pScribeFlow.html']) {
   assert(fs.readFileSync(path.join(root, rel), 'utf8').includes('function _athenaGetVisitBinding(){return currentVisitAthenaBinding;}'),

@@ -31062,6 +31062,23 @@ function _mlsAthenaBindDayKey(v){var s=String(v||'').trim(),m=/^(\d{4})-(\d{1,2}
 function _mlsAthenaBindVisitSame(a,b){
   try{var av=a&&a.visit||{},bv=b&&b.visit||{};return String(av.visitDate||'')===String(bv.visitDate||'')&&String(av.provider||'')===String(bv.provider||'')&&String(av.appointmentId||'')===String(bv.appointmentId||'')&&String(av.encounterId||'')===String(bv.encounterId||'')&&String(av.encounterUrl||'')===String(bv.encounterUrl||'');}catch(e){return false;}
 }
+function _mlsAthenaLegacyBindingRecoveryCandidate(readback){
+  try{
+    var rb=readback||{},rbc=rb.visitContext||{};
+    if(!String(rbc.appointmentId||'').trim()||typeof currentNoteId==='undefined'||!currentNoteId||typeof getNotes!=='function')return null;
+    var live=_mlsAthenaSourceState(readback,true);if(!live)return null;
+    var saved=(getNotes()||[]).find(function(n){return n&&String(n.id)===String(currentNoteId);});if(!saved)return null;
+    if(!/^(generated_soap|edited_generated_soap)$/.test(String(saved.noteProvenance||''))||!/^(generated|edited)$/.test(String(saved.athenaNoteProvenance||'')))return null;
+    if(String(saved.appointmentId||'')!==String(rbc.appointmentId||''))return null;
+    var stored=_mlsAthenaBindState(saved.athenaNoteSourceFingerprint);if(!stored||String((stored.visit||{}).appointmentId||''))return null;
+    var record={v:2,transcript:String(saved.transcript||''),context:String(saved.context||''),visitComment:String(saved.visitComment||''),standardNote:String(saved.soap||''),activePatientId:String(saved.patientId||''),patient:{patientId:String(saved.patientId||''),name:String(saved.patient||''),dob:String(saved.patientDob||saved.dob||''),mrn:String(saved.patientMrn||saved.mrn||'')},visit:{visitDate:String(saved.visitDate||''),provider:String(saved.provider||''),appointmentId:String(saved.appointmentId||''),encounterId:String(saved.encounterId||''),encounterUrl:String(saved.encounterUrl||'')}};
+    if(!_mlsAthenaBindClinicalPatientSame(stored,record)||String((stored.visit||{}).provider||'')!==record.visit.provider||String((stored.visit||{}).encounterId||'')!==record.visit.encounterId||String((stored.visit||{}).encounterUrl||'')!==record.visit.encounterUrl)return null;
+    var rv=record.visit||{},lv=live.visit||{};
+    if(!_mlsAthenaBindClinicalPatientSame(record,live)||String(((document.getElementById('noteBox')||{}).value)||'')!==String(saved.soap||'')||_mlsAthenaBindDayKey(rv.visitDate)!==_mlsAthenaBindDayKey(lv.visitDate)||String(rv.provider||'')!==String(lv.provider||'')||String(rv.appointmentId||'')!==String(lv.appointmentId||'')||String(rv.encounterId||'')!==String(lv.encounterId||'')||String(rv.encounterUrl||'')!==String(lv.encounterUrl||''))return null;
+    return saved;
+  }catch(e){return null;}
+}
+function _mlsAthenaCanRecoverExplicitBinding(readback){return !!_mlsAthenaLegacyBindingRecoveryCandidate(readback);}
 function _mlsAthenaReanchorExplicitBinding(prior,readback){
   try{
     var rb=readback||{},rbc=rb.visitContext||{};
@@ -31075,19 +31092,12 @@ function _mlsAthenaReanchorExplicitBinding(prior,readback){
     /* A previously saved note from before bindfp-1.0.0 was marked stale during
        History restore. Recover it only when this explicit choice names the same
        stored appointment and every source/patient byte still proves ownership. */
-    if(typeof currentNoteId==='undefined'||!currentNoteId||typeof getNotes!=='function')return false;
-    var saved=(getNotes()||[]).find(function(n){return n&&String(n.id)===String(currentNoteId);});if(!saved)return false;
-    if(!/^(generated_soap|edited_generated_soap)$/.test(String(saved.noteProvenance||''))||!/^(generated|edited)$/.test(String(saved.athenaNoteProvenance||'')))return false;
-    if(String(saved.appointmentId||'')!==String(rbc.appointmentId||''))return false;
-    var stored=_mlsAthenaBindState(saved.athenaNoteSourceFingerprint);if(!stored||String((stored.visit||{}).appointmentId||''))return false;
-    var record={v:2,transcript:String(saved.transcript||''),context:String(saved.context||''),visitComment:String(saved.visitComment||''),standardNote:String(saved.soap||''),activePatientId:String(saved.patientId||''),patient:{patientId:String(saved.patientId||''),name:String(saved.patient||''),dob:String(saved.patientDob||saved.dob||''),mrn:String(saved.patientMrn||saved.mrn||'')},visit:{visitDate:String(saved.visitDate||''),provider:String(saved.provider||''),appointmentId:String(saved.appointmentId||''),encounterId:String(saved.encounterId||''),encounterUrl:String(saved.encounterUrl||'')}};
-    if(!_mlsAthenaBindClinicalPatientSame(stored,record)||String((stored.visit||{}).provider||'')!==record.visit.provider||String((stored.visit||{}).encounterId||'')!==record.visit.encounterId||String((stored.visit||{}).encounterUrl||'')!==record.visit.encounterUrl)return false;
-    var rv=record.visit||{},lv=live.visit||{};
-    if(!_mlsAthenaBindClinicalPatientSame(record,live)||String(((document.getElementById('noteBox')||{}).value)||'')!==String(saved.soap||'')||_mlsAthenaBindDayKey(rv.visitDate)!==_mlsAthenaBindDayKey(lv.visitDate)||String(rv.provider||'')!==String(lv.provider||'')||String(rv.appointmentId||'')!==String(lv.appointmentId||'')||String(rv.encounterId||'')!==String(lv.encounterId||'')||String(rv.encounterUrl||'')!==String(lv.encounterUrl||''))return false;
+    if(!_mlsAthenaLegacyBindingRecoveryCandidate(readback))return false;
     _mlsSetAthenaNote(String(typeof currentSoap!=='undefined'?currentSoap:''),'edited');
     return _mlsAthenaFingerprintMatchesCurrent(currentAthenaNoteSourceFingerprint);
   }catch(e){return false;}
 }
+window._mlsAthenaCanRecoverExplicitBinding=_mlsAthenaCanRecoverExplicitBinding;
 window._mlsAthenaReanchorExplicitBinding=_mlsAthenaReanchorExplicitBinding;
 function _mlsAthenaGenerationSourceFingerprint(binding){var state=_mlsAthenaSourceState(binding,false);try{return state?JSON.stringify(state):'';}catch(e){return '';}}
 function _mlsAthenaFingerprintMatchesCurrent(expected){
@@ -35776,7 +35786,7 @@ function pushSuperbillToAthena(){
    status line written into the DOM would be erased by the next unrelated
    repaint - which is the same class of disappearance this fix is for. */
 var _mlsHistPushRefusals=Object.create(null);
-var HIST_REFUSAL_CANON_CURE='Open this visit ▸ Regenerate ▸ Save to history, then review again';
+var HIST_REFUSAL_CANON_CURE='Open this visit ▸ Review or complete the existing note ▸ Open Send to Athena again ▸ Save to history when ready';
 function _mlsHistRefusalFor(id){ try{ return _mlsHistPushRefusals[String(id||'')]||null; }catch(e){ return null; } }
 function _mlsHistRefusalClear(id){ try{ delete _mlsHistPushRefusals[String(id||'')]; }catch(e){} }
 function _mlsHistRefusalHtml(id){
