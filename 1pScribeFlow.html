@@ -65588,6 +65588,14 @@ html [aria-busy="true"][data-mls-busy-paint]{ opacity:.72; cursor:progress; }
   var pendingCancel = null;
   var stats = { armed: 0, begun: 0, skipped: 0 };
 
+  /* Navigation that finishes synchronously has no work interval for this
+     module to describe. More importantly, calOpenDay already has several
+     cooperative render wrappers. Replacing that global between capture and
+     its inline onclick lets a re-wrapper close a cycle and the real day open
+     never arrives. Leave this one stable; asynchronous calendar actions are
+     still instrumented normally. */
+  var SYNC_NAV = { calOpenDay: 1 };
+
   /* Controls whose busy state belongs to the pull lane. It renames and
      instruments them itself; two blocks on one control would fight. */
   var OWNED_ELSEWHERE = {
@@ -65737,6 +65745,7 @@ html [aria-busy="true"][data-mls-busy-paint]{ opacity:.72; cursor:progress; }
   }
 
   function arm(name) {
+    if (SYNC_NAV[name]) return false;
     var fn = window[name];
     if (typeof fn !== 'function' || fn.__mlsBusyAll) return false;
     var wrapped = function () {
@@ -65808,14 +65817,13 @@ html [aria-busy="true"][data-mls-busy-paint]{ opacity:.72; cursor:progress; }
          unrelated control was disabled, and the double-fire guard then ate
          real clicks on it until the cap.
 
-         Clicking a day in the calendar month grid died with "Maximum call
-         stack size exceeded". feat_mls_caldedupe_render.js and
-         1p-mls-connect.js BOTH wrap calOpenDay, each capturing whatever the
-         global held when its pass ran; a third wrapper left standing in that
-         chain lets it close into a loop, recursing w -> w -> w between the two
-         files. The shell alone never does this and this block alone never does
-         it - the block PLUS somebody else's re-wrap does, which is why it
-         surfaced intermittently and only after a walk had clicked enough.
+         Clicking a day in the calendar month grid died while direct
+         calOpenDay() still worked. feat_mls_caldedupe_render.js and
+         1p-mls-connect.js BOTH wrap calOpenDay, and this block used to replace
+         it once more between capture and the inline onclick. A re-wrapper in
+         that interval can close the chain into a loop or strand the call before
+         the native opener. Disarming on the next task is too late for that
+         interval, so the synchronous opener is excluded by SYNC_NAV above.
 
        An inline onclick runs synchronously inside this dispatch, so clearing
        and disarming on the very next task keeps every genuine press, drops
