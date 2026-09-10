@@ -19,14 +19,16 @@ const path = require('path');
 const vm = require('vm');
 
 const root = path.resolve(__dirname, '..');
-const si = fs.readFileSync(path.join(root, 'feat_mls_schedimport_exact.js'), 'utf8');
+const si = fs.readFileSync(path.join(root, '1p-feat_mls_schedimport_exact.js'), 'utf8');
 const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
 
 /* ---- source pins ------------------------------------------------------- */
 assert(connect.includes("'#' + FAB + '{position:fixed;left:14px;bottom:150px;"),
   'the pull pill must sit bottom-LEFT');
-assert(si.includes('ppStart((sweepProgressTotal > rows.length ? sweepProgressTotal : rows.length), sweepProgressBase);'),
-  'the modern sweep must start the progress state');
+assert(si.includes('var ppRequestedTotal = rows.length + unresolved.length;') &&
+  si.includes('ppStart((sweepProgressTotal > ppRequestedTotal ? sweepProgressTotal : ppRequestedTotal), sweepProgressBase);') &&
+  si.includes('ppSettleUnresolved(unresolved);'),
+  'the modern sweep must start progress with the complete requested scope, including identity refusals');
 assert(si.includes('ppCurrent(row.name || (target && target.name) || "");'),
   'the sweep must publish the patient being read');
 assert(si.includes('one.__ppRow = ppSettle(row.name,'), 'every processed row must settle into the panel state');
@@ -84,8 +86,13 @@ assert(si.includes('if(g.state&&g.state.running===true) return null;'),
 
 /* ---- runtime: drive the sliced helpers --------------------------------- */
 const helpers = si.slice(si.indexOf('function ppState()'), si.indexOf('var sweepDepth = Number('));
+const localPatients = {
+  'refused-1': { id: 'refused-1', name: 'Same Synthetic Name' },
+  'refused-2': { id: 'refused-2', name: 'Same Synthetic Name' }
+};
 const ctx = { window: {}, console: console };
 ctx.window = ctx;
+ctx.findPatient = (id) => localPatients[String(id)] || null;
 vm.createContext(ctx);
 vm.runInContext(helpers, ctx, { filename: 'si-pp-helpers.js' });
 
@@ -105,11 +112,50 @@ ctx.ppResolve(r2, true, '');
 assert(S.ok === 2 && S.failed === 1, 'finalization must upgrade the pending row and recount');
 void r1;
 
+/* Unresolved-at-entry rows are terminal requested outcomes too. The live
+   refuter was 22 requested = 14 readable + 8 source-proof-conflict, while the
+   panel incorrectly closed as 14/14 saved. Names stay out of this fixture and
+   duplicate display labels remain distinct through their local ids. */
+ctx.ppStart(22, 0);
+ctx.ppSettleUnresolved(Array.from({ length: 8 }, (_, i) => ({
+  patientId: 'refused-' + (i + 1), reason: 'source-proof-conflict'
+})));
+for (let i = 0; i < 14; i++) ctx.ppSettle('Readable chart', true, '', false, { pid: 'readable-' + (i + 1) });
+ctx.ppEnd();
+S = ctx.window.__mlsDayHistoryPull.state;
+assert.strictEqual(S.total, 22, 'progress hid unresolved rows from the requested total');
+assert.strictEqual(S.done, 22, 'progress did not account for every requested row');
+assert.strictEqual(S.ok, 14, 'identity refusals changed the saved count');
+assert.strictEqual(S.failed, 8, 'identity refusals were not reported as terminal attention rows');
+assert.strictEqual(S.rows.filter(r => r.reason === 'source-proof-conflict').length, 8,
+  'the exact fail-closed refusal code was not preserved in progress');
+const sameNameRefusals = S.rows.filter(r => r.name === 'Same Synthetic Name');
+assert.strictEqual(sameNameRefusals.length, 2,
+  'distinct exact-id patients sharing one name collapsed into one refusal row');
+assert.notStrictEqual(sameNameRefusals[0].k, sameNameRefusals[1].k,
+  'same-name refusal rows were not keyed by their distinct exact local ids');
+
+/* Pid-less refusals can arrive in separate sub-batches. Their numbered labels
+   may repeat, but their report keys must not; re-settling the same entry must
+   still replace its earlier verdict in the latest-key tally. */
+ctx.ppStart(23, 22);
+const pidlessA = { reason: 'patient-not-resolved' };
+ctx.ppSettleUnresolved([pidlessA]);
+ctx.ppStart(24, 23);
+const pidlessB = { reason: 'patient-not-resolved' };
+ctx.ppSettleUnresolved([pidlessB]);
+assert.notStrictEqual(pidlessA.__ppReportKey, pidlessB.__ppReportKey,
+  'distinct pid-less sub-batch refusals received a colliding report key');
+const beforeRestettle = S.done;
+ctx.ppSettleUnresolved([pidlessA]);
+assert.strictEqual(S.done, beforeRestettle,
+  're-settling the same pid-less refusal created a second progress outcome');
+
 /* sub-batch: the bar NEVER resets (si-1.9.4 law) */
 ctx.ppEnd();
 assert(S.running === false, 'end must disarm');
 ctx.ppStart(18, 15);
-assert(S.running === true && S.done === 3 && S.rows.length === 3 && S.total === 18,
+assert(S.running === true && S.done === 24 && S.rows.length === 25 && S.total === 24,
   'a sub-batch (base>0) must preserve done/rows - the bar only ever moves forward');
 
 /* legacy engine mid-run is never stolen */
