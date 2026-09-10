@@ -49,6 +49,9 @@ assert(/complete final actions in Athena/i.test(unified), 'final actions must re
 assert(/Sign &amp; Save unlocks only after a verified note write/i.test(unified), 'capability-on Sign must disclose its verified-write prerequisite');
 assert(/function athenaFinalActionsReady\(\) \{ return false; \}/.test(flow), 'final-action capability must remain disabled; only note write and Save Draft are confirmable');
 assert(!/probeUnifiedRow\([^)]*sign[^)]*\)[^]{0,300}executeUnifiedSelection/.test(unified), 'Sign must not auto-chain after a new note write');
+assert(/id=\"mlsAthenaUnifiedReturnToNote\"/.test(unified), 'canonical-source issue state must return the doctor to the retained note');
+assert(!/id=\"mlsAthenaUnifiedGenerateSections\"/.test(unified), 'Send review must not render an AI Generate/Regenerate action');
+assert(!/data-mls-generate-canonical=/.test(unified), 'Send review must not expose a generation trigger');
 
 const render = between(unified, 'function renderUnifiedConfirmation(state)', 'function openUnifiedConfirmation(opts)');
 assert(render.includes("document.getElementById('athenaReceipt')"), 'opening unified review must remove the legacy receipt');

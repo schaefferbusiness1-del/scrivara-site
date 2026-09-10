@@ -6538,17 +6538,25 @@
     var issue = unifiedCanonicalGenerationIssue(state && state.sourceOpts);
     if (!issue) return '';
     var stale = /(?:stale|changed|malformed|format)/i.test(issue);
-    var verb = stale ? 'Regenerate' : 'Generate';
     return '<section data-mls-canonical-generation="1" style="margin-top:12px;padding:13px 14px;border:1px solid #cfe0d7;background:#f7fbf9;border-radius:11px;color:#204034">' +
-      '<div style="font-size:13.5px;font-weight:850">' + verb + ' the five exact Athena draft fields</div>' +
-      '<div style="font-size:12px;color:#52675c;margin-top:4px">The reviewed HPI, ROS, Physical Exam, Assessment, and Plan / Follow-up draft is ' + (stale ? 'stale or malformed' : 'missing') + '. This action runs the normal MLS note-generation, validation, and local-save gate. It does not write to Athena. After success, MLS rebuilds every row and still requires the exact patient and appointment check before any Confirm button can enable.</div>' +
-      '<div style="display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-top:10px"><button type="button" id="mlsAthenaUnifiedGenerateSections" data-mls-generate-canonical="1" style="border:0;background:#204034;color:#fff;border-radius:9px;padding:9px 13px;font-weight:800;cursor:pointer">' + verb + ' HPI, ROS, Exam, Assessment &amp; Plan</button>' +
-      '<span id="mlsAthenaUnifiedGenerateStatus" role="status" style="font-size:11.5px;color:#52675c">Nothing has been generated or sent yet.</span></div></section>';
+      '<div style="font-size:13.5px;font-weight:850">Return to the note to review the five Athena draft fields</div>' +
+      '<div style="font-size:12px;color:#52675c;margin-top:4px">The existing note is retained, but its HPI, ROS, Physical Exam, Assessment, and Plan / Follow-up payload is ' + (stale ? 'stale or malformed' : 'missing') + '. Review or update the note and its source, then open Send to Athena again. Nothing was checked or sent.</div>' +
+      '<div style="display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-top:10px"><button type="button" id="mlsAthenaUnifiedReturnToNote" style="border:0;background:#204034;color:#fff;border-radius:9px;padding:9px 13px;font-weight:800;cursor:pointer">Return to note</button>' +
+      '<span id="mlsAthenaUnifiedGenerateStatus" role="status" style="font-size:11.5px;color:#52675c">No Athena check or write has started.</span></div></section>';
   }
   function unifiedCanonicalGenerationStatus(state, text, isError) {
     if (!state || state.closed || unifiedAthenaState !== state) return;
     var el = null; try { el = document.getElementById('mlsAthenaUnifiedGenerateStatus'); } catch (e) {}
     if (el) { el.textContent = S(text); el.style.color = isError ? '#8b2525' : '#385b49'; }
+  }
+  function unifiedReturnToNote(state) {
+    if (!state || state.closed || unifiedAthenaState !== state) return;
+    var target = null;
+    try { target = document.getElementById('noteBox') || document.getElementById('transcript'); } catch (e) {}
+    closeUnifiedConfirmation();
+    if (target && typeof target.focus === 'function') setTimeout(function () {
+      try { target.focus({ preventScroll: true }); } catch (e1) { try { target.focus(); } catch (e2) {} }
+    }, 0);
   }
   function runUnifiedCanonicalGeneration(state, button) {
     if (!state || state.closed || unifiedAthenaState !== state || state.generating) return;
@@ -6721,12 +6729,12 @@
        capability branches, 1p-writeflow-sheet-ux counts the guide exactly
        once); they are one fold down. */
     var capabilityLine = generationIssue
-      ? (esc(S(manifest.patient.name) || 'This note') + ' &middot; generate the missing or stale five-field clinical draft locally first; no Athena write is available until the rebuilt rows pass the exact encounter check.')
+      ? (esc(S(manifest.patient.name) || 'This note') + ' &middot; the existing note is retained while you review or update its missing or stale five-field clinical draft; no Athena write is available until the rows pass the exact encounter check.')
       : (athenaFinalActionsReady()
         ? 'Reviewed note writes, Save Draft, billing staging, Sign &amp; Save, and each supported catalog-bound order run only after their own explicit confirmation; medication and injection orders stay yours in Athena.'
         : 'Only reviewed note write and Save Draft can be confirmed here; signing, billing and orders stay yours in Athena.');
     var boundaryLine = generationIssue
-      ? 'Generate / Regenerate updates only the local MLS draft through the normal validation and persistence gate. It never binds an encounter and never writes Athena; the rebuilt review must still pass exact patient, appointment, and destination checks.'
+      ? 'Return to the note to review or update its source, then open this review again. Nothing here checks an encounter, writes Athena, or changes the retained note.'
       : (athenaFinalActionsReady()
         ? 'One READY row is pre-selected and checked read-only; each Confirm &amp; Send click runs exactly that one action, and MLS never retries or auto-chains. Sign &amp; Save unlocks only after a verified note write; a reviewed catalog-bound order places only that item; prescriptions and claim submission stay yours in Athena.'
         : 'One READY note row is pre-selected and checked read-only; each Confirm &amp; Send click runs exactly that one action, and MLS never retries or auto-chains. Billing, orders, prescriptions, signature, attestation, and claim submission stay yours in Athena.');
@@ -6864,8 +6872,8 @@
       if (apGroupKind(bxRow)) bxBoxes[bxd].checked = unifiedDefaultChecked(bxRow);
       else if (unifiedDefaultChecked(bxRow)) bxBoxes[bxd].checked = true;
     }
-    var generationButton = card.querySelector('#mlsAthenaUnifiedGenerateSections');
-    if (generationButton) generationButton.addEventListener('click', function () { runUnifiedCanonicalGeneration(state, generationButton); });
+    var returnToNoteButton = card.querySelector('#mlsAthenaUnifiedReturnToNote');
+    if (returnToNoteButton) returnToNoteButton.addEventListener('click', function () { unifiedReturnToNote(state); });
     var radios = card.querySelectorAll('input[name="mlsAthenaUnifiedAction"]');
     for (var i = 0; i < radios.length; i++) radios[i].addEventListener('change', function () { probeUnifiedRow(state, this.value); });
     var acceptBtns = card.querySelectorAll('[data-mls-accept-order]');
