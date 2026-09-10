@@ -34,6 +34,14 @@ assert(si.includes('ppCurrent(row.name || (target && target.name) || "");'),
 assert(si.includes('one.__ppRow = ppSettle(row.name,'), 'every processed row must settle into the panel state');
 assert(si.includes('ppResolve(pOne.__ppRow, pOne.complete === true,'),
   'pipelined rows must be corrected at finalization');
+assert(si.includes('ppSettleUnvisited(rows, i, "stopped-by-user");') &&
+  si.includes('ppSettleUnvisited(rows, i, "deferred-after-batch-deadline");') &&
+  si.includes('ppSettleUnvisited(rows, i, "athena-search-surface-unresponsive");') &&
+  si.includes('ppSettleUnvisited(rows, i + 1, "deferred-after-timeout");'),
+  'an early exit can still omit the unvisited remainder from visible progress');
+assert(si.includes('oneQueuedForSweep ? ppAutomaticRecheckReason(one)') &&
+  si.includes('fpQueuedForSweep ? ppAutomaticRecheckReason(fp)'),
+  'automatic re-check rows bypass the proof-aware progress wording');
 /* b744 #36: the reporter's close moved OUT of the per-patient finally — it
    used to fire before the automatic sweeps, killing and re-creating the whole
    panel at every sweep boundary (elapsed reset, hidden reset, and the pts
@@ -151,11 +159,43 @@ ctx.ppSettleUnresolved([pidlessA]);
 assert.strictEqual(S.done, beforeRestettle,
   're-settling the same pid-less refusal created a second progress outcome');
 
+/* Rows that the batch never visits are terminal retry outcomes, not empty
+   space between done and total. This helper only reports the already-decided
+   suffix; it does not run a chart operation. */
+ctx.ppStart(4, 0);
+ctx.ppSettle('Saved synthetic chart', true, '', false, { pid: 'saved-1' });
+const unvisited = [
+  { name: 'Saved synthetic chart', _mlsTargetPatientId: 'saved-1' },
+  { name: 'Stopped synthetic chart', _mlsTargetPatientId: 'stopped-2' },
+  { name: 'Stopped synthetic chart', _mlsTargetPatientId: 'stopped-3' },
+  { _mlsTargetPatientId: 'stopped-4' }
+];
+ctx.ppSettleUnvisited(unvisited, 1, 'stopped-by-user');
+S = ctx.window.__mlsDayHistoryPull.state;
+assert.strictEqual(S.done, 4, 'the stopped suffix did not fill the visible requested census');
+assert.strictEqual(S.ok, 1, 'reporting the stopped suffix changed the saved count');
+assert.strictEqual(S.failed, 3, 'unvisited stopped rows did not become visible terminal failures');
+assert.strictEqual(S.rows.filter(r => r.reason === 'stopped-by-user').length, 3,
+  'the exact stopped retry code was not preserved in progress');
+
+/* The existing renderer gives queued-for-automatic-recheck the stronger
+   sentence “chart saved — full visit notes queued”. The importer may emit
+   that code only when it has proof for both clauses. */
+ctx.pullVisitBodies = true;
+assert.strictEqual(ctx.ppAutomaticRecheckReason({ organized: true, dobVerified: true }), 'queued-for-automatic-recheck',
+  'a proven saved chart in full-notes mode lost the specific queued wording');
+assert.strictEqual(ctx.ppAutomaticRecheckReason({ organized: false, dobVerified: true }), 're-checking',
+  'a row with no saved chart falsely claims its chart was saved');
+ctx.pullVisitBodies = false;
+assert.strictEqual(ctx.ppAutomaticRecheckReason({ organized: true, dobVerified: true }), 're-checking',
+  'a day-facts row falsely claims full visit notes were queued');
+
 /* sub-batch: the bar NEVER resets (si-1.9.4 law) */
+const beforeSubBatch = { done: S.done, rows: S.rows.length, total: S.total };
 ctx.ppEnd();
 assert(S.running === false, 'end must disarm');
 ctx.ppStart(18, 15);
-assert(S.running === true && S.done === 24 && S.rows.length === 25 && S.total === 24,
+assert(S.running === true && S.done === beforeSubBatch.done && S.rows.length === beforeSubBatch.rows && S.total === 18 && beforeSubBatch.total === 4,
   'a sub-batch (base>0) must preserve done/rows - the bar only ever moves forward');
 
 /* legacy engine mid-run is never stolen */
