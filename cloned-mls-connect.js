@@ -9451,6 +9451,29 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if(_laneRaf!=null){ if(window.cancelAnimationFrame) window.cancelAnimationFrame(_laneRaf); else clearTimeout(_laneRaf); _laneRaf=null; }
     } catch (e2) {}
   }
+  function laneUnifiedReviewClosed() {
+    /* Only the Easy Next action owns this marker. A sheet opened directly from
+       the advanced workspace leaves it false and therefore keeps that user's
+       workspace exactly as they arranged it. */
+    if (!_reviewStepOpen) return false;
+    var advOpen = false;
+    try { advOpen = !!(document.body && document.body.classList.contains('ez3adv')); } catch (eAdv) {}
+    if (advOpen) {
+      var adv = $('ez3Adv');
+      if (!adv || typeof adv.click !== 'function') return false;
+      var priorQuiet = window.__mlsAdvQuietOpen;
+      try { window.__mlsAdvQuietOpen = true; adv.click(); }
+      catch (eClick) { return false; }
+      finally { window.__mlsAdvQuietOpen = priorQuiet; }
+      try { if (document.body.classList.contains('ez3adv')) return false; } catch (eStillOpen) { return false; }
+    }
+    setReviewStepOpen(false);
+    syncTopLane(_primaryLane || document.querySelector('.ez3fl-record'));
+    setTimeout(function () {
+      try { var next = $('ez3flReview'); if (next && !next.hidden) next.focus({ preventScroll: true }); } catch (eFocus) {}
+    }, 0);
+    return true;
+  }
   function laneSignal(ev) {
     try {
       var t = ev && ev.target;
@@ -9968,6 +9991,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        the press from the lane that has to explain its outcome. */
     document.addEventListener('click', laneRecordPress, true);
     window.addEventListener('mls:view-changed', laneViewChanged);
+    window.addEventListener('mls:athena-review-closed', laneUnifiedReviewClosed);
     window.addEventListener('mls:generation-started', onLaneGenStarted);
     window.addEventListener('mls:generation-settled', onLaneGenSettled);
     /* Event-driven updates cover normal recording/transcript/note/voice work.
@@ -10029,6 +10053,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       try { document.removeEventListener('input', laneSignal, true); document.removeEventListener('change', laneSignal, true); document.removeEventListener('click', laneSignal, true); } catch (e) {}
       try { document.removeEventListener('click', laneRecordPress, true); } catch (e) {}
       try { window.removeEventListener('mls:view-changed', laneViewChanged); } catch (e) {}
+      try { window.removeEventListener('mls:athena-review-closed', laneUnifiedReviewClosed); } catch (e) {}
       try { window.removeEventListener('mls:generation-started', onLaneGenStarted); } catch (e) {}
       try { window.removeEventListener('mls:generation-settled', onLaneGenSettled); } catch (e) {}
       try { if (window.__mlsGenerationRunState === genRunState) delete window.__mlsGenerationRunState; } catch (e) {}

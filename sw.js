@@ -6,7 +6,7 @@
  * retired route from being replayed by an older browser cache or opened as an
  * HTML navigation if a future static-site configuration regresses.
  */
-const CACHE = 'mls-v236';
+const CACHE = 'mls-v237';
 
 const SHELL = [
   '/ScribeFlow.html',
@@ -398,3 +398,4 @@ self.addEventListener('fetch', (e) => {
   e.respondWith(response);
   e.waitUntil(response.then(() => cacheWrite).catch(() => {}));
 });
+
