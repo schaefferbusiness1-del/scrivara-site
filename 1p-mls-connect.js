@@ -9186,6 +9186,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     setTopVoiceChip(rec, 'ez3flAssistant', assistantOpen, 'MLS Assistant', 'Close MLS Assistant');
     setTopVoiceChip(rec, 'ez3flDictate', dictateOn, 'Dictate', 'Stop Dictate');
   }
+  function doctorVisitLaneReady() {
+    /* The enhancement lane belongs to an ACTIVE Easy visit, not merely to the
+       Visit tab or to text left in the shared editor.  Those broader facts are
+       also true on Home, where mounting this lane beside #ez3StartActive made
+       the page offer both "Start the visit" and Generate at once. */
+    try {
+      var easy = window.__mlsEasyV32;
+      var state = easy && typeof easy.state === 'function' ? easy.state() : null;
+      return !!(state && state.mode === 'doctor' && state.screen === 'doctor' && state.locked);
+    } catch (e) { return false; }
+  }
   function clickTopVoiceControl(id, label) {
     var control = $(id);
     if (!control) { flowToast(label + ' is still loading. Try again in a moment.', 'err'); return; }
@@ -9488,7 +9499,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     try { var fb = $('mlsDayHistBtn'); if (fb && fb.style.getPropertyValue('display') !== 'none') fb.style.setProperty('display', 'none', 'important'); } catch (e) {}
     var body = $('mlsEz3Body'); if (!body) return;
     var wrap = body.querySelector('#ez3Wrap');
-    var staff = onStaffScreen(body);
+    var staff = onStaffScreen(body), doctorVisit = doctorVisitLaneReady();
     /* fl-1.7.0 (owner 2026-07-16): ONE transcript box, and the TOP lane is
        the keeper — the fl-1.6.1 yield hid .ez3fl-record, which also removed
        the quick-tools row and the primary record CTA. Instead, while this
@@ -9511,7 +9522,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          MOUNTED lane must not claim the top - that claim was hiding the
          engine's transcript card and quick-tools chip, leaving the phone with
          no transcript at all. Mounted is not visible. */
-      var wantOwns = !staff && laneVisible && !(document.body && document.body.classList.contains('mls-phone'));
+      var wantOwns = !staff && doctorVisit && laneVisible && !(document.body && document.body.classList.contains('mls-phone'));
       if (body.classList.contains('ez3fl-top-owns') !== wantOwns) body.classList.toggle('ez3fl-top-owns', wantOwns);
     } catch (e) {}
     /* (0) symmetric cleanup — the engine re-renders #ez3Wrap, not the body, so
@@ -9522,8 +9533,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        parked the canonical node for the doctor return, so anything still in
        the DOM here is a stale duplicate. */
     try {
-      var kill = staff ? '.ez3fl-staffLink,.ez3fl-record' : '.ez3fl-back,.ez3fl-staffbadge';
+      var kill = (staff || !doctorVisit) ? '.ez3fl-staffLink,.ez3fl-record' : '.ez3fl-back,.ez3fl-staffbadge';
       body.querySelectorAll(kill).forEach(function (n) { n.remove(); });
+      if (!doctorVisit) {
+        _primaryLane = null;
+        syncTopGenerationOwnership(null, null);
+        syncTopNextOwnership(null, null, null);
+      }
     } catch (e) {}
     /* (1) doctor screen: quiet staff entry under the actions row */
     if (!staff) {
@@ -9541,7 +9557,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       for (var laneIndex = 0; laneIndex < mountedLanes.length; laneIndex++) {
         if (mountedLanes[laneIndex] !== mountedLane) mountedLanes[laneIndex].remove();
       }
-      if (!mountedLane) {
+      if (!doctorVisit) {
+        /* Home/Choose owns its own single next action. Shared transcript bytes
+           may remain safely stored, but they do not turn either screen into a
+           visit or authorize the enhancement lane to add clinical actions. */
+      } else if (!mountedLane) {
         var row2 = wrap ? wrap.querySelector('.ez3-row2') : null;
         if (wrap && row2) {
           var nmEl = document.querySelector('.mlsctx-name');
@@ -9922,7 +9942,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         var anchor = wrapEl ? wrapEl.querySelector('.ez3-row2') : null;
         var have = !!(body && body.querySelector('.ez3fl-record'));
         if (have) _fastBlocked = false;
-        if (!_fastBlocked && anchor && !have && !onStaffScreen(body)) {
+        if (!_fastBlocked && anchor && !have && !onStaffScreen(body) && doctorVisitLaneReady()) {
           if (_deb) { try { clearTimeout(_deb); } catch (e0) {} _deb = null; }
           _fast = true;
           try { run(); } finally { _fast = false; }
@@ -23709,6 +23729,45 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     })();
   }
 
+  /* Opening the Doctor screen is navigation, not a new-visit mutation. When
+     the header already proves one patient, adopt that exact identity into the
+     Easy room without calling selectPatient/calStartVisit, clearing editor
+     bytes, changing the canonical binding, recording, or generating. A saved
+     exact binding is reused as display context; a conflicting binding refuses
+     adoption instead of turning shared source text into the wrong visit. */
+  function adoptActiveVisitForDoctorOpen() {
+    if (S.appt && S.locked) return true;
+    var p = canonicalActivePatient();
+    if (!p || p.id == null || !p.name) return false;
+    var b = currentVisitBinding(), bp = b && b.patient, ctx = b && b.visitContext || {};
+    if (b) {
+      if (!bp || String(bp.patientId || bp.id || '') !== String(p.id)) return false;
+      if (!nameMatch(bp.name, p.name) || dobConflicts(bp.dob, p.dob) || mrnConflicts(bp, p)) return false;
+    }
+    var appointmentId = String(ctx.appointmentId || '').trim();
+    var a = {
+      id: String(ctx.sourceId || appointmentId || '').trim() || null,
+      appointmentId: appointmentId,
+      appt_date: String(ctx.visitDate || '').slice(0, 10),
+      provider: String(ctx.provider || ''),
+      name: p.name || '', dob: p.dob || '', mrn: p.mrn || '',
+      _patientId: p.id, _pt: true
+    };
+    S.appt = a;
+    S.locked = { id: p.id, name: a.name, dob: a.dob, key: 'pt|' + String(p.id) };
+    return true;
+  }
+  function generationWarningDuplicatesLane(message) {
+    try {
+      var flow = window.__mlsEz3Flow, reader = flow && flow.genRun && flow.genRun.hint;
+      var settledHint = typeof reader === 'function' ? reader() : null;
+      var settledText = String(settledHint && settledHint.text || '').trim();
+      var warningText = String(message || '').trim();
+      return !!(settledHint && settledHint.state === 'failed' && warningText &&
+        (settledText === warningText || settledText.indexOf(warningText + ' ') === 0));
+    } catch (e) { return false; }
+  }
+
   /* =======================================================================
    *  renderers
    * ===================================================================== */
@@ -24722,7 +24781,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       '<button type="button" class="ez3-back" id="ez3HomeTop" title="Go straight to the visit home screen - everything here is saved">🏠 Home</button>' +
       '</div>';
     h += quickStripHtml();
-    if (S.lastWarn) {
+    var generationWarnEcho = S.lastWarn && generationWarningDuplicatesLane(S.lastWarn);
+    if (S.lastWarn && !generationWarnEcho) {
       var calmNotice = /^(?:Athena appointment not linked|Unscheduled visit)\b/.test(S.lastWarn);
       /* wfbindbar-1.0.0: a warning whose stated cure is "re-pull this day"
          carries that cure as a button, instead of sending the doctor away. */
@@ -27331,7 +27391,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     version: VER,
     installed: true,
     open: function (screen) {
-      return setEasyMode('doctor', screen || 'home', 'api-open-doctor', true);
+      var target = screen || 'home';
+      if (target === 'doctor') adoptActiveVisitForDoctorOpen();
+      return setEasyMode('doctor', target, 'api-open-doctor', true);
     },
     close: function () {},   /* kept for compat — the workspace IS the tab */
     resetSession: resetEasySession,

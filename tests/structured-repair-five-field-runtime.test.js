@@ -106,6 +106,12 @@ function rejected(api, note, expected, label) {
     }
     const reservedTemplate = { templateMode: 'adapt', templateText: 'DATE OF SERVICE:\n[DATE]\nVISIT TYPE:\n[TYPE]\nDIAGNOSIS:\n[DIAGNOSIS]\nRecommendations:\n[PLAN]' };
     assert.deepStrictEqual(Array.from(api.required(reservedTemplate, 'plan')), ['DIAGNOSIS', 'RECOMMENDATIONS']); checks += 1;
+    const compositeExample = { templateMode: 'adapt', templateText: 'ASSESSMENT\n[CONDITION #] — [STATUS]; pain today [PAIN SCORE]:\nDocumented finding:\n[FINDING]\nClinical status:\n[STATUS]' };
+    assert.deepStrictEqual(Array.from(api.required(compositeExample, 'assessment')), ['DOCUMENTED FINDING', 'CLINICAL STATUS']); checks += 1;
+    const onePlaceholderExample = { templateMode: 'adapt', templateText: '[CONDITION] status:\nDocumented finding:\n[FINDING]\nClinical status:\n[STATUS]' };
+    assert.deepStrictEqual(Array.from(api.required(onePlaceholderExample, 'assessment')), ['DOCUMENTED FINDING', 'CLINICAL STATUS']); checks += 1;
+    const placeholderAfterColon = { templateMode: 'adapt', templateText: 'DIAGNOSIS: [value]\nRecommendations: [documented plan]' };
+    assert.deepStrictEqual(Array.from(api.required(placeholderAfterColon, 'plan')), ['DIAGNOSIS', 'RECOMMENDATIONS']); checks += 1;
 
     repairContent = JSON.stringify({ note: base });
     eq(await api.repair('system', 'synthetic source', tuning, null), repairContent,

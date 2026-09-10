@@ -15,6 +15,67 @@ function between(start, end) {
 const canonical = between('  function withAdvancedWorkspace(fn)', '  function wireVisitQuickTools()');
 assert(!/installAutoAdvance|__ez3AutoGenWrap|ez3AutoGenerate|window\.stopCapture\s*=/.test(canonical),
   'a low-level Stop still installs deferred automatic generation');
+
+/* The enhancement lane and the Easy renderer must agree on whether a visit
+ * exists. Shared transcript bytes alone never authorize clinical controls on
+ * Home/Choose, while an explicit Doctor open can adopt the exact active
+ * patient and an already-frozen visit without mutating either. */
+{
+  const laneReady = between('  function doctorVisitLaneReady()', '  function clickTopVoiceControl(');
+  let easyState = { mode: 'doctor', screen: 'home', locked: null };
+  const laneCtx = { window: { __mlsEasyV32: { state: () => easyState } } };
+  vm.createContext(laneCtx);
+  vm.runInContext(laneReady + '\nthis.ready=doctorVisitLaneReady;', laneCtx);
+  assert.strictEqual(laneCtx.ready(), false, 'Home accepted a source-only enhancement lane');
+  easyState = { mode: 'doctor', screen: 'doctor', locked: null };
+  assert.strictEqual(laneCtx.ready(), false, 'Doctor screen without a patient lock accepted the lane');
+  easyState = { mode: 'doctor', screen: 'doctor', locked: { id: 'fixture-patient-one' } };
+  assert.strictEqual(laneCtx.ready(), true, 'an exact active Doctor visit lost its enhancement lane');
+  easyState = { mode: 'doctor', screen: 'choose', locked: { id: 'fixture-patient-one' } };
+  assert.strictEqual(laneCtx.ready(), false, 'Choose retained the prior visit lane');
+}
+{
+  const adopt = between('  function adoptActiveVisitForDoctorOpen()', '  function generationWarningDuplicatesLane(');
+  const patient = { id: 'fixture-patient-one', name: 'Synthetic Patient', dob: '2000-01-02', mrn: 'MRN-1' };
+  const binding = { id: 'binding-one', patient: { patientId: patient.id, name: patient.name, dob: patient.dob, mrn: patient.mrn },
+    visitContext: { sourceId: 'source-row-one', appointmentId: 'appointment-one', visitDate: '2026-09-10', provider: 'Synthetic Doctor' } };
+  const S = { appt: null, locked: null, phase: 'note', editing: true, genClickedAt: 44, signedAt: 55, lastWarn: 'kept' };
+  const ctx = {
+    S, canonicalActivePatient: () => patient, currentVisitBinding: () => binding,
+    nameMatch: (a, b) => String(a) === String(b), dobConflicts: (a, b) => !!a && !!b && a !== b,
+    mrnConflicts: (a, b) => !!a.mrn && !!b.mrn && a.mrn !== b.mrn
+  };
+  vm.createContext(ctx);
+  vm.runInContext(adopt + '\nthis.adopt=adoptActiveVisitForDoctorOpen;', ctx);
+  assert.strictEqual(ctx.adopt(), true, 'exact active saved visit was not adopted');
+  assert.strictEqual(S.appt.appointmentId, 'appointment-one', 'adoption lost the exact saved appointment');
+  assert.strictEqual(S.appt.appt_date, '2026-09-10', 'adoption lost the exact saved visit date');
+  assert.strictEqual(S.appt.provider, 'Synthetic Doctor', 'adoption lost the exact saved provider');
+  assert.strictEqual(S.locked.id, patient.id, 'adoption changed the active patient');
+  assert.deepStrictEqual({ phase: S.phase, editing: S.editing, genClickedAt: S.genClickedAt, signedAt: S.signedAt, lastWarn: S.lastWarn },
+    { phase: 'note', editing: true, genClickedAt: 44, signedAt: 55, lastWarn: 'kept' },
+    'navigation reset existing draft/visit state');
+  S.appt = null; S.locked = null;
+  binding.patient.patientId = 'different-patient';
+  assert.strictEqual(ctx.adopt(), false, 'conflicting saved binding was silently adopted');
+  assert.strictEqual(S.appt, null, 'refused adoption changed the workspace');
+}
+{
+  const warningHelper = between('  function generationWarningDuplicatesLane(message)', '  /* =======================================================================\n   *  renderers');
+  let hint = { state: 'failed', text: 'Generation could not finish. Your prior draft was retained. [draft_quality_failed]' };
+  const ctx = { window: { __mlsEz3Flow: { genRun: { hint: () => hint } } } };
+  vm.createContext(ctx);
+  vm.runInContext(warningHelper + '\nthis.duplicate=generationWarningDuplicatesLane;', ctx);
+  assert.strictEqual(ctx.duplicate('Generation could not finish. Your prior draft was retained.'), true,
+    'the same generation error with a diagnostic suffix still rendered twice');
+  hint = { state: 'failed', text: 'A different failure.' };
+  assert.strictEqual(ctx.duplicate('Generation could not finish. Your prior draft was retained.'), false,
+    'a distinct warning was incorrectly suppressed');
+}
+assert(source.includes("var kill = (staff || !doctorVisit) ? '.ez3fl-staffLink,.ez3fl-record'"),
+  'Home/Choose does not remove a previously mounted enhancement lane');
+assert(source.includes('!onStaffScreen(body) && doctorVisitLaneReady()'),
+  'the fast remount path can recreate the lane on Home/Choose');
 const stop = between('  function stopRecordingOnly(fromLane)', '  /* The top lane must not call');
 for (const scenario of ['pause', 'resume', 'next-patient', 'next-visit']) {
   let capturing = true, stops = 0, generations = 0;
