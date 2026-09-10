@@ -33833,6 +33833,15 @@ function __mlsNoteQualityStrip(hostId,res,label){
    In PER-DEVICE KEY MODE: POST OpenAI directly with the key.
    Returns the raw JSON string the model produced.
    --------------------------------------------------------- */
+/* A helper payload may contain chart history, a generated note, and document
+   boilerplate. None of those is today's dictation. Helpers must pass the
+   frozen visit transcript explicitly for conditional format selection;
+   otherwise use the saved format or the clinician's explicit override. */
+function _mlsTemplateRoutingSource(user,opts){
+  opts=opts||{};
+  if(Object.prototype.hasOwnProperty.call(opts,'todayTranscript')) return String(opts.todayTranscript==null?'':opts.todayTranscript).slice(0,24000);
+  return opts.freeform?'':String(user==null?'':user);
+}
 async function aiCallRaw(sys,user,key,opts){
   opts=opts||{};
   /* Load account draft preferences only for an actual generation request. */
@@ -33868,7 +33877,7 @@ async function aiCallRaw(sys,user,key,opts){
         if(typeof _dt.autoRoute==='function'){
           var _routeOptions=_draftFamily==='soap'?(_effectiveDraftTuning||{}):{families:{}};
           if(_draftFamily!=='soap') _routeOptions.families[_draftFamily]=_effectiveDraftTuning||{};
-          var _routedTuning=_dt.autoRoute({todayTranscript:user},_routeOptions);
+          var _routedTuning=_dt.autoRoute({todayTranscript:_mlsTemplateRoutingSource(user,opts)},_routeOptions);
           if(_draftFamily==='soap') _effectiveDraftTuning=_routedTuning;
           else {
             var _routedFamily=_routedTuning&&_routedTuning.families&&_routedTuning.families[_draftFamily];
@@ -37140,6 +37149,7 @@ async function generatePriorAuth(){
       })(),
       provider:clinicalProviderName()||'[Provider name]', spec:getPreset()||getSpec()||'',
       dxLine:dxLineNow, note:noteNow, noteFormat:currentFormat,
+      todayTranscript:String((document.getElementById('transcript')||{}).value||''),
       pctx:buildPatientContext(),
       denialReason:appealNow?(((document.getElementById('paDenialReason')||{}).value)||'Not medically necessary'):'',
       denialText:appealNow?((((document.getElementById('paDenialText')||{}).value)||'').trim()):'',
@@ -37211,11 +37221,10 @@ CRITICAL HONESTY RULES:
 Return ONLY the letter text, no preamble, no markdown fences.`;
       user='REQUESTED SERVICE / ITEM:\n'+service+'\n\n'+ptLine+(payerLine?('\n'+payerLine):'')+'\nRequesting provider: '+provider+(spec?(' ('+spec+')'):'')+'\nWorking diagnosis: '+dxLine+'\n\nVISIT NOTE (sole source of clinical facts — do not invent beyond this):\n'+(note||'[No note generated — provider to complete clinical narrative]')+(pctx?('\n\nPATIENT CHART BACKGROUND (history/meds/allergies — for context; do not invent new findings):\n'+pctx):'');
     }
-    // Both request and appeal modes share the prior-auth validator. Keep the
-    // two machine-checkable anchors explicit even when the narrative wording
-    // differs between modes.
-    sys += '\n\nOUTPUT CONTRACT: include exact headings "Requested service" and "Medical necessity" on separate lines, using placeholders when the record is missing a required fact.';
-    const priorAuthDraft=(await aiCallRaw(sys,user,priorAuthSources.key,{freeform:true,family:'priorauth'})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+    // These are defaults for an untemplated letter. A selected template owns
+    // presentation; clinical evidence and missing-information rules still apply.
+    sys += '\n\nDEFAULT FORMAT: include "Requested service" and "Medical necessity" on separate lines. A selected strict or adapted template controls its own headings and order. Use placeholders when the record is missing a required fact.';
+    const priorAuthDraft=(await aiCallRaw(sys,user,priorAuthSources.key,{freeform:true,family:'priorauth',todayTranscript:priorAuthSources.todayTranscript})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
     if(!_athenaAsyncBindingStillSafe(priorAuthBinding,'prior-authorization drafting',priorAuthEpoch)) return;
     if(JSON.stringify(_readPriorAuthSources())!==priorAuthSourceFingerprint){
       toast('The prior-authorization inputs changed while the letter was being drafted, so MLS discarded that older result. Review the current visit and draft again. Nothing changed in Athena.','err');
@@ -38160,6 +38169,7 @@ async function generateAVS(){
     return {
       note:(currentFormat==='insurance'?insuranceNow:soapNow)||soapNow||'',
       noteFormat:currentFormat,
+      todayTranscript:String((document.getElementById('transcript')||{}).value||''),
       pctx:buildPatientContext(),
       prefs:docPrefsBlock(),
       key:getKey()
@@ -38170,8 +38180,8 @@ async function generateAVS(){
   const avsSourceFingerprint=JSON.stringify(avsSources);
   btn.disabled=true; btn.innerHTML='<span class="spin"></span> Writing…';
   try{
-    let sys=`You are a clinician writing a PATIENT-FACING after-visit summary (AVS). Convert the clinical note into clear, warm, plain language at about a 6th-grade reading level. Use short sections with simple headers: "Why you came in today", "What we found", "Your medicines", "What to do at home", "Tests / follow-up", and "When to get help right away". Use ONLY information in the note and the patient background provided — do not invent. The "Your medicines" section should reflect the patient's current/home medications plus anything changed today. Avoid jargon; explain any necessary terms. No coding/billing content. Address the patient as "you".`+avsSources.prefs;
-    sys += '\n\nOUTPUT CONTRACT: use these exact headings, each on its own line and in this order: Why you came in today; What we found; What to do at home. Add other sections only when supported by the source.';
+    let sys=`You are a clinician writing a PATIENT-FACING after-visit summary (AVS). Convert the clinical note into clear, warm, plain language at about a 6th-grade reading level. When no saved template specifies the format, use short sections with simple headers: "Why you came in today", "What we found", "Your medicines", "What to do at home", "Tests / follow-up", and "When to get help right away". Use ONLY information in the note and the patient background provided — do not invent. The "Your medicines" section should reflect the patient's current/home medications plus anything changed today. Avoid jargon; explain any necessary terms. No coding/billing content. Address the patient as "you".`+avsSources.prefs;
+    sys += '\n\nDEFAULT FORMAT: use these headings, each on its own line and in this order: Why you came in today; What we found; What to do at home. A selected strict or adapted template controls its own headings and order. Add content only when supported by the source.';
     const user='CLINICAL NOTE:\n'+avsSources.note+(avsSources.pctx?('\n\nPATIENT BACKGROUND (chart history — use for context only, do not invent new findings):\n'+avsSources.pctx):'');
     /* noteq-1.0.0 (b1169): the after-visit summary is patient-facing prose and
        has no rubric of its own; the SOAP contract is the closest honest fit and
@@ -38182,10 +38192,10 @@ async function generateAVS(){
     /* noteq-1.1.0 (b1177): bounded await before the patient-facing summary. */
     try{ await __mlsNoteQualityEnsure(); }catch(eNoteqReadyAvs){}
     const noteqAvs=__mlsNoteQualityContract('visit-note-soap',noteqAvsCtx);
-    let avsDraft=(await aiCallRaw(sys+noteqAvs,user,avsSources.key,{freeform:true,family:'avs'})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+    let avsDraft=(await aiCallRaw(sys+noteqAvs,user,avsSources.key,{freeform:true,family:'avs',todayTranscript:avsSources.todayTranscript})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
     try{
       const avsGraded=await __mlsNoteQualityOnce(avsDraft,'visit-note-soap',noteqAvsCtx,async function(retry){
-        const again=await aiCallRaw(sys+noteqAvs+retry,user,avsSources.key,{freeform:true,family:'avs'});
+        const again=await aiCallRaw(sys+noteqAvs+retry,user,avsSources.key,{freeform:true,family:'avs',todayTranscript:avsSources.todayTranscript});
         return String(again||'').replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
       });
       if(avsGraded&&String(avsGraded.text||'').trim()) avsDraft=avsGraded.text;
@@ -38265,6 +38275,7 @@ async function generateReferral(){
       spec:getPreset()||getSpec()||'',
       note:(currentFormat==='insurance'?insuranceNow:soapNow)||soapNow||'',
       noteFormat:currentFormat,
+      todayTranscript:String((document.getElementById('transcript')||{}).value||''),
       pctx:buildPatientContext(),
       prefs:docPrefsBlock(),
       key:getKey()
@@ -38275,10 +38286,10 @@ async function generateReferral(){
   const referralSourceFingerprint=JSON.stringify(referralSources);
   btn.disabled=true; btn.innerHTML='<span class="spin"></span> Drafting…';
   try{
-    let sys=`You are drafting a concise, professional REFERRAL LETTER from one physician to another. Use a standard letter format: date line, "Dear [recipient]:", a brief reason for referral, a short relevant history & exam summary, current medications/allergies, the working assessment, what has been done so far, and the specific question/request for the consultant. Close with "Thank you" and a signature block for the referring provider. Use ONLY facts from the note and the patient background provided — do not invent. Pull current medications, allergies, and chronic problems from the patient background. Keep it under ~250 words.`+referralSources.prefs;
-    sys += '\n\nOUTPUT CONTRACT: begin with Dear [recipient]: and include the exact heading Reason for referral: before the history and findings.';
+    let sys=`You are drafting a concise, professional REFERRAL LETTER from one physician to another. When no saved template specifies the format, use a standard letter format: date line, "Dear [recipient]:", a brief reason for referral, a short relevant history & exam summary, current medications/allergies, the working assessment, what has been done so far, and the specific question/request for the consultant. Close with "Thank you" and a signature block for the referring provider. Use ONLY facts from the note and the patient background provided — do not invent. Pull current medications, allergies, and chronic problems from the patient background. Keep it under ~250 words.`+referralSources.prefs;
+    sys += '\n\nDEFAULT FORMAT: begin with Dear [recipient]: and include Reason for referral: before the history and findings. A selected strict or adapted template controls its own headings and order; retain the documented referral purpose and recipient.';
     const user=`Referring provider: ${referralSources.from}${referralSources.spec?' ('+referralSources.spec+')':''}\nReferring to: ${referralSources.to}\n\nCLINICAL NOTE:\n${referralSources.note}`+(referralSources.pctx?('\n\nPATIENT BACKGROUND (chart history):\n'+referralSources.pctx):'');
-    const referralDraft=(await aiCallRaw(sys,user,referralSources.key,{freeform:true,family:'referral'})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+    const referralDraft=(await aiCallRaw(sys,user,referralSources.key,{freeform:true,family:'referral',todayTranscript:referralSources.todayTranscript})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
     if(!_athenaAsyncBindingStillSafe(referralBinding,'referral drafting',referralEpoch)) return;
     if(JSON.stringify(_readReferralSources())!==referralSourceFingerprint){
       toast('The note, patient background, or referral details changed while the letter was being drafted, so MLS discarded that older result. Review the current visit and draft it again. Nothing changed in Athena.','err');
@@ -39327,7 +39338,8 @@ async function generateHandout(){
       const note=currentNoteText();
       const target=((document.getElementById('handoutBody')||{}).value||'');
       const stored=String(typeof currentHandout==='undefined'?'':currentHandout||'');
-      return {dxStr:currentDxStr,note,fingerprint:JSON.stringify([editor,currentDxStr,note,target,stored])};
+      const todayTranscript=String((document.getElementById('transcript')||{}).value||'');
+      return {dxStr:currentDxStr,note,todayTranscript,fingerprint:JSON.stringify([editor,currentDxStr,note,todayTranscript,target,stored])};
     }catch(e){ return null; }
   };
   const handoutSource=handoutSourceNow();
@@ -39343,15 +39355,10 @@ async function generateHandout(){
   };
   btn.disabled=true; btn.innerHTML='<span class="spin"></span> Writing…';
   try{
-    const sys=`You are a physical medicine & rehabilitation (PM&R)/spine clinician writing a PLAIN-LANGUAGE PATIENT HANDOUT for a home-exercise and self-care program. Write at about a 6th-grade reading level in a warm, encouraging tone. Use simple section headers:
-"What's going on" (explain the diagnosis in lay terms),
-"Home exercises" (list 4-6 specific, safe exercises appropriate to the diagnosis — for lumbar/low-back issues use things like pelvic tilts, knee-to-chest, cat-camel, bird-dog, glute bridges, walking; for cervical/neck use chin tucks, gentle range-of-motion; give each exercise a short how-to and reps/sets),
-"Do's and don'ts" (activity guidance),
-"Call us right away if" (red-flag symptoms — e.g. new weakness, numbness, loss of bowel/bladder control, fever, severe worsening),
-"Follow-up" (when to come back).
-Use ONLY the diagnosis and note provided; do not invent specific medications or test results. End with the exact line: "Follow your physician's specific instructions." Keep it concise and printable.`;
+    const sys=`Write a plain-language patient handout from the documented visit note. Address the patient as "you" and explain documented terms clearly. The selected patient-summary template controls headings, order, and layout. Without a selected template, use "Why you came in today", "What we found", and "What to do at home", adding a follow-up section when documented.
+Include only exercises, activity instructions, precautions, medicines, tests, and follow-up that the clinician actually documented. Do not invent an exercise program, repetitions, restrictions, warning signs, or treatment recommendations to fill a template. Keep patient questions distinct from clinician decisions. When a required template field has no source support, leave an explicit neutral missing-information marker. Use only the supplied diagnosis and note; keep the result clear and printable.`;
     const user='DIAGNOSIS: '+handoutSource.dxStr+'\n\nVISIT NOTE (for context):\n'+handoutSource.note;
-    const raw=await aiCallRaw(sys,user,getKey(),{freeform:true,family:'general_draft'});
+    const raw=await aiCallRaw(sys,user,getKey(),{freeform:true,family:'avs',draftSubtype:'patient_handout',todayTranscript:handoutSource.todayTranscript});
     if(!handoutResultStillSafe()) return;
     currentHandout=String(raw||'').replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
     document.getElementById('handoutBody').value=currentHandout;

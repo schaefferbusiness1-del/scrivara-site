@@ -184,6 +184,10 @@ async function main() {
       return safe;
     },
     aiCallRaw() { return new Promise(resolve => pending.push(resolve)); },
+    __mlsNoteQualityEnsure() { return Promise.resolve(); },
+    __mlsNoteQualityContract() { return ''; },
+    __mlsNoteQualityOnce(text) { return Promise.resolve({ text, res: null }); },
+    __mlsNoteQualityStrip() {},
     friendlyError(err) { return String(err && err.message || err); },
     toast(message, kind) { toasts.push({ message, kind }); },
     mipsToHtml(text) { return `HTML:${text}`; },
@@ -222,6 +226,7 @@ async function main() {
   context.currentSoap = 'NOTE A';
 
   run = context.generateAVS();
+  await new Promise(resolve => setImmediate(resolve));
   assert.strictEqual(pending.length, 1, 'AVS did not reach its delayed request');
   patientContext = 'PATIENT CONTEXT B';
   pending.shift()('AVS NEW');
@@ -245,6 +250,7 @@ async function main() {
   providerName = 'Provider A';
 
   run = context.generateAVS();
+  await new Promise(resolve => setImmediate(resolve));
   assert.strictEqual(pending.length, 1, 'visit-switch AVS did not reach its delayed request');
   context.currentVisitAthenaBinding = bindingB;
   context.currentVisitAthenaEpoch = 2;

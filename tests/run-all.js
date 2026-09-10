@@ -976,6 +976,7 @@ const tests = [
      while immutable clinical/legal/coding safeguards remain authoritative. */
   'draft-tuning-contract.test.js',
   'draft-tuning-route-reach.test.js',
+  'template-helper-routing-source-runtime.test.js',
   'conditional-draft-profile-routing-contract.test.js',
   /* Every HPI, ROS, Exam, Assessment and Plan format is independently
      reusable: name, outline/template, use-when rule and AI prompt comments
