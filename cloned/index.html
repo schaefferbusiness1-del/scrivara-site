@@ -30975,7 +30975,13 @@ function _mlsRequiredTemplateHeadings(profile,family){
     var lines=text.split(/\r?\n/),candidates=[];
     for(var i=0;i<lines.length;i++){
       var part=_mlsTemplateHeadingParts(lines[i]),label=part.label;
-      if(!label||label.length>80||/^\[[^\]]+\]$/.test(label))continue;
+      var placeholderTokens=label.match(/\[[^\]]+\]/g)||[];
+      /* A bracket token anywhere before the colon makes this a fill pattern,
+         not one literal heading the model can preserve. A real heading such
+         as "DIAGNOSIS: [value]" is still eligible because label parsing stops
+         at the colon, before its placeholder. Keep this exactly aligned with
+         the backend extractor. */
+      if(!label||label.length>80||placeholderTokens.length)continue;
       var words=label.match(/[A-Za-z0-9]+/g)||[],next='';
       for(var n=i+1;n<lines.length;n++){if(lines[n].trim()){next=lines[n];break;}}
       var nextPlaceholder=/^\s*\[[^\]]+\]\s*$/.test(next),allCaps=/[A-Z]/.test(label)&&label===label.toUpperCase();
