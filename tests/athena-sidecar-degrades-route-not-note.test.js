@@ -36,7 +36,7 @@ const malformedSidecar = validDisplay.replace('ROS:\nPatient denies fever or new
 let firstRegion = null;
 for (const file of shells) {
   const source = fs.readFileSync(path.join(root, file), 'utf8');
-  const displayValidation = source.indexOf('_mlsValidateStructuredNoteResult(result);');
+  const displayValidation = source.indexOf('_mlsValidateStructuredNoteResult(result,generationDraftTuning);');
   const canonicalValidation = source.indexOf("generationStyle==='soap'?_mlsAthenaCanonicalFromStandardNote(result.note):_mlsValidateAthenaNote(", displayValidation);
   ok(displayValidation > 0, file + ': display-note contract validation is gone');
   ok(canonicalValidation > displayValidation, file + ': reviewed display is not validated for canonical routing');
@@ -80,7 +80,7 @@ for (const file of shells) {
     file + ': valid separate sidecar rescued a malformed displayed SOAP note');
   checks += 1;
 
-  const region = span(source, '_mlsValidateStructuredNoteResult(result);', "outcomeCode='generated';", file);
+  const region = span(source, '_mlsValidateStructuredNoteResult(result,generationDraftTuning);', "outcomeCode='generated';", file);
   if (firstRegion === null) firstRegion = region;
   else eq(region, firstRegion, file + ': generation settlement drifted across shipped shells');
 }

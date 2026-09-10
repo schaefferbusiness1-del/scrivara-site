@@ -70,18 +70,13 @@ function read(name) { return fs.readFileSync(path.join(ROOT, name), 'utf8'); }
 
 function contractBlock(source, name) {
   const start = source.indexOf('function _mlsStructuredNoteQualityError(');
-  /* The dual-note work adds a second, stricter Athena payload contract between
-     the style-neutral validator and generateNote. Keep this test focused on
-     the original display-note boundary; the dual-note suite verifies its own
-     canonical block separately. Older shells do not have that marker. */
-  const canonical = source.indexOf('\n\n/* =========================================================\n   CANONICAL ATHENA NOTE CONTRACT', start);
-  const end = canonical > start ? canonical : source.indexOf('\n\n/* =========================================================\n   GENERATE NOTE', start);
+  const end = source.indexOf('\n\n/* =========================================================\n   GENERATE NOTE', start);
   ok(start >= 0 && end > start, name + ' has no structured-note contract block');
   return source.slice(start, end);
 }
 
 function loadValidator(source, name) {
-  const sandbox = {};
+  const sandbox = { window: {}, stripSignatureBlock: value => String(value || ''), _autoDraftStripCarried: value => String(value || '') };
   vm.runInNewContext(
     contractBlock(source, name) +
       '\nthis.__mlsStructuredNoteContract={validate:_mlsValidateStructuredNoteResult,quality:_mlsStructuredNoteQualityError};',
@@ -107,7 +102,7 @@ for (const [name, source] of sources) {
   const validator = loadValidator(source, name);
   const generation = source.indexOf('async function generateNote()');
   const generate = generation >= 0 ? generation : source.indexOf('function generateNote()');
-  const validation = source.indexOf('_mlsValidateStructuredNoteResult(result);', generate);
+  const validation = source.indexOf('_mlsValidateStructuredNoteResult(result,generationDraftTuning);', generate);
   const mutation = source.indexOf('currentSoap=_reorderNoteForStyle(result.note', generate);
   ok(generate >= 0, name + ' has no generateNote sink');
   ok(validation > generate, name + ' does not validate the structured result inside generateNote');
@@ -117,15 +112,11 @@ for (const [name, source] of sources) {
   eq(contractBlock(source, name), firstContract, name + ' drifted from the canonical response contract');
 
   const goodSoap = {
-    note: 'SUBJECTIVE:\nHPI: cough for three days.\nOBJECTIVE:\nExam: lungs clear.\nASSESSMENT:\nAcute cough.\nPLAN:\nSupportive care and follow-up.'
+    note: "HPI:\nCough documented for three days.\nROS:\nNot documented in today's transcript.\nEXAM:\nLungs documented as clear today.\nASSESSMENT:\nAcute cough under evaluation.\nPLAN:\nSupportive care and follow-up documented."
   };
   eq(validator.validate(goodSoap), goodSoap, name + ' rejected a valid SOAP response');
-  eq(validator.validate({
-    note: 'ASSESSMENT: stable condition. PLAN: continue current care. SUBJECTIVE: no new concern.'
-  }).note.indexOf('ASSESSMENT:'), 0, name + ' rejected a valid APSO-style response');
-  eq(validator.validate({
-    note: 'HPI describes improving pain. Exam is reassuring. Assessment is benign. Plan is routine follow-up.'
-  }).note.indexOf('HPI'), 0, name + ' rejected a valid narrative response');
+  expectQualityFailure(validator.validate, { note: 'ASSESSMENT: stable condition. PLAN: continue current care. SUBJECTIVE: no new concern.' }, name + ' obsolete APSO wrapper');
+  expectQualityFailure(validator.validate, { note: 'HPI describes improving pain. Exam is reassuring. Assessment is benign. Plan is routine follow-up.' }, name + ' narrative without five fields');
 
   expectQualityFailure(validator.validate, undefined, name + ' missing response');
   expectQualityFailure(validator.validate, {}, name + ' missing note');
@@ -146,4 +137,4 @@ for (const [name, source] of sources) {
 }
 
 console.log('PASS structured-note-response-contract: ' + checks +
-  ' checks — malformed /api/generate note responses fail closed before currentSoap/editor mutation in production, 1p, cloned, and staging shells, while SOAP/APSO/narrative notes remain accepted and the failure is explicitly retryable');
+  ' checks — malformed /api/generate note responses fail closed before currentSoap/editor mutation in production, 1p, cloned, and staging shells, while the fixed exact five-field note remains accepted and the failure is explicitly retryable');

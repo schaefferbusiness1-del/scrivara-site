@@ -47,7 +47,7 @@ function canonicalBlock(source, file) {
 }
 
 function loadCanonical(source, file) {
-  const sandbox = {};
+  const sandbox = { window: {} };
   vm.runInNewContext(canonicalBlock(source, file) +
     '\nthis.__canonical={validate:_mlsValidateAthenaNote,quality:_mlsAthenaNoteQualityError};', sandbox, { filename: file });
   return sandbox.__canonical;
@@ -169,7 +169,7 @@ function runPlan(source, file, setup) {
   for (const [file, source] of sources) {
     eq(canonicalBlock(source, file), firstCanonical, file + ': canonical Athena contract drifted from the canonical 1p lane');
     ok(source.includes('"athena_note": "<the SAME visit as plain text in EXACTLY five flat top-level sections'), file + ': generation prompt does not require athena_note');
-    const displayValidation = source.indexOf('_mlsValidateStructuredNoteResult(result);');
+    const displayValidation = source.indexOf('_mlsValidateStructuredNoteResult(result,generationDraftTuning);');
     /* Fixed SOAP uses the clinician-reviewed display. Legacy alternate formats
        retain their separately generated canonical sidecar. */
     const fallbackExpr = "result.athena_note==null?(typeof _autoDraftStripCarried==='function'?_autoDraftStripCarried(result.note):result.note):result.athena_note";
