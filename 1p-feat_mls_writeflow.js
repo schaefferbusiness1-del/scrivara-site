@@ -1769,6 +1769,9 @@
        the batch driver waits on this settle latch (and on the recheck-button
        latch for refusals) instead of any timer heuristics. */
     try { if (rowId && unifiedAthenaState) unifiedAthenaState.probeSettled = unifiedAthenaState.probeGeneration; } catch (eBx) {}
+    /* A passing re-check retires the patient-search fallback that belonged to
+       this row. Keep this beside the READY latch so every success path agrees. */
+    try { if (rowId && unifiedAthenaState && S(unifiedAthenaState.wfdxNameRouteRowId) === S(rowId)) unifiedAthenaState.wfdxNameRouteRowId = ''; } catch (eNameRoute) {}
     /* wfatt-1.0.0 (2026-09-02): this is the READY terminal, so a wfauto
        re-check or a manual "Check Athena again" that finally succeeds erases
        the section's old failure and the row goes back to WAITING FOR YOUR
@@ -3585,7 +3588,10 @@
     /* mrnadopt-1.0.0: a review blocked ONLY for a missing MRN paints no READY
        row, so the probe path's own recheck control never appears. Offer the
        same words the blocked row's Why sentence names. */
-    try { mrnAdoptOfferCure(state, host); } catch (eMrnCure) {}
+    /* A row-level refusal already owns the canonical Check Athena again button
+       in #mlsAthenaUnifiedProbe. The MRN adoption button is the replacement
+       only for an MRN-blocked review that has no executable row of its own. */
+    if (!S(rowId).trim()) try { mrnAdoptOfferCure(state, host); } catch (eMrnCure) {}
     /* mrnopen-1.0.0 (owner 2026-09-01; 76% of charts carry no MRN in MLS).
        THE SEAM. mrnadopt-1.0.0 reads the MRN off the OPEN athenaOne chart, so on
        an MRN-only-blocked review it is the whole cure - but it refuses
@@ -3605,17 +3611,27 @@
           : 're-runs the read-only check. Nothing is written.'),
         function (btn) { wfdxOpenEncounter(state, rowId, btn, false); }));
     }
+    /* A failed appointment-row open earns a safe patient-search fallback. Keep
+       that recovery available across automatic probe/fix-strip repaints; the
+       old one-off append was erased by host.innerHTML above. */
+    try { wfdxAppendNameRoute(state, rowId, host); } catch (eNameRoute) {}
     wfdxAppendCopyReport(state, host);
     wfdxHealth(false).then(function () { wfdxPaintDiag(state); });
   }
-  function wfdxOfferNameRoute(state, rowId) {
-    var host = wfdxFixHost(); if (!host || !state || state.closed) return;
+  function wfdxAppendNameRoute(state, rowId, host) {
+    if (!host || !state || state.closed || !S(rowId).trim() || S(state.wfdxNameRouteRowId) !== S(rowId)) return false;
     if (host.querySelector('[data-mls-open-by-name]')) return;
     var btn = wfdxButton('Open by name instead',
       'Read-only: asks athenaOne’s own patient search for this chart. The search refuses an ambiguous or DOB-mismatched result, and the write check still re-verifies name, DOB and MRN before anything can be confirmed.',
       function (b) { wfdxOpenEncounter(state, rowId, b, true); });
     btn.setAttribute('data-mls-open-by-name', '1');
     host.appendChild(btn);
+    return true;
+  }
+  function wfdxOfferNameRoute(state, rowId) {
+    var host = wfdxFixHost(); if (!host || !state || state.closed || !S(rowId).trim()) return;
+    state.wfdxNameRouteRowId = S(rowId);
+    wfdxAppendNameRoute(state, rowId, host);
   }
   /* Compose the read-only ladder MLS Assist 3.0.62 exposes:
        mlsAppGotoDate {date}  ->  mlsAppSearchOpenPatient  ->  probe
@@ -3649,6 +3665,7 @@
        row-not-painted refusal, not the gatekeeper. The goto bridge is LAZY now
        - constructing it eagerly fired the drive even on the row-first path. */
     function handleOpenSuccess(openRes) {
+      if (S(state.wfdxNameRouteRowId) === S(rowId)) state.wfdxNameRouteRowId = '';
       done('', '');
       if (state.closed || unifiedAthenaState !== state) return;
       /* openpace-1.0.0: an athenaOne encounter page takes 30-60s to paint -
@@ -5040,16 +5057,40 @@
     }
     return { mode: 'batch', rows: rows, reason: '' };
   }
+  /* The manifest says which rows are eligible to be checked. It does not
+     overrule the live check currently on screen. During a current check, after
+     a current refusal, or with a stale probe bound to another row, the merged
+     primary remains disabled until the normal probe path proves READY again. */
+  function unifiedPrimaryLiveBlocked(state) {
+    try {
+      if (!state || state.closed || Number(state.probeGeneration || 0) <= 0) return false;
+      if (Number(state.probeSettled || 0) !== Number(state.probeGeneration || 0)) return true;
+      var last = state.wfautoProbe;
+      if (last && Number(last.generation) === Number(state.probeGeneration) && last.ok !== true) return true;
+      if (state.probe && !sheetclarReadyRow(state)) return true;
+    } catch (e) { return true; }
+    return false;
+  }
+  function unifiedDisablePrimaryForLiveCheck(go) {
+    if (!go) return;
+    go.disabled = true; go.setAttribute('aria-disabled', 'true');
+    go.setAttribute('data-mls-primary-blocked', SHEETCLAR_NONE_READY_REASON); go.title = SHEETCLAR_NONE_READY_REASON;
+    go.removeAttribute('data-mls-athena-action'); go.removeAttribute('data-mls-preview-hash');
+    go.removeAttribute('data-mls-row-hash'); go.removeAttribute('data-mls-client-order-id');
+    wfnextClearBatchAttrs(go);
+  }
   function unifiedSyncPrimaryButton(state) {
     var go = null; try { go = document.getElementById('mlsAthenaUnifiedGo'); } catch (e) { return; }
     if (!go || !state || state.closed || state.running || state.batchRunning || state.generating) return;
     var plan = unifiedPrimaryPlan(state);
     /* 'single' is the legacy lane: its ONLY enable path stays the validated
        read-only probe, so this never touches the button in that mode. */
-    if (plan.mode === 'batch') {
+    if (plan.mode === 'batch' && unifiedPrimaryLiveBlocked(state)) {
+      try { unifiedDisablePrimaryForLiveCheck(go); } catch (eLive) {}
+    } else if (plan.mode === 'batch') {
       try {
         go.disabled = false; go.removeAttribute('aria-disabled'); go.removeAttribute('data-mls-primary-blocked');
-        go.title = 'Sends every checked note section, one at a time, each with its own read-only Athena check and its own receipt. Save and Sign stay manual.';
+        go.title = 'Sends every checked note section, one at a time, each with its own read-only Athena check and receipt. If this review includes the final Save step, MLS saves the draft after the sections finish. Sign stays manual.';
       } catch (e2) {}
     } else if (plan.mode === 'none') {
       try {
@@ -9377,8 +9418,13 @@
       /* sheetux-1.0.0 test seam (read-only except press(), which is the SAME
          call the merged primary button makes). */
       sheetUx: { v: 'sheetux-1.0.0', zeroReason: SHEETUX_ZERO_REASON, doItLabel: SHEETUX_DOIT_LABEL,
-        plan: unifiedPrimaryPlan, sync: unifiedSyncPrimaryButton, checkedRows: bxCheckedRows,
+        plan: unifiedPrimaryPlan, sync: unifiedSyncPrimaryButton, liveBlocked: unifiedPrimaryLiveBlocked, checkedRows: bxCheckedRows,
         press: function (btn) { return runUnifiedPrimarySend(unifiedAthenaState, btn || null); } },
+      /* Read-only recovery-state seam. offer()/repaint() call the exact UI
+         functions used in production; they never probe, navigate or write. */
+      nameRoute: { pending: function () { return unifiedAthenaState ? S(unifiedAthenaState.wfdxNameRouteRowId) : ''; },
+        offer: function (rowId) { return unifiedAthenaState ? wfdxOfferNameRoute(unifiedAthenaState, rowId) : false; },
+        repaint: function (rowId) { return unifiedAthenaState ? wfdxShowFixStrip(unifiedAthenaState, rowId) : false; } },
       /* wfnext-1.0.0 read-only seam: which rows THIS press authorizes, the
          label and up-front sentence derived from them, and the two timeout
          sentences. Every one of these is a pure read of the checked set and the

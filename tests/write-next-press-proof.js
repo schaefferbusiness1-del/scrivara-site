@@ -700,10 +700,11 @@ function fireChange(box) { ((box.handlers && box.handlers.change) || []).forEach
     eq(h.next().checkTimeoutMsg,
       'One section did not answer in time, twice - press Confirm again to retry it. Nothing was written for it.',
       'the timeout wording drifted from the sentence this suite pins');
-    /* and the pill is off SENDING with the button live again */
+    /* and the pill is off SENDING while the failed current check keeps the
+       write-labelled primary disabled; the canonical recheck owns recovery. */
     eq(h.wf.diagnostics.sheetClarity.stateFor('err').label === 'SENDING', false,
       'the pill is stuck on SENDING after the queue settled');
-    eq(go.disabled, false, 'the doctor cannot press again - the sheet has dead-ended');
+    eq(go.disabled, true, 'an unanswered current Athena check re-enabled the write-labelled primary');
     eq(go.textContent, 'Confirm & write 1 of 3: HPI', 'the button did not re-arm for a retry of the same section');
     /* wfrearm-1.0.0: the re-arm section 9 adds is evidence-gated, and THIS is
        the stage that has no evidence - its read-only check never answered at
@@ -916,7 +917,7 @@ function fireChange(box) { ((box.handlers && box.handlers.change) || []).forEach
     eq(receipt.toLowerCase().indexOf('blocked'), -1, 'a section that is still checked and still owed is reported as BLOCKED');
     eq(h.next().deferredStatus, 'moved to the end', 'the deferred status word drifted');
     eq(h.arms().length, 0, 'the sheet armed the extension itself');
-    eq(go.disabled, false, 'the sheet dead-ended - the doctor cannot press again for the section that is still owed');
+    eq(go.disabled, true, 'an exhausted failed Athena check re-enabled the write-labelled primary');
   }
 
   /* ============ 9. A REFUSED WRITE DOES NOT WEDGE THE SHEET ================
@@ -995,11 +996,36 @@ function fireChange(box) { ((box.handlers && box.handlers.change) || []).forEach
     r.wf.openUnifiedConfirmation({ patient: PATIENT, sections: SECTIONS, expectedContext: BOUND, receiptSessionId: 'next-refuseprobe' });
     await settle(160);
     const rgo = r.el('mlsAthenaUnifiedGo');
-    rgo.click();
     await settle(900);
     eq(rgo.getAttribute('data-mls-athena-action'), null,
       'a sheet whose read-only check REFUSED was left carrying a write binding');
+    eq(rgo.disabled, true,
+      'a sheet whose read-only check REFUSED repainted CAN\'T SEND but re-enabled its batch primary');
+    eq(rgo.getAttribute('aria-disabled'), 'true',
+      'the refused batch primary is not exposed as disabled to assistive technology');
+    eq(rgo.getAttribute('data-mls-preview-hash'), null,
+      'a refused batch primary retained the preview binding MLS Assist reads from a trusted click');
+    eq(rgo.getAttribute('data-mls-batch-count'), null,
+      'a refused batch primary retained an ordered batch authorization');
     eq(r.executes().length, 0, 'a section whose read-only check refused was WRITTEN');
+
+    /* The appointment-id fallback is earned by a read-only open refusal. It
+       must survive the automatic probe's fix-strip repaint, and a row-level
+       refusal keeps one canonical Check Athena again control. */
+    const refusedId = r.wf.diagnostics.state().selectedRowId;
+    r.wf.diagnostics.nameRoute.offer(refusedId);
+    const fixHost = r.el('mlsAthenaUnifiedFix');
+    ok(fixHost.querySelector('[data-mls-open-by-name]'),
+      'the earned Open by name instead recovery was not rendered');
+    r.wf.diagnostics.nameRoute.repaint(refusedId);
+    ok(fixHost.querySelector('[data-mls-open-by-name]'),
+      'an automatic refusal repaint erased Open by name instead');
+    eq(r.wf.diagnostics.nameRoute.pending(), refusedId,
+      'the safe name-search recovery lost its row ownership across repaint');
+    const checkControls = [r.el('mlsAthenaUnifiedRecheck')].concat(fixHost.children)
+      .filter(el => String(el && el.textContent || '') === 'Check Athena again');
+    eq(checkControls.length, 1,
+      'a row-level refusal rendered duplicate Check Athena again controls');
 
     /* NEGATIVE 2 - the read-only check never answered at all. The bounded
        two-attempt stage and the sentence it settles in are unchanged, and it
@@ -1021,5 +1047,5 @@ function fireChange(box) { ((box.handlers && box.handlers.change) || []).forEach
       'the settled section lost the sentence that tells him it did not answer and can be pressed again');
   }
 
-  console.log('PASS write-next-press-proof: ' + checks + ' checks - the seven write-path regions are byte-identical to the digests sheet-clarity and write-auto-chain both carry; the sheet never arms MLS Assist itself; the number of checked sections and the cost in presses are stated before the first press; one press writes exactly one section and neither probes nor writes anything for a section nobody pressed for; the sheet stays open, re-arms with the next section named, accumulates one receipt and reaches DONE; a read-only stage nothing will settle is retried once and then settled in the doctor\'s words with the button live again; and on an extension that can take a batch authorization the ordered list is on the button before the trusted click and one press writes all of them, one section per execute; with a section left unchecked the finished sheet kills its own button from the PLAN and says "Nothing left to send" instead of naming a write that would be refused, and re-ticking that section revives it; and the spent or expired write arm is said in words that name the fresh-check step instead of the extension instruction that reproduces it; and a section that can never be written keeps the one documented retry, then moves to the BACK of the same list so every other checked section is written, still checked and still owed, with its own reason kept and the deferral added to it; and a press whose read-only check passed but whose WRITE Athena refused hands the button back still carrying the action and preview-hash MLS Assist reads at click time, so the very next press is a real retry instead of "click the matching Athena action button again" - while a check that refused, and one that never answered at all, both leave that binding off; and the loading panel counts the checked REVIEW rather than the one-section queue it was handed - a press that wrote 1 of 3 reads "Written 1 of 3 sections to Athena and read back so far", "1 written, 0 not sent, 2 still to go", a bar below 100% and one line saying the other two still need their own Confirm press, with no unpressed section queued as a row, while a press whose queue IS the whole checked review still says "Done: 3 of 3" on a full bar');
+  console.log('PASS write-next-press-proof: ' + checks + ' checks - the seven write-path regions are byte-identical to the digests sheet-clarity and write-auto-chain both carry; the sheet never arms MLS Assist itself; the number of checked sections and the cost in presses are stated before the first press; one press writes exactly one section and neither probes nor writes anything for a section nobody pressed for; the sheet stays open, re-arms with the next section named, accumulates one receipt and reaches DONE; a read-only stage nothing will settle is retried once and then settled in the doctor\'s words with the write-labelled button disabled; and on an extension that can take a batch authorization the ordered list is on the button before the trusted click and one press writes all of them, one section per execute; with a section left unchecked the finished sheet kills its own button from the PLAN and says "Nothing left to send" instead of naming a write that would be refused, and re-ticking that section revives it; and the spent or expired write arm is said in words that name the fresh-check step instead of the extension instruction that reproduces it; and a section that can never be written keeps the one documented retry, then moves to the BACK of the same list so every other checked section is written, still checked and still owed, with its own reason kept and the deferral added to it; and a press whose read-only check passed but whose WRITE Athena refused hands the button back still carrying the action and preview-hash MLS Assist reads at click time, so the very next press is a real retry instead of "click the matching Athena action button again" - while a check that refused, and one that never answered at all, both leave that binding off; and the loading panel counts the checked REVIEW rather than the one-section queue it was handed - a press that wrote 1 of 3 reads "Written 1 of 3 sections to Athena and read back so far", "1 written, 0 not sent, 2 still to go", a bar below 100% and one line saying the other two still need their own Confirm press, with no unpressed section queued as a row, while a press whose queue IS the whole checked review still says "Done: 3 of 3" on a full bar');
 })().catch(err => { console.error('FAIL: ' + (err && err.message ? err.message : err)); process.exit(1); });

@@ -247,9 +247,16 @@ const KEEP_REGIONS = [
      not a selection or a state change - and of the seven SHA-pinned write-path
      regions only the batch queue moved, for pullshield-1.0.0 above. Proven in
      tests/write-sheet-agreement-proof.js. */
+  /* RE-AIMED DELIBERATELY A FOURTH TIME, livecheck-1.0.0 (2026-09-10): a
+     settled current refusal painted CAN'T SEND, then the manifest-only batch
+     sync enabled the same write-labelled primary again. The added predicate
+     may only DISABLE the batch primary while its current probe is in flight,
+     refused, or stale; it removes every action/batch binding. The real runtime
+     cases, including a current passing probe enabling normally, are pinned in
+     tests/write-next-press-proof.js. */
   ['the primary button plan and its sync (unifiedPrimaryPlan + unifiedSyncPrimaryButton)',
     '  function unifiedPrimaryPlan(state) {', "  /* rwfix-1.0.0 (b1169): the include checkboxes' ONE handler",
-    '1b31b746fffd76035fc9ae472147ad4cb73649ceb368bcfd15833561e2887aae'],
+    '0b064704c34b71d8cbded7f74de91b52b8e9dfb19168c379e31b59c6aade6a4c'],
   ['the state derivation (sheetclarStateBase)',
     '  function sheetclarStateBase(state, kind) {', '  function paintSheetclarState(state, kind) {',
     '0b63410b3ead86ef078ab3f3c33651b930ee6c16a4af9df4ee26b3b3cd1dce37']
@@ -337,8 +344,8 @@ KEEP_REGIONS.forEach(function (r) {
     'the legacy single-row shortcut no longer stands aside when the save is riding this press - one press would then run two rows through the one-row path');
   eq((PLAN.match(/mode: 'single'/g) || []).length, 3, 'the plan gained a new legacy-single path - wfdone may only ever refuse');
   eq(crypto.createHash('sha256').update(SYNC, 'utf8').digest('hex'),
-    '894175be89041031f2d705337318289c7f6a5c85ea485e79eb6010d6c84eb63a',
-    'THE BUTTON SYNC CHANGED - wfdone-1.0.0 moved the PLAN and nothing else; enabling and disabling still happen in exactly the code that always did it');
+    '2ea0699e945d046ebf7740aeb4a4c067e6cac9c4a11f4eb4e90a080c9772cc9b',
+    'THE BUTTON SYNC CHANGED OUTSIDE livecheck-1.0.0 - it may add only the current-probe disable branch proven by the runtime regression');
   ok(FLOW.indexOf("var WFDONE_NOTHING_LEFT_LABEL = 'Nothing left to send';") > 0,
     'the finished-sheet label stopped being the SAME shared constant renderUnifiedReceipts already writes - one state, two sentences');
   eq((FLOW.match(/'Nothing left to send'/g) || []).length, 1,
