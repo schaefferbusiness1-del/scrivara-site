@@ -89,6 +89,7 @@ try {
   assert.match(await page.textContent('#mlsDtResetStatus') || '', /already using MLS defaults/i,
     'the default Reset state does not explain why the action is unavailable');
   const storageBeforeReset = await page.evaluate(() => JSON.stringify(Object.keys(localStorage).sort().map(key => [key, localStorage.getItem(key)])));
+  await page.locator('#mlsDtAdvanced').evaluate(el => { el.open = true; });
   await page.selectOption('#mlsDtLength', 'detailed');
   assert.ok(await page.locator('#mlsDtReset').isEnabled(), 'editing a draft family did not enable Reset');
   await page.click('#mlsDtReset');

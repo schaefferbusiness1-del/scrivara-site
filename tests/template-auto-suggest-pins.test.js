@@ -476,6 +476,7 @@ DT_FILES.forEach(file => {
       'runtime: the shell extractor did not publish itself on window');
 
     await page.selectOption('#mlsDtFamily', 'plan');
+    await page.locator('#mlsDtAdvanced').evaluate(el => { el.open = true; });
     await page.click('#mlsDtSectionAdd');
     const profileId = await page.inputValue('#mlsDtSectionProfile');
     eq(await page.inputValue('#mlsDtSectionWhen'), '',
@@ -528,6 +529,7 @@ DT_FILES.forEach(file => {
     await page.addScriptTag({ path: path.resolve(root, 'feat_mls_draft_tuning.js') });
     await page.evaluate(() => window.__mlsDraftTuning.beginSettings());
     await page.selectOption('#mlsDtFamily', 'plan');
+    await page.locator('#mlsDtAdvanced').evaluate(el => { el.open = true; });
     await page.selectOption('#mlsDtSectionProfile', profileId);
     eq(await page.inputValue('#mlsDtSectionWhen'), '',
       'runtime: a RELOAD refilled a rule he had cleared and saved');

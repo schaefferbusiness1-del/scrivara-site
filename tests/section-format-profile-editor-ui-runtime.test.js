@@ -13,17 +13,33 @@ const { chromium } = require('playwright');
         <div class="row"><button type="button" onclick="saveSettings()">Save settings</button></div>
       </div></div>
     </body></html>`;
-    await page.route('https://mls-ui-runtime.test/**', route => route.fulfill({ status: 200, contentType: 'text/html', body: shell }));
+    await page.route('https://mls-ui-runtime.test/**', route => {
+      if (new URL(route.request().url()).pathname === '/api/section-templates/derive') {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+          name: 'Imported follow-up HPI',
+          templateText: 'Imported reason:\nImported response:\nImported function:',
+          instructions: 'Keep the imported chronology.'
+        }) });
+      }
+      return route.fulfill({ status: 200, contentType: 'text/html', body: shell });
+    });
     await page.goto('https://mls-ui-runtime.test/settings');
     await page.evaluate(() => {
       window.uns = key => 'ui-runtime-account::' + key;
       window.saveSettings = function () {};
       window.getGenLength = () => 'standard';
       window.getGenInstr = () => '';
+      window.bkBase = () => '';
+      window.bkToken = () => 'test-token';
+      window.__openedProcedureTemplates = 0;
+      window.openTemplates = () => { window.__openedProcedureTemplates += 1; };
     });
     await page.addScriptTag({ path: path.resolve(__dirname, '..', 'feat_mls_draft_tuning.js') });
 
     await page.selectOption('#mlsDtFamily', 'hpi');
+    assert.equal(await page.locator('#mlsDtAdvanced').getAttribute('open'), null, 'advanced settings should start collapsed');
+    assert.match(await page.textContent('#mlsDtEffectiveSummary'), /HPI section will use/i, 'effective format summary is missing');
+    assert.equal(await page.isDisabled('#mlsDtSectionTemplate'), true, 'template fidelity is active with no template');
     for (const id of ['#mlsDtSectionName', '#mlsDtSectionWhen', '#mlsDtSectionImportNamePreview']) {
       assert.equal(await page.locator(id).getAttribute('type'), 'text', id + ' is not an explicit text input');
     }
@@ -44,9 +60,40 @@ const { chromium } = require('playwright');
     assert.match(customId, /^custom_/, 'new format did not become the selected profile');
 
     await page.fill('#mlsDtSectionName', 'Procedure follow-up HPI');
+    await page.locator('#mlsDtAdvanced').evaluate(el => { el.open = true; });
     await page.fill('#mlsDtSectionWhen', 'procedure response is discussed today');
     await page.fill('#mlsDtSectionTemplateText', 'Reason for follow-up:\nInterval response:\nFunctional change:\nRelevant symptoms:');
     await page.fill('#mlsDtInstructions', 'Lead with the procedure response and preserve documented timing, laterality, and functional change.');
+    assert.equal(await page.isDisabled('#mlsDtSectionTemplate'), false, 'template fidelity stayed disabled after adding a template');
+    assert.match(await page.textContent('#mlsDtEffectiveSummary'), /character template active/i, 'effective summary does not identify the active template');
+
+    // An imported preview belongs to the currently selected output/profile.
+    // Applying it preserves existing comments and appends distinct derived
+    // guidance instead of silently replacing the doctor's saved instruction.
+    await page.click('#mlsDtSectionImportOpen');
+    await page.fill('#mlsDtSectionImportExample', 'A synthetic HPI example with chronology and functional change.');
+    await page.click('#mlsDtSectionImportDerive');
+    await page.waitForFunction(() => document.getElementById('mlsDtSectionImportPreview').style.display !== 'none');
+    await page.click('#mlsDtSectionImportApply');
+    assert.match(await page.inputValue('#mlsDtSectionTemplateText'), /Imported response:/, 'imported template did not apply to the selected profile');
+    assert.match(await page.inputValue('#mlsDtInstructions'), /procedure response.*imported chronology/i, 'import replaced rather than appended existing comments');
+    assert.match(await page.textContent('#mlsDtAppliedStatus'), /HPI.*Imported follow-up HPI.*Save Settings/i, 'applied preview status does not name its output and profile');
+
+    // If appending would exceed the bound, Apply refuses without truncating or
+    // replacing either value and explains what the clinician must fix.
+    const priorTemplate = await page.inputValue('#mlsDtSectionTemplateText');
+    const longComments = 'x'.repeat(590);
+    await page.fill('#mlsDtInstructions', longComments);
+    await page.click('#mlsDtSectionImportOpen');
+    await page.fill('#mlsDtSectionImportExample', 'Another synthetic HPI example.');
+    await page.click('#mlsDtSectionImportDerive');
+    await page.waitForFunction(() => document.getElementById('mlsDtSectionImportPreview').style.display !== 'none');
+    await page.fill('#mlsDtSectionImportTemplatePreview', 'SHOULD NOT APPLY');
+    await page.click('#mlsDtSectionImportApply');
+    assert.equal(await page.inputValue('#mlsDtInstructions'), longComments, 'over-limit import changed existing comments');
+    assert.equal(await page.inputValue('#mlsDtSectionTemplateText'), priorTemplate, 'over-limit import partially applied its template');
+    assert.match(await page.textContent('#mlsDtSectionImportStatus'), /exceed 600 characters.*did not replace or cut off/i, 'over-limit import lacks an explicit refusal');
+    await page.fill('#mlsDtInstructions', 'Lead with the procedure response and preserve documented timing, laterality, and functional change. | Keep the imported chronology.');
 
     // Exercise the real selector change handler twice. The newly entered HPI
     // values must remain attached to their original profile instead of being
@@ -54,8 +101,8 @@ const { chromium } = require('playwright');
     await page.selectOption('#mlsDtSectionProfile', 'standard');
     await page.fill('#mlsDtSectionTemplateText', 'STANDARD HPI OUTLINE');
     await page.selectOption('#mlsDtSectionProfile', customId);
-    assert.equal(await page.inputValue('#mlsDtSectionName'), 'Procedure follow-up HPI', 'profile switch lost the format name');
-    assert.match(await page.inputValue('#mlsDtSectionTemplateText'), /Interval response:/, 'profile switch lost or overwrote the template');
+    assert.equal(await page.inputValue('#mlsDtSectionName'), 'Imported follow-up HPI', 'profile switch lost the format name');
+    assert.match(await page.inputValue('#mlsDtSectionTemplateText'), /Imported response:/, 'profile switch lost or overwrote the template');
     assert.match(await page.inputValue('#mlsDtInstructions'), /procedure response/, 'profile switch lost AI prompt comments');
 
     // Switching draft families must isolate the five independent editors.
@@ -63,7 +110,15 @@ const { chromium } = require('playwright');
     assert.doesNotMatch(await page.inputValue('#mlsDtSectionTemplateText'), /Interval response:/, 'HPI template leaked into ROS');
     await page.selectOption('#mlsDtFamily', 'hpi');
     await page.selectOption('#mlsDtSectionProfile', customId);
-    assert.match(await page.inputValue('#mlsDtSectionTemplateText'), /Interval response:/, 'HPI template did not survive a family round trip');
+    assert.match(await page.inputValue('#mlsDtSectionTemplateText'), /Imported response:/, 'HPI template did not survive a family round trip');
+
+    await page.selectOption('#mlsDtFamily', 'opnote');
+    assert.equal(await page.locator('#mlsDtProcedureTemplatesLink').evaluate(el => el.style.display), '', 'Op Note does not expose the separate procedure template library');
+    assert.match(await page.textContent('#mlsDtEffectiveSummary'), /Settings format.*procedure templates are selected separately in Op Notes/i, 'Op Note summary conflates Settings and procedure templates');
+    await page.click('#mlsDtProcedureTemplatesLink');
+    assert.equal(await page.evaluate(() => window.__openedProcedureTemplates), 1, 'procedure template library link did not use the existing opener');
+    await page.selectOption('#mlsDtFamily', 'hpi');
+    await page.selectOption('#mlsDtSectionProfile', customId);
 
     const saveReturn = await page.evaluate(() => window.__mlsDraftTuning.saveFromUi());
     const savedResult = await page.evaluate(id => {
@@ -72,10 +127,10 @@ const { chromium } = require('playwright');
     }, customId);
     const saved = savedResult.saved;
     assert.ok(saved, 'saved profile disappeared: wanted ' + customId + ', found ' + savedResult.ids.join(', ') + '; save returned ' + JSON.stringify(saveReturn && saveReturn.families && saveReturn.families.hpi));
-    assert.equal(saved.label, 'Procedure follow-up HPI');
-    assert.match(saved.templateText, /Functional change:/);
+    assert.equal(saved.label, 'Imported follow-up HPI');
+    assert.match(saved.templateText, /Imported function:/);
     assert.match(saved.when, /procedure response/);
-    assert.match(saved.instructions, /timing, laterality/);
+    assert.match(saved.instructions, /timing, laterality.*imported chronology/i);
 
     // Drive the actual Remove button down to one profile. The last format is a
     // required safety/default anchor and the UI must make further deletion
