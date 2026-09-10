@@ -737,7 +737,11 @@ const tests = [
   '1p-athena-all-actions-ready-3062.test.js',
   '1p-avatar-loader-runtime.test.js',
   '1p-calm-dock-owner-runtime.test.js',
+<<<<<<< HEAD
   'calm-tools-menu-lifecycle-runtime.test.js',
+=======
+  'keepalive-never-navigates-athena-runtime.test.js',
+>>>>>>> a3361c8f (Stop keepalive from navigating Athena)
   '1p-avatar-face-loader-runtime.test.js',
   '1p-avatar-face-studio-runtime.test.js',
   '1p-avatar-face-likeness-runtime.test.js',
@@ -2475,3 +2479,4 @@ if (executed !== tests.length) {
 }
 console.log(`GATE_COMPLETE executed=${executed} of=${tests.length}`);
 console.log(`PASS all ${tests.length} local regression suites`);
+
