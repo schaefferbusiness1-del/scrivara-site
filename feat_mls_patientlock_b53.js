@@ -346,6 +346,8 @@
    * skip its preserve-then-reset sequence for a switch that never happens. */
   function switchWillBeRefused(targetId) {
     var state = safe(function () { return switchState(targetId); }, 'allow');
+    /* The outer preserve/reset wrapper must see EVERY refusal before it saves. */
+    if (!doctorGesture() && wouldOverrideChosenChart(targetId)) return true;
     return state === 'blocked' || state === 'ask';
   }
   /* setActivePtId is the PRIMARY/authoritative switch point - always decides fresh and records

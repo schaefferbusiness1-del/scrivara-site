@@ -265,9 +265,10 @@ async function midFlight(shellSource, mutate) {
 
 (async function run() {
   /* =================================================================== gkey
-     POSITIVE: the "up now" schedule fill repaints #patientLabel through the
-     REAL _heroSyncName(). Before the fix that destroyed the finished note. */
-  const repaint = h => { h.el.heroPtName.value = OTHER_NAME; h.context._heroSyncName(); };
+     POSITIVE: a cosmetic label mutation is independent of the clinical source.
+     headerlink now prevents the old schedule writer from making this mutation,
+     so exercise the generation guard directly rather than disabling that fix. */
+  const repaint = h => { h.el.patientLabel.value = OTHER_NAME; };
 
   const beforeRepaint = await midFlight(shellWith(['gkey']), repaint);
   eq(beforeRepaint.result, false, 'PRE-FIX control: a cosmetic patientLabel repaint did NOT discard the note - the defect is unreproducible, so this proof is void');
@@ -279,6 +280,10 @@ async function midFlight(shellSource, mutate) {
   eq(settled(afterRepaint.h.state)[0].detail.status, 'success', 'the surviving run did not settle successfully');
   eq(afterRepaint.h.el.noteBox.value, canonicalNote, 'the surviving run did not render its canonical draft');
   eq(afterRepaint.h.el.patientLabel.value, OTHER_NAME, 'the repaint under test never actually happened');
+
+  const scheduledRepaint = await midFlight(SHELL, h => { h.el.heroPtName.value = OTHER_NAME; h.context._heroSyncName(); });
+  eq(scheduledRepaint.h.el.patientLabel.value, PATIENT_NAME, 'a schedule repaint must retain the selected patient label');
+  eq(scheduledRepaint.result, true, 'a protected schedule repaint must preserve generation');
 
   /* NEGATIVE CONTROL 1a: the same repaint with the SAME name must not abort in
      either build - no behaviour delta on a no-op repaint. */
@@ -369,6 +374,13 @@ async function midFlight(shellSource, mutate) {
   ok(typedEdit.h.state.toasts[0].message.startsWith('You edited the transcript'), 'the gsx-1.0.0 typed-edit sentence changed');
   eq(settled(typedEdit.h.state)[0].detail.code, 'source-changed', 'the typed-edit abort lost its pinned code');
   eq(typedEdit.h.context.__mlsLastGenerationDiscard.field, 'transcript-edit', 'the typed-edit discard was not attributed');
+
+  const repeatedPaste = await midFlight(SHELL, h => {
+    h.el.transcript.fire('input');
+    h.el.transcript.fire('input');
+  });
+  eq(repeatedPaste.result, true, 'same-value paste or mirror input events must not discard the generated result');
+  eq(settled(repeatedPaste.h.state)[0].detail.status, 'success', 'same-value input must settle the real generation successfully');
 
   /* gsx NEGATIVE CONTROLS 2 and 3: a non-transcript change keeps the alarming
      sentence, and an unchanged run still succeeds. */

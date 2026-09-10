@@ -224,6 +224,14 @@
 
   /* set the TOP field + banner to a card the app itself surfaced (no persistence) */
   function adoptTopFromChip(chip) {
+    /* headerlink-1.0.0: a highlighted schedule row cannot replace the header's
+       selected chart, even when that chart is absent from today's schedule. */
+    try {
+      if (typeof window.getActivePtId === "function" && window.getActivePtId()) {
+        if (typeof window._heroSyncName === "function") window._heroSyncName();
+        return;
+      }
+    } catch (eActive) { return; }
     var k = chipIdx(chip); if (k < 0) return;
     var a = (window._heroTodayList || [])[k] || {};
     if (!a.name) return;

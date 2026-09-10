@@ -127,7 +127,7 @@ const TAIL = run('JSON.parse(JSON.stringify(UPNOW_TAIL))');
 ok(SHELL.indexOf(HEAD) > 0, 'the shell painter no longer writes the head this module matches on: ' + JSON.stringify(HEAD));
 ok(SHELL.indexOf(SEP + TAIL.ready) > 0,
   'the shell painter no longer writes the ready sentence this module reuses: ' + JSON.stringify(SEP + TAIL.ready));
-eq(Object.keys(TAIL).sort().join(','), 'note,ready,recording,sent,transcript',
+eq(Object.keys(TAIL).sort().join(','), 'generating,note,ready,recording,sent,transcript',
   'the set of banner states changed without this suite being re-aimed');
 
 /* --------------------------------------------------------------------------
@@ -143,6 +143,7 @@ function state(ctx) { return run('upNowVisitState(' + JSON.stringify(ctx) + ')')
 const TABLE = [
   ['nothing captured yet', { upName: UP, activeName: ACTIVE }, 'ready'],
   ['recording live', { upName: UP, activeName: ACTIVE, recording: true }, 'recording'],
+  ['generation active', { upName: UP, activeName: ACTIVE, generating: true, transcript: TX, note: NOTE }, 'generating'],
   ['transcript, no note', { upName: UP, activeName: ACTIVE, transcript: TX }, 'transcript'],
   ['note generated', { upName: UP, activeName: ACTIVE, transcript: TX, note: NOTE }, 'note'],
   ['note verified into Athena', { upName: UP, activeName: ACTIVE, transcript: TX, note: NOTE, sent: true }, 'sent'],

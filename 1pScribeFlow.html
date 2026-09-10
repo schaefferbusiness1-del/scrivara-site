@@ -14100,6 +14100,7 @@ function setActivePtId(id){
   if(changed){ try{if(typeof _athenaHandleActivePatientChange==='function')_athenaHandleActivePatientChange(previous,id||'');}catch(e2){} }
   if(id) localStorage.setItem(uns('activePt'),id); else localStorage.removeItem(uns('activePt'));
   try{ if(id) sessionStorage.setItem(uns('activePtChosen'),String(id)); else sessionStorage.removeItem(uns('activePtChosen')); }catch(e5){}
+  try{ if(id&&typeof _heroSyncName==='function') _heroSyncName(); }catch(eHero){}
   if(changed){
     /* px-3.0 (2026-08-07): a monotonically increasing patient-switch epoch.
        Async completions capture it before their await and re-check it after,
@@ -28538,6 +28539,14 @@ function _heroSyncName(){
   try{
     var dl=document.getElementById('heroPtList'); if(dl && !dl.children.length) _heroPopulateList();
     var n=(document.getElementById('heroPtName')||{}).value||'';
+    /* headerlink-1.0.0: the selected chart owns every visit identity field.
+       A schedule repaint must never rename an already selected patient. */
+    var active=(typeof activePatient==='function')?activePatient():null;
+    if(active){
+      n=String(active.name||'');
+      var hn=document.getElementById('heroPtName'); if(hn) hn.value=n;
+      var hd=document.getElementById('heroPtDob'); if(hd) hd.value=String(active.dob||'');
+    }
     var pl=document.getElementById('patientLabel'); if(pl && n) pl.value=n;
   }catch(e){}
 }
@@ -30071,6 +30080,19 @@ function _calLoadNextUp(){
     var db=document.getElementById('heroPtDob'); if(db) db.value=a.dob||'';
     try{ _heroSyncName(); }catch(e){}
     _renderTodayPatients(appts);
+    var active=(typeof activePatient==='function')?activePatient():null;
+    var sameActive=!active;
+    if(active){
+      var rowId=String(a.patient_external_id||a._mlsTargetPatientId||a.patientId||a.patient_id||'');
+      sameActive=rowId?rowId===String(active.id||active.patientId||''):
+        (typeof _athenaHistoryNameCompatible==='function'&&_athenaHistoryNameCompatible(a.name,active.name)&&
+         typeof _athenaHistoryDobSame==='function'&&_athenaHistoryDobSame(a.dob,active.dob));
+    }
+    if(!sameActive){
+      var scheduled=document.getElementById('heroPullStatus');
+      if(scheduled){ scheduled.innerHTML='On the schedule now: <b>'+esc(a.name||'patient')+'</b>. Your selected patient is unchanged.'; scheduled.style.display='block'; }
+      return;
+    }
     var el=document.getElementById('heroPullStatus'); if(el){ var _ut=_fmtApptTime(a.time||''); el.innerHTML='⏰ Up now: <b>'+esc(a.name||'patient')+'</b>'+(_ut?(' at '+esc(_ut)):'')+' — loaded &amp; ready. Hit 🎙️ Start recording.'; el.style.color='#d8ffe8'; el.style.display='block'; }
   }catch(e){}
 }
@@ -30109,6 +30131,9 @@ function _heroPickPatient(i){
     if(!dob&&rec.dob) dob=String(rec.dob);
     if(dob&&!rec.dob){rec.dob=dob;if(typeof upsertPatient==='function')upsertPatient(rec);}
     setActivePtId(rec.id);
+    /* A guard can refuse without throwing while the doctor's answer is pending. */
+    var selected=(typeof activePatient==='function')?activePatient():null;
+    if(!selected||String(selected.id||selected.patientId||'')!==String(rec.id)) return false;
     try{if(typeof renderProfile==='function')renderProfile();}catch(_){} try{if(typeof renderPatientBar==='function')renderPatientBar();}catch(_){} try{if(typeof renderPatients==='function')renderPatients();}catch(_){}
     // Only repaint after the canonical chart binding has succeeded.
     window._heroSelIdx=i; window._heroWinOff=0;
@@ -31413,7 +31438,7 @@ function _mlsAwaitGeneration(run,promise,timeoutMs,timeoutReason){
 }
 function _mlsStartGeneration(transcriptEl,evidence){
   _mlsAbortActiveGeneration('superseded');
-  var run={id:++_mlsGenerationSequence,controller:new AbortController(),settled:false,abortReason:'',evidence:evidence||null,sourceEl:transcriptEl,sourceHandler:null};
+  var run={id:++_mlsGenerationSequence,controller:new AbortController(),settled:false,abortReason:'',evidence:evidence||null,sourceEl:transcriptEl,sourceHandler:null,sourceValue:String(transcriptEl&&transcriptEl.value||'')};
   if(transcriptEl&&typeof transcriptEl.addEventListener==='function'){
     /* gsx-1.0.0 (2026-08-27): this is the DOCTOR TYPING, not a patient change.
        It shares the 'source-changed' abort code with the genuine binding aborts,
@@ -31425,7 +31450,8 @@ function _mlsStartGeneration(transcriptEl,evidence){
        code is an internal contract, not a sentence. Only the MESSAGE was wrong,
        so only the message is fixed - this flag tells the handler which of the
        two very different situations actually occurred. */
-    run.sourceHandler=function(){run.abortWasTranscriptEdit=true;_mlsAbortGenerationRun(run,'source-changed');};
+    /* A deferred paste/mirror input event is not a source change. */
+    run.sourceHandler=function(){if(String(transcriptEl.value||'')===run.sourceValue)return;run.abortWasTranscriptEdit=true;_mlsAbortGenerationRun(run,'source-changed');};
     transcriptEl.addEventListener('input',run.sourceHandler);
   }
   _mlsActiveGeneration=run;
@@ -31540,14 +31566,14 @@ function _mlsExpectedTemplateCancellation(reason){
 function _mlsStartOptionalTemplate(transcript,expectedBinding,expectedEpoch,sourceEl){
   _mlsAbortGenerationRun(_mlsActiveGenerationTemplate,'superseded');
   var controller=new AbortController();
-  var run={controller:controller,abortReason:'',settled:false,sourceEl:sourceEl||null,sourceHandler:null,promise:null};
+  var run={controller:controller,abortReason:'',settled:false,sourceEl:sourceEl||null,sourceHandler:null,promise:null,sourceValue:String(sourceEl&&sourceEl.value||'')};
   if(sourceEl&&typeof sourceEl.addEventListener==='function'){
     /* gsx-1.0.0: the OPTIONAL template run deliberately keeps 'source-changed'.
        Its reason never reaches a human - the report is suppressed and the only
        toast is the main draft's success - and generate-note-lifecycle-runtime
        pins this receipt vocabulary. The rename belongs on the MAIN run above,
        which is the one that speaks to the doctor. */
-    run.sourceHandler=function(){_mlsAbortGenerationRun(run,'source-changed');};
+    run.sourceHandler=function(){if(String(sourceEl.value||'')===run.sourceValue)return;_mlsAbortGenerationRun(run,'source-changed');};
     sourceEl.addEventListener('input',run.sourceHandler);
   }
   _mlsActiveGenerationTemplate=run;
