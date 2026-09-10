@@ -33,6 +33,12 @@ function block(source, file) {
   assert(start >= 0 && end > start, file + ': structured/canonical block missing');
   return source.slice(start, end);
 }
+function tuningBlock(source, file) {
+  const start = source.indexOf('function _mlsGenerationDraftTuning(');
+  const end = source.indexOf('\nasync function generateNote()', start);
+  assert(start >= 0 && end > start, file + ': generation tuning block missing');
+  return source.slice(start, end);
+}
 function rejected(api, note, expected, label) {
   let error = null;
   try { api.validate({ note }, tuning); } catch (caught) { error = caught; }
@@ -45,12 +51,19 @@ function rejected(api, note, expected, label) {
     const source = fs.readFileSync(path.join(root, file), 'utf8');
     const strictBeforeMutation = source.indexOf('_mlsValidateStructuredNoteResult(result,generationDraftTuning);');
     const firstEditorMutation = source.indexOf('currentSoap=_reorderNoteForStyle(result.note', strictBeforeMutation);
+    const ensureTuning = source.indexOf('await _mlsAwaitGeneration(run,Promise.resolve().then(function(){return window.__mlsEnsureDraftTuning();})');
+    const captureTuning = source.indexOf('const generationDraftTuning=_mlsResolvedGenerationDraftTuning(transcript,evidence);');
     ok(strictBeforeMutation > 0 && firstEditorMutation > strictBeforeMutation,
       file + ': strict validation no longer precedes the first generated editor mutation');
-    let repairContent = '';
+    ok(ensureTuning > 0 && captureTuning > ensureTuning, file + ': settings were frozen before the lazy profile load completed');
+    ok(source.includes('resolvedDraftTuning:generationDraftTuning'), file + ': request did not receive the validated tuning snapshot');
+    ok(source.includes('draftTuningResolved:!!options.resolvedDraftTuning'), file + ': request did not mark the resolved tuning snapshot');
+    ok(source.includes("if(opts.draftTuningResolved!==true&&typeof _dt.autoRoute==='function')"), file + ': transport can reroute the frozen tuning snapshot');
+    ok(source.includes("opts.draftTuningResolved===true&&_draftFamily==='soap'"), file + ': transport can rebuild the frozen structured tuning snapshot');
+    let repairContent = '', stripCalls = 0;
     const sandbox = {
       window: {},
-      stripSignatureBlock: value => String(value || ''),
+      stripSignatureBlock: value => { stripCalls += 1; return String(value || '').replace(/\nSignature:[\s\S]*$/i, ''); },
       _autoDraftStripCarried: value => String(value || ''),
       parseGenJSON: value => JSON.parse(value),
       bkBase: () => 'https://synthetic.invalid',
@@ -60,14 +73,20 @@ function rejected(api, note, expected, label) {
     };
     vm.createContext(sandbox);
     vm.runInContext(block(source, file) + `
-      this.__api={validate:_mlsValidateStructuredNoteResult,repair:_mlsRepairUnsupportedClinicalClaim};`, sandbox, { filename: file });
+      this.__api={validate:_mlsValidateStructuredNoteResult,repair:_mlsRepairUnsupportedClinicalClaim,required:_mlsRequiredTemplateHeadings};`, sandbox, { filename: file });
     const api = sandbox.__api;
 
     const valid = api.validate({ note: base }, tuning);
     eq(valid.note, base, file + ': valid exact five-field note was rewritten');
+    eq(stripCalls, 0, file + ': raw model response passed through the displayed-note signature stripper');
     rejected(api, 'Date of Service: synthetic\n' + base, /preamble/i, file + ': metadata preamble');
     rejected(api, base.replace(/^HPI:/, '**HPI:**'), /preamble|unsupported/i, file + ': markdown outer heading');
-    rejected(api, base + '\n\nSignature:\n________________', /nested|wrapper|heading/i, file + ': sixth Signature heading');
+    rejected(api, base + '\n\n**Signature:**', /signature heading/i, file + ': bold Signature heading');
+    rejected(api, base + '\n\nSignature: [provider]', /signature heading/i, file + ': provider Signature heading');
+    rejected(api, base + '\n\nSignature', /signature heading/i, file + ': bare Signature heading');
+    eq(stripCalls, 0, file + ': signature stripper hid a malformed raw model response');
+    const planProse = base.replace('Return after the documented interval.', 'Return after the documented interval. Signature requirements for a future form were discussed.');
+    eq(api.validate({ note: planProse }, tuning).note, planProse, file + ': ordinary Plan prose containing signature was rejected');
     rejected(api, base.replace('\nDiscussion:\nReturn after the documented interval.', ''), /active adapt plan template structure/i,
       file + ': missing required Plan template label');
 
@@ -75,6 +94,18 @@ function rejected(api, note, expected, label) {
        structure and therefore remains guidance rather than a false gate. */
     eq(api.validate({ note: base }, { families: { plan: { templateMode: 'adapt', templateText: '[PLAN TEXT]' } } }).note, base,
       file + ': placeholder-only template became a structural requirement');
+    const noPlan = base.replace('DIAGNOSIS:\nSynthetic documented condition.\nRecommendations:\nProceed with the documented next step.\nDiscussion:\nReturn after the documented interval.', "Not documented in today's transcript.");
+    eq(api.validate({ note: noPlan }, tuning).note, noPlan, file + ': exact no-plan-evidence body was forced to invent template fields');
+    rejected(api, noPlan.replace("PLAN:\nNot documented in today's transcript.", "PLAN:\nNot documented in today's transcript.\nA mixed statement."), /active adapt plan template structure/i,
+      file + ': mixed Plan body incorrectly received the no-evidence exemption');
+    for (const family of ['hpi', 'ros', 'exam', 'assessment']) {
+      const outer = family.toUpperCase();
+      const sparse = base.replace(new RegExp(outer + ':\\n[\\s\\S]*?(?=\\n\\n(?:HPI|ROS|EXAM|ASSESSMENT|PLAN):|$)'), outer + ":\nNot documented in today's transcript.");
+      const familyTuning = { families: { [family]: { templateMode: 'adapt', templateText: 'FIRST FIELD:\n[x]\nSECOND FIELD:\n[y]' } } };
+      eq(api.validate({ note: sparse }, familyTuning).note, sparse, file + ': exact no-evidence ' + outer + ' body was forced to invent template fields');
+    }
+    const reservedTemplate = { templateMode: 'adapt', templateText: 'DATE OF SERVICE:\n[DATE]\nVISIT TYPE:\n[TYPE]\nDIAGNOSIS:\n[DIAGNOSIS]\nRecommendations:\n[PLAN]' };
+    assert.deepStrictEqual(Array.from(api.required(reservedTemplate, 'plan')), ['DIAGNOSIS', 'RECOMMENDATIONS']); checks += 1;
 
     repairContent = JSON.stringify({ note: base });
     eq(await api.repair('system', 'synthetic source', tuning, null), repairContent,
@@ -85,6 +116,21 @@ function rejected(api, note, expected, label) {
     ok(repairError && repairError.mlsStructuredNoteQuality, file + ': malformed /api/complete repair returned as success');
 
     ok(source.includes('Your prior draft was retained if one was already open.'), file + ': failure UI does not say the prior draft was retained');
+
+    const mutableTuning = { families: { plan: { templateMode: 'adapt', templateText: 'DIAGNOSIS:\n[x]\nRecommendations:\n[y]' } } };
+    const tuningSandbox = {
+      window: { __mlsDraftTuning: {
+        installed: true,
+        autoRoute: (_source, requested) => requested,
+        forStructured: requested => requested
+      } },
+      getGenSectionProfileOverrides: () => mutableTuning
+    };
+    vm.createContext(tuningSandbox);
+    vm.runInContext(tuningBlock(source, file) + '\nthis.__resolved=_mlsResolvedGenerationDraftTuning("synthetic",{});', tuningSandbox, { filename: file + ':tuning' });
+    mutableTuning.families.plan.templateMode = 'guide';
+    eq(tuningSandbox.__resolved.families.plan.templateMode, 'adapt', file + ': resolved request tuning drifted after capture');
+    ok(Object.isFrozen(tuningSandbox.__resolved) && Object.isFrozen(tuningSandbox.__resolved.families.plan), file + ': resolved request tuning was not deeply frozen');
   }
   console.log('PASS structured repair five-field runtime: ' + checks + ' checks; exact display, active Adapt labels, repair boundary, unchanged bytes, and retained-draft UI are enforced in both canonical shells');
 })().catch(error => { console.error(error); process.exitCode = 1; });
