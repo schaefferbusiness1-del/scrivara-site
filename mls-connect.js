@@ -20768,8 +20768,15 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
   function forceFreshVisitForNewPatient(keepRecovery) {
     safe(function () {
-      /* newVisit(opts) does opts=opts||{}, so both shapes are safe. */
-      if (typeof window.newVisit === 'function') { window.newVisit(keepRecovery ? { preserveRecovery: true } : {}); }
+      /* This is the switch engine's internal empty-editor pass, not the
+         doctor's explicit New visit intent. visitowner uses the marker to keep
+         the target patient's resumable in-tab draft eligible for its queued
+         switch-back restore. preserveRecovery keeps its existing meaning. */
+      if (typeof window.newVisit === 'function') {
+        var resetOptions = { patientSwitchReset: true };
+        if (keepRecovery) resetOptions.preserveRecovery = true;
+        window.newVisit(resetOptions);
+      }
     });
     safe(function () {
       if (typeof window.prefillContextFromProfile === 'function') { window.prefillContextFromProfile(); }
