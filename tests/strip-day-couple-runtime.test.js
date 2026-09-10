@@ -7,11 +7,11 @@ const vm = require('vm');
 
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'feat_mls_strip_day_couple.js'), 'utf8');
-const connectSource = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
+const connectSource = fs.readFileSync(path.join(root, '1p-mls-connect.js'), 'utf8');
 new Function(source); // syntax gate
 
-assert(source.includes('VERSION = "sdc-2.0.2"'), 'presentation-free sdc-2.0.2 release marker is missing');
-assert(connectSource.includes("?v=20260808sdc202perf1"), 'sdc-2.0.2 is not loaded through a fresh immutable asset URL');
+assert(source.includes('VERSION = "sdc-2.1.0"'), 'one-way sdc-2.1.0 release marker is missing');
+assert(connectSource.includes("?v=20260910sdc210"), 'sdc-2.1.0 is not loaded through a fresh immutable asset URL');
 assert(!/\.id\s*=\s*["']mlsSdcQuick/.test(source), 'feature still builds the removed second patient strip');
 assert(!source.includes('mlsDsList .ds-row'), 'feature still depends on the removed alternate-day list');
 assert(!/new\s+MutationObserver/.test(source), 'feature must not synthesize UI from DOM mutations');
@@ -55,7 +55,7 @@ assert(!source.includes('_athenaSetVisitBinding'), 'binding ownership must remai
   assert.deepStrictEqual(removed.sort(), ['mlsSdcQuick', 'mlsSdcStyle', 'stale-script'].sort(),
     'the loader left the duplicate strip, style, or stale marker behind');
   assert.strictEqual(appended.length, 1, 'the current sdc asset was not loaded exactly once');
-  assert.strictEqual(appended[0].src, 'feat_mls_strip_day_couple.js?v=20260808sdc202perf1');
+  assert.strictEqual(appended[0].src, 'feat_mls_strip_day_couple.js?v=20260910sdc210');
   assert.strictEqual(appended[0].attributes['data-mls-asset'], 'feat_mls_strip_day_couple.js');
 }
 
@@ -70,7 +70,7 @@ assert(!source.includes('_athenaSetVisitBinding'), 'binding ownership must remai
   const nodes = new Map(['mlsSdcQuick', 'mlsSdcStyle'].map(id => [id, { label: id, parentNode: parent }]));
   let reverted = 0;
   const context = {
-    NS: '__mlsStripDayCouple', VERSION: 'sdc-2.0.2',
+    NS: '__mlsStripDayCouple', VERSION: 'sdc-2.1.0',
     window: { __mlsStripDayCouple: { installed: true, version: 'sdc-1.0.0', revert() { reverted += 1; } } },
     document: { getElementById(id) { return nodes.get(id) || null; } }
   };
@@ -125,7 +125,7 @@ const document = {
 
 let active = patients[0];
 let snapshot = { day: today, active: { id: 902, name: 'Stephen Michael Buchanan', dob: '1956-10-26' } };
-const starts = [], opens = [], selects = [], dsRowsCalls = [];
+const starts = [], opens = [], selects = [], offers = [], dsRowsCalls = [];
 
 const window = {
   _acctTodayKey: () => today,
@@ -148,6 +148,7 @@ const window = {
   getPatients: () => patients,
   activePatient: () => active,
   selectPatient(id) { selects.push(String(id)); active = patients.filter(p => p.id === id)[0] || active; },
+  __mlsPtAnchor: { offer(name, id) { offers.push({ name: String(name), id: String(id) }); return true; } },
   addEventListener(type, fn) { listeners['w:' + type] = fn; },
   removeEventListener(type, fn) { if (listeners['w:' + type] === fn) delete listeners['w:' + type]; }
 };
@@ -161,7 +162,7 @@ vm.createContext(context);
 vm.runInContext(source, context, { filename: 'feat_mls_strip_day_couple.js' });
 
 const api = window.__mlsStripDayCouple;
-assert(api && api.installed && api.version === 'sdc-2.0.2', 'single-strip coupling owner did not install');
+assert(api && api.installed && api.version === 'sdc-2.1.0', 'single-strip coupling owner did not install');
 assert.strictEqual(registry.mlsSdcQuick, null, 'legacy duplicate strip was not removed');
 assert.strictEqual(registry.mlsSdcStyle, null, 'legacy duplicate-strip style was not removed');
 
@@ -176,6 +177,8 @@ snapshot = { day: today, active: { id: 902 } };
 listeners['w:mls:active-patient-changed']({ detail: { patientId: 'PT-AARON' } });
 assert.deepStrictEqual(starts, [{ id: '901', record: false }], 'Today did not use Easy.remote.startVisitFor');
 assert.strictEqual(opens.length, 0, 'Today incorrectly used the cross-day binding path');
+assert.strictEqual(active.id, 'PT-AARON', 'explicit header selection was replaced while its matching workspace was restored');
+assert.strictEqual(String(snapshot.active.id), '901', 'explicit header selection did not replace the stale workspace row');
 
 // Another selected date: exact name+DOB fallback routes only through XDC.
 selectedDay = friday;
@@ -195,13 +198,23 @@ assert.strictEqual(starts.length, 1, 'ambiguous rows activated through Easy');
 assert.strictEqual(opens.length, 1, 'ambiguous rows activated through XDC');
 rowsByDay[friday].pop();
 
-// Workspace -> header: a native quick-strip click aligns one exact chart.
+// Workspace -> header: even an exact restored row is an offer, never a reload-time selection.
 selectedDay = today;
 active = patients[0];
 snapshot = { day: today, active: { id: 902 } };
+listeners['w:mls:appointment-context-changed']({ detail: { active: true } });
+assert.deepStrictEqual(selects, [], 'restored appointment context replaced the persisted active patient during reload');
+assert.strictEqual(offers.length, 2, 'both bounded reload reconciliation passes did not use the explicit offer');
+assert(offers.every(offer => offer.name === 'Stephen Michael Buchanan' && offer.id === 'PT-STEPHEN'),
+  'restored appointment context offered a chart other than the one exact row');
+offers.length = 0;
 const nativeChip = { closest(selector) { return selector.indexOf('#ez3Quick [data-q]') !== -1 ? this : null; } };
 listeners['d:click']({ target: nativeChip });
-assert.deepStrictEqual(selects, ['PT-STEPHEN'], 'native quick-strip selection did not align the active-patient header');
+assert.deepStrictEqual(selects, [], 'restored/native workspace state replaced the persisted active patient');
+assert.strictEqual(offers.length, 2, 'both bounded workspace reconciliation passes did not use the explicit offer');
+assert(offers.every(offer => offer.name === 'Stephen Michael Buchanan' && offer.id === 'PT-STEPHEN'),
+  'workspace mismatch offered a chart other than the one exact restored row');
+assert.strictEqual(active.id, 'PT-AARON', 'workspace mismatch changed the header patient without an explicit patient selection');
 
 // Missing DaySwitch row API is a hard stop, never an _calAppts fallback.
 const savedRowsFor = window.__mlsDaySwitch.rowsFor;

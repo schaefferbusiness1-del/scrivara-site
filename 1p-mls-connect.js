@@ -61826,14 +61826,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 }catch(e){}})(); /* xdc-2.0.3: backend hot refreshes evict b419's observer/list owner; every selected date stays in native Easy and exact actions still fail closed */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{var A='feat_mls_portal_request_inbox.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260717prq102';s.setAttribute('data-mls-asset',A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* prq-1.0.0: exact-patient portal request clinician review inbox; no prescribing, pull, extension, or Athena action */
 ;(function(){try{
-  var A='feat_mls_strip_day_couple.js',V='sdc-2.0.2',old=window.__mlsStripDayCouple||null;
+  var A='feat_mls_strip_day_couple.js',V='sdc-2.1.0',old=window.__mlsStripDayCouple||null;
   if(old&&old.installed&&old.version===V)return;
   if(old){try{if(typeof old.revert==='function')old.revert();}catch(e0){}try{delete window.__mlsStripDayCouple;}catch(e1){window.__mlsStripDayCouple=null;}}
   var stale=document.querySelectorAll('script[data-mls-asset="'+A+'"]'),i,node;
   for(i=0;i<stale.length;i++){node=stale[i];if(node&&node.parentNode)node.parentNode.removeChild(node);}
   ['mlsSdcQuick','mlsSdcStyle'].forEach(function(id){var n=document.getElementById(id);if(n&&n.parentNode)n.parentNode.removeChild(n);});
-  var s=document.createElement('script');s.src=A+'?v=20260808sdc202perf1';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);
-}catch(e){}})(); /* sdc-2.0.2: hidden-view switches avoid forced layout; one native Easy quick strip remains */
+  var s=document.createElement('script');s.src=A+'?v=20260910sdc210';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);
+}catch(e){}})(); /* sdc-2.1.0: header choice owns the workspace; restored appointment state can only offer a patient switch */
 /* REJECTED_EEV_ROLLBACK_START */
 ;(function(){try{
   var A='feat_mls_exact_encounter_verify.js',old=window.__mlsExactEncounterVerify||null,stale,i,node;

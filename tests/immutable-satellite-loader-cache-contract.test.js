@@ -62,7 +62,7 @@ const assets = [
      tests/cache-token-cannot-go-stale.test.js. */
   ['feat_mls_patientpick.js', '20260811pick171', '20260811pick170'],
   ['feat_mls_study_calm.js', '20260802sg2f', '20260713sg2d'],
-  ['feat_mls_strip_day_couple.js', '20260808sdc202perf1', '20260719sdc201'],
+  ['feat_mls_strip_day_couple.js', '20260910sdc210', '20260808sdc202perf1'],
   ['feat_mls_widgetinsert.js', '20260802wi4', '20260624wi2c1'],
   ['feat_mls_topbar_unify.js', '20260722tb111', '20260719tb109'],
   ['feat_mls_command_palette.js', '20260831cpal107', '20260808cmd106perf2'],

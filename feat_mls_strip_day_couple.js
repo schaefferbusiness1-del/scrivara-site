@@ -1,4 +1,4 @@
-/* feat_mls_strip_day_couple.js -> window.__mlsStripDayCouple (sdc-2.0.2)
+/* feat_mls_strip_day_couple.js -> window.__mlsStripDayCouple (sdc-2.1.0)
  *
  * The Visit page has one native Easy workspace and one native quick strip for
  * every selected date.  This satellite only keeps that workspace and the
@@ -14,7 +14,7 @@
  */
 ;(function () {
   "use strict";
-  var NS = "__mlsStripDayCouple", VERSION = "sdc-2.0.2";
+  var NS = "__mlsStripDayCouple", VERSION = "sdc-2.1.0";
   /* sdc-1.0.0 built a second non-today patient strip and kept it alive with
      a whole-body observer plus interval.  Backend asset refreshes happen in
      the existing document, so a truthy-only guard preserved that old owner.
@@ -173,8 +173,11 @@
     finally { releaseAlignment(); }
   }
 
-  /* Native workspace -> header.  Snapshot id + selected-day row + one exact
-     chart are all required before selectPatient is allowed to run. */
+  /* Native workspace -> header is an OFFER only.  A restored Easy snapshot is
+     exact appointment evidence, but it is not evidence that the doctor chose
+     to replace the persisted header patient on this load.  The header remains
+     the patient authority; the existing anchor gives the doctor the explicit
+     switch when the workspace points at someone else. */
   function alignHeaderToWorkspace() {
     if (disposed || aligning || !workspaceVisible()) return false;
     var row = activeWorkspaceRow();
@@ -182,10 +185,9 @@
     var p = resolvePatientForRow(row), active = activePatient();
     if (!p) return false;
     if (active && text(active.id) === text(p.id) && rowMatchesPatient(row, active)) return true;
-    if (typeof window.selectPatient !== "function") return false;
-    aligning = true;
-    try { window.selectPatient(p.id); return true; } catch (e) { return false; }
-    finally { releaseAlignment(); }
+    var anchor = safe(function () { return window.__mlsPtAnchor; }, null);
+    if (!anchor || typeof anchor.offer !== "function") return false;
+    return safe(function () { return anchor.offer(text(p.name), text(p.id)) === true; }, false);
   }
 
   function scheduleHeaderAlignment() {
