@@ -14,9 +14,8 @@
  * chart-grounded guard honestly reports none.
  *
  * The fix keeps the exact match first, then falls back to a canonical
- * first|last key - but ONLY when the date of birth agrees AND exactly one chart
- * matches. The identity bar is unchanged (DOB + uniqueness); only the NAME
- * SHAPE tolerance changed, so it can never silently link the wrong chart.
+ * first|last key when either DOB or explicit MRN agrees. Contradictory nonempty
+ * identity still refuses, as does an ambiguous survivor pool.
  *
  * This suite executes the REAL extracted helper and pins both halves: the
  * shapes that must now link, and the shapes that must still refuse.
@@ -36,10 +35,13 @@ assert(html.includes("if(hits.length===1&&hits[0]&&hits[0].id!=null){ a._mlsTarg
 const resolver = html.slice(
   html.indexOf('function _calResolveLocalPatient(a){'),
   html.indexOf('function calStartVisit(id){'));
-assert(resolver.indexOf('if(db){') > 0,
-  'the canonical fallback must be gated on a known date of birth');
-assert(/_calDobKey\(p\.dob\)!==db/.test(resolver),
-  'the fallback must require the date of birth to AGREE');
+assert(resolver.indexOf('if(db||mr){') > 0,
+  'the canonical fallback must require a DOB or explicit MRN');
+assert(/\(db&&pd&&db===pd\)\|\|\(mr&&pm&&mr===pm\)/.test(resolver),
+  'the fallback must require an agreeing DOB or explicit MRN');
+assert(/if\(db&&pd&&db!==pd\) return false;/.test(resolver) &&
+       /if\(mr&&pm&&mr!==pm\) return false;/.test(resolver),
+  'contradictory nonempty DOB or MRN must refuse before selection');
 assert(/if\(fb\.length===1\)\{ a\._mlsTargetPatientId=String\(fb\[0\]\.id\); return fb\[0\]\.id; \}/.test(resolver),
   'the fallback must refuse unless EXACTLY ONE chart matches - never guess between charts');
 assert(resolver.includes('A sole same-name chart is not identity proof'),
@@ -73,13 +75,39 @@ assert.notStrictEqual(keyFL('Hans Toegel'), keyFL('Greta Toegel'), 'different fi
   assert.strictEqual(keyFL(n), '', 'a single-token or empty name must yield NO key: ' + JSON.stringify(n));
 });
 
-/* ---- 3. anti-vacuity: the OLD exact-equality rule would have failed these ---- */
+/* ---- 3. execute the complete resolver identity contract ---- */
+const helpers = html.slice(
+  html.indexOf('function _calDobKey(v)'),
+  html.indexOf('function calStartVisit(id){'));
+function resolverFor(patients) {
+  return new Function('getPatients', 'findPatient', helpers + '\nreturn _calResolveLocalPatient;')(
+    function () { return patients; },
+    function (id) { return patients.find(function (p) { return String(p.id) === String(id); }); });
+}
+const chart = { id:'local-1', name:'Hans Toegel', dob:'1985-02-03', mrn:'701101' };
+assert.strictEqual(resolverFor([chart])({ name:'Toegel, Hans', mrn:'701101' }), 'local-1',
+  'canonical name plus agreeing explicit MRN must resolve without DOB');
+assert.strictEqual(resolverFor([chart])({ name:'Toegel, Hans', dob:'02/03/1985' }), 'local-1',
+  'canonical name plus agreeing DOB must resolve without MRN');
+assert.strictEqual(resolverFor([chart])({ name:'Toegel, Hans' }), null,
+  'canonical name alone is not identity proof');
+assert.strictEqual(resolverFor([chart])({ name:'Toegel, Hans', dob:'02/03/1985', mrn:'701102' }), null,
+  'an agreeing DOB cannot override a conflicting MRN');
+assert.strictEqual(resolverFor([chart])({ name:'Toegel, Hans', dob:'1986-02-03', mrn:'701101' }), null,
+  'an agreeing MRN cannot override a conflicting DOB');
+assert.strictEqual(resolverFor([
+  chart,
+  { id:'local-2', name:'Hans F. Toegel', dob:'1986-02-03', mrn:'701101' }
+])({ name:'Toegel, Hans', mrn:'701101' }), null,
+  'same-name same-MRN candidates with conflicting DOBs must refuse');
+
+/* ---- 4. anti-vacuity: the OLD exact-equality rule would have failed these ---- */
 const normOld = function (s) { return String(s || '').trim().toLowerCase().replace(/\s+/g, ' '); };
 const missedByOld = SAME.filter(function (n) { return normOld(n) !== normOld(SAME[0]); });
 assert(missedByOld.length >= 4,
   'this suite is vacuous unless the old exact-string rule genuinely missed these shapes (missed ' +
   missedByOld.length + ')');
 
-console.log('PASS schedule row links the chart: exact match still runs first, then a canonical first|last fallback gated on an AGREEING date of birth and a UNIQUE match; ' +
+console.log('PASS schedule row links the chart: exact match still runs first, then a canonical first|last fallback gated on an agreeing DOB or explicit MRN; conflicting identity and ambiguous survivors refuse; ' +
   SAME.length + ' real athenaOne name shapes now resolve to one chart (' + missedByOld.length +
   ' of which the old exact-string rule missed, which is why the banner showed a patient while every chart-grounded guard reported none), and single-token/empty names still yield no key');
