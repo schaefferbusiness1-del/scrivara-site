@@ -5526,9 +5526,8 @@
  *     (sf_u::<email>::patients via upsertPatient->savePatients, :5666-:5676).
  * Nothing joins the store back, and loadCalendar refetches dob:'' every load.
  * THIS MODULE IS THAT JOIN, at the data level, so every consumer is fixed:
- *   (1) store -> _calAppts backfill: exact patient_external_id first, else
- *       exact sorted-token full-name match; same-name/two-DOBs veto; NEVER
- *       overwrites a non-empty row dob;
+ *   (1) store -> _calAppts backfill: agreeing explicit MRN only, with a
+ *       same-MRN/two-DOBs veto; NEVER overwrites a non-empty row dob;
  *   (2) re-applied after every window.loadCalendar() and savePatients(),
  *       plus cross-tab 'storage' events; microtask-coalesced, NO page timers;
  *   (3) in-place repaint of already-rendered Easy rows: dob span text AND the
@@ -5550,7 +5549,7 @@
     applied: 0,        /* rows backfilled this session */
     persisted: 0,      /* rows accepted by /update */
     persistFails: 0,   /* rows the server refused/ignored (join still covers) */
-    ambiguous: 0,      /* name keys vetoed (same name, two store DOBs) */
+    ambiguous: 0,      /* MRN keys vetoed (same MRN, two store DOBs) */
     lastRun: 0,
     persist: true,     /* set false to stop server writes; join keeps working */
     apply: null,       /* manual re-run hook (filled below) */
@@ -5559,26 +5558,43 @@
   window.__mlsDobEverywhere = api;
 
   /* ---- tiny local helpers (self-contained, pack style) ------------------- */
-  function nrm(s) { return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim(); }
-  function nameKey(s) { var t = nrm(s).split(' ').filter(Boolean); if (t.length < 2) return ''; t.sort(); return t.join(' '); }
-  function dobDigits(s) { return String(s == null ? '' : s).replace(/[^0-9]/g, ''); }
+  /* A missing DOB cannot supply a name+DOB second factor. Cross-record
+     enrichment therefore requires the same explicit MRN, never a name or a
+     patient_external_id (which may belong to a different id namespace). */
+  function dobMrnKey(row) {
+    var keys = {}, fields = ['mrn', 'athenaId', 'athenaPatientId', 'athena_id', 'patient_mrn'];
+    fields.forEach(function (field) {
+      var value = String(row && row[field] || '').trim();
+      if (!value) return;
+      if (!/^[a-z0-9._-]{3,48}$/i.test(value) || !/\d/.test(value)) { keys.invalid = 1; return; }
+      keys[value.toLowerCase().replace(/[^a-z0-9]/g, '')] = 1;
+    });
+    var found = Object.keys(keys); return found.length === 1 && !keys.invalid ? found[0] : '';
+  }
+  function dobValueKey(value) {
+    var s = String(value || '').trim(), m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/), y, month, day;
+    if (m) { y = +m[1]; month = +m[2]; day = +m[3]; }
+    else { m = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/); if (!m) return ''; month = +m[1]; day = +m[2]; y = +m[3]; }
+    var d = new Date(Date.UTC(y, month - 1, day));
+    if (y < 1800 || d.getUTCFullYear() !== y || d.getUTCMonth() !== month - 1 || d.getUTCDate() !== day) return '';
+    return y + '-' + ('0' + month).slice(-2) + '-' + ('0' + day).slice(-2);
+  }
   function calRows() {
     try { var c = window._calAppts; if (typeof c === 'function') c = c(); return Array.isArray(c) ? c : []; } catch (e) { return []; }
   }
 
-  /* ---- store index: '#'+id -> dob, and sorted-token name -> dob ----------- */
+  /* ---- store index: explicit MRN -> canonical DOB; conflicts refuse ---- */
+  function addDobIdentity(index, ambiguous, p) {
+    var k = dobMrnKey(p), d = dobValueKey(p && p.dob); if (!k || !d) return;
+    if (index[k] && index[k] !== d) { ambiguous[k] = 1; return; }
+    index[k] = d;
+  }
   function dobIndex() {
     var pts = [];
     try { pts = (typeof window.getPatients === 'function' ? window.getPatients() : []) || []; } catch (e) { pts = []; }
-    var m = {}, amb = {}, i, p, k, dd;
-    for (i = 0; i < pts.length; i++) {
-      p = pts[i]; if (!p || !p.name || !p.dob) continue;
-      dd = dobDigits(p.dob); if (!dd) continue;
-      if (p.id != null && p.id !== '') m['#' + String(p.id)] = String(p.dob).trim();
-      k = nameKey(p.name); if (!k) continue;
-      if (m[k] != null && dobDigits(m[k]) !== dd) { amb[k] = 1; continue; } /* same full name, two DOBs: never guess */
-      m[k] = String(p.dob).trim();
-    }
+    var m = Object.create(null), amb = Object.create(null), i;
+    for (i = 0; i < pts.length; i++) addDobIdentity(m, amb, pts[i]);
+    var k;
     api.ambiguous = 0;
     for (k in amb) { delete m[k]; api.ambiguous++; }
     return m;
@@ -5586,14 +5602,12 @@
 
   /* ---- the join: store dob -> _calAppts rows (in place, add-only) --------- */
   function applyNow() {
-    var idx = dobIndex(), rows = calRows(), changed = [], i, a, d, k;
+    var idx = dobIndex(), rows = calRows(), changed = [], i, a, d;
     for (i = 0; i < rows.length; i++) {
       a = rows[i];
-      if (!a || !a.name) continue;
+      if (!a) continue;
       if (a.dob && String(a.dob).trim()) continue;          /* NEVER overwrite */
-      d = '';
-      if (a.patient_external_id != null && a.patient_external_id !== '') d = idx['#' + String(a.patient_external_id)] || '';
-      if (!d) { k = nameKey(a.name); if (k) d = idx[k] || ''; }
+      d = idx[dobMrnKey(a)] || '';
       if (!d) continue;
       a.dob = d;
       changed.push({ a: a, dob: d });
@@ -5613,36 +5627,33 @@
   }
   api.apply = applyNow;
 
-  var _dobCache = { key: '', raw: null, index: null, ambiguous: 0 };
+  var _dobEpoch = 0;
+  var _dobCache = { key: '', raw: null, gen: '', epoch: -1, index: null, ambiguous: 0 };
+  function dobGeneration(){try{var store=window.__mlsPtsStore;return store&&typeof store.genRead==='function'?String(store.genRead()):'';}catch(e){return '';}}
   function dobInputPending(){try{var n=window.navigator&&window.navigator.scheduling;return !!(n&&typeof n.isInputPending==='function'&&n.isInputPending({includeContinuous:true}));}catch(e){return false;}}
   function dobOneTurn(){try{if(typeof window.__mlsBgSleep==='function')return Promise.resolve(window.__mlsBgSleep(0));}catch(e){}return new Promise(function(resolve){setTimeout(resolve,0);});}
-  function dobScopeCurrent(scope){try{return typeof window.uns==='function'&&String(window.uns('patients')||'')===scope.key&&localStorage.getItem(scope.key)===scope.raw;}catch(e){return false;}}
+  function dobScopeCurrent(scope){try{return typeof window.uns==='function'&&String(window.uns('patients')||'')===scope.key&&localStorage.getItem(scope.key)===scope.raw&&dobGeneration()===scope.gen&&_dobEpoch===scope.epoch;}catch(e){return false;}}
   function dobQuietTurn(scope){return dobOneTurn().then(function wait(){if(!dobScopeCurrent(scope))return false;return dobInputPending()?dobOneTurn().then(wait):true;});}
   async function dobIndexResponsive(scope){
-    if(_dobCache.index&&_dobCache.key===scope.key&&_dobCache.raw===scope.raw){api.ambiguous=_dobCache.ambiguous;return _dobCache.index;}
+    if(_dobCache.index&&_dobCache.key===scope.key&&_dobCache.raw===scope.raw&&_dobCache.gen===scope.gen&&_dobCache.epoch===scope.epoch){api.ambiguous=_dobCache.ambiguous;return _dobCache.index;}
     if(!await dobQuietTurn(scope))return null;
     var pts=[];try{pts=(typeof window.getPatients==='function'?window.getPatients():[])||[];}catch(e){pts=[];}
     if(!dobScopeCurrent(scope))return null;
-    var m={},amb={},i=0,CHUNK=24;
+    var m=Object.create(null),amb=Object.create(null),i=0,CHUNK=24;
     while(i<pts.length){
       if(!await dobQuietTurn(scope))return null;
       var end=Math.min(i+CHUNK,pts.length);
       for(;i<end;i++){
-        var p=pts[i];if(!p||!p.name||!p.dob)continue;
-        var dd=dobDigits(p.dob);if(!dd)continue;
-        if(p.id!=null&&p.id!=='')m['#'+String(p.id)]=String(p.dob).trim();
-        var k=nameKey(p.name);if(!k)continue;
-        if(m[k]!=null&&dobDigits(m[k])!==dd){amb[k]=1;continue;}
-        m[k]=String(p.dob).trim();
+        addDobIdentity(m,amb,pts[i]);
       }
     }
     var ambiguous=0;for(var key in amb){delete m[key];ambiguous++;}
     if(!dobScopeCurrent(scope))return null;
-    _dobCache={key:scope.key,raw:scope.raw,index:m,ambiguous:ambiguous};api.ambiguous=ambiguous;
+    _dobCache={key:scope.key,raw:scope.raw,gen:scope.gen,epoch:scope.epoch,index:m,ambiguous:ambiguous};api.ambiguous=ambiguous;
     return m;
   }
   async function applyResponsive(){
-    var scope={key:'',raw:null};
+    var scope={key:'',raw:null,gen:dobGeneration(),epoch:_dobEpoch};
     try{scope.key=String(window.uns('patients')||'');scope.raw=localStorage.getItem(scope.key);}catch(e){return {stale:true};}
     var idx=await dobIndexResponsive(scope);if(!idx)return {stale:true};
     var rows=calRows(),planned=[],i=0,CHUNK=24;
@@ -5650,10 +5661,8 @@
       if(!await dobQuietTurn(scope))return {stale:true};
       var end=Math.min(i+CHUNK,rows.length);
       for(;i<end;i++){
-        var a=rows[i];if(!a||!a.name||(a.dob&&String(a.dob).trim()))continue;
-        var d='',k='';
-        if(a.patient_external_id!=null&&a.patient_external_id!=='')d=idx['#'+String(a.patient_external_id)]||'';
-        if(!d){k=nameKey(a.name);if(k)d=idx[k]||'';}
+        var a=rows[i];if(!a||(a.dob&&String(a.dob).trim()))continue;
+        var d=idx[dobMrnKey(a)]||'';
         if(d)planned.push({a:a,dob:d});
       }
     }
@@ -5691,29 +5700,30 @@
 
   /* ---- repaint already-rendered Easy DOM (keys + dob spans) --------------- */
   function repaint(changed) {
-    var byName = {}, i;
-    for (i = 0; i < changed.length; i++) byName[nrm(changed[i].a.name)] = changed[i].dob;
-    var scopes = document.querySelectorAll('#mlsEz3, .ez3-modal');
-    for (var s = 0; s < scopes.length; s++) {
-      var attrs = ['data-k', 'data-hd', 'data-more', 'data-q'];
-      for (var ai = 0; ai < attrs.length; ai++) {
-        var els = scopes[s].querySelectorAll('[' + attrs[ai] + ']');
-        for (i = 0; i < els.length; i++) {
-          var v = els[i].getAttribute(attrs[ai]) || '';
-          var parts = v.split('|');
-          if (parts.length !== 5 || parts[2]) continue;   /* not a rowKey, or dob already set */
-          var d = byName[nrm(parts[1])]; if (!d) continue;
-          parts[2] = d;
-          els[i].setAttribute(attrs[ai], parts.join('|'));
+    /* Match the complete rendered appointment key. A same-name row can be
+       another patient; neither its DOB nor its action key may be relabeled. */
+    var keys = Object.create(null), collisions = Object.create(null), rows = calRows(), changedDobs = new Map();
+    changed.forEach(function(item){changedDobs.set(item.a,item.dob);});
+    rows.forEach(function(a){
+      if(!a||!a.start_local)return;
+      var d=changedDobs.get(a)||'';
+      var key=String(a.patient_external_id||'')+'|'+String(a.name||'')+'||'+String(a.appt_date||a.day_local||'').slice(0,10)+'|'+String(a.start_local);
+      var exact=String(a.id||a.appointmentId||a.appointment_id||a.apptId||a.appt_id||'');
+      [key,exact?exact+'|'+key:''].forEach(function(k){if(!k)return;if(Object.prototype.hasOwnProperty.call(keys,k))collisions[k]=1;keys[k]=d;});
+    });
+    Object.keys(collisions).forEach(function(k){delete keys[k];});
+    var scopes=document.querySelectorAll('#mlsEz3, .ez3-modal');
+    for(var s=0;s<scopes.length;s++){
+      ['data-k','data-hd','data-more','data-q'].forEach(function(attr){
+        var els=scopes[s].querySelectorAll('['+attr+']');
+        for(var i=0;i<els.length;i++){
+          var v=els[i].getAttribute(attr)||'',d=keys[v];if(!d)continue;
+          var parts=v.split('|'),slot=parts.length===6?3:parts.length===5?2:-1;if(slot<0||parts[slot])continue;
+          parts[slot]=d;els[i].setAttribute(attr,parts.join('|'));
+          var row=typeof els[i].closest==='function'?els[i].closest('.ez3-prow'):null;
+          var span=row&&row.querySelector('.dob');if(span&&/—\s*$/.test(span.textContent||''))span.textContent='🎂 '+d;
         }
-      }
-      var prows = scopes[s].querySelectorAll('.ez3-prow');
-      for (i = 0; i < prows.length; i++) {
-        var nmEl = prows[i].querySelector('.nm'), dEl = prows[i].querySelector('.dob');
-        if (!nmEl || !dEl) continue;
-        var d2 = byName[nrm(nmEl.textContent)];
-        if (d2 && /—\s*$/.test(dEl.textContent || '')) dEl.textContent = '🎂 ' + d2;
-      }
+      });
     }
   }
 
@@ -5767,8 +5777,8 @@
     _origSave = f;
     var w = function () {
       var r = f.apply(this, arguments);
-      if(r&&typeof r.then==='function')return Promise.resolve(r).then(function(receipt){if(!receipt||!receipt.stale)applySoon();return receipt;},function(error){throw error;});
-      applySoon();
+      if(r&&typeof r.then==='function')return Promise.resolve(r).then(function(receipt){if(!receipt||!receipt.stale){_dobEpoch++;applySoon();}return receipt;},function(error){throw error;});
+      _dobEpoch++;applySoon();
       return r;
     };
     w.__mlsDobWrap = 1;w.__mlsDobOrig=f;w.__mlsOrig=f;
@@ -5779,10 +5789,12 @@
 
   /* late-defined globals / cross-tab store writes: event-driven only */
   function onReady() { ensureWraps(); applySoon(); }
-  function onStorage(ev) { try { if (ev && ev.key && /::patients$/.test(ev.key)) { ensureWraps(); applySoon(); } } catch (e) {} }
+  function onStorage(ev) { try { if (ev && ev.key && /::patients$/.test(ev.key)) { _dobEpoch++;ensureWraps(); applySoon(); } } catch (e) {} }
+  function onRecordUpdated(){_dobEpoch++;applySoon();}
   function onVis() { ensureWraps(); if (Date.now() - api.lastRun > 2000) applySoon(); }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', onReady, { once: true });
   window.addEventListener('storage', onStorage, false);
+  window.addEventListener('mls:patient-record-updated', onRecordUpdated, false);
   document.addEventListener('visibilitychange', onVis, true);
 
   /* first pass now (store + _calAppts may both already be populated) */
@@ -5793,6 +5805,7 @@
     try { if (_origSave && window.savePatients && window.savePatients.__mlsDobWrap) window.savePatients = _origSave; } catch (e) {}
     try { document.removeEventListener('DOMContentLoaded', onReady); } catch (e) {}
     try { window.removeEventListener('storage', onStorage, false); } catch (e) {}
+    try { window.removeEventListener('mls:patient-record-updated', onRecordUpdated, false); } catch (e) {}
     try { document.removeEventListener('visibilitychange', onVis, true); } catch (e) {}
     try { delete window.__mlsDobEverywhere; } catch (e) { window.__mlsDobEverywhere = null; }
     return 'reverted (already-backfilled rows keep their dob; server writes are not undone)';
