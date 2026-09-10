@@ -670,6 +670,8 @@ function walk(node, fn) { fn(node); node.children.forEach(c => walk(c, fn)); }
       'the READY sentence dropped the scope honesty: ' + short);
     eq(/[Nn]o save,/.test(short), false,
       'THE PILL PROMISED NO SAVE ON A PRESS THAT SAVES: ' + short);
+    ok(FLOW.indexOf('can save an unsigned draft when you choose Save draft; it never signs.') > 0,
+      'the Send to Athena safety copy still denies the available unsigned Save draft action');
 
     /* EVERY honest fact survives, verbatim, one disclosure below */
     ok(h.statusText().indexOf('Ready — the exact chart is verified. One click on Confirm & Send runs only Write reviewed HPI. Nothing else.') === 0,

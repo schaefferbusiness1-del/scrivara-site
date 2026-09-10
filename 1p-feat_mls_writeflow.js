@@ -6528,7 +6528,7 @@
     /* sheetux-1.0.0: the one shared "How" for every READY row, said once here
        instead of repeated verbatim inside each row. */
     var sharedHow = readyRows.some(function (row) { return row.action === 'write_note'; })
-      ? ' Leave the sections you want checked, then press <b>Confirm &amp; Send to Athena</b> once. Each checked section still gets its own read-only Athena check, its own write and its own receipt; nothing is saved or signed.'
+      ? ' Leave the sections you want checked, then press <b>Confirm &amp; Send to Athena</b> once. Each checked section still gets its own read-only Athena check, its own write and its own receipt; MLS can save an unsigned draft when you choose Save draft, and never signs.'
       : ' Every READY item needs its own Confirm &amp; Send.';
     /* writeui-1.0.0 (b1184): the What -> Where -> How paragraph is the same
        paragraph, byte for byte - it moved OUT of the doctor's first screen and
@@ -6725,7 +6725,7 @@
          aria-describedby, so it stays visible and outside every fold; the long
          boundary sentence it used to carry is one fold down in How this works,
          where it is still read by every pin that reads it. */
-      '<div id="mlsAthenaUnifiedSafety" style="margin-top:12px;padding:9px 11px;border:1px solid #f0d79a;background:#fff7e6;border-radius:9px;color:#6d5010;font-size:12px"><b>Nothing has changed yet.</b> Nothing leaves MLS until you press Confirm &amp; Send, and MLS never saves and never signs.</div>' +
+      '<div id="mlsAthenaUnifiedSafety" style="margin-top:12px;padding:9px 11px;border:1px solid #f0d79a;background:#fff7e6;border-radius:9px;color:#6d5010;font-size:12px"><b>Nothing has changed yet.</b> Nothing leaves MLS until you press Confirm &amp; Send. MLS writes the reviewed sections and can save an unsigned draft when you choose Save draft; it never signs.</div>' +
       wfxEvidenceHtml(state) + /* wfx-1.0.0: W1 staleness, W2 contradiction screen, W4 completeness tally */
       howHtml +
       unifiedIdentityHtml(manifest) +
