@@ -53,11 +53,16 @@ const { chromium } = require('playwright');
     assert.equal(await page.locator('#mlsDtSectionNameHost').evaluate(el => el.style.display), '', 'HPI format-name control is hidden');
     assert.equal(await page.locator('#mlsDtSectionTemplateTextHost').evaluate(el => el.style.display), '', 'HPI template editor is hidden');
 
+    // Creating beside a shipped Guide profile must still start in Adapt. Guide
+    // is a loose behavior, not a safe inherited default for a blank upload.
+    await page.selectOption('#mlsDtSectionProfile', 'focused');
+    assert.equal(await page.inputValue('#mlsDtSectionTemplate'), 'guide', 'Guide fixture profile is not active');
     const before = await page.locator('#mlsDtSectionProfile option').count();
     await page.click('#mlsDtSectionAdd');
     assert.equal(await page.locator('#mlsDtSectionProfile option').count(), before + 1, 'Add format did not add a profile');
     const customId = await page.inputValue('#mlsDtSectionProfile');
     assert.match(customId, /^custom_/, 'new format did not become the selected profile');
+    assert.equal(await page.inputValue('#mlsDtSectionTemplate'), 'adapt', 'new blank format inherited loose Guide mode');
 
     await page.fill('#mlsDtSectionName', 'Procedure follow-up HPI');
     await page.locator('#mlsDtAdvanced').evaluate(el => { el.open = true; });
@@ -65,7 +70,7 @@ const { chromium } = require('playwright');
     await page.fill('#mlsDtSectionTemplateText', 'Reason for follow-up:\nInterval response:\nFunctional change:\nRelevant symptoms:');
     await page.fill('#mlsDtInstructions', 'Lead with the procedure response and preserve documented timing, laterality, and functional change.');
     assert.equal(await page.isDisabled('#mlsDtSectionTemplate'), false, 'template fidelity stayed disabled after adding a template');
-    assert.match(await page.textContent('#mlsDtEffectiveSummary'), /character template active/i, 'effective summary does not identify the active template');
+    assert.match(await page.textContent('#mlsDtEffectiveSummary'), /character template.*keeps template headings and structure/i, 'effective summary does not identify the active template and fidelity behavior');
 
     // An imported preview belongs to the currently selected output/profile.
     // Applying it preserves existing comments and appends distinct derived
@@ -111,6 +116,42 @@ const { chromium } = require('playwright');
     await page.selectOption('#mlsDtFamily', 'hpi');
     await page.selectOption('#mlsDtSectionProfile', customId);
     assert.match(await page.inputValue('#mlsDtSectionTemplateText'), /Imported response:/, 'HPI template did not survive a family round trip');
+
+    // A first import into an untouched Guide profile defaults to Adapt and says
+    // plainly what that means. An explicit Guide choice is preserved, as is
+    // Guide when replacing a template that already exists.
+    await page.selectOption('#mlsDtFamily', 'plan');
+    await page.selectOption('#mlsDtSectionProfile', 'escalation');
+    assert.equal(await page.inputValue('#mlsDtSectionTemplate'), 'guide', 'blank Plan Guide fixture is missing');
+    assert.equal(await page.inputValue('#mlsDtSectionTemplateText'), '', 'blank Plan fixture unexpectedly has a template');
+    await page.click('#mlsDtSectionImportOpen');
+    await page.fill('#mlsDtSectionImportExample', 'Synthetic follow-up Plan example.');
+    await page.click('#mlsDtSectionImportDerive');
+    await page.waitForFunction(() => document.getElementById('mlsDtSectionImportPreview').style.display !== 'none');
+    await page.click('#mlsDtSectionImportApply');
+    assert.equal(await page.inputValue('#mlsDtSectionTemplate'), 'adapt', 'first import into blank inherited Guide instead of defaulting to Adapt');
+    assert.match(await page.textContent('#mlsDtAppliedStatus'), /Keeps template headings and structure/i, 'first-import status hides the effective fidelity behavior');
+
+    await page.click('#mlsDtSectionAdd');
+    const explicitGuideId = await page.inputValue('#mlsDtSectionProfile');
+    await page.fill('#mlsDtSectionTemplateText', 'Temporary outline to choose fidelity.');
+    await page.selectOption('#mlsDtSectionTemplate', 'guide');
+    await page.fill('#mlsDtSectionTemplateText', '');
+    await page.click('#mlsDtSectionImportOpen');
+    await page.fill('#mlsDtSectionImportExample', 'Synthetic explicitly guided Plan example.');
+    await page.click('#mlsDtSectionImportDerive');
+    await page.waitForFunction(() => document.getElementById('mlsDtSectionImportPreview').style.display !== 'none');
+    await page.click('#mlsDtSectionImportApply');
+    assert.equal(await page.inputValue('#mlsDtSectionTemplate'), 'guide', 'explicit Guide choice was overwritten on first import');
+    assert.match(await page.textContent('#mlsDtEffectiveSummary'), /loose guide.*may rewrite or omit/i, 'collapsed summary hides Guide rewrite/omission behavior');
+
+    await page.click('#mlsDtSectionImportOpen');
+    await page.fill('#mlsDtSectionImportExample', 'Synthetic replacement for an existing guided Plan template.');
+    await page.click('#mlsDtSectionImportDerive');
+    await page.waitForFunction(() => document.getElementById('mlsDtSectionImportPreview').style.display !== 'none');
+    await page.click('#mlsDtSectionImportApply');
+    assert.equal(await page.inputValue('#mlsDtSectionProfile'), explicitGuideId, 'replacement import changed the target profile');
+    assert.equal(await page.inputValue('#mlsDtSectionTemplate'), 'guide', 'replacing a nonempty Guide template reset its saved mode');
 
     await page.selectOption('#mlsDtFamily', 'opnote');
     assert.equal(await page.locator('#mlsDtProcedureTemplatesLink').evaluate(el => el.style.display), '', 'Op Note does not expose the separate procedure template library');

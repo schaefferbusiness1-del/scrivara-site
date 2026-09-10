@@ -682,9 +682,10 @@
       return { kind: kind, name: name, type: type, text: text };
     });
   }
-  function exampleImporter(id, profile) {
+  function exampleImporter(id, profile, options) {
     id = familyId(id);
     if (!isProfileFamily(id)) return null;
+    options = options && typeof options === 'object' && !Array.isArray(options) ? options : {};
     var targetId = profileId(profile, ''), previewState = null, originScope = storageScope();
     function requireOrigin() { if (!scopeCurrent(originScope)) { previewState = null; throw scopeError(); } }
     function sanitizeDerived(value) {
@@ -735,6 +736,16 @@
         var editor = profileEditor(id, originScope);
         var changes = { templateText: previewState.templateText, instructions: previewState.instructions };
         if (previewState.name) changes.label = previewState.name;
+        /* A first imported example should keep its headings and structure by
+           default. Guide is intentionally loose, so inheriting it from a
+           neighboring/default profile makes an upload look ignored. Callers
+           may preserve an explicit choice; replacing an existing template
+           always keeps its saved mode. */
+        var existing = editor && editor.list().filter(function (row) { return row.id === targetId; })[0];
+        if (existing && !String(existing.templateText || '').trim()) {
+          if (enumValue('templateMode', options.templateMode, '')) changes.templateMode = String(options.templateMode);
+          else if (options.preserveTemplateMode !== true) changes.templateMode = SECTION_TEMPLATE_DEFAULT;
+        }
         var applied = editor && editor.update(targetId, changes);
         if (applied) previewState = null;
         return applied || false;
@@ -793,7 +804,7 @@
         if (!Object.prototype.hasOwnProperty.call(input, 'templateText')) input.templateText = '';
         if (!Object.prototype.hasOwnProperty.call(input, 'instructions')) input.instructions = '';
         if (!input.sectionMode) input.sectionMode = (activeSectionProfile(id, profiles, ctx.family.activeProfile) || {}).sectionMode;
-        if (!input.templateMode) input.templateMode = (activeSectionProfile(id, profiles, ctx.family.activeProfile) || {}).templateMode;
+        if (!input.templateMode) input.templateMode = SECTION_TEMPLATE_DEFAULT;
         profiles.push(input);
         return persist(ctx, profiles, candidateId);
       },
@@ -1082,6 +1093,8 @@
   var modalWasOpen = false;
   var sectionImportSession = null;
   var sectionImportEpoch = 0;
+  var templateModeExplicit = Object.create(null);
+  function templateModeKey(family, profile) { return familyId(family) + '::' + String(profile || ''); }
   function q(id) { return document.getElementById(id); }
   function optionHtml(rows) {
     return rows.map(function (row) { return '<option value="' + row[0] + '">' + row[1] + '</option>'; }).join('');
@@ -1183,6 +1196,9 @@
     var templateText = cleanTemplate(q('mlsDtSectionImportTemplatePreview').value, MAX_SECTION_TEMPLATE);
     if (!templateText) { sectionImportStatus('The reusable template preview is empty.', true); return; }
     var name = cleanReusableText(q('mlsDtSectionImportNamePreview').value, 80);
+    var priorTemplate = cleanTemplate((q('mlsDtSectionTemplateText') || {}).value, MAX_SECTION_TEMPLATE);
+    var selectedProfileId = String((q('mlsDtSectionProfile') || {}).value || '');
+    var modeWasExplicit = !!templateModeExplicit[templateModeKey(activeFamily, selectedProfileId)];
     var currentComments = cleanReusableText((q('mlsDtInstructions') || {}).value, MAX_INSTRUCTIONS);
     var derivedComments = cleanReusableText((q('mlsDtSectionImportCommentsPreview') || {}).value, MAX_INSTRUCTIONS);
     var combinedComments = currentComments;
@@ -1195,6 +1211,7 @@
       combinedComments = proposedComments;
     }
     if (name) q('mlsDtSectionName').value = name;
+    if (!priorTemplate && !modeWasExplicit && q('mlsDtSectionTemplate')) q('mlsDtSectionTemplate').value = SECTION_TEMPLATE_DEFAULT;
     q('mlsDtSectionTemplateText').value = templateText;
     q('mlsDtInstructions').value = combinedComments;
     /* tplauto-1.0.0: an uploaded example that produced a template also
@@ -1213,7 +1230,10 @@
     captureUi(activeFamily);
     var appliedLabel = String((q('mlsDtSectionName') || {}).value || 'selected format').trim();
     var appliedStatus = q('mlsDtAppliedStatus');
-    if (appliedStatus) appliedStatus.textContent = 'Preview applied to ' + (FAMILY_LABELS[activeFamily] || 'this output') + ' → ' + appliedLabel + '. Save Settings to use it for future drafts.';
+    var appliedMode = String((q('mlsDtSectionTemplate') || {}).value || SECTION_TEMPLATE_DEFAULT);
+    var appliedModeText = appliedMode === 'guide' ? 'Uses the template as a loose guide and may rewrite nonessential wording.' :
+      (appliedMode === 'strict' ? 'Keeps template headings, order, and standard wording.' : 'Keeps template headings and structure.');
+    if (appliedStatus) appliedStatus.textContent = 'Preview applied to ' + (FAMILY_LABELS[activeFamily] || 'this output') + ' → ' + appliedLabel + '. ' + appliedModeText + ' Save Settings to use it for future drafts.';
     resetSectionImport(true);
     paintEffectiveSummary();
     paintCount();
@@ -1401,8 +1421,12 @@
       catch (e) { try { if (typeof window.toast === 'function') window.toast('The procedure template library could not be opened.', 'err'); } catch (e2) {} }
     });
     ['mlsDtLength', 'mlsDtTone', 'mlsDtStructure', 'mlsDtExtra', 'mlsDtSectionName', 'mlsDtSectionMode', 'mlsDtSectionTemplate', 'mlsDtSectionTemplateText', 'mlsDtSectionWhen', 'mlsDtInstructions', 'mlsDtFamilyInstructions'].forEach(function (id) {
-      var el = q(id); if (el) el.addEventListener('input', function () { captureUi(activeFamily); paintEffectiveSummary(); paintCount(); });
-      if (el) el.addEventListener('change', function () { captureUi(activeFamily); paintEffectiveSummary(); paintCount(); });
+      function changed() {
+        if (id === 'mlsDtSectionTemplate') templateModeExplicit[templateModeKey(activeFamily, (q('mlsDtSectionProfile') || {}).value)] = true;
+        captureUi(activeFamily); paintEffectiveSummary(); paintCount();
+      }
+      var el = q(id); if (el) el.addEventListener('input', changed);
+      if (el) el.addEventListener('change', changed);
     });
     var whenSuggestButton = q('mlsDtSectionWhenSuggest');
     if (whenSuggestButton) whenSuggestButton.addEventListener('click', suggestWhenNow);
@@ -1437,7 +1461,7 @@
         label: 'New ' + activeFamily.toUpperCase() + ' format',
         when: '',
         sectionMode: current.sectionMode,
-        templateMode: current.templateMode,
+        templateMode: SECTION_TEMPLATE_DEFAULT,
         templateText: '',
         instructions: ''
       });
@@ -1524,8 +1548,10 @@
     var routing = profiles.length > 1
       ? ' It is the account default; another saved format can be chosen only when its Use automatically when rule matches or you pick it for one visit.'
       : ' It is the only saved format for this output.';
+    var modeSentence = mode === 'guide' ? ' It uses the template as a loose guide and may rewrite or omit nonessential template wording.' :
+      (mode === 'strict' ? ' It keeps template headings, order, and standard wording.' : ' It keeps template headings and structure while filling supported content.');
     var templateSentence = templateText
-      ? ' This Settings format has a ' + templateText.length + '-character template active in ' + mode + ' mode.'
+      ? ' This Settings format has a ' + templateText.length + '-character template.' + modeSentence
       : ' This Settings format has no template, so template fidelity is inactive; its format and comments can still guide the draft.';
     var procedureSentence = id === 'opnote'
       ? ' Patient-specific procedure templates are selected separately in Op Notes and remain unchanged.' : '';
@@ -1721,6 +1747,7 @@
     workingScopeInvalid = false;
     working = readForScope(workingScope);
     if (!working) { workingScopeInvalid = true; return false; }
+    templateModeExplicit = Object.create(null);
     activeFamily = 'soap';
     mountSettings();
     loadUi(activeFamily);
@@ -1785,6 +1812,7 @@
     working = null;
     workingScope = null;
     workingScopeInvalid = false;
+    templateModeExplicit = Object.create(null);
     activeFamily = 'soap';
   }
   function onSessionBoundary() {
