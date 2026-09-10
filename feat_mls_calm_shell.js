@@ -1189,7 +1189,7 @@
          preference, resolved by the ONE resolver (window.__mlsVisitNotesPref).
          `reveal` routes the row THROUGH Settings so he sees a real check
          mark with its state, instead of a hidden box being flipped. */
-      { id: 'setPullVisitBodies', as: 'Full visit notes', reveal: 'integrations' },
+      { id: 'setPullVisitBodies', as: 'Chart import settings', reveal: 'integrations' },
       { label: /^copy every visit from athenaone$/i, within: '#profileCard' },
       { label: /^add a visit$/i, within: '#profileCard' }
     ] },
@@ -1343,7 +1343,7 @@
        that exists to name exactly these controls - was consulted. A bare
        <input type=checkbox> has empty textContent and carries its title
        and aria-label on the wrapping <label>, so EVERY checkbox spec was
-       silently dropped. The "Full visit notes" row the shell promises had
+       silently dropped. The "Chart import settings" row the shell promises had
        therefore never rendered once, while the reach suite exempted the
        hidden wrapper *because* that row was "offered". Offered in the
        spec list is not offered on screen. */
@@ -1417,7 +1417,7 @@
     function row(it) {
       /* 2026-07-28 owner order: Tools is a windows-style launcher - icon above, name below. Same rows, same data-i indexing, same resolver; only the cell presentation changed. */
       var nm = it.label.replace(/[<>&]/g, '');
-      var ic = it.icon || ({'Dictate':'🎙️','MLS Assistant':'🤖','Draft op note':'📝','Snapshot':'📸','Prep op notes':'📋','Schedule':'📅','Pre-visit intake forms':'🧾','Templates':'📄','Custom widget':'🧩','Pull activity':'📥','Analysis':'📊','Team':'👥','Staff prep':'👩‍⚕️','Legal requests':'⚖️','Verify saved data':'🛡️','Share / Export':'📤','Export everything for EMR':'💾','Full visit notes':'📖','Copy every visit from athenaOne':'📋','Add a visit':'➕','Settings':'⚙️','Admin':'🔐','Help':'🎓','Troubleshoot Athena':'🩺','Log out':'🚪'})[nm] || '🔧';
+      var ic = it.icon || ({'Dictate':'🎙️','MLS Assistant':'🤖','Draft op note':'📝','Snapshot':'📸','Prep op notes':'📋','Schedule':'📅','Pre-visit intake forms':'🧾','Templates':'📄','Custom widget':'🧩','Pull activity':'📥','Analysis':'📊','Team':'👥','Staff prep':'👩‍⚕️','Legal requests':'⚖️','Verify saved data':'🛡️','Share / Export':'📤','Export everything for EMR':'💾','Chart import settings':'⚙️','Copy every visit from athenaOne':'📋','Add a visit':'➕','Settings':'⚙️','Admin':'🔐','Help':'🎓','Troubleshoot Athena':'🩺','Log out':'🚪'})[nm] || '🔧';
       return '<div class="r" role="menuitem" tabindex="0" data-i="' + it.i + '"><span class="ri" aria-hidden="true">' + ic + '</span><span class="rn">' + nm + '</span></div>';
     }
     menu.innerHTML = sections.map(function (s) {

@@ -33,6 +33,8 @@ const root = process.env.MLS_ROOT || path.resolve(__dirname, '..');
 const shell = fs.readFileSync(path.join(root, 'feat_mls_calm_shell.js'), 'utf8');
 const app = fs.readFileSync(path.join(root, 'ScribeFlow.html'), 'utf8');
 const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'latin1');
+const p1Shells = ['1pScribeFlow.html', path.join('1p', 'index.html')]
+  .map((file) => fs.readFileSync(path.join(root, file), 'utf8'));
 
 /* ------------------------------------------------ lift the shipped resolver */
 
@@ -74,11 +76,11 @@ let stubFor = () => null;
 const dataGroup = shell.slice(shell.indexOf("{ id: 'data', label: 'Data'"), shell.indexOf("{ id: 'app', label: 'App'"));
 assert(dataGroup.length > 40, 'the Tools > Data group is gone');
 
-const specLine = dataGroup.split('\n').find((l) => /as:\s*'Full visit notes'/.test(l));
-assert(specLine, 'the Tools menu no longer declares a "Full visit notes" row at all');
+const specLine = dataGroup.split('\n').find((l) => /as:\s*'Chart import settings'/.test(l));
+assert(specLine, 'the Tools menu no longer declares a "Chart import settings" row at all');
 
 const specId = (/\bid:\s*'([A-Za-z][\w-]*)'/.exec(specLine) || [])[1];
-assert(specId, 'the "Full visit notes" row declares no id');
+assert(specId, 'the "Chart import settings" row declares no id');
 
 /* (b) his placement request: NOT the checkbox beside Pull today. */
 assert.notStrictEqual(specId, 'mlsDsVisitBodies',
@@ -90,14 +92,21 @@ assert.strictEqual(specId, 'setPullVisitBodies',
 /* (a) the row must actually RENDER. This is the assertion the old suite could
    not make, and the one that was false for every build since the shell landed. */
 stubFor = (id) => (id === specId ? bareCheckbox(id) : null);
-const spec = { id: specId, as: 'Full visit notes', reveal: 'integrations' };
+const spec = { id: specId, as: 'Chart import settings', reveal: 'integrations' };
 const row = resolver.toolsResolve(spec);
 
-assert(row, 'toolsResolve() DROPS the "Full visit notes" row: textOf(' +
+assert(row, 'toolsResolve() DROPS the "Chart import settings" row: textOf(' +
   JSON.stringify(resolver.textOf(bareCheckbox(specId))) + ') is empty for a bare checkbox, ' +
   'and the guard rejects the element before spec.as is read. The control is hidden ' +
   'in the day strip AND absent from Tools - it has no route at all.');
-assert.strictEqual(row.label, 'Full visit notes', 'the declared label must be what the row shows');
+assert.strictEqual(row.label, 'Chart import settings',
+  'the Tools row must name the Settings destination rather than sound like saved History');
+assert(shell.includes("'Chart import settings':'⚙️'"),
+  'Chart import settings lost the Settings icon and fell back to a generic tool');
+for (const source of p1Shells) {
+  assert(source.includes("'chart import settings': 'Open Settings to choose how much visit history Athena pulls include.'"),
+    'the renamed Tools row lost its plain-language hover explanation');
+}
 
 /* --------- NON-VACUITY: the harness must be able to say no, and to say yes --- */
 
