@@ -5261,9 +5261,39 @@
        signal on modern pulls too. */
     function ppState(){ try{ var g=window.__mlsDayHistoryPull=window.__mlsDayHistoryPull||{}; if(!g.state||g.state.__si!==1){ if(g.state&&g.state.running===true) return null; g.state={__si:1,running:false,total:0,done:0,ok:0,failed:0,current:'',rows:[]}; } return g.state; }catch(e){ return null; } }
     function ppTally(s){ try{ /* ppt-2.0 (owner 2026-08-09, watching day 9: "2 saved · 19 skipped"): the tally counted settle EVENTS, so a chart that failed three re-check passes then cleared counted 3 into "skipped" and 1 into "saved" forever. CHART-LEVEL truth: latest state per chart key wins; done = distinct charts seen (monotonic - the bar never moves backward, si-1.9.4). */ var latest={}; for(var ti=0;ti<s.rows.length;ti++){ var tr=s.rows[ti]; latest[tr.k||tr.name]=tr; } var tks=Object.keys(latest); var tok=0,tfail=0,tcs=0; for(var tj=0;tj<tks.length;tj++){ var tl=latest[tks[tj]]; if(tl.ok===true) tok++; else if(tl.pending!==true){ tfail++; if(tl.cs===true) tcs++; } } s.ok=tok; s.failed=tfail; s.chartOnly=tcs; s.done=tks.length; if((s.total||0)<tks.length) s.total=tks.length; }catch(e){} }
-    function ppStart(total,base){ var s=ppState(); if(!s) return; if(base>0){ s.running=true; if(total>s.total) s.total=total; return; } s.running=true; s.total=total||0; s.done=0; s.ok=0; s.failed=0; s.current=''; s.rows=[]; s.runId='r'+Date.now().toString(36); /* srr-1.2: rows accumulate across sub-batches by the si-1.9.4 no-reset law - the runId lets readers slice the CURRENT run without resetting anything (the 22-rows-on-a-20-chart-day trap, 2026-08-08) */ }
+    function ppStart(total,base){ var s=ppState(); if(!s) return; if(base>0){ s.running=true; if(total>s.total) s.total=total; return; } s.running=true; s.total=total||0; s.done=0; s.ok=0; s.failed=0; s.current=''; s.rows=[]; s.runId='r'+Date.now().toString(36); s.unresolvedSeq=0; /* srr-1.2: rows accumulate across sub-batches by the si-1.9.4 no-reset law - the runId lets readers slice the CURRENT run without resetting anything (the 22-rows-on-a-20-chart-day trap, 2026-08-08) */ }
     function ppCurrent(name){ var s=ppState(); if(s&&s.running) s.current=String(name||''); }
-    function ppSettle(name,ok,reason,pending,extra){ var s=ppState(); if(!s||!s.running) return null; var r={name:String(name||''),ok:ok===true,reason:String(reason||''),pending:pending===true,runId:String(s.runId||'')}; if(extra){ r.sr=Number(extra.surfaceResets||0); r.surface=String(extra.chartSurface||''); if(extra.pid) r.pid=String(extra.pid); if(extra.axe) r.axe=String(extra.axe); if(extra.chartSaved===true) r.cs=true; /* qol-2.2 */ if(extra.sp===true) r.sp=true; /* cap-1.0.0 */ if(extra.dn) r.dn=String(extra.dn).slice(0,80); /* tny-1.0.0 */ if(extra.dnDay) r.dnd=String(extra.dnDay).slice(0,10); /* lcd-1.0.0: the note column's OWN day, so a receipt that lands later can prove it belongs to THIS row */ } /* ppt-2.0: rows key by name+pid so same-name patients stay distinct and re-settles REPLACE in the tally rather than double-count */ r.k=r.name+'|'+(r.pid||''); s.rows.push(r); ppTally(s); return r; }
+    function ppSettle(name,ok,reason,pending,extra){ var s=ppState(); if(!s||!s.running) return null; var r={name:String(name||''),ok:ok===true,reason:String(reason||''),pending:pending===true,runId:String(s.runId||'')}; if(extra){ r.sr=Number(extra.surfaceResets||0); r.surface=String(extra.chartSurface||''); if(extra.pid) r.pid=String(extra.pid); if(extra.axe) r.axe=String(extra.axe); if(extra.chartSaved===true) r.cs=true; /* qol-2.2 */ if(extra.sp===true) r.sp=true; /* cap-1.0.0 */ if(extra.dn) r.dn=String(extra.dn).slice(0,80); /* tny-1.0.0 */ if(extra.dnDay) r.dnd=String(extra.dnDay).slice(0,10); /* lcd-1.0.0: the note column's OWN day, so a receipt that lands later can prove it belongs to THIS row */ } /* ppt-2.0: rows key by name+pid so same-name patients stay distinct and re-settles REPLACE in the tally rather than double-count. A reporting-only key is reserved for pid-less refused entries. */ r.k=(extra&&extra.reportKey)?String(extra.reportKey):(r.name+'|'+(r.pid||'')); s.rows.push(r); ppTally(s); return r; }
+    /* ppu-1.0.0: unresolved-at-entry rows belong to the requested history
+       scope even though the identity gate correctly refuses to open them.
+       The receipt has always counted them; seed the same terminal refusals
+       into progress so a 22-target day cannot finish looking like 14/14 saved.
+       A label may come only from an exact local-id lookup; otherwise the
+       fallback is numbered and carries no guessed identity. A pid-less entry
+       gets a run-stable report key stored on that entry, so re-settling the
+       same refusal replaces it while distinct sub-batch refusals never merge. */
+    function ppSettleUnresolved(list){
+      list=Array.isArray(list)?list:[];
+      for(var ui=0;ui<list.length;ui++){
+        var u=list[ui]||{},s=ppState();
+        var upid=String(u.patientId||u._mlsTargetPatientId||u.patient_external_id||'');
+        var local=null;
+        if(upid) try{ if(typeof window.findPatient==='function'){ var found=window.findPatient(upid); if(found&&String(found.id||'')===upid) local=found; } }catch(eFind){}
+        var localName=String(local&&local.name||'').trim();
+        var label=localName||('Unresolved chart '+String(ui+1));
+        var reportKey=String(u.__ppReportKey||'');
+        if(!reportKey){
+          if(upid){
+            /* A later sub-batch refusal replaces the row already carrying this
+               exact local id, even if that patient's display name has changed. */
+            if(s&&Array.isArray(s.rows)) for(var ri=s.rows.length-1;ri>=0;ri--){ if(String(s.rows[ri]&&s.rows[ri].pid||'')===upid){ reportKey=String(s.rows[ri].k||''); break; } }
+            if(!reportKey) reportKey=label+'|'+upid;
+          }else { if(s) s.unresolvedSeq=Number(s.unresolvedSeq||0)+1; reportKey=String((s&&s.runId)||'run')+':unresolved:'+String((s&&s.unresolvedSeq)||ui+1); }
+          try{Object.defineProperty(u,'__ppReportKey',{value:reportKey,writable:true,configurable:true});}catch(eKey){u.__ppReportKey=reportKey;}
+        }
+        ppSettle(label,false,String(u.reason||'identity-target-unresolved').slice(0,80),false,{pid:upid,reportKey:reportKey});
+      }
+    }
     function ppResolve(rowRef,ok,reason,extra){ var s=ppState(); if(!s||!rowRef) return; rowRef.ok=ok===true; rowRef.pending=false; rowRef.reason=String(reason||''); if(extra){ if(extra.sp===true) rowRef.sp=true; /* cap-1.0.0 */ if(extra.chartSaved===true) rowRef.cs=true; if(extra.dn) rowRef.dn=String(extra.dn).slice(0,80); /* tny-1.0.0 */ if(extra.dnDay) rowRef.dnd=String(extra.dnDay).slice(0,10); /* lcd-1.0.0 */ } ppTally(s); }
     function ppEnd(){ var s=ppState(); if(s){ s.finishedAt=Date.now(); s.running=false; s.current=''; s.phase=null; } } /* dn-1.0: the DONE card freezes its clock on finishedAt */
     /* ===== dnp-1.0.0 (the day-note pass gets its OWN phase) =================
@@ -6234,7 +6264,9 @@
        the same day the gap would close and the verdict would be back to claiming
        coverage it never captured. Pure read, no write, same resolver. */
     receipt.storeCensusBefore = storedContentCensus(rows, unresolved);
-    ppStart((sweepProgressTotal > rows.length ? sweepProgressTotal : rows.length), sweepProgressBase);
+    var ppRequestedTotal = rows.length + unresolved.length;
+    ppStart((sweepProgressTotal > ppRequestedTotal ? sweepProgressTotal : ppRequestedTotal), sweepProgressBase);
+    ppSettleUnresolved(unresolved);
     safe(function () { var scopeState = ppState(); if (scopeState) scopeState.visitNotesRequested = pullVisitBodies === true; });
     /* ===== nrh-1.0.0 (a poisoned search surface must not burn the roster) ====
        MEASURED live 2026-08-26, twice in one night: an athenaOne tab whose

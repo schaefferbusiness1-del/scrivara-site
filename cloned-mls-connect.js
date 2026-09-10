@@ -8631,6 +8631,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       try { note.dispatchEvent(new Event('input', { bubbles: true })); } catch (eSync) {}
     }
     if (!note || !(note.value || '').trim()) { flowToast('Generate the note first, then review it before sending.', 'err'); return; }
+    /* recnote-1.0.0: Resume may have appended dictation after this note was
+       created. The dim is advisory by design, so the click gate must enforce
+       the same freshness verdict before any Athena review door can open. */
+    var reviewPatient = null;
+    try { reviewPatient = verifiedActivePatient(); } catch (eNextGatePatient) {}
+    var reviewPatientId = String(reviewPatient && (reviewPatient.id || reviewPatient.patientId || reviewPatient.patient_external_id) || '');
+    if (noteTranscriptOutdated(genTranscriptText(), note.value, reviewPatientId, noteRecordIdentity())) { flowToast(NOTE_TRANSCRIPT_STALE_WHY, 'err'); return; }
     /* nextgate-1.1.0 (measured 2026-09-02 10:xx): the dim on #ez3flReview is
        deliberately not `disabled`, so the click still arrives here - answer it
        with the same sentence the tooltip carries. Placement is load-bearing:
@@ -8968,6 +8975,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var d = detail || {};
     _genRun.id = Number(d.runId || 0) || 0;
     _genRun.active = true;
+    _noteGenerationAccepted = false;
     /* A NEW RUN is the one thing besides a transcript edit that clears the old
        verdict, and nothing else does: the doctor decides when they have read
        it, not a timer and not the next repaint. */
@@ -8982,7 +8990,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (_genRun.id && runId && runId !== _genRun.id) return genRunHint();
     _genRun.active = false;
     var status = String(d.status || '');
-    if (status === 'success' || status === 'ok') { _genRun.settled = null; return genRunHint(); }
+    if (status === 'success' || status === 'ok') { _genRun.settled = null; _noteGenerationAccepted = true; return genRunHint(); }
     _genRun.settled = {
       runId: runId, status: status || 'failed',
       code: String(d.code || ''), message: String(d.message || ''),
@@ -9019,21 +9027,68 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     };
   }
   try { window.__mlsGenerationRunState = genRunState; } catch (eGenRun) {}
-  function laneHintDefault(live, text, noteTextValue) {
+  /* recnote-1.0.0: a note and transcript can both be restored, then the doctor
+     can Resume and append another segment. Presence of the old note is not
+     proof that it contains the new words. Keep one context-bound baseline:
+     when the patient or saved record changes, the restored note becomes the baseline;
+     while both stay fixed, any transcript change means Review must wait for
+     an explicit Generate. No text is copied, cleared, or generated here. */
+  var _noteTranscriptProof = { ready: false, patientId: '', recordId: '', note: '', transcript: '' };
+  var _noteGenerationAccepted = false;
+  var _noteManualEditPending = false;
+  var NOTE_TRANSCRIPT_STALE_WHY = 'New visit text was added after this note was created. Update the note before reviewing.';
+  function noteRecordIdentity() {
+    try { if (typeof currentNoteId !== 'undefined' && currentNoteId != null && String(currentNoteId)) return 'note:'+String(currentNoteId); } catch (eNoteId) {}
+    try { if (typeof currentVisitAthenaBinding !== 'undefined' && currentVisitAthenaBinding) return 'binding:'+JSON.stringify(currentVisitAthenaBinding); } catch (eBinding) {}
+    return '';
+  }
+  function noteTranscriptOutdated(transcriptText, noteTextValue, patientId, recordId) {
+    var tx = String(transcriptText == null ? '' : transcriptText);
+    var nt = String(noteTextValue == null ? '' : noteTextValue);
+    var pid = String(patientId == null ? '' : patientId);
+    var rid = String(recordId == null ? '' : recordId);
+    /* A transient repaint can briefly lose the verified patient while the old
+       visit remains mounted. Do not let that blank frame erase stale truth. */
+    if (!pid && _noteTranscriptProof.ready) pid = _noteTranscriptProof.patientId;
+    if (!rid && _noteTranscriptProof.ready) rid = _noteTranscriptProof.recordId;
+    if (!nt.trim()) {
+      _noteTranscriptProof = { ready: false, patientId: pid, recordId: rid, note: '', transcript: tx };
+      _noteGenerationAccepted = false; _noteManualEditPending = false;
+      return false;
+    }
+    if (!_noteTranscriptProof.ready || _noteTranscriptProof.patientId !== pid || _noteTranscriptProof.recordId !== rid) {
+      _noteTranscriptProof = { ready: true, patientId: pid, recordId: rid, note: nt, transcript: tx };
+      _noteGenerationAccepted = false; _noteManualEditPending = false;
+      return false;
+    }
+    /* Only evidence that can actually incorporate the current transcript may
+       advance its baseline: the engine's successful generation receipt, or a
+       trusted edit in one of the two note editors. Background formatting and
+       mirror writes may change note bytes, but cannot clear stale dictation. */
+    if (_noteGenerationAccepted || _noteManualEditPending) {
+      _noteTranscriptProof = { ready: true, patientId: pid, recordId: rid, note: nt, transcript: tx };
+      _noteGenerationAccepted = false; _noteManualEditPending = false;
+      return false;
+    }
+    if (_noteTranscriptProof.note !== nt) _noteTranscriptProof.note = nt;
+    return tx !== _noteTranscriptProof.transcript;
+  }
+  function laneHintDefault(live, text, noteTextValue, noteTranscriptStale) {
     var tx = String(text == null ? '' : text);
     var nt = String(noteTextValue == null ? '' : noteTextValue);
     if (live) return 'Recording now. Pause whenever you need to; everything captured stays here so you can resume later.';
+    if (noteTranscriptStale) return NOTE_TRANSCRIPT_STALE_WHY;
     if (nt.trim()) return 'Your note is ready below. Review and edit it here before using any send tools.';
     if (tx.trim()) return _recSessionSeen
       ? 'Recording stopped. Resume to add more, or generate one note from every segment.'
       : 'Transcript added. Record to add more, or generate one note from every segment.';
     return 'Records locally and drafts the note here - nothing goes to Athena until you review and send it.';
   }
-  function paintLaneHint(hint, live, text, noteTextValue) {
+  function paintLaneHint(hint, live, text, noteTextValue, noteTranscriptStale) {
     if (!hint) return '';
     genRunTranscriptChanged(text);
     var run = genRunHint();
-    var next = run.text || laneHintDefault(live, text, noteTextValue);
+    var next = run.text || laneHintDefault(live, text, noteTextValue, noteTranscriptStale);
     setLaneText(hint, next);
     /* role=status so the sentence is ANNOUNCED and not merely drawn. A refusal
        is the one thing on this lane a doctor must not be able to miss, and the
@@ -9164,6 +9219,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var noteWrap = $('ez3flNoteWrap'), topNote = $('ez3flNote');
     var avsQuick = rec.querySelector('#ez3flAvs');
     var avsPatient = verifiedActivePatient();
+    var notePatientId = String(avsPatient && (avsPatient.id || avsPatient.patientId || avsPatient.patient_external_id) || '');
+    var noteTranscriptStale = noteTranscriptOutdated(text, noteText, notePatientId, noteRecordIdentity());
     if (avsQuick) {
       setLaneDisabled(avsQuick, !avsPatient);
       setLaneAttr(avsQuick, 'aria-disabled', avsPatient ? 'false' : 'true');
@@ -9182,7 +9239,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          a stopped session has transcript. So it now shows ONLY in those two
          states and the hero owns starting, exactly as onboarding teaches.
          (Pause/resume reachability is pinned by easy-pause-resume-runtime.) */
-      var rbResumable = !!(text.trim() && _recSessionSeen) && !noteText.trim();
+      var rbResumable = !!(text.trim() && _recSessionSeen);
       setLaneHidden(rb, !live && !rbResumable);
       if (rb.classList.contains('live') !== live) rb.classList.toggle('live', live);
       /* 2026-07-29: body.mls-recording had NO writer anywhere, while three
@@ -9219,7 +9276,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       setLaneAttr(ob, 'aria-expanded', wsOpen ? 'true' : 'false');
     }
     if (gb) {
-      setLaneHidden(gb, live || !text.trim() || !!noteText.trim());
+      setLaneHidden(gb, live || !text.trim() || (!!noteText.trim() && !noteTranscriptStale));
       setLaneDisabled(gb, !genReal || !!genReal.disabled);
       /* genvis-1.0.0: #genBtn.disabled was the ONLY evidence this label had
          that a run was in flight, and on 2026-09-01 it was not enough - the
@@ -9231,7 +9288,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          the single writer of those on this button and runs immediately below,
          and two writers on one attribute is a defect this repo already pays
          for elsewhere. */
-      setLaneText(gb, (_genRun.active || (genReal && genReal.disabled)) && !noteText.trim() ? 'Generating note...' : '\u2728 Generate one note');
+      setLaneText(gb, (_genRun.active || (genReal && genReal.disabled)) ? 'Generating note...' : (noteTranscriptStale ? '\u2728 Update note with new visit text' : '\u2728 Generate one note'));
     }
     syncTopGenerationOwnership(rec, gb);
     /* gcx-1.0.0: the top lane's Generate carries the same read-only evidence
@@ -9242,7 +9299,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        laneHintDefault(); paintLaneHint puts the live generation state in front
        of them. This is the line that read "Your note is ready below" for the
        whole 28 s of a run that ended in a refusal. */
-    paintLaneHint(hint, live, text, noteText);
+    paintLaneHint(hint, live, text, noteText, noteTranscriptStale);
     /* txm-1.0.0: a PURE APPEND (which is what live dictation is) is now taken
        even while the caret is in the box, caret and scroll preserved, so the
        doctor watches their words arrive instead of the box sitting frozen until
@@ -9337,8 +9394,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if (rvBtn) {
         var rvRun = false; try { rvRun = !!(_genRun && _genRun.active); } catch (eRvRun) { rvRun = false; }
         var rvRefusal = noteLooksLikeRefusal(noteText);
-        var rvBlocked = rvRun || !noteText.trim() || rvRefusal;
-        var rvWhy = rvRun ? 'Your note is still generating - review opens when it is ready.' : (rvRefusal ? NEXTGATE_REFUSAL_WHY : 'Generate a note first.');
+        var rvBlocked = rvRun || !noteText.trim() || rvRefusal || noteTranscriptStale;
+        var rvWhy = rvRun ? 'Your note is still generating - review opens when it is ready.' : (rvRefusal ? NEXTGATE_REFUSAL_WHY : (noteTranscriptStale ? NOTE_TRANSCRIPT_STALE_WHY : 'Generate a note first.'));
         setLaneAttr(rvBtn, 'aria-disabled', rvBlocked ? 'true' : 'false');
         if (rvBlocked) setLaneAttr(rvBtn, 'title', rvWhy); else if (rvBtn.hasAttribute('title')) rvBtn.removeAttribute('title');
         if (rvBtn.classList.contains('dim') !== rvBlocked) rvBtn.classList.toggle('dim', rvBlocked);
@@ -9380,6 +9437,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     try {
       var t = ev && ev.target;
       if (!t || !t.closest || !t.closest('#mlsEz3,#captureCard,#noteCard,#mlsAsstPanel,#mlsDaDock,#mlsCopVoiceBtn,#mlsAsstFab')) return;
+      if (ev.type === 'input' && ev.isTrusted === true && (t.id === 'noteBox' || t.id === 'ez3flNote')) _noteManualEditPending = true;
       scheduleLaneSync();
     } catch (e) {}
   }
@@ -9503,8 +9561,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           rec.appendChild(failRow);
           var txWrap = document.createElement('div');
           txWrap.className = 'ez3fl-transcript';
-          txWrap.innerHTML = '<div class="ez3fl-txhead"><label for="ez3flTranscript">Visit transcript</label><span>Type, paste, pause, and resume without losing anything</span></div>' +
-            '<textarea class="ez3fl-tx" id="ez3flTranscript" placeholder="The visit conversation appears here as you speak. You can also type or paste text."></textarea>' +
+          txWrap.innerHTML = '<div class="ez3fl-txhead"><label for="ez3flTranscript">Visit transcript or doctor dictation</label><span>Record the visit, dictate your post-visit summary, or type/paste notes here.</span></div>' +
+            '<textarea class="ez3fl-tx" id="ez3flTranscript" placeholder="Record the visit, dictate your post-visit summary, or type/paste notes here."></textarea>' +
             '<div class="ez3fl-txmeta"><span id="ez3flCount">0 words captured</span><span>Every segment is combined into one note.</span></div>';
           rec.appendChild(txWrap);
           var topTx = txWrap.querySelector('#ez3flTranscript');
@@ -24647,10 +24705,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        always editable before generation and mirrors #transcript both ways. */
     if (a && S.phase !== 'gen' && S.phase !== 'note') {
       h += '<div class="ez3-card ez3-transcript-card">' +
-             '<div class="ez3-transcript-head"><label for="ez3Transcript">Visit transcript</label>' +
-               '<span>' + (S.phase === 'rec' ? '🔴 Recording now' : 'Type, paste, or resume recording') + '</span></div>' +
+             '<div class="ez3-transcript-head"><label for="ez3Transcript">Visit transcript or doctor dictation</label>' +
+               '<span>' + (S.phase === 'rec' ? '🔴 Recording now' : 'Record the visit, dictate your post-visit summary, or type/paste notes here.') + '</span></div>' +
              (S.phase === 'rec' ? '<div class="ez3-timer">' + fmtTimer() + '</div>' : '') +
-             '<textarea class="ez3-transcript" id="ez3Transcript" placeholder="The visit conversation appears here. You can also type or paste notes before generating."></textarea>' +
+             '<textarea class="ez3-transcript" id="ez3Transcript" placeholder="Record the visit, dictate your post-visit summary, or type/paste notes here."></textarea>' +
              '<div class="ez3-transcript-meta"><span id="ez3TranscriptCount">0 words captured</span>' +
                '<span><strong>Every recording segment is combined</strong> into one note.</span></div>' +
            '</div>';

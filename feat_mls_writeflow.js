@@ -5487,6 +5487,70 @@
       return (fresh && S(fresh.appointmentId).trim()) ? o : null;
     } catch (e) { return null; }
   }
+  /* An explicit Bind choice changes which visit THIS editor will be saved as,
+     not merely which encounter the transient Send sheet will probe. Carry the
+     exact resolved context into the canonical Visit binding only while both
+     owners still match: the editor bytes that opened this sheet and the full
+     active-patient identity. Read the frozen binding back before calling the
+     rebuilt sheet a success; on any refusal, restore the prior binding and
+     leave the current review and note untouched. */
+  function wfbindEditorFingerprint() {
+    try { return typeof window._athenaEditorFingerprint === 'function' ? S(window._athenaEditorFingerprint()) : ''; } catch (e) { return ''; }
+  }
+  function wfbindCommitCanonical(state, opts) {
+    try {
+      var expectedFingerprint = S(state && state.editorFingerprint);
+      if (!expectedFingerprint || wfbindEditorFingerprint() !== expectedFingerprint) {
+        unifiedStatus(state, 'The note changed while this appointment was being bound. The binding was not applied; reopen Send to Athena from the current note.', 'err');
+        return false;
+      }
+      var patient = state && state.manifest && state.manifest.patient || {};
+      var active = activePt() || {};
+      var activeIdentity = { patientId: S(active.id || active.patientId), name: S(active.name), dob: S(active.dob), mrn: S(active.mrn || active.athenaId) };
+      if (!p1SamePatient(patient, activeIdentity)) {
+        unifiedStatus(state, 'The active patient changed while this appointment was being bound. The binding was not applied and nothing was sent.', 'err');
+        return false;
+      }
+      var ctx = expectedVisitContext(patient, opts);
+      if (!ctx || !S(ctx.visitDate).trim() || !S(ctx.provider).trim() || !S(ctx.appointmentId).trim()) {
+        unifiedStatus(state, 'MLS could not freeze one exact dated Athena appointment for this review. The binding was not applied and nothing was sent.', 'err');
+        return false;
+      }
+      var freeze = window._athenaFreezeVisitBinding, setBinding = window._athenaSetVisitBinding, getBinding = window._athenaGetVisitBinding;
+      if (typeof freeze !== 'function' || typeof setBinding !== 'function' || typeof getBinding !== 'function') {
+        unifiedStatus(state, 'The Visit editor could not accept this appointment binding. Reload MLS and bind it again; nothing was sent.', 'err');
+        return false;
+      }
+      var prior = getBinding();
+      var binding = freeze(active, { source: 'send-sheet-explicit-bind', historical: true, visitContext: ctx,
+        noteTimestamp: Number(opts && (opts.visitTimestamp || opts.noteTimestamp) || 0) || null,
+        displayDate: ctx.visitDate, displayProvider: ctx.provider });
+      if (!binding) {
+        unifiedStatus(state, 'The Visit editor refused this appointment binding. The review remains unchanged and nothing was sent.', 'err');
+        return false;
+      }
+      var setAccepted = false;
+      try { setAccepted = setBinding(binding, true) === true; } catch (eSet) {}
+      if (!setAccepted) {
+        try { setBinding(prior || null, true); } catch (eRollbackSet) {}
+        unifiedStatus(state, 'The Visit editor refused this appointment binding. The prior visit context was kept and nothing was sent.', 'err');
+        return false;
+      }
+      var readback = null;
+      try { readback = getBinding(); } catch (eReadback) {}
+      var rb = readback && readback.visitContext || {};
+      if (!readback || !p1SamePatient(readback.patient, activeIdentity) ||
+          S(rb.visitDate) !== S(ctx.visitDate) || S(rb.provider) !== S(ctx.provider) || S(rb.appointmentId) !== S(ctx.appointmentId)) {
+        try { setBinding(prior || null, true); } catch (eRollback) {}
+        unifiedStatus(state, 'The Visit editor could not verify the chosen appointment after binding it. The prior visit context was kept and nothing was sent.', 'err');
+        return false;
+      }
+      return true;
+    } catch (e) {
+      unifiedStatus(state, 'The Visit editor could not apply this appointment binding. The review remains unchanged and nothing was sent.', 'err');
+      return false;
+    }
+  }
   function wfbindFinish(state, btn, label) {
     if (state) state.binding = false;
     if (!btn) return;
@@ -5518,6 +5582,7 @@
           return;
         }
         clearInterval(timer); wfbindFinish(state, btn, label);
+        if (!wfbindCommitCanonical(state, resolved)) return;
         wfbindLast = { day: day, at: Date.now() };
         wfdxNote({ verb: 'wfbind', stage: 'bind-cure', ok: true, expectedDay: day, appointmentIdPresent: true });
         unifiedStatus(state, 'The day pull named this exact Athena appointment — rebinding this review now. Nothing was sent.', 'ok');
@@ -5538,6 +5603,7 @@
     /* Already resolvable locally? Then no Athena read is needed at all. */
     var already = wfbindResolvedOpts(state, day);
     if (already) {
+      if (!wfbindCommitCanonical(state, already)) return false;
       unifiedStatus(state, 'This day is already imported and names this exact appointment — rebinding this review now. Nothing was sent.', 'ok');
       wfbindLast = { day: day, at: Date.now() };
       openUnifiedConfirmation(already);
@@ -5687,6 +5753,7 @@
           var opts = wfbindOptsForAppointment(state, day, choice);
           if (!opts) return;
           unifiedStatus(state, 'Binding this review to the ' + (when || 'chosen') + ' appointment on ' + wfdxDayKey(day) + ' and re-checking read-only. Nothing was sent.', '');
+          if (!wfbindCommitCanonical(state, opts)) return;
           openUnifiedConfirmation(opts);
         });
       b.setAttribute('data-mls-appt-pick', choice.appointmentId);
@@ -7458,7 +7525,7 @@
     if (unifiedAthenaState) closeUnifiedConfirmation();
     var manifest = buildUnifiedManifest(opts);
     wfdxReset(manifest);
-    var state = { manifest: manifest, sourceOpts: opts, reopenOpts: null, selectedRowId: '', probe: null, probeGeneration: 0, probeSettled: 0, receipts: {}, running: false, generating: false, binding: false, halted: false, closed: false, batchRunning: false, returnFocus: returnFocus, a11yKeyHandler: null, autoOpened: false };
+    var state = { manifest: manifest, sourceOpts: opts, reopenOpts: null, editorFingerprint: wfbindEditorFingerprint(), selectedRowId: '', probe: null, probeGeneration: 0, probeSettled: 0, receipts: {}, running: false, generating: false, binding: false, halted: false, closed: false, batchRunning: false, returnFocus: returnFocus, a11yKeyHandler: null, autoOpened: false };
     state.reopenOpts = reopenOptions(opts, manifest);
     /* apsel-1.0.0: the doctor's A/P pick belongs to ONE review. A new sheet
        starts from the learned surface preference again. */
