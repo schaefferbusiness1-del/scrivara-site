@@ -688,6 +688,10 @@ async function mlsAthenaActionV2DriverFn(req) {
         if (!sawSlate || !blocks.length || blocks.some(function (block) {
           return block.parentElement !== el || !!block.querySelector('[data-slate-object="block"]');
         })) return null;
+        for (var child = el.firstChild; child; child = child.nextSibling) {
+          if (child.nodeType === 1 && child.getAttribute('data-slate-object') !== 'block') return null;
+          if (child.nodeType === 3 && /\S/.test(child.nodeValue || '')) return null;
+        }
         var out = [];
         for (var i = 0; i < blocks.length; i++) {
           var block = blocks[i], leaves = block.querySelectorAll('[data-slate-string="true"]');
@@ -711,7 +715,7 @@ async function mlsAthenaActionV2DriverFn(req) {
       try {
         if (el.isContentEditable) {
           var slate = slateEditorValue(el);
-          if (slate !== null) return slate;
+          if (el.getAttribute && el.getAttribute('data-slate-editor') === 'true') return slate;
           if (el.querySelector && el.querySelector('[data-slate-object]')) return null;
           return noteNorm(el.innerText);
         }

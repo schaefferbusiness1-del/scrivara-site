@@ -77,4 +77,21 @@ const wrongHost = element('div', {}, [block([leaf([text('wrong host')])])]);
 wrongHost.isContentEditable = true;
 assert.strictEqual(reader.editorValue(wrongHost), null, 'Slate projection must require the exact Slate host marker');
 
+const exactHostWithoutBlocks = editor([]);
+exactHostWithoutBlocks.innerText = 'unreadable';
+assert.strictEqual(reader.editorValue(exactHostWithoutBlocks), null, 'exact Slate host without blocks must not fall back to innerText');
+
+const directUnknown = editor([element('span', {}, [text('toolbar-like text')])]);
+assert.strictEqual(reader.editorValue(directUnknown), null, 'unknown direct Slate child must refuse exact readback');
+
+let mutationCount = 0;
+function guardedEmptyOnlyWrite(target) {
+  const current = reader.editorValue(target);
+  if (current === null || current !== '') return false;
+  mutationCount++;
+  return true;
+}
+assert.strictEqual(guardedEmptyOnlyWrite(unknown), false, 'unreadable nonempty Slate state must be blocked before mutation');
+assert.strictEqual(mutationCount, 0, 'unreadable Slate state reached the mutation seam');
+
 console.log('PASS savenamed Slate editor reader: exact blocks, placeholder omission, real FEFF, inline break, and unknown-shape refusal');
