@@ -20,6 +20,8 @@ assert(begin >= 0 && end > begin, 'shipped Slate reader functions not found');
 const reader = new Function('noteNorm', `${background.slice(begin, end)}\nreturn { slateEditorValue, editorValue };`)(
   value => String(value == null ? '' : value).replace(/\r\n?/g, '\n').trim()
 );
+assert(background.includes("initialNoteValue === null"), 'unreadable pre-write Slate state must refuse mutation');
+assert(background.includes("preFocusNoteValue === null") && background.includes("focusedNoteValue === null"), 'all empty-only write checks must refuse unreadable state');
 
 function element(tag, attrs, children) {
   const kids = (children || []).slice();
@@ -67,5 +69,12 @@ const unknown = element('div', { 'data-slate-editor': 'true' }, [block([element(
 unknown.isContentEditable = true;
 unknown.innerText = 'unreadable';
 assert.strictEqual(reader.editorValue(unknown), null, 'unknown Slate structure must not become an exact readback');
+
+const nested = editor([block([block([leaf([text('nested')])])])]);
+assert.strictEqual(reader.editorValue(nested), null, 'nested Slate blocks must refuse exact readback');
+
+const wrongHost = element('div', {}, [block([leaf([text('wrong host')])])]);
+wrongHost.isContentEditable = true;
+assert.strictEqual(reader.editorValue(wrongHost), null, 'Slate projection must require the exact Slate host marker');
 
 console.log('PASS savenamed Slate editor reader: exact blocks, placeholder omission, real FEFF, inline break, and unknown-shape refusal');

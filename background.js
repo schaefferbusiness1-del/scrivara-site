@@ -682,15 +682,12 @@ async function mlsAthenaActionV2DriverFn(req) {
     function slateEditorValue(el) {
       var blocks = [], sawSlate = false;
       try {
+        if (!el || el.getAttribute('data-slate-editor') !== 'true') return null;
         blocks = Array.prototype.slice.call(el.querySelectorAll('[data-slate-object="block"]'));
         sawSlate = blocks.length > 0;
-        blocks = blocks.filter(function (block) {
-          var p = block.parentElement;
-          while (p && p !== el && !p.hasAttribute('data-slate-object')) p = p.parentElement;
-          return p === el || !p;
-        });
-        if (!sawSlate) return null;
-        if (!blocks.length) return null;
+        if (!sawSlate || !blocks.length || blocks.some(function (block) {
+          return block.parentElement !== el || !!block.querySelector('[data-slate-object="block"]');
+        })) return null;
         var out = [];
         for (var i = 0; i < blocks.length; i++) {
           var block = blocks[i], leaves = block.querySelectorAll('[data-slate-string="true"]');
@@ -704,11 +701,11 @@ async function mlsAthenaActionV2DriverFn(req) {
             if (String(node.tagName || '').toUpperCase() === 'BR') { value += '\n'; return; }
             for (var c = node.firstChild; c; c = c.nextSibling) visit(c);
           }
-          for (var j = 0; j < leaves.length; j++) visit(leaves[j]);
+          visit(block);
           out.push(value);
         }
         return out.join('\n');
-      } catch (e) { return sawSlate ? null : null; }
+      } catch (e) { return null; }
     }
     function editorValue(el) {
       try {
@@ -1703,7 +1700,11 @@ async function mlsAthenaActionV2DriverFn(req) {
       return { ok: false, blocked: true, action: action, attempted: false, written: false, verified: false, draftEntered: false, draftVerified: false, reason: 'note-editor-not-empty', context: context, results: [{ key: requestedNoteSection, attempted: false, written: false, verified: false, reason: 'note-editor-not-empty' }], noAutomaticChaining: 'no-automatic-chaining' };
     }
     if (mode === 'teach') return { ok: true, mode: 'teach', action: action, readOnly: true, reason: 'taught-destination-validated', contextVerified: true, context: context, targetValidated: true, target: taughtValidation.binding, noAutomaticChaining: 'no-automatic-chaining' };
-    if (action === 'write_note' && notePolicy === 'empty_only' && editorValue(noteEditor)) return noteEditorNotEmptyReceipt();
+    if (action === 'write_note' && notePolicy === 'empty_only') {
+      var initialNoteValue = editorValue(noteEditor);
+      if (initialNoteValue === null) return { ok: false, blocked: true, action: action, attempted: false, written: false, verified: false, draftEntered: false, draftVerified: false, reason: 'note-editor-unreadable', context: context, results: [{ key: requestedNoteSection, attempted: false, written: false, verified: false, reason: 'note-editor-unreadable' }], noAutomaticChaining: 'no-automatic-chaining' };
+      if (initialNoteValue !== '') return noteEditorNotEmptyReceipt();
+    }
     /* ATHENA_ACTION_V2_PROBE_READ_ONLY_RETURN */
     /* savenamed-1.0.0: the encounter-save probe is READ-ONLY exactly like
        every other probe on this path. It has already resolved the one exact
@@ -1770,7 +1771,9 @@ async function mlsAthenaActionV2DriverFn(req) {
         if (editorFingerprint(currentTarget.editor, hit.frame.url) !== context.editorFingerprint) return null;
         return currentTarget.editor;
       }
-      if (editorValue(noteEditor)) return noteEditorNotEmptyReceipt();
+      var preFocusNoteValue = editorValue(noteEditor);
+      if (preFocusNoteValue === null) return { ok: false, blocked: true, action: action, attempted: false, written: false, verified: false, draftEntered: false, draftVerified: false, reason: 'note-editor-unreadable', context: context, results: [{ key: requestedNoteSection, attempted: false, written: false, verified: false, reason: 'note-editor-unreadable' }], noAutomaticChaining: 'no-automatic-chaining' };
+      if (preFocusNoteValue !== '') return noteEditorNotEmptyReceipt();
       /* Focusing a controlled Athena editor can synchronously hydrate a saved
          template or clinician draft. Focus first, re-resolve the exact locked
          editor, and make the last emptiness check immediately before the native
@@ -1779,7 +1782,9 @@ async function mlsAthenaActionV2DriverFn(req) {
       var focusedNoteEditor = currentExactNoteEditor();
       if (!focusedNoteEditor) return { ok: false, blocked: true, action: action, attempted: false, written: false, verified: false, draftEntered: false, draftVerified: false, reason: 'context-mismatch', context: context, results: [{ key: requestedNoteSection, attempted: false, written: false, verified: false, reason: 'context-mismatch' }], noAutomaticChaining: 'no-automatic-chaining' };
       noteEditor = focusedNoteEditor;
-      if (editorValue(noteEditor)) return noteEditorNotEmptyReceipt();
+      var focusedNoteValue = editorValue(noteEditor);
+      if (focusedNoteValue === null) return { ok: false, blocked: true, action: action, attempted: false, written: false, verified: false, draftEntered: false, draftVerified: false, reason: 'note-editor-unreadable', context: context, results: [{ key: requestedNoteSection, attempted: false, written: false, verified: false, reason: 'note-editor-unreadable' }], noAutomaticChaining: 'no-automatic-chaining' };
+      if (focusedNoteValue !== '') return noteEditorNotEmptyReceipt();
       var noteSet = setNoteEditorExact(noteEditor, req.noteText), noteAttempted = !!(noteSet && noteSet.attempted);
       mutationAttempted = mutationAttempted || noteAttempted;
       if (!noteSet || !noteSet.ok) return { ok: false, blocked: !noteAttempted, action: action, attempted: noteAttempted, partialMutation: noteAttempted, written: false, verified: false, draftEntered: false, draftVerified: false, reason: noteSet && noteSet.slate ? 'slate-paste-not-handled' : 'outcome-uncertain', context: context, results: [{ key: requestedNoteSection, attempted: noteAttempted, written: false, verified: false, reason: noteSet && noteSet.slate ? 'slate-paste-not-handled' : 'note-write-unverified' }], noAutomaticChaining: 'no-automatic-chaining' };
