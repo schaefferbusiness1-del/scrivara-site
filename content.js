@@ -103,7 +103,7 @@
     label = String(label || '').replace(/\s+/g, ' ').trim();
     if (action === 'write_note') return /\bconfirm\s+write\s+reviewed\s+note\b/i.test(label);
     if (action === 'stage_billing') return /\bconfirm\s+stage\s+billing(?:\s+codes?)?(?:\s+in\s+athena)?\b/i.test(label); /* wsg-2.0.0: the app confirm aria reads Confirm stage billing in Athena - accept both the codes and in-Athena forms (no quotes here: test block scanners treat quotes as strings) */
-    if (action === 'save_draft') return /\bconfirm\s+save\s+draft(?:\s+in\s+athena)?\b/i.test(label);
+    if (action === 'save_draft') return /\b(?:confirm\s+save\s+draft(?:\s+in\s+athena)?|verify\s+saved\s+unsigned\s+note\s+in\s+athena)\b/i.test(label);
     if (action === 'sign_encounter') return /\bconfirm\s+sign\s*(?:&|and)\s*save(?:\s+in\s+athena)?\b/i.test(label);
     if (action === 'place_order') return /\bconfirm\s*(?:&|and)?\s*place\s+(?:one\s+)?(?:reviewed\s+)?order\b/i.test(label);
     return false;
@@ -267,7 +267,7 @@
       reply({ source: 'mls-ext', type: 'mlsBridgeBlocked', requestId: mlsStr(d.requestId || d.id, 100), resp: { ok: false, blocked: true, reason: 'loopback-synthetic-only' } });
       return;
     }
-    if (d.type === 'mlsPing') { var __v = '', __b = ''; try { var __m = chrome.runtime.getManifest(); __v = __m.version || ''; __b = __m.version_name || __v; } catch (e) {} reply({ source: 'mls-ext', type: 'mlsPong', requestId: mlsStr(d.requestId || d.id, 100), version: __v, buildId: __b, capabilities: { supervisedOrderPlacementV2: false, destinationTeachingV2: true, athenaFinalActionsV1: false, phoneConfirmedWriteV1: true, batchArmV1: true }, batchArm: '1.0.0' }); return; }
+    if (d.type === 'mlsPing') { var __v = '', __b = ''; try { var __m = chrome.runtime.getManifest(); __v = __m.version || ''; __b = __m.version_name || __v; } catch (e) {} reply({ source: 'mls-ext', type: 'mlsPong', requestId: mlsStr(d.requestId || d.id, 100), version: __v, buildId: __b, capabilities: { supervisedOrderPlacementV2: false, destinationTeachingV2: true, athenaFinalActionsV1: false, phoneConfirmedWriteV1: true, batchArmV1: true, nativeNamedSectionPersistenceV1: true }, batchArm: '1.0.0' }); return; }
     if (d.type === 'mlsExtHealth') { var __healthRequestId = mlsStr(d.requestId || d.id, 100); try { mlsRelayRetry({ type: 'mlsExtHealthRequest' }, function (resp) { var le = chrome.runtime.lastError; reply({ source: 'mls-ext', type: 'mlsExtHealthResult', requestId: __healthRequestId, resp: resp || { ok: false, reason: le ? 'worker-unreachable' : 'no-response' } }); }); } catch (e2) { reply({ source: 'mls-ext', type: 'mlsExtHealthResult', requestId: __healthRequestId, resp: { ok: false, reason: 'bridge-error' } }); } return; }
     if (d.type === 'mlsAppCapture') {
       try {

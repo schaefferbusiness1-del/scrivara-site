@@ -57,6 +57,7 @@ const capabilityObject = /capabilities:\s*\{([^}]*)\}/.exec(content);
 assert(capabilityObject && /supervisedOrderPlacementV2:\s*false/.test(capabilityObject[1]), 'current extension must not advertise order execution');
 assert(capabilityObject && /destinationTeachingV2:\s*true/.test(capabilityObject[1]), 'current extension does not explicitly advertise exact destination teaching');
 assert(capabilityObject && /athenaFinalActionsV1:\s*false/.test(capabilityObject[1]), 'current extension must not advertise final-action execution');
+assert(capabilityObject && /nativeNamedSectionPersistenceV1:\s*true/.test(capabilityObject[1]), 'current extension does not advertise named-section persistence verification');
 assert(/arm\.rowHash\s*===\s*orderRowHash/.test(content) && /arm\.clientOrderId\s*===\s*orderClientOrderId/.test(content), 'trusted-click arm is not bound to the exact order row and local order ID');
 assert(/gestureRowHash/.test(content) && /gestureClientOrderId/.test(content), 'worker request loses the trusted-click row binding');
 assert(/rawFields\[key\]\.length\s*>\s*2000/.test(content) && !/fields\[key\]\s*=\s*mlsStr\([^\n]*2000/.test(content), 'content bridge still silently truncates reviewed order details');
@@ -65,6 +66,7 @@ const actionLabelMatches = Function(`${actionLabelSource}; return _mlsActionLabe
 assert.strictEqual(actionLabelMatches('place_order', 'Confirm & place one order'), false, 'a valid order confirmation label must still be refused by policy');
 assert.strictEqual(actionLabelMatches('write_note', 'Confirm write reviewed note'), true, 'note confirmation parser positive control failed');
 assert.strictEqual(actionLabelMatches('save_draft', 'Confirm save draft'), true, 'draft-save confirmation parser positive control failed');
+assert.strictEqual(actionLabelMatches('save_draft', 'Verify saved unsigned note in Athena'), true, 'native persistence verification phrase was not armed');
 assert.strictEqual(actionLabelMatches('place_order', 'Place Order'), false, 'an Athena DOM button could arm the MLS execute bridge without its confirmation label');
 for (const reason of [
   'order-catalog-near-match-rejected', 'order-catalog-duplicate-rejected',

@@ -123,6 +123,47 @@ async function withPage(browser, key, unknownShape, fn) {
   try { return await fn(page); } finally { await page.close(); }
 }
 
+function slateBlocks(value) {
+  const esc = text => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return value.split('\n').map(line => line
+    ? `<div data-slate-object="block"><span data-slate-node="text"><span data-slate-leaf="true"><span data-slate-string="true">${esc(line)}</span></span></span></div>`
+    : '<div data-slate-object="block"><span data-slate-node="text"><span data-slate-leaf="true"><span data-slate-zero-width="z" data-slate-length="0">&#65279;<br></span></span></span></div>').join('');
+}
+
+function finalSections() {
+  return [
+    { key: 'hpi', text: 'Final HPI.', execute: true, destination: destinations.hpi },
+    { key: 'ros', text: 'Final ROS.', execute: true, destination: destinations.ros },
+    { key: 'exam', text: 'Final exam.', execute: true, destination: destinations.exam },
+    { key: 'assessment', text: 'Final assessment.', execute: true, destination: 'Athena encounter > Assessment & Plan > Assessment' },
+    { key: 'plan', text: 'Final plan.', execute: true, destination: 'Athena encounter > Assessment & Plan > Plan / Follow-up' }
+  ];
+}
+
+function finalFixture(apOverride, nonSlate) {
+  const ap = apOverride == null ? 'Assessment:\nFinal assessment.\n\nPlan / Follow-up:\nFinal plan.' : apOverride;
+  const meta = JSON.stringify([{ encounter_id: context.encounterId }, { patient_id: patient.mrn }, { department_id: 'synthetic' }, { specialty_id: 'synthetic' }]).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+  const hydration = JSON.stringify({ owned: { clinical_encounter: { ID: context.encounterId, PatientID: patient.mrn, AppointmentID: context.appointmentId, EncounterDate: { __CLASS__: 'Date', Date: '2026-08-27T09:00:00' } }, appointment: { ID: context.appointmentId, FullAppointmentDate: { __CLASS__: 'Date', Date: '2026-08-27T09:00:00' }, LocalFullAppointmentDate: { __CLASS__: 'Date', Date: '2026-08-27T09:00:00' } }, provider: { DisplayName: context.provider } } });
+  const section = (testId, label, id, value) => `<section data-testid="${testId}" aria-label="${label}"><h2>${label}</h2><div id="${id}" contenteditable="true"${nonSlate && id === 'ap-editor' ? '' : ' data-slate-editor="true"'} data-appointment-id="8812777" aria-label="${label} editor">${slateBlocks(value)}</div></section>`;
+  return '<!doctype html><html><head><meta content="' + meta + '"></head><body><script id="inline-page-data" type="application/json">' + hydration + '</script><main id="encounter-shell">' +
+    `<header data-testid="patient-header" data-patient-name="${patient.name}" data-patient-dob="${patient.dob}" data-patient-mrn="${patient.mrn}">${patient.name}</header>` +
+    '<div aria-label="Date of service">08/27/2026</div><div aria-label="Rendering provider">Synthetic Clinician, MD</div>' +
+    section('hpi-section', 'History of Present Illness', 'hpi-editor', 'Final HPI.') +
+    section('ros-section', 'Review of Systems', 'ros-editor', 'Final ROS.') +
+    section('physical-exam-section', 'Physical Examination', 'exam-editor', 'Final exam.') +
+    section('assessment-plan-section', 'Assessment and Plan', 'ap-editor', ap) +
+    (nonSlate ? '<footer class="encounter-footer" data-testid="encounter-actions"><button id="active-save">Save</button></footer>' : '') +
+    '<aside class="external-encounter-view" style="position:absolute;left:-5000px"><button id="decoy-save">Save</button></aside>' +
+    '</main><script>window.__saveClicks=0;document.querySelectorAll("#decoy-save,#active-save").forEach(x=>x.addEventListener("click",()=>window.__saveClicks++));</script></body></html>';
+}
+
+async function withFinalPage(browser, apOverride, fn, nonSlate) {
+  const page = await browser.newPage();
+  await page.route('https://athenanet.athenahealth.com/**', route => route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: finalFixture(apOverride, nonSlate) }));
+  await page.goto(context.encounterUrl);
+  try { return await fn(page); } finally { await page.close(); }
+}
+
 (async () => {
   const browser = await chromium.launch({ channel: 'chrome', headless: true });
   let checks = 0;
@@ -206,6 +247,62 @@ async function withPage(browser, key, unknownShape, fn) {
       assert.strictEqual(state.sends, 0, 'unreadable Slate reached Athena persistence');
       checks += 6;
     });
+
+    await withFinalPage(browser, null, async page => {
+      const req = { mode: 'probe', action: 'save_draft', expectedPatient: patient, expectedContext: context, noteText: 'Reviewed five-section note.', sections: finalSections(), notePolicy: 'empty_only', locked: null };
+      const result = await drive(page, req);
+      assert.strictEqual(result.ok, true, `native final probe refused without a Save button: ${JSON.stringify(result)}`);
+      assert.strictEqual(result.nativePersistenceReconcile, true); assert.strictEqual(result.readOnly, true);
+      assert.strictEqual(await page.evaluate(() => window.__saveClicks), 0);
+      checks += 4;
+    });
+
+    await withFinalPage(browser, null, async page => {
+      const frameTimeOrigin = await page.evaluate(() => performance.timeOrigin);
+      const req = { mode: 'execute', action: 'save_draft', expectedPatient: patient, expectedContext: context, noteText: 'Reviewed five-section note.', sections: finalSections(), notePolicy: 'empty_only', locked: null, nativePersistenceProofSetVerified: true, nativePersistenceProofFrameTimeOrigin: frameTimeOrigin };
+      const result = await drive(page, req);
+      assert.strictEqual(result.ok, true, `native final reconciliation failed: ${JSON.stringify(result)}`);
+      assert.strictEqual(result.reason, 'exact-section-persistence-reconciled');
+      assert.strictEqual(result.saved, true); assert.strictEqual(result.persisted, true);
+      assert.strictEqual(result.sectionsDeclared, 5); assert.strictEqual(result.persistedDestinations, 4);
+      assert.strictEqual(result.results.length, 4); assert.strictEqual(await page.evaluate(() => window.__saveClicks), 0);
+      checks += 8;
+    });
+
+    await withFinalPage(browser, null, async page => {
+      const req = { mode: 'execute', action: 'save_draft', expectedPatient: patient, expectedContext: context, noteText: 'Reviewed five-section note.', sections: finalSections(), notePolicy: 'empty_only', locked: null, nativePersistenceProofSetVerified: false };
+      const result = await drive(page, req);
+      assert.strictEqual(result.ok, false); assert.strictEqual(result.reason, 'section-persistence-proof-missing');
+      assert.strictEqual(result.attempted, false); assert.strictEqual(await page.evaluate(() => window.__saveClicks), 0);
+      checks += 4;
+    });
+
+    await withFinalPage(browser, 'Assessment:\nFinal assessment.\n\nPlan / Follow-up:\nChanged after persistence.', async page => {
+      const frameTimeOrigin = await page.evaluate(() => performance.timeOrigin);
+      const req = { mode: 'execute', action: 'save_draft', expectedPatient: patient, expectedContext: context, noteText: 'Reviewed five-section note.', sections: finalSections(), notePolicy: 'empty_only', locked: null, nativePersistenceProofSetVerified: true, nativePersistenceProofFrameTimeOrigin: frameTimeOrigin };
+      const result = await drive(page, req);
+      assert.strictEqual(result.ok, false); assert.strictEqual(result.reason, 'section-persistence-readback-mismatch');
+      assert.strictEqual(result.failedDestination, 'ap'); assert.strictEqual(result.persistedDestinations, 3);
+      assert.strictEqual(await page.evaluate(() => window.__saveClicks), 0);
+      checks += 5;
+    });
+
+    await withFinalPage(browser, null, async page => {
+      const req = { mode: 'execute', action: 'save_draft', expectedPatient: patient, expectedContext: context, noteText: 'Reviewed five-section note.', sections: finalSections(), notePolicy: 'empty_only', locked: null, nativePersistenceProofSetVerified: true, nativePersistenceProofFrameTimeOrigin: 1 };
+      const result = await drive(page, req);
+      assert.strictEqual(result.ok, false); assert.strictEqual(result.reason, 'section-persistence-frame-changed');
+      assert.strictEqual(result.attempted, false); assert.strictEqual(await page.evaluate(() => window.__saveClicks), 0);
+      checks += 4;
+    });
+
+    await withFinalPage(browser, null, async page => {
+      const req = { mode: 'probe', action: 'save_draft', expectedPatient: patient, expectedContext: context, noteText: 'Reviewed five-section note.', sections: finalSections(), notePolicy: 'empty_only', locked: null };
+      const result = await drive(page, req);
+      assert.strictEqual(result.ok, true, `legacy non-Slate five-field probe failed: ${JSON.stringify(result)}`);
+      assert.strictEqual(result.nativePersistenceReconcile, undefined); assert.strictEqual(result.savenamed, true);
+      assert.strictEqual(await page.evaluate(() => window.__saveClicks), 0);
+      checks += 4;
+    }, true);
   } finally { await browser.close(); }
   console.log(`PASS Athena native persistence runtime: ${checks} checks`);
 })().catch(error => { console.error(error); process.exit(1); });

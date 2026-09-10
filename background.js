@@ -1390,12 +1390,28 @@ async function mlsAthenaActionV2DriverFn(req) {
        canonical key. A generic or mixed shape, and every teach request,
        keep the shipped behaviour byte for byte. */
     var snvNamedSave = false;
+    var nativeNamedSave = false, nativeSaveSections = null;
     try {
       snvNamedSave = action === 'save_draft' && mode !== 'teach' && noteSections.length > 0 && noteSections.every(function (section) {
         var snvKey = canonicalNamedNoteKey(section && section.key);
         return !!snvKey && snvKey !== 'note' && section.execute === true && text(section.destination) === NAMED_NOTE_DESTINATIONS[snvKey];
       });
     } catch (eSnvShape) { snvNamedSave = false; }
+    if (snvNamedSave && action === 'save_draft' && noteSections.length === 5) {
+      try {
+        var nativeByKey = Object.create(null), nativeShapeOk = true;
+        for (var nativeI = 0; nativeI < noteSections.length; nativeI++) {
+          var nativeSection = noteSections[nativeI] || {}, nativeKey = canonicalNamedNoteKey(nativeSection.key);
+          if (!/^(hpi|ros|exam|assessment|plan)$/.test(nativeKey) || nativeByKey[nativeKey] || nativeSection.execute !== true || text(nativeSection.destination) !== NAMED_NOTE_DESTINATIONS[nativeKey] || !String(nativeSection.text == null ? '' : nativeSection.text).trim()) { nativeShapeOk = false; break; }
+          nativeByKey[nativeKey] = String(nativeSection.text).trim();
+        }
+        nativeNamedSave = nativeShapeOk && ['hpi','ros','exam','assessment','plan'].every(function (key) { return Object.prototype.hasOwnProperty.call(nativeByKey, key); });
+        if (nativeNamedSave) nativeSaveSections = {
+          hpi: nativeByKey.hpi, ros: nativeByKey.ros, exam: nativeByKey.exam,
+          ap: 'Assessment:\n' + nativeByKey.assessment + '\n\nPlan / Follow-up:\n' + nativeByKey.plan
+        };
+      } catch (eNativeShape) { nativeNamedSave = false; nativeSaveSections = null; }
+    }
     if (action === 'write_note') {
       var executableSections = noteSections.filter(function (section) { return section && section.execute === true; });
       if (noteSections.length !== 1 || executableSections.length !== 1) return { ok: false, blocked: true, reason: 'note-section-count-mismatch', error: 'One confirmed Athena note destination is required per write.' };
@@ -1593,7 +1609,11 @@ async function mlsAthenaActionV2DriverFn(req) {
            the encounter-id, appointment-id, visit-date and provider gates
            all still run BELOW it, so this control belongs to the one bound
            encounter or its candidate is dropped. */
-        if (snvNamedSave) noteTarget = snvFindEncounterSave(fr); else
+        if (nativeNamedSave) {
+          var nativeApTarget = findNamedNoteAction(fr, 'write_note', 'ap');
+          var nativeApSlate = !!(nativeApTarget && nativeApTarget.editor && String(nativeApTarget.editor.getAttribute && nativeApTarget.editor.getAttribute('data-slate-editor') || '').toLowerCase() === 'true');
+          noteTarget = nativeApSlate ? nativeApTarget : snvFindEncounterSave(fr);
+        } else if (snvNamedSave) noteTarget = snvFindEncounterSave(fr); else
         noteTarget = (action === 'write_note' && requestedNoteSection !== 'note') ? findNamedNoteAction(fr, action, requestedNoteSection) : findNoteAction(fr, action);
         if (hetStage) hetDiag.noteTargetFound = !!noteTarget;
         hetRec.note = !!noteTarget;
@@ -1630,7 +1650,7 @@ async function mlsAthenaActionV2DriverFn(req) {
       if (dateKey(expectedContext.visitDate) && encounterMeta.visitDate !== dateKey(expectedContext.visitDate)) { if (hetStage) hetDiag.postGate = 'visit-date'; continue; }
       if (norm(expectedContext.provider) && norm(encounterMeta.provider) !== norm(expectedContext.provider)) { if (hetStage) hetDiag.postGate = 'provider'; continue; }
       if (hetStage) hetDiag.postGate = 'pushed';
-      candidates.push({ frame: fr, observedIdentity: observedIdentity, appointmentId: observedAppointmentId, encounterId: eid, visitDate: encounterMeta.visitDate, provider: encounterMeta.provider, encounterRoot: encounterMeta.root, noteTarget: noteTarget, bill: billTarget, orderTarget: orderTarget });
+      candidates.push({ frame: fr, observedIdentity: observedIdentity, appointmentId: observedAppointmentId, encounterId: eid, visitDate: encounterMeta.visitDate, provider: encounterMeta.provider, encounterRoot: encounterMeta.root, noteTarget: noteTarget, bill: billTarget, orderTarget: orderTarget, nativePersistenceReconcile: !!(nativeNamedSave && nativeApSlate) });
     }
     /* secsurf-1.0.0 (3.0.109, measured live 2026-09-02): a named section whose
        OWN editor is not resolvable is not the same refusal as "no encounter is
@@ -1664,6 +1684,10 @@ async function mlsAthenaActionV2DriverFn(req) {
     }
     if (candidates.length !== 1) return { ok: false, blocked: true, reason: candidates.length ? 'context-mismatch' : (mode === 'teach' && sawOtherPatient ? 'patient-mismatch' : 'context-unverified'), hetDiag: hetDiag, hetFrames: hetFrames, error: mode === 'teach' && sawOtherPatient ? 'The open Athena chart is not the patient in this review.' : 'Could not identify one exact patient encounter frame.' };
     var hit = candidates[0], observedPatient = hit.observedIdentity, noteScope = hit.noteTarget && hit.noteTarget.root, noteEditor = hit.noteTarget && hit.noteTarget.editor;
+    /* Five named fields alone do not identify the modern native-persistence
+       lane. The bound A/P editor on this exact frame must be Slate; otherwise
+       the existing encounter Save path remains authoritative. */
+    nativeNamedSave = !!(nativeNamedSave && hit.nativePersistenceReconcile);
     var bill = hit.bill, orderTarget = hit.orderTarget, actionControl = bill ? bill.el : (orderTarget ? orderTarget.search : hit.noteTarget.control);
     var actionScope = bill ? bill.root : (orderTarget ? orderTarget.root : noteScope);
     var taughtValidation = null;
@@ -1720,6 +1744,7 @@ async function mlsAthenaActionV2DriverFn(req) {
        member of the closed save allowlist by construction, scope is the
        region's machine attributes with every digit removed, and
        encounterMatched states that the reviewed encounter is the open one. */
+    if (nativeNamedSave && mode === 'probe') return { ok: true, mode: 'probe', action: action, readOnly: true, reason: 'context-verified', contextVerified: true, context: context, nativePersistenceReconcile: true, encounterMatched: true, sectionsDeclared: 5, persistedDestinations: 4, noAutomaticChaining: 'no-automatic-chaining' };
     if (snvNamedSave && mode === 'probe') return { ok: true, mode: 'probe', action: action, readOnly: true, reason: 'context-verified', contextVerified: true, context: context, savenamed: true, encounterMatched: true, sectionsDeclared: noteSections.length, control: { labelCore: snvSaveCore(actionControl), scope: snvScopeTag(actionScope) }, noAutomaticChaining: 'no-automatic-chaining' };
     if (mode === 'probe') return { ok: true, mode: 'probe', action: action, readOnly: true, reason: action === 'stage_billing' ? 'billing-context-verified' : (action === 'place_order' ? 'order-workspace-context-verified' : 'context-verified'), contextVerified: true, context: context, noAutomaticChaining: 'no-automatic-chaining' };
     if (mode !== 'execute') return { ok: false, blocked: true, reason: 'unknown-action' };
@@ -1976,6 +2001,8 @@ async function mlsAthenaActionV2DriverFn(req) {
           var nativeReason = nativePersistence && nativePersistence.reason || 'native-persistence-request-missing';
           return { ok: false, action: action, attempted: true, partialMutation: true, written: true, verified: true, draftEntered: true, draftVerified: true, saved: false, persisted: false, serverVerified: false, reason: nativeReason, persistence: nativePersistence || { ok: false, reason: nativeReason }, context: context, results: [{ key: requestedNoteSection, attempted: true, written: true, verified: true, saved: false, persisted: false, serverVerified: false, reason: nativeReason }], noAutomaticChaining: 'no-automatic-chaining' };
         }
+        try { nativePersistence.frameTimeOrigin = Number(hit.frame.w.performance && hit.frame.w.performance.timeOrigin || 0); } catch (eTimeOrigin) { nativePersistence.frameTimeOrigin = 0; }
+        nativePersistence.framePath = context.framePath;
         verifiedEditor = currentExactNoteEditor();
         if (!verifiedEditor || editorValue(verifiedEditor) !== reviewedNote) {
           return { ok: false, action: action, attempted: true, partialMutation: true, written: true, verified: false, draftEntered: true, draftVerified: false, saved: false, persisted: false, serverVerified: true, reason: 'native-persistence-readback-mismatch', persistence: nativePersistence, context: context, results: [{ key: requestedNoteSection, attempted: true, written: true, verified: false, saved: false, persisted: false, serverVerified: true, reason: 'native-persistence-readback-mismatch' }], noAutomaticChaining: 'no-automatic-chaining' };
@@ -2568,6 +2595,42 @@ async function mlsAthenaActionV2DriverFn(req) {
     function clickOnce(el) { if (wsForbiddenControl(el)) throw new Error('forbidden-control-blocked'); try { el.scrollIntoView({ block: 'center' }); } catch (e) {} el.click(); }
 
     /* ATHENA_ACTION_V2_SAVENAMED_EXECUTE_START */
+    if (nativeNamedSave && action === 'save_draft') {
+      if (req.nativePersistenceProofSetVerified !== true) return { ok: false, blocked: true, action: action, attempted: false, verified: false, saved: false, persisted: false, reason: 'section-persistence-proof-missing', context: context, noAutomaticChaining: 'no-automatic-chaining' };
+      var nativeProofFrameTimeOrigin = Number(req.nativePersistenceProofFrameTimeOrigin || 0);
+      function nativeFrameLifetimeMatches() {
+        var current = 0; try { current = Number(hit.frame.w.performance && hit.frame.w.performance.timeOrigin || 0); } catch (eLifetime) { current = 0; }
+        return nativeProofFrameTimeOrigin > 0 && current === nativeProofFrameTimeOrigin;
+      }
+      if (!nativeFrameLifetimeMatches()) return { ok: false, blocked: true, action: action, attempted: false, verified: false, saved: false, persisted: false, reason: 'section-persistence-frame-changed', context: context, noAutomaticChaining: 'no-automatic-chaining' };
+      async function nativeReadSection(key, expectedValue) {
+        if (!nativeFrameLifetimeMatches()) return { ok: false, reason: 'section-persistence-frame-changed' };
+        var target = findNamedNoteAction(hit.frame, 'write_note', key), navLabel = { hpi: 'HPI', ros: 'ROS', exam: 'PE', ap: 'A/P' }[key];
+        if (!target) {
+          var beads = deepQueryAll(hit.frame.doc, 'li.nav-bead').filter(function (bead) { return text(bead.textContent) === navLabel && visible(bead, hit.frame.w); });
+          if (beads.length !== 1) return { ok: false, reason: beads.length ? 'section-persistence-readback-ambiguous' : 'section-persistence-readback-missing' };
+          var nav = null; try { nav = beads[0].querySelector('a,button,span') || beads[0]; } catch (eNav) { nav = beads[0]; }
+          if (!nav || wsForbiddenControl(nav)) return { ok: false, reason: 'forbidden-control' };
+          try { nav.click(); } catch (eClick) { return { ok: false, reason: 'section-persistence-readback-missing' }; }
+          for (var look = 0; look < 20 && !target; look++) { await sleep(400); target = findNamedNoteAction(hit.frame, 'write_note', key); }
+        }
+        if (!nativeFrameLifetimeMatches()) return { ok: false, reason: 'section-persistence-frame-changed' };
+        if (!target || !target.editor || String(target.editor.getAttribute && target.editor.getAttribute('data-slate-editor') || '').toLowerCase() !== 'true') return { ok: false, reason: 'section-persistence-readback-missing' };
+        var freshStage = hetStageEncounterContext(hit.frame, expectedPatient);
+        if (!freshStage || digits(freshStage.encounterId) !== digits(context.encounterId) || digits(freshStage.appointmentId) !== digits(context.appointmentId) || dateKey(freshStage.visitDate) !== dateKey(context.visitDate) || norm(freshStage.provider) !== norm(context.provider)) return { ok: false, reason: 'context-mismatch' };
+        var value = editorValue(target.editor);
+        if (value === null) return { ok: false, reason: 'note-editor-unreadable' };
+        if (value !== expectedValue) return { ok: false, reason: 'section-persistence-readback-mismatch' };
+        return { ok: true, key: key, persisted: true, saved: true, verified: true };
+      }
+      var nativeResults = [], nativeKeys = ['hpi','ros','exam','ap'];
+      for (var nativeReadI = 0; nativeReadI < nativeKeys.length; nativeReadI++) {
+        var nativeReadKey = nativeKeys[nativeReadI], nativeRead = await nativeReadSection(nativeReadKey, nativeSaveSections[nativeReadKey]);
+        if (!nativeRead.ok) return { ok: false, blocked: true, action: action, attempted: true, verified: false, saved: false, persisted: false, serverVerified: true, reason: nativeRead.reason, failedDestination: nativeReadKey, sectionsDeclared: 5, persistedDestinations: nativeResults.length, context: context, results: nativeResults, noAutomaticChaining: 'no-automatic-chaining' };
+        nativeResults.push(nativeRead);
+      }
+      return { ok: true, action: action, attempted: true, verified: true, saved: true, persisted: true, serverVerified: true, reason: 'exact-section-persistence-reconciled', nativePersistenceReconcile: true, sectionsDeclared: 5, persistedDestinations: 4, signed: false, context: context, results: nativeResults, noAutomaticChaining: 'no-automatic-chaining' };
+    }
     /* savenamed-1.0.0 (3.0.111, owner ruling 2026-09-02): a trusted press on
        the MLS site drives athenaOne's encounter Save for a review that
        placed NAMED sections. This block adds NO authorization of its own.
@@ -2925,6 +2988,30 @@ function mlsAthenaTeachWatcherFn(config) {
   }
   function norm(v) { return clean(v).toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim(); }
   function digits(v) { return clean(v).replace(/\D/g, ''); }
+  function nativeNamedPersistenceShape(sections) {
+    if (!Array.isArray(sections) || sections.length !== 5) return null;
+    var destinations = {
+      hpi: 'Athena encounter > HPI', ros: 'Athena encounter > Review of Systems', exam: 'Athena encounter > Physical Exam',
+      assessment: 'Athena encounter > Assessment & Plan > Assessment', plan: 'Athena encounter > Assessment & Plan > Plan / Follow-up'
+    };
+    var byKey = Object.create(null);
+    for (var i = 0; i < sections.length; i++) {
+      var section = sections[i] || {}, key = norm(section.key).replace(/ /g, '_');
+      var aliases = { history_of_present_illness: 'hpi', review_of_systems: 'ros', physical_exam: 'exam', physical_examination: 'exam', assessment_narrative: 'assessment', follow_up: 'plan', followup: 'plan' };
+      key = aliases[key] || key;
+      if (!Object.prototype.hasOwnProperty.call(destinations, key) || byKey[key] || section.execute !== true || clean(section.destination) !== destinations[key]) return null;
+      var value = String(section.text == null ? '' : section.text).trim();
+      if (!value) return null;
+      byKey[key] = value;
+    }
+    if (!['hpi','ros','exam','assessment','plan'].every(function (key) { return Object.prototype.hasOwnProperty.call(byKey, key); })) return null;
+    return {
+      sectionsDeclared: 5, persistedDestinations: 4,
+      values: { hpi: byKey.hpi, ros: byKey.ros, exam: byKey.exam, ap: 'Assessment:\n' + byKey.assessment + '\n\nPlan / Follow-up:\n' + byKey.plan },
+      destinations: { hpi: destinations.hpi, ros: destinations.ros, exam: destinations.exam, ap: 'Athena encounter > Assessment & Plan' }
+    };
+  }
+  function gestureBatchSerial(value) { var match = /^([a-f0-9]{16,128}):([0-9]{1,2})$/i.exec(clean(value)); return match ? match[1] : ''; }
   function dateKey(v) { /* isodob-1.0.0 (3.0.99): an ISO DOB (1962-03-04) must not be scanned by the M/D/Y reader - it first matches inside the YEAR and reads a different person (measured b1157 app-side; this is the extension twin). Anchored ISO branch first; the M/D/Y branch below is unchanged. */ var iso = /(^|[^0-9])(\d{4})-([01]\d)-([0-3]\d)(?![0-9])/.exec(clean(v)); if (iso) { return Number(iso[3]) + '/' + Number(iso[4]) + '/' + iso[2]; } var m = /([01]?\d)[\/\-.]([0-3]?\d)[\/\-.](\d{2,4})/.exec(clean(v)); if (!m) return ''; var y = m[3]; if (y.length === 2) y = (Number(y) > ((new Date().getFullYear() % 100) + 1) ? '19' : '20') + y; return Number(m[1]) + '/' + Number(m[2]) + '/' + y; }
   function simpleHash(v) { var s = String(v || ''), h = 2166136261; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return ('00000000' + (h >>> 0).toString(16)).slice(-8); }
   function patientKey(p) { p = p || {}; return [clean(p.patientId), norm(p.name), dateKey(p.dob)].join('|'); }
@@ -3359,6 +3446,7 @@ function mlsAthenaTeachWatcherFn(config) {
   }
   function urlKey(v) { return clean(v).split('#')[0]; }
   function expectedContextKey(c) { c = c || {}; return [digits(c.appointmentId), digits(c.encounterId), urlKey(c.encounterUrl), dateKey(c.visitDate), norm(c.provider)].join('|'); }
+  function persistenceContextKey(c) { c = c || {}; return [norm(c.patientName), dateKey(c.dob), digits(c.mrn), digits(c.appointmentId), digits(c.encounterId), urlKey(c.encounterUrl), dateKey(c.visitDate), norm(c.provider), clean(c.framePath)].join('|'); }
   function expectedContextShape(c, requireEncounter) {
     c = c || {};
     var hasDate = !!clean(c.visitDate), hasProvider = !!clean(c.provider);
@@ -3488,11 +3576,15 @@ function mlsAthenaTeachWatcherFn(config) {
     if (!candidates.length) return { __error: 'no-athena-tab', __message: 'Open one signed-in Athena tab, then retry. Nothing was changed.' };
     return candidates;
   }
-  async function injectOnce(tabId, payload) {
+  async function injectOnce(tabId, payload, documentId) {
     /* Intentionally one TOP-frame injection: no allFrames, no retry/reload. */
     try {
-      var r = await chrome.scripting.executeScript({ target: { tabId: tabId }, world: 'MAIN', args: [payload], func: mlsAthenaActionV2DriverFn });
-      return r && r[0] && r[0].result ? r[0].result : { ok: false, reason: 'outcome-uncertain', error: 'The Athena action returned no result.' };
+      var target = { tabId: tabId }; if (clean(documentId)) target.documentIds = [clean(documentId)];
+      var r = await chrome.scripting.executeScript({ target: target, world: 'MAIN', args: [payload], func: mlsAthenaActionV2DriverFn });
+      if (!(r && r[0] && r[0].result)) return { ok: false, reason: 'outcome-uncertain', error: 'The Athena action returned no result.' };
+      var result = r[0].result;
+      result.executionDocumentId = clean(r[0].documentId); result.executionFrameId = Number(r[0].frameId || 0);
+      return result;
     } catch (e) { return { ok: false, reason: 'outcome-uncertain', error: String((e && e.message) || e) }; }
   }
   function noteWriteProofMatches(proof, senderTabId, athenaTabId, p, previewHash, noteHash, notePayload, context) {
@@ -3514,6 +3606,28 @@ function mlsAthenaTeachWatcherFn(config) {
       }
       var proof = await loadNoteWriteProofUnlocked(id);
       return noteWriteProofMatches(proof, senderTabId, athenaTabId, p, previewHash, noteHash, notePayload, context) ? proof : null;
+    });
+  }
+  async function matchingNativePersistenceProofSet(batchSerial, senderTabId, athenaTabId, p, manifestHash, documentId, shape, context) {
+    return withTokenStateLock(async function () {
+      await pruneExpiredAuthSessionUnlocked(Date.now());
+      if (!batchSerial || !shape || !clean(documentId)) return { ok: false, reason: 'section-persistence-proof-missing' };
+      var expectedContext = persistenceContextKey(context), keys = ['hpi','ros','exam','ap'], matched = {}, proofIds = [];
+      Object.keys(noteWriteProofs).forEach(function (id) {
+        var proof = noteWriteProofs[id];
+        if (!validPersistedNoteWriteProof(id, proof) || proof.used || proof.state !== 'ready' || proof.serverVerified !== true || proof.persisted !== true) return;
+        if (proof.batchSerial !== batchSerial || Number(proof.senderTabId) !== Number(senderTabId) || Number(proof.athenaTabId) !== Number(athenaTabId) || proof.patientKey !== patientKey(p) || proof.manifestHash !== manifestHash || proof.executionDocumentId !== documentId || proof.persistenceContextKey !== expectedContext) return;
+        var key = clean(proof.sectionKey);
+        if (keys.indexOf(key) < 0 || proof.sectionText !== shape.values[key] || proof.sectionDestination !== shape.destinations[key] || !(Number(proof.frameTimeOrigin) > 0)) return;
+        if (!matched[key]) matched[key] = [];
+        matched[key].push(proof); proofIds.push(id);
+      });
+      for (var i = 0; i < keys.length; i++) {
+        if (!matched[keys[i]] || matched[keys[i]].length !== 1) return { ok: false, reason: matched[keys[i]] && matched[keys[i]].length > 1 ? 'section-persistence-proof-ambiguous' : 'section-persistence-proof-missing' };
+      }
+      var origins = keys.map(function (key) { return Number(matched[key][0].frameTimeOrigin); });
+      if (!origins.every(function (value) { return value === origins[0]; })) return { ok: false, reason: 'section-persistence-proof-mismatch' };
+      return { ok: true, proofIds: proofIds, frameTimeOrigin: origins[0] };
     });
   }
   async function noteWriteProofFailure(id) {
@@ -4009,7 +4123,9 @@ function mlsAthenaTeachWatcherFn(config) {
           expectedAccount: clean(msg.expectedAccount), expectedPracticeId: digits(msg.expectedPracticeId),
           expectedContext: expectedAtExecute,
           lockedContextHash: simpleHash(expectedContextKey(probe.context)),
-          locked: probe.context
+          locked: probe.context,
+          executionDocumentId: clean(probe.executionDocumentId), executionFrameId: Number(probe.executionFrameId || 0),
+          nativePersistenceReconcile: probe.nativePersistenceReconcile === true
         };
         var __mintOk = false; try { (self.tokDiag||function(){})('mint-call', String(tok || '').length + ':' + action); __mintOk = await storeActionToken(tok, tokenRecord, action === 'place_order' ? { senderTabId: sender.tab.id, previewHash: previewHash } : null); (self.tokDiag||function(){})('mint-result', __mintOk === true ? 'ok' : ('falsy:' + typeof __mintOk)); } catch (eMint) { (self.tokDiag||function(){})('mint-throw', (eMint && eMint.message) || eMint); __mintOk = false; }
         if (!__mintOk) return { ok: false, blocked: true, reason: 'token-state-unavailable', error: 'Chrome could not preserve the exact one-use authorization for review. Re-check Athena before trying again. Nothing was changed.' };
@@ -4048,6 +4164,12 @@ function mlsAthenaTeachWatcherFn(config) {
       var lockedLive = liveCandidates.filter(function (lt) { return Number(lt.id) === Number(rec.athenaTabId); });
       if (lockedLive.length !== 1) return { ok: false, blocked: true, reason: 'token-tab-mismatch', error: 'The Athena tab this action was verified in is no longer open and signed in. Nothing was changed.' };
       if (executeBusy) return { ok: false, blocked: true, reason: 'outcome-uncertain', detail: 'another-athena-action-is-running', noAutomaticChaining: 'no-automatic-chaining' };
+      var nativeSaveShape = action === 'save_draft' && rec.nativePersistenceReconcile === true ? nativeNamedPersistenceShape(noteSections) : null;
+      var nativeProofSet = null;
+      if (nativeSaveShape) {
+        nativeProofSet = await matchingNativePersistenceProofSet(gestureBatchSerial(msg.gestureProof), sender.tab.id, rec.athenaTabId, p, manifestHash, clean(rec.executionDocumentId), nativeSaveShape, rec.locked);
+        if (!nativeProofSet.ok) return { ok: false, blocked: true, attempted: false, verified: false, saved: false, persisted: false, reason: nativeProofSet.reason, noAutomaticChaining: 'no-automatic-chaining' };
+      }
       if (action === 'sign_encounter') {
         if (!noteWriteProofId || noteWriteProofId !== rec.noteWriteProof) return { ok: false, blocked: true, reason: 'sign-prerequisite-mismatch' };
         var proofClaim = await claimNoteWriteProof(noteWriteProofId, sender.tab.id, rec.athenaTabId, p, previewHash, noteHash, canonicalNotePayload, rec.locked);
@@ -4068,20 +4190,26 @@ function mlsAthenaTeachWatcherFn(config) {
       var executed;
       try {
         /* ATHENA_ACTION_V2_EXECUTE_INJECTION */
-        executed = await injectOnce(rec.athenaTabId, { mode: 'execute', action: action, expectedPatient: p, expectedContext: { appointmentId: rec.locked.appointmentId, encounterId: rec.locked.encounterId, encounterUrl: rec.locked.encounterUrl, visitDate: rec.locked.visitDate, provider: rec.locked.provider }, billing: b, order: checkedOrder.order, noteText: noteText, sections: noteSections, notePolicy: notePolicy, locked: rec.locked, taughtDestination: checkedTaught.value });
+        executed = await injectOnce(rec.athenaTabId, { mode: 'execute', action: action, expectedPatient: p, expectedContext: { appointmentId: rec.locked.appointmentId, encounterId: rec.locked.encounterId, encounterUrl: rec.locked.encounterUrl, visitDate: rec.locked.visitDate, provider: rec.locked.provider }, billing: b, order: checkedOrder.order, noteText: noteText, sections: noteSections, notePolicy: notePolicy, locked: rec.locked, taughtDestination: checkedTaught.value, nativePersistenceProofSetVerified: !!(nativeProofSet && nativeProofSet.ok), nativePersistenceProofFrameTimeOrigin: Number(nativeProofSet && nativeProofSet.frameTimeOrigin || 0) }, rec.executionDocumentId);
       } finally { executeBusy = false; }
       if (!executed) {
         await transitionActionToken(actionToken, rec, 'uncertain', 'no-execute-result');
         return { ok: false, attempted: true, verified: false, reason: 'outcome-uncertain', noAutomaticChaining: 'no-automatic-chaining' };
       }
-      if (action === 'write_note' && executed.attempted === true && executed.written === true && executed.verified === true && executed.draftVerified === true && lockedContextShape(executed.context) && probeContextMatches(executed.context, rec.locked) && simpleHash(encounterProofKey(executed.context)) === simpleHash(encounterProofKey(rec.locked))) {
+      if (action === 'write_note' && executed.attempted === true && executed.written === true && executed.verified === true && executed.draftVerified === true && (!executed.persistence || (executed.persisted === true && executed.serverVerified === true && Number(executed.persistence.frameTimeOrigin) > 0)) && lockedContextShape(executed.context) && probeContextMatches(executed.context, rec.locked) && simpleHash(encounterProofKey(executed.context)) === simpleHash(encounterProofKey(rec.locked))) {
         var noteWriteProof = tokenValue(), proofNow = Date.now();
         var newNoteWriteProof = {
           used: false, issuedAt: proofNow, expiresAt: proofNow + NOTE_PROOF_TTL_MS,
           senderTabId: sender.tab.id, athenaTabId: rec.athenaTabId,
           previewHash: previewHash, patientKey: patientKey(p), patientHash: simpleHash(patientKey(p)),
           notePayload: canonicalNotePayload, noteHash: noteHash,
-          lockedContextKey: encounterProofKey(executed.context), lockedContextHash: simpleHash(encounterProofKey(executed.context))
+          lockedContextKey: encounterProofKey(executed.context), lockedContextHash: simpleHash(encounterProofKey(executed.context)),
+          batchSerial: gestureBatchSerial(msg.gestureProof), manifestHash: manifestHash,
+          executionDocumentId: clean(executed.executionDocumentId), executionFrameId: Number(executed.executionFrameId || 0),
+          persistenceContextKey: persistenceContextKey(executed.context), sectionKey: clean(executed.results && executed.results[0] && executed.results[0].key),
+          sectionText: String(noteSections[0] && noteSections[0].text != null ? noteSections[0].text : '').trim(), sectionDestination: clean(noteSections[0] && noteSections[0].destination),
+          serverVerified: executed.serverVerified === true, persisted: executed.persisted === true,
+          frameTimeOrigin: Number(executed.persistence && executed.persistence.frameTimeOrigin || 0)
         };
         /* Never expose a Sign capability that the next MV3 worker cannot
            hydrate. The note result stays truthful if this separate proof write
