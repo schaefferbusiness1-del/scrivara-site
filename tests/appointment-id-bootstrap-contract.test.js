@@ -19,10 +19,10 @@ function sliceBetween(source, startText, endText) {
 
 const deltaSource = sliceBetween(
   background,
-  'function mlsAppointmentNavigationDelta(appointmentId, beforeFrames, afterFrames)',
+  'function mlsNonclinicalAppointmentUrl(rawUrl)',
   'function bestFrameResult'
 );
-const context = { Map, Set, Array, String, Number, RegExp, Object };
+const context = { Map, Set, Array, String, Number, RegExp, Object, URL };
 vm.runInNewContext(deltaSource, context, { filename: 'appointment-navigation-delta.js', timeout: 1000 });
 const prove = context.mlsAppointmentNavigationDelta;
 assert.strictEqual(typeof prove, 'function');

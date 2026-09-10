@@ -1369,6 +1369,7 @@ const tests = [
   'history-absolute-deadline-runtime.test.js',
   'background-final-patient-timeout-runtime.test.js',
   'appointment-id-bootstrap-contract.test.js',
+  'appointment-nonclinical-route-guard.test.js',
   'day-schedule-absolute-deadline-runtime.test.js',
   'schedule-scrape-deadline-searchopen-runtime.test.js',
   'background-all-visits-cleanup-serialization.test.js',

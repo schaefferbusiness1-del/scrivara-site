@@ -14159,6 +14159,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       function openAllowed() { return !!__openGuard.token && Number.isFinite(__openGuard.deadline) && Date.now() < __openGuard.deadline; }
       function deadlineOut() { return { phase: phase, opened: false, filled: false, candidates: 0, reason: 'open-deadline-exceeded', requestToken: __openGuard.token || '' }; }
       if (!openAllowed()) return deadlineOut();
+      /* openroute-3.0.113: these appointment-id URLs are scheduling
+         administration, not encounter openers. Keep this helper inside the
+         injected function because executeScript serializes the function and
+         cannot close over worker helpers. */
+      function nonclinicalAppointmentHref(el) {
+        try {
+          if (!el || !el.getAttribute) return false;
+          var rawHref = String(el.getAttribute('href') || '').trim();
+          if (!rawHref) return false;
+          var routeBase = String(location.href || '');
+          if (!/^https?:\/\//i.test(routeBase)) routeBase = 'https://athenanet.athenahealth.com/';
+          var parsedHref = new URL(rawHref, routeBase);
+          var routePath = String(parsedHref.pathname || '').toLowerCase().replace(/\/+$/, '');
+          if (/\/schedule\/apptworkflow\.esp$/.test(routePath)) return true;
+          return /\/schedule\/schedulingplatformcalendarview\.esp$/.test(routePath) &&
+            /(?:^|[?&])(?:appointmentid|initialworkflow)(?:=|&|$)/i.test(String(parsedHref.search || ''));
+        } catch (eRoute) { return false; }
+      }
       /* v1.84: never scan/type on the findpatient RESULTS page - its rows are
          javascript: links this (isolated) world cannot navigate; clicking them
          reports a phantom "open" while nothing happens. The findpatient route
@@ -14321,13 +14339,23 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           return true;
         }
         function clickRow(row) {
+          clickRow.reason = '';
           var clickT = null;
           // v1.53: prefer the child link whose text matches the patient NAME (not the
           // row's first <a>, which on a schedule row is often a time/status link).
           try {
             /* v1.64: never pick a click target whose own label is a dangerous control
                ("Check-out" button inside the row). */
-            var cand = [].slice.call(row.querySelectorAll('a,[role=link],[role=button],[onclick]')).filter(vis).filter(function (a) { var tb = rowText(a); return !(tb.length < 34 && BAD.test(tb)); });
+            var rawCand = [].slice.call(row.querySelectorAll('a,[role=link],[role=button],[onclick]')).filter(vis);
+            /* An appointment-history row can carry the exact id but expose
+               only Change/Cancel and Reschedule links. Refuse the whole row
+               before any child or row fallback click; a row-level handler is
+               not evidence of a clinical destination. */
+            if (nonclinicalAppointmentHref(row) || rawCand.some(nonclinicalAppointmentHref)) {
+              clickRow.reason = 'appointment-target-not-clinical';
+              return false;
+            }
+            var cand = rawCand.filter(function (a) { var tb = rowText(a); return !(tb.length < 34 && BAD.test(tb)); });
             clickT = cand.filter(function (a) { var t = rowText(a).toLowerCase(); return (lname && t.indexOf(lname) !== -1) || (fname && t.indexOf(fname) !== -1); })[0] || cand[0];
           } catch (e0) {}
           if (!clickT) {
@@ -14421,7 +14449,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         // proven name scan as a compatibility fallback.
         var hit = apptIdRow() || (requireAppointmentId === true ? { el: null, sc: 0, scanned: 0 } : scanOnce());
         if (hit.ambiguous) return { phase: 'open', opened: false, candidates: hit.matches || 2, reason: 'appointment-id-ambiguous', diag: { frame: location.hostname, scanned: hit.scanned, topScore: hit.sc, apptIdBound: false, apptIdMatches: hit.matches || 2 } };
-        if (hit.el) { if (!clickRow(hit.el)) return deadlineOut(); return { phase: 'open', opened: true, via: hit.viaApptId ? 'appt-id' : 'quick', candidates: 1, diag: { frame: location.hostname, scanned: hit.scanned, topScore: hit.sc, apptIdBound: hit.viaApptId === true, apptIdMatches: hit.matches || 1 } }; }
+        if (hit.el) {
+          if (!clickRow(hit.el)) {
+            if (clickRow.reason === 'appointment-target-not-clinical') return { phase: 'open', opened: false, candidates: 1, reason: clickRow.reason, diag: { frame: location.hostname, scanned: hit.scanned, topScore: hit.sc, apptIdBound: false, apptIdMatches: hit.matches || 1 } };
+            return deadlineOut();
+          }
+          return { phase: 'open', opened: true, via: hit.viaApptId ? 'appt-id' : 'quick', candidates: 1, diag: { frame: location.hostname, scanned: hit.scanned, topScore: hit.sc, apptIdBound: hit.viaApptId === true, apptIdMatches: hit.matches || 1 } };
+        }
         // v1.61: SCROLL the virtualized schedule + re-scan. athenaOne renders only the
         // rows in the viewport, so a below-the-fold patient (e.g. Ruth Gehrman) was never
         // found by the old single-scan opener - "open-failed". The reader already scrolls
@@ -14456,7 +14490,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             await (function (ms) { var __hsAt = Date.now() + Math.max(0, Number(ms || 0)); return new Promise(function (r) { /* mls-hs-1.0.0: hidden tab => timers throttled to 1/s then 1/min; yield through a MessageChannel (not a timer) until the wall clock passes. */ if (typeof document === 'undefined' || !document.hidden) { setTimeout(r, Math.max(0, __hsAt - Date.now())); return; } var __ch = null; try { __ch = new MessageChannel(); } catch (e) { __ch = null; } if (!__ch) { setTimeout(r, Math.max(0, __hsAt - Date.now())); return; } __ch.port1.onmessage = function () { if (Date.now() >= __hsAt) { try { __ch.port1.onmessage = null; __ch.port1.close(); __ch.port2.close(); } catch (e2) {} r(); return; } if (!document.hidden) { try { __ch.port1.onmessage = null; __ch.port1.close(); __ch.port2.close(); } catch (e3) {} setTimeout(r, Math.max(0, __hsAt - Date.now())); return; } try { __ch.port2.postMessage(0); } catch (e4) { setTimeout(r, Math.max(0, __hsAt - Date.now())); } }; __ch.port2.postMessage(0); }); })(320);
             var h2 = requireAppointmentId === true ? (apptIdRow() || { el: null, sc: 0, scanned: 0 }) : scanOnce(); if (h2.scanned > scannedTotal) scannedTotal = h2.scanned;
             if (h2.ambiguous) return { phase: 'open', opened: false, candidates: h2.matches || 2, reason: 'appointment-id-ambiguous', diag: { frame: location.hostname, scanned: scannedTotal, scrolledTo: y, topScore: h2.sc, apptIdBound: false, apptIdMatches: h2.matches || 2 } };
-            if (h2.el) { if (!clickRow(h2.el)) return deadlineOut(); return { phase: 'open', opened: true, via: h2.viaApptId ? 'appt-id-scroll' : 'scroll', candidates: 1, diag: { frame: location.hostname, scanned: scannedTotal, scrolledTo: y, topScore: h2.sc, apptIdBound: h2.viaApptId === true, apptIdMatches: h2.matches || 1 } }; }
+            if (h2.el) {
+              if (!clickRow(h2.el)) {
+                if (clickRow.reason === 'appointment-target-not-clinical') return { phase: 'open', opened: false, candidates: 1, reason: clickRow.reason, diag: { frame: location.hostname, scanned: scannedTotal, scrolledTo: y, topScore: h2.sc, apptIdBound: false, apptIdMatches: h2.matches || 1 } };
+                return deadlineOut();
+              }
+              return { phase: 'open', opened: true, via: h2.viaApptId ? 'appt-id-scroll' : 'scroll', candidates: 1, diag: { frame: location.hostname, scanned: scannedTotal, scrolledTo: y, topScore: h2.sc, apptIdBound: h2.viaApptId === true, apptIdMatches: h2.matches || 1 } };
+            }
           }
           if (openAllowed()) try { sc0.scrollTop = orig; } catch (e) {}
         }
@@ -14491,6 +14531,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     } catch (e) { return { href: '', encish: false, dates: [] }; }
   }
 
+  function mlsNonclinicalAppointmentUrl(rawUrl) {
+    try {
+      var parsed = new URL(String(rawUrl || ''), 'https://athenanet.athenahealth.com/');
+      var routePath = String(parsed.pathname || '').toLowerCase().replace(/\/+$/, '');
+      if (/\/schedule\/apptworkflow\.esp$/.test(routePath)) return true;
+      return /\/schedule\/schedulingplatformcalendarview\.esp$/.test(routePath) &&
+        /(?:^|[?&])(?:appointmentid|initialworkflow)(?:=|&|$)/i.test(String(parsed.search || ''));
+    } catch (e) { return false; }
+  }
+
   function mlsAppointmentNavigationDelta(appointmentId, beforeFrames, afterFrames) {
     try {
       var want = String(appointmentId || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40);
@@ -14503,7 +14553,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       (afterFrames || []).forEach(function (frame) {
         if (!frame || typeof frame.frameId !== 'number') return;
         var url = String(frame.url || ''), existed = beforeById.has(frame.frameId), prior = existed ? beforeById.get(frame.frameId) : '';
-        if ((!existed || prior !== url) && re.test(url)) changed.push(frame.frameId);
+        if ((!existed || prior !== url) && re.test(url) && !mlsNonclinicalAppointmentUrl(url)) changed.push(frame.frameId);
       });
       changed = Array.from(new Set(changed));
       return { matched: changed.length > 0, changedFrameIds: changed };
