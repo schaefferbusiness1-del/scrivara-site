@@ -829,10 +829,15 @@
       setTimeout(function () { fin({ ok: false, reason: 'open-timeout', error: 'Opening the patient in Athena timed out.' }); }, 155000);
     });
   }
-  function navigateAndSearchOpenTarget(patient, expectedContext) {
+  function navigateAndSearchOpenTarget(patient, expectedContext, stillOwned) {
     var day = wfDayKey(expectedContext && expectedContext.visitDate);
     var appointmentId = S(expectedContext && expectedContext.appointmentId).trim();
     if (!day || !appointmentId) return Promise.resolve({ ok: false, opened: false, reason: 'appointment-navigation-unverified', error: 'The exact visit is not bound to a dated Athena appointment, so MLS will not open or guess an encounter.' });
+    function ownsChain() {
+      try { return typeof stillOwned !== 'function' || stillOwned() === true; } catch (e) { return false; }
+    }
+    function cancelled() { return { ok: false, opened: false, cancelled: true }; }
+    if (!ownsChain()) return Promise.resolve(cancelled());
     /* rowfirst-1.0.0 (measured live 2026-08-31): the Day-view drive's own
        recovery ladder can DESTROY a perfectly painted schedule (Home-drives on
        a slow renderer), after which the row hunt honestly finds nothing. The
@@ -842,14 +847,21 @@
        already paints. Only when the row is not on the current grid does the
        day-drive run as the cure, exactly as before. */
     return searchOpenTarget(patient, expectedContext).then(function (firstTry) {
+      if (!ownsChain()) return cancelled();
       firstTry = firstTry || {};
       wfdxNote({ verb: 'mlsAppSearchOpenPatient', stage: 'row-first', ok: firstTry.ok === true,
         reason: firstTry.reason || firstTry.findReason, error: firstTry.error, expectedDay: day, appointmentIdPresent: true });
       if (firstTry.ok === true) return firstTry;
       return navigateThenSearch();
-    }, function () { return navigateThenSearch(); });
+    }, function () { return ownsChain() ? navigateThenSearch() : cancelled(); });
     function navigateThenSearch() {
+    if (!ownsChain()) return Promise.resolve(cancelled());
     return bridge('mlsAppGotoDate', { date: day, deadlineAt: Date.now() + 60000 }, 'mlsAppGotoDateResult', 62000).then(function (nav) {
+      /* reviewcancel-1.0.0: an already-dispatched extension request cannot be
+         recalled, but its answer no longer licenses the next navigation hop.
+         Cancel, replacement by a newer sheet, or a newer probe generation all
+         stop here before another row search can move athenaOne. */
+      if (!ownsChain()) return cancelled();
       nav = nav || {};
       var observed = wfDayKey(nav.schedDate);
       wfdxNote({ verb: 'mlsAppGotoDate', stage: 'auto-open', ok: nav.ok === true, timeout: nav.__timeout === true,
@@ -866,6 +878,7 @@
       if (observed && observed !== day) return { ok: false, opened: false, reason: 'appointment-navigation-unverified', error: 'athenaOne reported a different encounter day. Nothing was opened.' };
       return searchOpenTarget(patient, expectedContext);
     }, function () {
+      if (!ownsChain()) return cancelled();
       return { ok: false, opened: false, reason: 'appointment-navigation-unverified', error: 'The exact encounter-day navigation could not be started. Nothing was opened.' };
     });
     }
@@ -3899,7 +3912,9 @@
         if (AUTO_OPEN_REASONS[probeReason] === 1 && !state.autoOpened) {
           state.autoOpened = true;
           unifiedStatus(state, S(state.manifest.patient.name) + ' is not open in Athena. MLS is finding and opening the exact chart now — identity is verified before it opens, and nothing is written without your Confirm & write click...', '');
-          navigateAndSearchOpenTarget(state.manifest.patient, state.manifest.visit).then(function (openRes) {
+          navigateAndSearchOpenTarget(state.manifest.patient, state.manifest.visit, function () {
+            return !state.closed && unifiedAthenaState === state && generation === state.probeGeneration;
+          }).then(function (openRes) {
             if (state.closed || unifiedAthenaState !== state || generation !== state.probeGeneration) return;
             wfdxNote({ verb: 'mlsAppSearchOpenPatient', stage: 'auto-open', ok: !!(openRes && openRes.ok === true),
               reason: openRes && (openRes.reason || openRes.findReason), error: openRes && openRes.error,

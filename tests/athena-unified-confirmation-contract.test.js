@@ -75,7 +75,8 @@ assert(!/startAthenaAction\(['"]stage_billing['"]/.test(superbill), 'Superbill m
   const probeFn = between(unified, 'function probeUnifiedRow(state, rowId)', 'function receiptStateForRow(state, row)');
   assert(/AUTO_OPEN_REASONS\[probeReason\] === 1 && !state\.autoOpened/.test(probeFn), 'unified probe must auto-open only on whitelisted not-open reasons, once per review');
   assert(probeFn.includes('state.autoOpened = true;'), 'the auto-open once-flag must be consumed before dispatch');
-  assert(probeFn.includes('navigateAndSearchOpenTarget(state.manifest.patient, state.manifest.visit)'), 'auto-open must navigate to the frozen encounter day before the identity-frozen SearchOpen helper');
+  assert(/navigateAndSearchOpenTarget\(state\.manifest\.patient, state\.manifest\.visit, function \(\) \{[\s\S]*?!state\.closed && unifiedAthenaState === state && generation === state\.probeGeneration/.test(probeFn),
+    'auto-open must navigate to the frozen encounter day only while this open review and probe generation still own the chain');
   assert(/probeUnifiedRow\(state, row\.id\);/.test(probeFn), 'a successful auto-open must re-probe the same row');
   assert(probeFn.includes('press Check Athena again. Nothing was changed.'), 'a failed auto-open must fail closed with the manual instruction');
   assert(!/executeUnifiedSelection/.test(between(probeFn, 'AUTO_OPEN_REASONS[probeReason]', 'wf2-1.9.0')), 'auto-open must never chain into an execute');
