@@ -378,7 +378,7 @@ assert.deepStrictEqual(
 const ROOT_NAME_SAFE = /^[A-Za-z0-9_.@~-]+$/;
 const ROOT_EXT_REVIEWED = [
   'bin', 'css', 'html', 'jpg', 'js', 'json', 'lock', 'md', 'mp4', 'pdf',
-  'png', 'txt', 'webmanifest', 'xml', 'yml', 'zip'
+  'png', 'txt', 'vtt', 'webmanifest', 'xml', 'yml', 'zip'
 ];
 {
   const rootFiles = fs.readdirSync(root, { withFileTypes: true })

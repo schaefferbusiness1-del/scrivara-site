@@ -1,6 +1,6 @@
 'use strict';
 /* =============================================================================
- * setupvid-1.0.0 + rerunsetup-1.0.0  -  THE PROOF
+ * setupvid-1.0.1 + rerunsetup-1.0.0  -  THE PROOF
  * -----------------------------------------------------------------------------
  * OWNER, 2026-09-01, verbatim: "upload to video as the first thing u see when u
  * first log in as part of the set up prosess" and "also make it possible to re
@@ -17,10 +17,10 @@
  *           suShow() run at SU_STEP 0 paints step 0 and mounts the player.
  *   PART 2  THE PLAYER. The real mlsSvMount() builds one <video> with controls,
  *           a PUBLISHED poster, playsinline, preload=metadata, sound ON and no
- *           autoplay, sourcing MLS_HowTo_v1.mp4.
- *   PART 3  THE ASSET IS NOT THERE YET. Firing the source's error event - which
- *           is exactly what a 404 delivers - swaps the player for a short,
- *           honest card. Nothing throws, nothing is disabled, setup continues.
+ *           autoplay, sourcing MLS_HowTo_v1.mp4 with English captions.
+ *   PART 3  LOAD FAILURE. A source error swaps the player for an honest card
+ *           with a working retry. Caption failure leaves playback usable.
+ *           Nothing is disabled and setup continues.
  *   PART 4  NOBODY IS TRAPPED. The real suShow() leaves Skip and Next live and
  *           visible on the video step, in every video state.
  *   PART 5  SETTINGS. Both controls and the second player host exist in all
@@ -49,8 +49,13 @@ const os = require('os');
 const vm = require('vm');
 
 const ROOT = path.resolve(__dirname, '..');
-const SHELLS = ['1pScribeFlow.html', path.join('1p', 'index.html'), 'ScribeFlow.html', path.join('cloned', 'index.html')];
+/* Source-only checks run before release derivation; the default still checks
+   every shipped shell. */
+const SOURCE_ONLY = process.argv.includes('--source-only');
+const SHELLS = ['1pScribeFlow.html', path.join('1p', 'index.html')].concat(
+  SOURCE_ONLY ? [] : ['ScribeFlow.html', path.join('cloned', 'index.html')]);
 const VIDEO = 'MLS_HowTo_v1.mp4';
+const CAPTIONS = 'MLS_HowTo_v1.en.vtt';
 
 /* A SUITE CAN PASS WITHOUT RUNNING (2026-08-28): the async half below could
    exit 0 having settled nothing. An explicit completion flag, checked on exit,
@@ -242,7 +247,7 @@ function mountHarness(rel) {
     localStorage: makeStore({}).api,
     sessionStorage: makeStore({}).api
   });
-  vm.runInContext(svBlock(source[rel]) + '\nthis.__api = { mount: mlsSvMount, fallback: mlsSvFallbackCard, src: MLS_SV_SRC, poster: MLS_SV_POSTER, watch: mlsSvWatchWalkthrough, keys: mlsSvRerunKeys, reset: mlsSvResetSetupProgress, rerun: mlsSvRerunSetup, avail: mlsSvSetupAvailable, applyUI: mlsSvApplySettingsUI, confirmText: MLS_SV_RERUN_CONFIRM };', ctx);
+  vm.runInContext(svBlock(source[rel]) + '\nthis.__api = { mount: mlsSvMount, fallback: mlsSvFallbackCard, src: MLS_SV_SRC, captions: MLS_SV_CAPTIONS, poster: MLS_SV_POSTER, watch: mlsSvWatchWalkthrough, keys: mlsSvRerunKeys, reset: mlsSvResetSetupProgress, rerun: mlsSvRerunSetup, avail: mlsSvSetupAvailable, applyUI: mlsSvApplySettingsUI, confirmText: MLS_SV_RERUN_CONFIRM };', ctx);
   return { ctx, doc, api: ctx.__api };
 }
 
@@ -267,27 +272,49 @@ for (const rel of SHELLS) {
   eq(v.muted, false, rel + ': a narrated walkthrough must play with SOUND - muted=false');
   ok(!v.hasAttribute('autoplay'), rel + ': the walkthrough must never start by itself');
   ok(String(v.getAttribute('aria-label') || '').length > 3, rel + ': the player needs an accessible name');
-  eq(v.childNodes.length, 1, rel + ': one <source>');
+  eq(v.childNodes.length, 2, rel + ': one source and one caption track');
   eq(v.childNodes[0].getAttribute('src'), VIDEO, rel + ': the <source> points at the walkthrough');
   eq(v.childNodes[0].getAttribute('type'), 'video/mp4', rel + ': the <source> declares video/mp4');
+  const track = v.childNodes[1];
+  eq(track.tagName, 'TRACK', rel + ': captions use a native track');
+  eq(track.getAttribute('kind'), 'captions', rel + ': the track exposes captions');
+  eq(track.getAttribute('srclang'), 'en', rel + ': captions identify their language');
+  eq(track.getAttribute('label'), 'English', rel + ': the caption menu has a readable label');
+  eq(track.getAttribute('src'), '/' + CAPTIONS, rel + ': captions use the published root resource');
+  eq(h.api.captions, track.getAttribute('src'), rel + ': the caption source is shared');
+  ok(track.hasAttribute('default'), rel + ': captions are available by default');
+  ok(inventory.includes(CAPTIONS), rel + ': the caption resource is reviewed for publication');
+  track.fire('error');
+  eq(host.childNodes[0], v, rel + ': a caption load failure does not remove the video');
 
   /* idempotent: showing the pane twice must not stack players */
   h.api.mount(host);
   eq(host.childNodes.length, 1, rel + ': a second mount must not stack a second player');
 
-  /* PART 3 - the asset is not published yet: a 404 delivers an error event */
+  /* PART 3 - a published video can still fail to load. */
   v.childNodes[0].fire('error');
   eq(host.childNodes.length, 1, rel + ': the failed player is replaced, not appended to');
   const card = host.childNodes[0];
   eq(card.getAttribute('data-mls-sv'), 'fallback', rel + ': a missing walkthrough degrades to the fallback card');
   const text = card.childNodes.map((n) => n.textContent).join(' ');
-  ok(/being produced/i.test(text), rel + ': the fallback says the video is being produced');
-  ok(/continue with setup/i.test(text), rel + ': the fallback tells the doctor to carry on - it must not read like a failure');
-  ok(!/error|failed|sorry/i.test(text), rel + ': the fallback must not shout an error at a new doctor');
+  ok(/could not load/i.test(text), rel + ': the fallback describes a loading failure');
+  ok(/continue with setup/i.test(text), rel + ': the fallback tells the doctor setup can continue');
+  ok(!/being produced|not published|as soon as it lands/i.test(text), rel + ': a load failure must not claim the published asset is absent');
 
   /* a second error (video AND source both fire) must not double-swap */
   v.fire('error');
   eq(host.childNodes.length, 1, rel + ': a second error event must not stack a second card');
+  const retry = card.childNodes.find((node) => node.tagName === 'BUTTON');
+  ok(retry && retry.getAttribute('type') === 'button', rel + ': fallback offers a non-submitting retry button');
+  eq(retry.textContent, 'Retry video', rel + ': the retry action is clear');
+  retry.fire('click');
+  eq(host.childNodes.length, 1, rel + ': retry replaces the fallback');
+  const retried = host.childNodes[0];
+  ok(retried !== v && retried.tagName === 'VIDEO', rel + ': retry builds a fresh player');
+  v.fire('error');
+  eq(host.childNodes[0], retried, rel + ': a stale error cannot replace the retried player');
+  retried.fire('error');
+  eq(host.childNodes[0].getAttribute('data-mls-sv'), 'fallback', rel + ': video-level failure also gives a retryable fallback');
 
   /* the Settings host uses the SAME builder, so the two surfaces cannot drift */
   h.api.watch(null);
@@ -609,6 +636,29 @@ function rerunHarness(answer) {
   ok(now.valid.size === inventory.length,
     'every one of the ' + inventory.length + ' reviewed paths resolves to a real regular file');
   ok(now.valid.has(VIDEO), 'the auditor must ACCEPT ' + VIDEO + ' now that source and inventory line agree');
+  ok(now.valid.has(CAPTIONS), 'the auditor must accept the reviewed caption source');
+  eq(inventory.filter((rel) => rel === CAPTIONS).length, 1, 'captions have exactly one reviewed inventory entry');
+
+  /* Converted from howto-video/captions.srt without changing cue timing or text.
+     Cue prose was manually reviewed for identifying information before publication. */
+  const captionText = fs.readFileSync(path.join(ROOT, CAPTIONS), 'utf8');
+  ok(captionText.startsWith('WEBVTT\n\n'), 'captions use a browser-native WebVTT header');
+  const cues = captionText.trim().split(/\n\s*\n/).slice(1);
+  eq(cues.length, 28, 'all 28 supplied caption cues are present');
+  const stamp = (value) => value.split(/[:.]/).reduce((total, value, index) =>
+    total + Number(value) * [3600, 60, 1, 0.001][index], 0);
+  let previousEnd = 0;
+  cues.forEach((cue, index) => {
+    const lines = cue.split('\n');
+    eq(lines[0], String(index + 1), 'caption cues remain in their supplied sequence');
+    const times = /^(\d{2}:\d{2}:\d{2}\.\d{3}) --> (\d{2}:\d{2}:\d{2}\.\d{3})$/.exec(lines[1]);
+    ok(times, 'caption cue has a valid WebVTT time range');
+    const start = stamp(times[1]), end = stamp(times[2]);
+    ok(start >= previousEnd && end > start && end <= 673, 'caption cues are ordered and fit the published walkthrough');
+    ok(lines.slice(2).join(' ').trim().length > 0, 'caption cue has text');
+    previousEnd = end;
+  });
+  eq(previousEnd, 672.831, 'the last supplied cue retains its endpoint');
 
   /* 3. THE NEGATIVE CONTROL, KEPT. The auditor being fail-closed is what made
         the inventory edit wait for the file, and a landing commit that deleted
@@ -625,6 +675,8 @@ function rerunHarness(answer) {
   const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'mls-pub-audit-'));
   try {
     const missing = audit.inspectExpectedSources(empty);
+    ok(missing.failures.includes('missing reviewed source file: ' + CAPTIONS),
+      'the auditor refuses a reviewed caption whose source is absent');
     const mp4s = inventory.filter((p) => p.endsWith('.mp4'));
     ok(mp4s.length >= 2, 'the inventory publishes the walkthrough alongside the existing sales mp4');
     ok(mp4s.indexOf(VIDEO) >= 0, 'the landed walkthrough must be one of the mp4s this control names');
@@ -650,6 +702,8 @@ function rerunHarness(answer) {
   const excludeBlock = config.slice(0, includeAt);
   const includeBlock = config.slice(includeAt);
   ok(!/mp4/i.test(excludeBlock), '_config.yml must not have grown an mp4 exclude glob - the walkthrough would stop publishing');
+  ok(!/vtt/i.test(excludeBlock), 'caption files publish without an exclude glob');
+  ok(!includeBlock.includes(CAPTIONS), 'captions publish by default without widening the include allowlist');
   for (const rel of inventory.filter((p) => p.endsWith('.mp4'))) {
     ok(includeBlock.indexOf('"' + rel + '"') < 0,
       rel + ' must keep publishing with NO include line - adding one would desynchronise the allowlist that public-publication-boundary.test.js compares exactly');
@@ -661,13 +715,14 @@ function rerunHarness(answer) {
   const reviewed = boundary.slice(boundary.indexOf('const ROOT_EXT_REVIEWED'), boundary.indexOf('const ROOT_EXT_REVIEWED') + 300);
   ok(/'mp4'/.test(reviewed),
     "public-publication-boundary.test.js must keep 'mp4' in ROOT_EXT_REVIEWED, or a landing walkthrough is an unreviewed root extension");
+  ok(/'vtt'/.test(reviewed), 'WebVTT is an explicitly reviewed root asset extension');
 
   console.log('setup-video.js: OK - ' + checks + ' checks. ' +
-    'The walkthrough player is the first thing in su_step0 in all 4 shells; the real mlsSvMount builds one ' +
+    'The walkthrough player is first in su_step0 in ' + SHELLS.length + ' checked shells; the real mlsSvMount builds one ' +
     'controls/poster/playsinline/preload=metadata, unmuted, non-autoplay <video> on ' + VIDEO + '; a source error ' +
-    '(what a 404 delivers) swaps it for an honest "being produced" card without disabling anything; the real suShow ' +
+    'swaps it for an honest load-failure card with a working retry; the real suShow ' +
     'keeps Skip and Get started live on the video step; Settings carries the same player plus Re-run setup inside ' +
-    'Account & access in all 4 shells; the real reset removes EXACTLY ' + EXPECTED_LOCAL.concat(EXPECTED_SESSION).join(' + ') +
+    'Account & access in all checked shells; the real reset removes EXACTLY ' + EXPECTED_LOCAL.concat(EXPECTED_SESSION).join(' + ') +
     ' and writes nothing, with a 14-key decoy account intact; re-run confirms first, reopens on the user path and ' +
     'forces step 0; and the walkthrough has LANDED - ' + VIDEO + ' is a real ' + videoBytes + '-byte mp4 on disk with one ' +
     'inventory line in sorted position, the real fail-closed reviewed-source audit passes over all ' + inventory.length +
