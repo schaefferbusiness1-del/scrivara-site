@@ -6042,14 +6042,22 @@
     try { return (manifest && manifest.rows || []).filter(function (r) { return r.action === 'write_note' && r.capability === 'ready'; }); }
     catch (e) { return []; }
   }
-  function previewOpenByDefault(manifest) { return previewWriteRows(manifest).length <= PREVIEW_OPEN_MAX_ROWS; }
+  function previewOpenByDefault(manifest, row) {
+    /* The five canonical clinical destinations are the doctor's primary
+       review. Keep each one readable on first paint, even when all five are
+       present; collapsing them made the sheet look as though it had less to
+       write than the dispatched payload actually contained. */
+    var named = { hpi: true, ros: true, exam: true, assessment: true, plan: true, assessment_and_plan: true };
+    if (row && named[S(row.kind).trim().toLowerCase()]) return true;
+    return previewWriteRows(manifest).length <= PREVIEW_OPEN_MAX_ROWS;
+  }
   function previewBlockHtml(manifest, row) {
     if (!row || row.action !== 'write_note' || row.capability !== 'ready') return '';
     var text = previewText(row);
     if (!text) return '';
-    var open = previewOpenByDefault(manifest);
+    var open = previewOpenByDefault(manifest, row);
     return '<div data-mls-preview="' + esc(row.id) + '" style="margin-top:8px;border:1px solid #dbe7e0;border-radius:9px;background:#f8fbf9;padding:9px 11px">' +
-      '<div data-mls-preview-title="' + esc(row.id) + '" style="font-size:11.5px;font-weight:850;color:#204034">' + esc(row.destination) + '</div>' +
+      '<div data-mls-preview-title="' + esc(row.id) + '" style="font-size:11.5px;font-weight:850;color:#204034">Exact text to be written · ' + esc(row.destination) + '</div>' +
       '<div data-mls-preview-text="' + esc(row.id) + '" data-mls-preview-open="' + (open ? '1' : '0') + '" style="' + previewTextStyle(open) + '">' + esc(text) + '</div>' +
       '<button type="button" data-mls-preview-toggle="' + esc(row.id) + '" aria-expanded="' + (open ? 'true' : 'false') + '" aria-controls="" style="margin-top:6px;border:1px solid #cfe0d7;background:#fff;color:#204034;border-radius:8px;padding:4px 10px;font-size:11.5px;font-weight:750;cursor:pointer">' +
       (open ? PREVIEW_SHOW_LESS : PREVIEW_SHOW_ALL) + '</button></div>';
@@ -6613,7 +6621,7 @@
        paragraph, byte for byte - it moved OUT of the doctor's first screen and
        into the one "How this works" disclosure below. It is still rendered
        exactly once, which is what 1p-writeflow-sheet-ux pins. */
-    var guideHtml = generationIssue ? '' : '<div data-mls-destination-guide="1" style="margin-top:9px;padding:8px 10px;border:1px solid #dbe7e0;background:#f7fbf9;border-radius:9px;color:#385b49;font-size:12px"><b>What &rarr; Where &rarr; How.</b>' + sharedHow + ' MANUAL and BLOCKED items never cross the Athena write bridge.</div>';
+    var guideHtml = generationIssue ? '' : '<div data-mls-destination-guide="1" style="margin-top:9px;padding:8px 10px;border:1px solid #dbe7e0;background:#f7fbf9;border-radius:9px;color:#385b49;font-size:12px"><b>What &rarr; Where &rarr; How.</b>' + sharedHow + ' The existing MLS draft is shown below; opening this review does not regenerate it. MANUAL and BLOCKED items never cross the Athena write bridge.</div>';
     /* writeui-1.0.0: the sections are a CHECKLIST with a heading, not a loose
        stack of cards under a paragraph. */
     var rowsHtml = '';

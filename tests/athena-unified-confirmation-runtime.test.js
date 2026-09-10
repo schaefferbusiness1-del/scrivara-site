@@ -288,6 +288,10 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 8));
   assert(/MANUAL|COMPLETE IN ATHENA/.test(card.innerHTML), 'manual diagnosis/order rows are not visible');
   assert(/complete (?:billing|the exact order|final actions).+Athena/i.test(card.innerHTML), 'review does not visibly route unsupported/untyped rows to Athena');
   assert(/Exact reviewed note\./.test(card.innerHTML), 'full note payload is not visible');
+  assert(/Exact text to be written/i.test(card.innerHTML), 'ready preview does not identify the exact dispatched text');
+  assert(/does not regenerate it/i.test(card.innerHTML), 'normal Send review implies an avoidable regeneration');
+  assert(/function previewOpenByDefault\(manifest, row\)/.test(fs.readFileSync(path.join(root, 'feat_mls_writeflow.js'), 'utf8')),
+    'preview default policy is not row-aware for the five named Athena fields');
 
   go.listeners.click[0]({ target: go });
   await tick();
