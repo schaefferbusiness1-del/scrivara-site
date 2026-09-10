@@ -2645,6 +2645,18 @@
     for (var i = 0; i < (rows || []).length; i++) if (!savenamedIsRow(rows[i])) out.push(rows[i]);
     return out;
   }
+  /* The upfront plan counts the same executable note destinations as the
+     chooser and queue. A mutually exclusive A/P alternative can remain
+     checked for the doctor's reference after its sibling landed, but it is
+     covered and no longer executable work for this review. */
+  function wfnextCountedNoteRows(state, rows) {
+    var out = [];
+    for (var i = 0; i < (rows || []).length; i++) {
+      if (savenamedIsRow(rows[i]) || apCovered(state, rows[i])) continue;
+      out.push(rows[i]);
+    }
+    return out;
+  }
   function wfnextCheckedRows(state) {
     var rows = [];
     try { rows = (bxCheckedRows(state) || []).slice(); } catch (e) { rows = []; }
@@ -2751,7 +2763,7 @@
     var checked = wfnextCheckedRows(state), remaining = wfnextRemainingRows(state);
     /* savenamed-app-1.0.0: SECTIONS are counted as sections. The save press is
        named by its own clause, so no number in this sentence ever calls it one. */
-    var total = wfnextNoteRows(checked).length, left = wfnextNoteRows(remaining).length, landed = total - left;
+    var total = wfnextCountedNoteRows(state, checked).length, left = wfnextCountedNoteRows(state, remaining).length, landed = total - left;
     var saveLeft = remaining.length > left;
     if (!checked.length) return '';
     if (!remaining.length) {

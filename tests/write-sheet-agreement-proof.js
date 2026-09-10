@@ -563,6 +563,8 @@ function armsWriteNote(go) {
     const btn = h.diag().wfnext.buttonLabel();
     eq(/Assessment narrative|Plan \/ Follow-up/.test(btn), false,
       'the primary button still names a destination this athenaOne does not have: ' + btn);
+    ok(/^4 sections checked -/.test(h.diag().wfnext.upfrontText()),
+      'the upfront header counts covered A/P alternatives instead of the four executable destinations: ' + h.diag().wfnext.upfrontText());
     eq(h.diag().wfnext.queueRows().map(r => r.id).indexOf(assessment.id), -1, 'the queue this press authorizes still contains the covered row');
 
     /* the receipt says covered, not failed, and not "not attempted" */
