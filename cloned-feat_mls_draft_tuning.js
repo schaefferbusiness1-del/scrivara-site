@@ -1359,7 +1359,7 @@
       'box-sizing:border-box;white-space:normal;padding:8px 10px;line-height:1.3}';
     try { (document.head || document.documentElement).appendChild(style); } catch (e) {}
     sec.innerHTML =
-      '<p class="set-head">🎚️ AI draft tuning</p>' +
+      '<p class="set-head">🤖 AI output formats</p>' +
       '<p class="set-desc">Choose an output, then review the saved format and template that will shape it. Uploading an example creates an editable preview; nothing is kept until you apply it and save Settings.</p>' +
       '<div class="field"><label for="mlsDtFamily">Output type</label><select class="sf-select" id="mlsDtFamily"></select></div>' +
       '<div id="mlsDtEffectiveSummary" role="status" style="margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--soft,#f8fafc);font-size:13px;line-height:1.45"></div>' +

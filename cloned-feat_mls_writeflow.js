@@ -937,7 +937,7 @@
    'not-persisted not-watching ' +
    'note-content-required note-destination-mismatch note-editor-not-empty note-payload-mismatch ' +
    'note-section-count-mismatch note-section-not-on-surface note-section-payload-mismatch note-write-proof-expired note-write-proof-used ' +
-   'note-write-unverified numeric-only-field-refused one-exact-order-isolated-readback-verified ' +
+   'note-write-unverified numeric-only-field-refused one-exact-order-isolated-readback-verified slate-paste-not-handled ' +
    'open-deadline-exceeded open-timeout order-client-id-mismatch order-exact-already-present ' +
    'order-existing-duplicate-rejected order-field-too-long order-id-required order-not-reviewed ' +
    'order-payload-incomplete order-payload-mismatch order-row-mismatch order-workspace-context-verified ' +
@@ -945,7 +945,7 @@
    'practice-unverifiable preview-hash-mismatch probe-frame-missing provider-mismatch provider-unverifiable rows-not-rendered ' +
    /* savenamed-app-1.0.0: the three ways the encounter-save control itself can
       refuse before anything is clicked, plus the read-back that never arrived. */
-   'save-control-ambiguous save-control-not-found save-readback-missing ' +
+   'save-control-ambiguous save-control-not-active-surface save-control-not-found save-readback-missing ' +
    'schedule-date-missing-after-recovery schedule-date-restore-failed search-deadline-exceeded ' +
    'session-expired sign-prerequisite-mismatch store-refused store-unavailable synthetic-local-only ' +
    'taught-destination-binding-mismatch ' +
@@ -2242,13 +2242,36 @@
        part-way through a run reads PARTLY DONE with the next press named under
        it, rather than claiming a readiness it has not re-earned. */
     var nextNote = ''; try { nextNote = wfnextNote(state); } catch (eNext) {}
-    if (nextNote) out = { label: out.label, color: out.color, short: out.short + nextNote };
+    if (nextNote && out.label !== SAVENAMED_PILL_LABEL && out.label !== 'UNCERTAIN') out = { label: out.label, color: out.color, short: out.short + nextNote };
     if (WFAUTO_SKIP_LABELS[out.label] === 1) return out;
     var note = ''; try { note = wfautoNote(state); } catch (e) {}
     return note ? { label: out.label, color: out.color, short: out.short + note } : out;
   }
   function sheetclarStateBase(state, kind) {
-    if (state.running || state.batchRunning) {
+    var uncertain = unifiedUncertainReceipt(state);
+    if (uncertain) {
+      var uncertainSave = uncertain.action === 'save_draft';
+      return { label: 'UNCERTAIN', color: '#8b2525',
+        short: uncertainSave
+          ? 'Athena Save was attempted, but MLS could not verify the saved result. Inspect this exact encounter before any retry; MLS will not retry automatically.'
+          : 'Athena may already have changed, but MLS could not verify the exact result. Inspect the named destination before any retry; MLS will not retry automatically.' };
+    }
+    if (state.batchRunning) {
+      var batchRow = unifiedRow(state.manifest, state.selectedRowId);
+      var batchMatch = /(\d+\s+of\s+\d+)/i.exec(S(state.batchLabel));
+      var batchWhere = batchMatch ? ' (' + batchMatch[1] + ')' : '';
+      if (!state.running) {
+        return { label: 'CHECKING', color: '#6d5010',
+          short: 'MLS is checking Athena read-only for ' + (batchRow ? batchRow.label : 'the next destination') + batchWhere + '. Nothing new is being sent during this check.' };
+      }
+      if (savenamedIsRow(batchRow)) {
+        return { label: 'SAVING DRAFT', color: '#204034',
+          short: 'MLS is pressing Save for this exact encounter' + batchWhere + ' and waiting for Athena to verify it. It never signs.' };
+      }
+      return { label: 'SENDING', color: '#204034',
+        short: 'MLS is writing ' + (batchRow ? batchRow.label : 'the reviewed text') + ' into its exact Athena field' + batchWhere + '. It has not saved or signed the encounter.' };
+    }
+    if (state.running) {
       return { label: 'SENDING', color: '#204034',
         short: 'MLS is writing the reviewed text into the exact Athena field. It never saves and never signs.' };
     }
@@ -2614,6 +2637,16 @@
     } catch (e) { return null; }
   }
   function savenamedIsRow(row) { return !!(row && row.id === SAVENAMED_ROW_ID && row.action === 'save_draft'); }
+  function unifiedUncertainReceipt(state) {
+    try {
+      var rows = (state && state.manifest && state.manifest.rows) || [];
+      for (var i = 0; i < rows.length; i++) {
+        var rec = (state.receipts && state.receipts[rows[i].id]) || sectionLedger[ledgerKey(state, rows[i].id)];
+        if (rec && rec.status === 'uncertain') return rec;
+      }
+    } catch (e) {}
+    return null;
+  }
   /* "landed" is read the way the receipt panel reads it - this run's receipt
      first, then the review's own durable ledger - so a sheet REOPENED after its
      sections landed still knows they landed. It reads receipts directly rather
@@ -2654,7 +2687,7 @@
   }
   function savenamedOwedRow(state) {
     var row = savenamedRow(state);
-    if (!row || (savenamedVerified(state) && savenamedSectionsLanded(state))) return null;
+    if (!row || unifiedUncertainReceipt(state) || (savenamedVerified(state) && savenamedSectionsLanded(state))) return null;
     return savenamedArmed(state) ? row : null;
   }
   /* the checked NOTE sections of a list - the numbers every "N sections"
@@ -2663,6 +2696,38 @@
     var out = [];
     for (var i = 0; i < (rows || []).length; i++) if (!savenamedIsRow(rows[i])) out.push(rows[i]);
     return out;
+  }
+  /* A named-section review can include one encounter Save after its clinical
+     sections. That Save is a queue step, not another note section. Keep the
+     progress denominator over every authorized step, while spelling out the
+     clinical-section census and the Save outcome separately. */
+  function wfprogSaveStep(state) {
+    var rows = state && state.prog && state.prog.rows || [];
+    for (var i = 0; i < rows.length; i++) if (S(rows[i] && rows[i].id) === SAVENAMED_ROW_ID) return rows[i];
+    return null;
+  }
+  function wfprogFooterText(state, n) {
+    n = n || wfprogCounts(state);
+    var rows = state && state.prog && state.prog.rows || [], sectionWritten = 0, sectionRefused = 0, sectionPending = Number(n.outside || 0);
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i];
+      if (S(row && row.id) === SAVENAMED_ROW_ID) continue;
+      if (row.phase === 'done' || row.phase === 'already') sectionWritten++;
+      else if (row.phase === 'refused' || row.phase === 'timeout' || row.phase === 'skipped') sectionRefused++;
+      else sectionPending++;
+    }
+    var sectionText = sectionWritten + ' section' + (sectionWritten === 1 ? '' : 's') + ' written, ' +
+      sectionRefused + ' not sent, ' + sectionPending + ' still to go.';
+    var save = wfprogSaveStep(state), saveText = '';
+    if (save) {
+      if (save.phase === 'done' || save.phase === 'already') saveText = ' Encounter saved and read back. MLS never signs.';
+      else if (save.phase === 'refused' || save.phase === 'timeout' || save.phase === 'skipped') saveText = ' Encounter save was not verified. Inspect Athena before retrying. MLS never signs.';
+      else if (save.phase === 'check' || save.phase === 'write') saveText = ' Encounter save is in progress. MLS never signs.';
+      else saveText = ' After the checked sections are verified, this same Confirm saves the encounter. MLS never signs.';
+    } else if (savenamedVerified(state)) saveText = ' Encounter saved and read back. MLS never signs.';
+    else if (savenamedRow(state)) saveText = ' The encounter save remains a separate Confirm step. MLS never signs.';
+    else saveText = ' MLS never saves or signs.';
+    return sectionText + saveText;
   }
   /* The upfront plan counts the same executable note destinations as the
      chooser and queue. A mutually exclusive A/P alternative can remain
@@ -2860,8 +2925,29 @@
     var go = null;
     try { go = document.getElementById('mlsAthenaUnifiedGo'); } catch (e) { return; }
     if (!go || !state || state.closed || unifiedAthenaState !== state) return;
+    var uncertain = unifiedUncertainReceipt(state);
+    if (state.halted || uncertain) {
+      try {
+        go.disabled = true; go.setAttribute('aria-disabled', 'true');
+        go.textContent = uncertain && uncertain.action === 'save_draft' ? 'Save outcome uncertain — inspect Athena' : 'Outcome uncertain — inspect Athena';
+        go.setAttribute('data-mls-primary-blocked', 'Inspect the exact Athena destination before any retry. MLS will not retry an uncertain outcome automatically.');
+        go.title = go.getAttribute('data-mls-primary-blocked');
+        go.removeAttribute('data-mls-athena-action'); go.removeAttribute('data-mls-preview-hash');
+        go.removeAttribute('data-mls-row-hash'); go.removeAttribute('data-mls-client-order-id');
+        wfnextClearBatchAttrs(go);
+      } catch (eHalt) {}
+      return;
+    }
     /* while a run is in flight the queue owns this button's N-of-M label */
-    if (state.running || state.batchRunning || state.generating) return;
+    if (state.running || state.batchRunning || state.generating) {
+      if (state.batchRunning) {
+        try {
+          go.disabled = true; go.setAttribute('aria-disabled', 'true');
+          go.textContent = (S(state.batchLabel) || 'Working') + '...';
+        } catch (eBatch) {}
+      }
+      return;
+    }
     var host = wfnextUpfrontHost();
     if (host) { try { host.textContent = wfnextUpfrontText(state); } catch (eHost) {} }
     var boxes = [];
@@ -3306,6 +3392,8 @@
          changed, hid or unticked any row, because nothing does that and
          rowsel-1.0.0 reserves an unchecked row for the doctor's own choice. */
       sayOpen: 'One step needed: athenaOne has this encounter open and the stage tab for {where} is already open - MLS checked that itself, so there is nothing for you to open. What it could not find on that surface is one exact editor for this section. If this athenaOne renders ONE combined Assessment & Plan field instead of separate Assessment and Plan fields, send the "Write reviewed Assessment & Plan (combined)" row in this review - that is the destination this surface has. Otherwise put the section on screen in athenaOne and press Check Athena again. Copy this section below to paste it yourself.' },
+    'slate-paste-not-handled': { fix: false, mutated: true,
+      say: 'MLS dispatched this reviewed text once, but athenaOne did not prove that its editor accepted the paste. Inspect this exact Athena field before any retry; MLS will not send it again until you confirm whether text appeared.' },
     'no-athena-tab': { fix: true,
       say: 'One step needed: no signed-in athenaOne tab is open. Open athenaOne and sign in, then press Check Athena again.' },
     'no-chart-open': { fix: true, open: true,
@@ -3358,6 +3446,8 @@
        of "never a loop": the only cycle here is a press the doctor makes. */
     'save-control-not-found': { fix: true,
       say: 'One step needed: athenaOne has this encounter open, but MLS could not see one exact Save control on the screen it is showing. Bring the encounter itself up in athenaOne so its Save button is on screen, then press Check Athena again.' },
+    'save-control-not-active-surface': { fix: true,
+      say: 'One step needed: MLS found this encounter\'s Save control, but it is not on the active encounter surface, so MLS refused to press it. Bring the exact encounter editor to the front in athenaOne, then press Check Athena again.' },
     'save-control-ambiguous': { fix: true,
       say: 'One step needed: more than one Save control is showing in this encounter, and MLS will not guess which one saves it. Close the extra editor or pop-up in athenaOne so a single Save is left, then press Check Athena again - or save the encounter yourself in athenaOne.' },
     /* THE RUNNING EXTENSION'S ANSWER. MLS Assist 3.0.107 and 3.0.110 have no
@@ -4323,8 +4413,8 @@
        save it may not fire, or it would hide the very row his last press is on.
        And once the save HAS landed the sentence stops telling him to go and do
        it: the encounter is saved and read back, and Sign is what is left. */
-    var nb = sheetclarInAthena(state), nbSaveOwed = savenamedOwedRow(state);
-    var banner = (nb.total && nb.landed === nb.total && !nbSaveOwed)
+    var nb = sheetclarInAthena(state), nbSaveOwed = savenamedOwedRow(state), nbSavePresent = !!savenamedRow(state);
+    var banner = (nb.total && nb.landed === nb.total && !nbSaveOwed && (!nbSavePresent || savenamedVerified(state)))
       ? '<div style="border:1px solid #bfe0cf;background:#eef7f2;color:#205c43;border-radius:10px;padding:10px 12px;margin-bottom:8px;font-weight:800">&#10003; Everything on this review is in Athena — ' + nb.landed + ' of ' + nb.total + ' note sections verified.' +
         (savenamedVerified(state) ? SAVENAMED_BANNER_TAIL : ' Nothing was saved or signed; finish Save / Sign in Athena yourself.') + '</div>'
       : '';
@@ -4669,9 +4759,10 @@
       return (r.phase === 'write' ? 'Writing ' : 'Checking Athena for ') + at + ' of ' + of +
         ' - ' + r.label + (p.secs ? ' (' + p.secs + 's)' : '') + (r.phase === 'write' ? '' : ' - nothing sent yet');
     }
+    var unit = wfprogSaveStep(state) ? 'step' : 'section';
     return n.written + n.refused
-      ? ('Finished ' + (n.written + n.refused) + ' of ' + p.total + ' - moving to the next section')
-      : ('Starting ' + p.total + ' section' + (p.total === 1 ? '' : 's') + ' - nothing has been sent yet');
+      ? ('Finished ' + (n.written + n.refused) + ' of ' + p.total + ' - moving to the next ' + unit)
+      : ('Starting ' + p.total + ' ' + unit + (p.total === 1 ? '' : 's') + ' - nothing has been sent yet');
   }
   function wfprogPaint(state) {
     var host = wfprogHost(); if (!host || !state || state.closed) return;
@@ -4714,7 +4805,7 @@
         barInner + '</div>' +
         '<div style="margin-top:7px">' + lines + outsideLine + '</div>' +
         '<div style="margin-top:6px;font-size:11.5px;color:#52675c">' +
-        esc(n.written + ' written, ' + n.refused + ' not sent, ' + (n.pending + n.outside) + ' still to go. MLS never saves or signs.') +
+        esc(wfprogFooterText(state, n)) +
         '</div></div>';
     } catch (e) {}
   }
@@ -5043,6 +5134,7 @@
   }
   function unifiedPrimaryPlan(state) {
     if (!state || state.closed) return { mode: 'none', rows: [], reason: SHEETCLAR_NONE_READY_REASON };
+    if (state.halted || unifiedUncertainReceipt(state)) return { mode: 'none', rows: [], reason: 'An Athena outcome is uncertain. Inspect the exact destination before any retry; MLS will not retry automatically.' };
     var sel = unifiedRow(state.manifest, state.selectedRowId);
     var selectable = !!(sel && sel.capability === 'ready' && sel.action);
     /* Save / Sign / order rows never join a batch - they keep the legacy path */
@@ -7617,6 +7709,7 @@
     wfdxReset(manifest);
     var state = { manifest: manifest, sourceOpts: opts, reopenOpts: null, editorFingerprint: wfbindEditorFingerprint(), selectedRowId: '', probe: null, probeGeneration: 0, probeSettled: 0, receipts: {}, running: false, generating: false, binding: false, halted: false, closed: false, batchRunning: false, returnFocus: returnFocus, a11yKeyHandler: null, autoOpened: false };
     state.reopenOpts = reopenOptions(opts, manifest);
+    state.halted = !!unifiedUncertainReceipt(state);
     /* apsel-1.0.0: the doctor's A/P pick belongs to ONE review. A new sheet
        starts from the learned surface preference again. */
     apPickThisSheet = '';

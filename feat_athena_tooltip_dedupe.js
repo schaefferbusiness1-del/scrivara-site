@@ -813,6 +813,10 @@
 
   function settingsGroupFor(section) {
     var heading = settingsHeading(section);
+    /* The draft-tuning fork is injected after the base Settings markup. Its
+       friendly heading is product copy, not a routing contract; stable id keeps
+       the section in Notes & AI when that copy changes. */
+    if (section && section.id === 'mlsDraftTuningSection') return 'notes';
     if (/Account & access|Security & privacy/i.test(heading)) return 'account';
     if (/Practice & provider/i.test(heading)) return 'practice';
     if (/Note defaults|AI personalization|AI draft tuning|Provider preferences/i.test(heading)) return 'notes';
