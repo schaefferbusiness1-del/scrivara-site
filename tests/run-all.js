@@ -737,6 +737,7 @@ const tests = [
   '1p-athena-all-actions-ready-3062.test.js',
   '1p-avatar-loader-runtime.test.js',
   '1p-calm-dock-owner-runtime.test.js',
+  'calm-tools-menu-lifecycle-runtime.test.js',
   '1p-avatar-face-loader-runtime.test.js',
   '1p-avatar-face-studio-runtime.test.js',
   '1p-avatar-face-likeness-runtime.test.js',

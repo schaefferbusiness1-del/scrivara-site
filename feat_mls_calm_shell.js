@@ -1385,7 +1385,18 @@
   var toolsClose = null;
 
   function openTools(anchorBtn) {
-    if (toolsClose) { toolsClose(); return; }
+    if (toolsClose) {
+      /* A shell restart or another presentation owner can detach the menu
+         before its private close callback runs.  In that state the old code
+         spent the doctor's next Tools press closing a menu that was already
+         gone.  Close the stale callback to release its document listener, but
+         only treat this press as a toggle-off when the tracked menu was still
+         attached at entry. */
+      var trackedMenu = qs('#mlsToolsMenu');
+      var wasOpen = !!(trackedMenu && trackedMenu.parentNode);
+      toolsClose();
+      if (wasOpen) return;
+    }
     var existing = qs('#mlsToolsMenu');
     if (existing && existing.parentNode) { existing.parentNode.removeChild(existing); return; }
     var anchor = anchorBtn || qs('#mlsDock button[data-dest="tools"]') || dockEl;
@@ -2978,6 +2989,10 @@
   }
 
   function teardown() {
+    /* Release openTools()'s private state through its owner before removing
+       shell nodes.  Otherwise a later boot inherits a close callback for the
+       detached old menu and its first Tools press appears to do nothing. */
+    if (toolsClose) safe(toolsClose);
     D.body.classList.remove('mls-calm', 'mls-headsdown');
     ['#mlsDock', '#mlsRightNow', '#mlsStages', '#mlsBusy', '#mlsHeadsDownHint', '#mlsClassicBtn',
       '#mlsToolsMenu', '#mlsNote'].forEach(function (s) {
