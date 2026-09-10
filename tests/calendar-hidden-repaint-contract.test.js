@@ -21,9 +21,9 @@ assert(dedupe.includes('if (window.__mlsCurrentView === "calendar") {') &&
   dedupe.includes('version: "caldedupe-1.1.0"'),
   'Calendar dedupe still performs its install repaint off-view');
 
-/* A trusted month-cell click passes through BusyAll's capture listener before
- * its inline calOpenDay call. That listener may instrument async work, but it
- * must leave the multiply-wrapped synchronous day opener stable. */
+/* BusyAll discovers global calls from inline handlers during click capture.
+ * It may instrument async work, but it must leave a synchronous day-navigation
+ * function stable because that function has no Promise-backed work to paint. */
 const busyOpen = shell.indexOf('<!-- ===== busyall-1.0.0');
 const busyScript = shell.indexOf('<script>', busyOpen);
 const busyClose = shell.indexOf('</script>', busyScript);
@@ -61,10 +61,10 @@ function control(handler) {
 clickCapture({ target: control("calOpenDay('2026-10-14')") });
 assert.strictEqual(calAssignments, 0, 'month-cell capture replaced the synchronous day opener');
 win.calOpenDay('2026-10-14');
-assert.strictEqual(selectedDay, '2026-10-14', 'trusted month-cell path did not reach the day opener');
+assert.strictEqual(selectedDay, '2026-10-14', 'synchronous day opener was not stable after capture');
 
 clickCapture({ target: control('slowCalendarRead()') });
 assert.strictEqual(win.slowCalendarRead.__mlsBusyAll, true,
   'excluding the synchronous day opener disabled instrumentation for async calendar work');
 
-console.log('PASS hidden Calendar repaint: styling/dedupe wait for Calendar, check-in skips appointment scans, and trusted day clicks reach the stable synchronous opener');
+console.log('PASS hidden Calendar repaint: styling/dedupe wait for Calendar, check-in skips appointment scans, and synchronous navigation stays outside BusyAll');
