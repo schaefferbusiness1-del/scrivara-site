@@ -73,6 +73,11 @@ const EMPTY_VISITS = () => ({ ok: true, visits: 0, authoritativeEmpty: true });
     '1pScribeFlow.html does not carry the backend {error, code, retryable} onto the Error');
   ok(/eAi\.mlsAi=\{status:r\.status,code:String\(code\|\|''\),retryable:/.test(TWIN),
     '1p/index.html (the twin) did not get the same aiCallRaw change');
+  for (const [name, html] of [['1pScribeFlow.html', SHELL], ['1p/index.html', TWIN]]) {
+    ok(html.indexOf('Visit transcript or doctor dictation') >= 0 &&
+      html.indexOf('Record the visit, dictate your post-visit summary, or type/paste notes here.') >= 0,
+      name + ' transcript input copy does not cover conversation, post-visit dictation, and typed/pasted notes');
+  }
   /* the panel has wording for both new verdicts */
   ok(/athenaOne search did not open the chart in time/.test(MC), 'fdx-1.1.0 has no human wording');
   ok(/summar' \+ \(Number\(dv\.summaryPending\) === 1 \? 'y' : 'ies'\) \+ ' pending'/.test(MC),
