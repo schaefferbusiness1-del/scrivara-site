@@ -114,7 +114,7 @@ function ok(name) { n++; console.log('ok ' + n + ' - ' + name); }
   assert.ok(activeBackground.indexOf("_ceDoc.createElement('br')") !== -1, 'active CE write builds text+<br> nodes');
   assert.ok(activeBackground.indexOf('while (el.firstChild) el.removeChild(el.firstChild);') !== -1, 'active CE write clears prior children');
   assert.ok(activeBackground.indexOf('rolledBack: rolledBack,') !== -1, 'active failed verification reports rolledBack');
-  assert.ok(activeBackground.indexOf('attempted: true, partialMutation: true, written: false') !== -1,
+  assert.ok(activeBackground.indexOf('attempted: noteAttempted, partialMutation: noteAttempted, written: false') !== -1,
     'a setter failure after a mutation attempt must report a possible partial mutation');
   assert.ok(activeBackground.indexOf('partialMutation: noteAttempted && !rolledBack') !== -1,
     'a failed verification must report a partial mutation exactly when rollback was not proven');
@@ -123,20 +123,24 @@ function ok(name) { n++; console.log('ok ' + n + ' - ' + name); }
   /* Any pre-existing note, including byte-exact reviewed text, is refused
      before mutation. Rollback therefore only applies to a real attempted
      empty-editor insertion; there is no successful alreadyExact shortcut. */
-  assert.ok(activeBackground.indexOf("notePolicy === 'empty_only' && editorValue(noteEditor)") !== -1,
-    'empty_only does not refuse a pre-existing note before mutation');
+  assert.ok(activeBackground.indexOf("if (action === 'write_note' && notePolicy === 'empty_only')") !== -1 &&
+    activeBackground.indexOf("if (initialNoteValue !== '') return noteEditorNotEmptyReceipt()") !== -1,
+    'empty_only pre-existing note gate is missing');
   assert.ok(activeBackground.indexOf('if (noteAttempted) {') !== -1,
     'rollback is not gated on a real mutation attempt');
-  assert.ok(activeBackground.indexOf('alreadyExact') === -1,
-    'a pre-existing exact note can still enter the successful no-op write path');
   const activeDriverStart = activeBackground.indexOf('async function mlsAthenaActionV2DriverFn(');
   const activeDriverEnd = activeBackground.indexOf('/* ATHENA_ACTION_V2_DRIVER_END */', activeDriverStart);
   assert.ok(activeDriverStart >= 0 && activeDriverEnd > activeDriverStart, 'active ActionV2 driver source is available');
   const activeDriver = activeBackground.slice(activeDriverStart, activeDriverEnd);
+  assert.ok(activeDriver.indexOf('alreadyExact') === -1,
+    'a pre-existing exact note can still enter the successful no-op write path');
   assert.ok(activeDriver.indexOf("reason: 'exact-note-editor-verified-unsaved'") !== -1,
     'active named write receipt has an explicit unsaved reason');
   assert.ok(activeDriver.indexOf('saved: false, persisted: false, signed: false') !== -1,
     'active named write receipt does not claim save or persistence');
+  assert.ok(activeDriver.indexOf("reason: 'exact-note-editor-persisted'") !== -1 &&
+    activeDriver.indexOf('saved: true, persisted: true, serverVerified: true') !== -1,
+    'modern Slate receipt is not gated on Athena native persistence');
   ok('active CE rollback + named write: newline round-trip, fail-closed rollback, and explicit unsaved receipt');
 }
 

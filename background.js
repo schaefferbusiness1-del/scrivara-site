@@ -1725,6 +1725,141 @@ async function mlsAthenaActionV2DriverFn(req) {
     if (mode !== 'execute') return { ok: false, blocked: true, reason: 'unknown-action' };
     /* ATHENA_ACTION_V2_MUTATION_BOUNDARY */
 
+    /* A modern Athena named-section editor persists through its own React
+       network path when Slate blurs.  Observe that existing request in the
+       already identity-bound frame; never issue, retry, cancel, or alter a
+       request.  The observer accepts only the four measured endpoint shapes
+       and only when the endpoint encounter plus the one documented note body
+       reconstruct the exact reviewed text. */
+    function nativePersistenceHtmlText(frameWin, html) {
+      try {
+        var parsed = new frameWin.DOMParser().parseFromString('<body>' + String(html == null ? '' : html) + '</body>', 'text/html');
+        var body = parsed && parsed.body, blocks = body ? Array.prototype.slice.call(body.children || []) : [];
+        if (!body || !blocks.length) return null;
+        for (var direct = body.firstChild; direct; direct = direct.nextSibling) {
+          if (direct.nodeType === 3 && /\S/.test(direct.nodeValue || '')) return null;
+          if (direct.nodeType === 1 && String(direct.tagName || '').toUpperCase() !== 'DIV') return null;
+        }
+        var out = [];
+        function nodeText(node) {
+          if (!node) return '';
+          if (node.nodeType === 3) return node.nodeValue || '';
+          if (node.nodeType !== 1) return '';
+          var tag = String(node.tagName || '').toUpperCase();
+          if (tag === 'BR') return '\n';
+          if (!/^(DIV|SPAN|B|STRONG|I|EM|U|S|A)$/.test(tag)) throw new Error('unsupported-note-html');
+          if (tag !== 'DIV' && node.querySelector && node.querySelector('div,p,section,article,ul,ol,li,table,script,style')) throw new Error('nested-note-block');
+          if (tag === 'DIV' && node.parentElement !== body) throw new Error('nested-note-block');
+          var value = '';
+          for (var child = node.firstChild; child; child = child.nextSibling) value += nodeText(child);
+          return value;
+        }
+        for (var i = 0; i < blocks.length; i++) out.push(nodeText(blocks[i]));
+        return noteNorm(out.join('\n'));
+      } catch (e) { return null; }
+    }
+    function beginNativePersistenceWatch(frameWin, sectionKey, encounterId, reviewedText) {
+      var originalFetch = null, xhrProto = null, originalOpen = null, originalSend = null;
+      var fetchWrapper = null, openWrapper = null, sendWrapper = null;
+      var xhrMeta = typeof frameWin.WeakMap === 'function' ? new frameWin.WeakMap() : null;
+      var matches = [], waiters = [], stopped = false;
+      var frameOrigin = '', framePrefix = '';
+      try {
+        frameOrigin = String(frameWin.location && frameWin.location.origin || '');
+        var framePathname = String(frameWin.location && frameWin.location.pathname || ''), axAt = framePathname.indexOf('/ax/');
+        framePrefix = axAt > 0 ? framePathname.slice(0, axAt) : '';
+        if (!/^\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+$/.test(framePrefix)) framePrefix = '';
+      } catch (eFrameUrl) { frameOrigin = ''; framePrefix = ''; }
+      function wake() { var list = waiters.splice(0); for (var i = 0; i < list.length; i++) try { list[i](); } catch (e) {} }
+      function endpoint(method, rawUrl) {
+        try {
+          var url = new frameWin.URL(String(rawUrl || ''), String(frameWin.location && frameWin.location.href || ''));
+          if (!frameOrigin || !framePrefix || url.origin !== frameOrigin) return null;
+          var escapedEncounter = String(encounterId || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          var key = sectionKey === 'ap' ? 'ap' : sectionKey;
+          if (/^(hpi|ros|exam)$/.test(key) && String(method).toUpperCase() === 'PUT') {
+            var routeKey = key === 'exam' ? 'pe' : key;
+            var re = new RegExp('^' + framePrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '/ax/exam_template/' + escapedEncounter + '/' + routeKey + '/freetext/?$');
+            if (re.test(url.pathname)) return { kind: 'exam-template-freetext', method: 'PUT' };
+          }
+          if (key === 'ap' && String(method).toUpperCase() === 'POST' && url.pathname === framePrefix + '/ax/assessment_and_plan/persistence/assessment') return { kind: 'assessment-plan', method: 'POST' };
+        } catch (e) {}
+        return null;
+      }
+      function bodyMatch(kind, body) {
+        try {
+          if (typeof body !== 'string') return false;
+          var value = JSON.parse(body), html = '';
+          if (kind === 'exam-template-freetext') html = value && value.freetext;
+          else {
+            if (!value || String(value.clinical_encounter_id || '') !== String(encounterId || '')) return false;
+            html = value.assessment && value.assessment.Note;
+          }
+          return typeof html === 'string' && nativePersistenceHtmlText(frameWin, html) === reviewedText;
+        } catch (e) { return false; }
+      }
+      function observe(method, url, body, settle) {
+        if (stopped) return null;
+        var ep = endpoint(method, url);
+        if (!ep || !bodyMatch(ep.kind, body)) return null;
+        var rec = { kind: ep.kind, method: ep.method, status: 0, settled: false };
+        matches.push(rec); wake();
+        settle(function (status, responseUrl) { rec.status = Number(status || 0); rec.responseMatch = !!endpoint(method, responseUrl); rec.settled = true; wake(); });
+        return rec;
+      }
+      try {
+        if (frameWin.XMLHttpRequest && frameWin.XMLHttpRequest.prototype) {
+          xhrProto = frameWin.XMLHttpRequest.prototype; originalOpen = xhrProto.open; originalSend = xhrProto.send;
+          if (typeof originalOpen === 'function' && typeof originalSend === 'function' && xhrMeta) {
+            openWrapper = function (method, url) { xhrMeta.set(this, { method: method, url: url }); return originalOpen.apply(this, arguments); };
+            sendWrapper = function (body) {
+              var xhr = this, meta = xhrMeta.get(xhr) || {};
+              observe(meta.method, meta.url, body, function (done) { try { xhr.addEventListener('loadend', function () { done(xhr.status, xhr.responseURL || ''); }, { once: true }); } catch (e) { done(0, ''); } });
+              return originalSend.apply(xhr, arguments);
+            };
+            xhrProto.open = openWrapper; xhrProto.send = sendWrapper;
+          }
+        }
+      } catch (eXhr) {}
+      try {
+        originalFetch = frameWin.fetch;
+        if (typeof originalFetch === 'function') {
+          fetchWrapper = function (input, init) {
+            var args = arguments, method = String(init && init.method || (input && input.method) || 'GET'), url = String((input && input.url) || input || ''), body = init && init.body;
+            var clonedBody = null;
+            if (typeof body !== 'string' && input && typeof input.clone === 'function') try { clonedBody = input.clone().text(); } catch (eClone) { clonedBody = null; }
+            var called = originalFetch.apply(this, args);
+            function bindBody(raw) {
+              observe(method, url, raw, function (done) { Promise.resolve(called).then(function (response) { done(response && response.status, response && response.url || ''); }, function () { done(0, ''); }); });
+            }
+            if (typeof body === 'string') bindBody(body);
+            else if (clonedBody) clonedBody.then(bindBody, function () {});
+            return called;
+          };
+          frameWin.fetch = fetchWrapper;
+        }
+      } catch (eFetch) {}
+      return {
+        wait: async function (timeoutMs) {
+          var until = Date.now() + Math.max(0, Number(timeoutMs || 0));
+          while (!stopped && Date.now() < until) {
+            if (matches.length > 1) break;
+            if (matches.length === 1 && matches[0].settled) { await sleep(100); break; }
+            await Promise.race([new Promise(function (resolve) { waiters.push(resolve); }), sleep(Math.max(0, until - Date.now()))]);
+          }
+          if (!matches.length) return { ok: false, reason: 'native-persistence-request-missing' };
+          if (matches.length !== 1) return { ok: false, reason: 'native-persistence-request-ambiguous', count: matches.length };
+          if (!matches[0].settled || matches[0].status < 200 || matches[0].status >= 300 || !matches[0].responseMatch) return { ok: false, reason: 'native-persistence-response-failed', status: matches[0].status || 0, responseMatch: matches[0].responseMatch === true };
+          return { ok: true, endpointClass: matches[0].kind, method: matches[0].method, status: matches[0].status, payloadMatch: true };
+        },
+        stop: function () {
+          stopped = true; wake();
+          try { if (xhrProto && xhrProto.open === openWrapper) xhrProto.open = originalOpen; } catch (e1) {}
+          try { if (xhrProto && xhrProto.send === sendWrapper) xhrProto.send = originalSend; } catch (e2) {}
+          try { if (frameWin.fetch === fetchWrapper) frameWin.fetch = originalFetch; } catch (e3) {}
+        }
+      };
+    }
     function setNoteEditorExact(el, value) {
       var attempted = false, isSlate = false;
       try {
@@ -1789,9 +1924,13 @@ async function mlsAthenaActionV2DriverFn(req) {
       var focusedNoteValue = editorValue(noteEditor);
       if (focusedNoteValue === null) return { ok: false, blocked: true, action: action, attempted: false, written: false, verified: false, draftEntered: false, draftVerified: false, reason: 'note-editor-unreadable', context: context, results: [{ key: requestedNoteSection, attempted: false, written: false, verified: false, reason: 'note-editor-unreadable' }], noAutomaticChaining: 'no-automatic-chaining' };
       if (focusedNoteValue !== '') return noteEditorNotEmptyReceipt();
+      var nativePersistenceRequired = noteEditor.isContentEditable && String(noteEditor.getAttribute && noteEditor.getAttribute('data-slate-editor') || '').toLowerCase() === 'true' && /^(hpi|ros|exam|ap)$/.test(requestedNoteSection);
+      var nativePersistenceWatch = nativePersistenceRequired ? beginNativePersistenceWatch(hit.frame.w, requestedNoteSection, context.encounterId, reviewedNote) : null;
+      function stopNativePersistenceWatch() { if (nativePersistenceWatch) { try { nativePersistenceWatch.stop(); } catch (eStopWatch) {} nativePersistenceWatch = null; } }
+      try {
       var noteSet = setNoteEditorExact(noteEditor, req.noteText), noteAttempted = !!(noteSet && noteSet.attempted);
       mutationAttempted = mutationAttempted || noteAttempted;
-      if (!noteSet || !noteSet.ok) return { ok: false, blocked: !noteAttempted, action: action, attempted: noteAttempted, partialMutation: noteAttempted, written: false, verified: false, draftEntered: false, draftVerified: false, reason: noteSet && noteSet.slate ? 'slate-paste-not-handled' : 'outcome-uncertain', context: context, results: [{ key: requestedNoteSection, attempted: noteAttempted, written: false, verified: false, reason: noteSet && noteSet.slate ? 'slate-paste-not-handled' : 'note-write-unverified' }], noAutomaticChaining: 'no-automatic-chaining' };
+      if (!noteSet || !noteSet.ok) { stopNativePersistenceWatch(); return { ok: false, blocked: !noteAttempted, action: action, attempted: noteAttempted, partialMutation: noteAttempted, written: false, verified: false, draftEntered: false, draftVerified: false, reason: noteSet && noteSet.slate ? 'slate-paste-not-handled' : 'outcome-uncertain', context: context, results: [{ key: requestedNoteSection, attempted: noteAttempted, written: false, verified: false, reason: noteSet && noteSet.slate ? 'slate-paste-not-handled' : 'note-write-unverified' }], noAutomaticChaining: 'no-automatic-chaining' }; }
       await sleep(250);
       var verifiedEditor = currentExactNoteEditor();
       var noteVerified = !!verifiedEditor && editorValue(verifiedEditor) === reviewedNote;
@@ -1814,6 +1953,7 @@ async function mlsAthenaActionV2DriverFn(req) {
         noteVerified = !!verifiedEditor && editorValue(verifiedEditor) === reviewedNote;
       }
       if (!noteVerified) {
+        stopNativePersistenceWatch();
         /* wv-1.3 (3.0.40): never leave a HALF-VERIFIED note on screen - the doctor sees the text, distrusts the failure receipt, and can sign a note athena's model never received. The empty-editor precheck above means rollback == clearing back to empty. */
         var rolledBack = false;
         try {
@@ -1829,7 +1969,21 @@ async function mlsAthenaActionV2DriverFn(req) {
         } catch (eRb) {}
         return { ok: false, action: action, attempted: noteAttempted, partialMutation: noteAttempted && !rolledBack, written: false, verified: false, draftEntered: noteAttempted, draftVerified: false, rolledBack: rolledBack, reason: 'outcome-uncertain', detail: 'note-write-unverified', context: context, results: [{ key: requestedNoteSection, attempted: noteAttempted, written: false, verified: false, reason: 'note-write-unverified' }], noAutomaticChaining: 'no-automatic-chaining' };
       }
+      if (nativePersistenceRequired) {
+        var nativePersistence = await nativePersistenceWatch.wait(15000);
+        stopNativePersistenceWatch();
+        if (!nativePersistence || !nativePersistence.ok) {
+          var nativeReason = nativePersistence && nativePersistence.reason || 'native-persistence-request-missing';
+          return { ok: false, action: action, attempted: true, partialMutation: true, written: true, verified: true, draftEntered: true, draftVerified: true, saved: false, persisted: false, serverVerified: false, reason: nativeReason, persistence: nativePersistence || { ok: false, reason: nativeReason }, context: context, results: [{ key: requestedNoteSection, attempted: true, written: true, verified: true, saved: false, persisted: false, serverVerified: false, reason: nativeReason }], noAutomaticChaining: 'no-automatic-chaining' };
+        }
+        verifiedEditor = currentExactNoteEditor();
+        if (!verifiedEditor || editorValue(verifiedEditor) !== reviewedNote) {
+          return { ok: false, action: action, attempted: true, partialMutation: true, written: true, verified: false, draftEntered: true, draftVerified: false, saved: false, persisted: false, serverVerified: true, reason: 'native-persistence-readback-mismatch', persistence: nativePersistence, context: context, results: [{ key: requestedNoteSection, attempted: true, written: true, verified: false, saved: false, persisted: false, serverVerified: true, reason: 'native-persistence-readback-mismatch' }], noAutomaticChaining: 'no-automatic-chaining' };
+        }
+        return { ok: true, action: action, attempted: true, written: true, verified: true, draftEntered: true, draftVerified: true, saved: true, persisted: true, serverVerified: true, reason: 'exact-note-editor-persisted', persistence: nativePersistence, context: context, results: [{ key: requestedNoteSection, attempted: true, written: true, verified: true, saved: true, persisted: true, serverVerified: true, alreadyPresent: false }], noAutomaticChaining: 'no-automatic-chaining' };
+      }
       return { ok: true, action: action, attempted: true, written: true, verified: true, draftEntered: true, draftVerified: true, saved: false, persisted: false, signed: false, reason: 'exact-note-editor-verified-unsaved', context: context, results: [{ key: requestedNoteSection, attempted: true, written: true, verified: true, saved: false, persisted: false, alreadyPresent: false }], noAutomaticChaining: 'no-automatic-chaining' };
+      } finally { stopNativePersistenceWatch(); }
     }
     /* ATHENA_ACTION_V2_WRITE_NOTE_END */
 

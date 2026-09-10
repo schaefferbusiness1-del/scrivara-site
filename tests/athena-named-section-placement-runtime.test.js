@@ -29,7 +29,7 @@ assert(/findNamedNoteAction\(fr,\s*action,\s*requestedNoteSection\)\s*:\s*findNo
 const patient = { name: 'Synthetic Section Patient', dob: '03/14/1970', mrn: '700123' };
 const context = {
   appointmentId: '8812345', encounterId: '9912345',
-  encounterUrl: 'https://athenanet.athenahealth.com/encounter/9912345',
+  encounterUrl: 'https://athenanet.athenahealth.com/one/two/ax/encounter/9912345/exam',
   visitDate: '08/22/2026', provider: 'Synthetic Clinician, MD'
 };
 
@@ -49,7 +49,7 @@ function fixture(options = {}) {
   const section = (key, label, id) => {
     if (omit.has(key)) return '';
     if (key === 'hpi' && options.slateHpi === true) {
-      return `<section data-testid="hpi-section" aria-label="${label}"><h2>${label}</h2><div id="${id}" contenteditable="true" data-slate-editor="true" data-appointment-id="8812345" aria-label="${label} editor"><span data-slate-node="text"><span data-slate-leaf="true"><span data-slate-string="true"></span></span></span></div></section>`;
+      return `<section data-testid="hpi-section" aria-label="${label}"><h2>${label}</h2><div id="${id}" contenteditable="true" data-slate-editor="true" data-appointment-id="8812345" aria-label="${label} editor"><div data-slate-object="block"><span data-slate-node="text"><span data-slate-leaf="true"><span data-slate-zero-width="z" data-slate-length="0">&#65279;<br></span></span></span></div></div></section>`;
     }
     const machineKey = key === 'exam' ? 'physical-exam' : key;
     const one = machineOnly.has(key)
@@ -155,10 +155,20 @@ async function values(page) {
           el.addEventListener('input', () => window.__slateProof.inputs++);
           el.addEventListener('change', () => window.__slateProof.changes++);
         }
+        function paint(el) {
+          el.textContent = '';
+          window.__slateProof.model.split('\n').forEach(line => {
+            const block = document.createElement('div'); block.setAttribute('data-slate-object', 'block');
+            const node = document.createElement('span'); node.setAttribute('data-slate-node', 'text');
+            const leaf = document.createElement('span'); leaf.setAttribute('data-slate-leaf', 'true');
+            const str = document.createElement('span'); str.setAttribute('data-slate-string', 'true'); str.textContent = line;
+            leaf.appendChild(str); node.appendChild(leaf); block.appendChild(node); el.appendChild(block);
+          });
+        }
         function remount() {
           const old = document.getElementById('hpi-editor');
           const fresh = old.cloneNode(false);
-          fresh.textContent = window.__slateProof.model;
+          paint(fresh);
           old.replaceWith(fresh); arm(fresh); window.__slateProof.remounts++;
         }
         arm(document.getElementById('hpi-editor'));
@@ -166,17 +176,24 @@ async function values(page) {
           if (!(event.target && event.target.id === 'hpi-editor')) return;
           event.preventDefault(); window.__slateProof.pastes++;
           window.__slateProof.model = event.clipboardData.getData('text/plain');
-          event.target.textContent = window.__slateProof.model;
+          paint(event.target);
           setTimeout(remount, 300);
         });
         document.addEventListener('focusout', event => {
-          if (event.target && event.target.id === 'hpi-editor') setTimeout(remount, 30);
+          if (event.target && event.target.id === 'hpi-editor') {
+            setTimeout(remount, 30);
+            const escaped = window.__slateProof.model.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            const xhr = new XMLHttpRequest();
+            xhr.open('PUT', '/one/two/ax/exam_template/9912345/hpi/freetext');
+            xhr.send(JSON.stringify({ freetext: '<div>' + escaped + '</div>', version_token: 'v', section_refresh_token: 'r', is_document: false, current_findings: '' }));
+          }
         }, true);
       });
       const text = 'Slate-controlled synthetic HPI.';
       const result = await drive(page, request('hpi', text));
       assert.strictEqual(result.ok, true, `Slate controlled paste was refused: ${JSON.stringify(result)}`);
-      assert.strictEqual(result.reason, 'exact-note-editor-verified-unsaved');
+      assert.strictEqual(result.reason, 'exact-note-editor-persisted');
+      assert.strictEqual(result.persisted, true);
       const proof = await page.evaluate(() => ({ ...window.__slateProof, shown: document.getElementById('hpi-editor').innerText }));
       assert.strictEqual(proof.model, text, 'Slate model did not receive the exact text');
       assert.strictEqual(proof.shown, text, 'Slate remount did not preserve the exact text');
@@ -195,7 +212,7 @@ async function values(page) {
       assert.strictEqual(result.attempted, true);
       assert.strictEqual(result.partialMutation, true, 'a dispatched but unhandled paste lost conservative mutation accounting');
       assert.strictEqual(result.reason, 'slate-paste-not-handled');
-      assert.strictEqual(await page.locator('#hpi-editor').innerText(), '', 'unhandled Slate paste changed the projection');
+      assert.strictEqual((await page.locator('#hpi-editor').innerText()).replace(/\uFEFF/g, '').trim(), '', 'unhandled Slate paste changed the projection');
       checks += 6;
     });
 
@@ -254,7 +271,8 @@ async function values(page) {
       assert.strictEqual(result.reason, 'outcome-uncertain');
       assert.strictEqual(result.detail, 'note-write-unverified');
       assert.strictEqual(result.partialMutation, true, 'a consumed Slate paste with failed model readback lost uncertainty');
-      assert.strictEqual(await page.locator('#hpi-editor').innerText(), '', 'projection-only Slate fixture did not remount empty');
+      await page.waitForTimeout(400);
+      assert.strictEqual((await page.locator('#hpi-editor').innerText()).replace(/\uFEFF/g, '').trim(), '', 'projection-only Slate fixture did not remount empty');
       checks += 5;
     });
 
