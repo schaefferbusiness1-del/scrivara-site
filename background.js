@@ -673,8 +673,53 @@ async function mlsAthenaActionV2DriverFn(req) {
       var els = deepQueryAll(root, 'textarea,[contenteditable="true"],[contenteditable="plaintext-only"]').filter(function (el) { return visible(el, frame.w); });
       return els.filter(function (el) { return !/\b(search|find|lookup|filter|message|comment|chat|patient id|mrn|billing|charge|claim|order)\b/.test(editorHay(el)); });
     }
+    /* Slate renders an empty block as a zero-width span plus <br>.  Reading
+       innerText therefore invents a newline (and often exposes FEFF) that is
+       not part of the editor model.  Project only the direct block elements,
+       preserve every text character and real <br>, and skip the specifically
+       identified Slate placeholder subtree.  A shape we do not understand is
+       unreadable, rather than an exact readback. */
+    function slateEditorValue(el) {
+      var blocks = [], sawSlate = false;
+      try {
+        blocks = Array.prototype.slice.call(el.querySelectorAll('[data-slate-object="block"]'));
+        sawSlate = blocks.length > 0;
+        blocks = blocks.filter(function (block) {
+          var p = block.parentElement;
+          while (p && p !== el && !p.hasAttribute('data-slate-object')) p = p.parentElement;
+          return p === el || !p;
+        });
+        if (!sawSlate) return null;
+        if (!blocks.length) return null;
+        var out = [];
+        for (var i = 0; i < blocks.length; i++) {
+          var block = blocks[i], leaves = block.querySelectorAll('[data-slate-string="true"]');
+          if (!leaves.length && !block.querySelector('[data-slate-zero-width]')) return null;
+          var value = '';
+          function visit(node) {
+            if (!node) return;
+            if (node.nodeType === 3) { value += node.nodeValue || ''; return; }
+            if (node.nodeType !== 1) return;
+            if (node.hasAttribute('data-slate-zero-width')) return;
+            if (String(node.tagName || '').toUpperCase() === 'BR') { value += '\n'; return; }
+            for (var c = node.firstChild; c; c = c.nextSibling) visit(c);
+          }
+          for (var j = 0; j < leaves.length; j++) visit(leaves[j]);
+          out.push(value);
+        }
+        return out.join('\n');
+      } catch (e) { return sawSlate ? null : null; }
+    }
     function editorValue(el) {
-      try { return noteNorm(el.isContentEditable ? el.innerText : el.value); } catch (e) { return ''; }
+      try {
+        if (el.isContentEditable) {
+          var slate = slateEditorValue(el);
+          if (slate !== null) return slate;
+          if (el.querySelector && el.querySelector('[data-slate-object]')) return null;
+          return noteNorm(el.innerText);
+        }
+        return noteNorm(el.value);
+      } catch (e) { return null; }
     }
     function editorFingerprint(el, frameUrl) { return controlFingerprint(el, frameUrl, 'note_editor'); }
     function noteTargetForControl(frame, control, allowGenericSave) {
