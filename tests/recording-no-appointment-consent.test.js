@@ -15,13 +15,15 @@ function between(start, end) {
 const patientFn = between('function lockAndStartPatient(p, opts) {', '\n  /* =======================================================================');
 const calls = [];
 let selected = null;
+let recording = false;
+let acceptSelection = true;
 const context = {
   S: {},
-  isRecording() { return false; },
+  isRecording() { return recording; },
   blockSwitchWhileRecording() { calls.push('blocked'); },
   setEasyMode() { calls.push('doctor'); },
   isFn(v) { return typeof v === 'function'; },
-  window: { selectPatient(id) { calls.push(['select', id]); selected = { id, name: 'Synthetic Patient' }; } },
+  window: { selectPatient(id) { calls.push(['select', id]); if (acceptSelection) selected = { id, name: 'Synthetic Patient' }; } },
   activeName() { return selected ? selected.name : 'Different Patient'; },
   canonicalActivePatient() { return selected; },
   nameMatch(a, b) { return a === b; },
@@ -41,6 +43,20 @@ calls.length = 0;
 selected = null;
 context.lockAndStartPatient(p);
 assert.strictEqual(calls.filter(x => x === 'capture').length, 0, 'ordinary patient selection unexpectedly starts recording');
+
+calls.length = 0;
+selected = { id: 'different-patient', name: p.name };
+acceptSelection = false;
+context.lockAndStartPatient(p, { record: true });
+assert.strictEqual(calls.filter(x => x === 'capture').length, 0,
+  'same-name patient with a different canonical ID passed the recording identity gate');
+assert(/Nothing was started/.test(context.S.lastWarn || ''), 'refused exact-patient selection left no visible refusal');
+
+calls.length = 0;
+recording = true;
+context.S.appt = { _pt: true, _patientId: 'different-patient' };
+context.lockAndStartPatient(p, { record: true });
+assert.deepStrictEqual(calls, ['blocked'], 'an active recording allowed a patient switch or issued another capture request');
 
 const hero = between("on('ez3ActiveGo', function () {", "\n    on('ez3Choose'");
 assert(hero.includes('lockAndStartPatient(p, { record: true });'), 'the no-appointment hero still opens Visit without requesting recording');
