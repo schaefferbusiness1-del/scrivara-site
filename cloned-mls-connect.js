@@ -64496,7 +64496,7 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
   } catch (_) {}
 })();
 
-/* ===== kal-1.0.0 - athenaOne keep-alive watchdog (app-side; ext 3.0.84 is frozen) =====
+/* ===== kal-1.0.1 - athenaOne keep-alive watchdog (app-side; ext 3.0.84 is frozen) =====
    Owner 2026-08-30: "the extensions keep alive doesnt really work well". The
    extension's own keep-alive (ka-3066 synthetic events + ka84 alarm GET) lives
    in an MV3 service worker that Chrome can stop, and a stopped worker keeps no
@@ -64505,13 +64505,13 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
    setTimeout, and every minute asks the extension for its health receipt
    (mlsExtHealth - read-only). Waking the worker to answer ALSO re-arms its own
    alarms, so the probe itself is half the cure. When the receipt shows the
-   native keep-alive tick is STALE (>210s; its healthy period is 180s) and
-   athenaOne is present and NOT signed out, it escalates once per 8 minutes to
-   mlsAppGoHome - a real, serialized Home click in the athena tab that resets
-   the client idle watcher. Never while a pull or recording runs; never when
-   signed out (a login page is the doctor's to handle - MLS says so instead of
-   hammering it). Status + a bounded ledger live at window.__mlsKeepAliveWatch
-   so a probe or a future Settings line can read exactly what happened. */
+   native keep-alive tick is STALE (>210s; its healthy period is 180s), it
+   reports that state without navigating athenaOne. The health request already
+   wakes the extension worker and re-arms its native alarm. A background
+   watchdog must never move a clinician away from an open encounter; Home
+   navigation remains owned by explicit pull/recovery flows. Status + a bounded
+   ledger live at window.__mlsKeepAliveWatch so a probe or a future Settings
+   line can read exactly what happened. */
 ;(function () {
   'use strict';
   try {
@@ -64521,7 +64521,7 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
     window.__mlsKeepAliveWatch = ST;
     function note(entry) { try { entry.at = Date.now(); ST.ledger.push(entry); if (ST.ledger.length > 24) ST.ledger.shift(); } catch (e) {} }
     function busyNow() {
-      try { var s = window.__mlsDayHistoryPull && window.__mlsDayHistoryPull.state; if (s && s.busy) return 'pull'; } catch (e) {}
+      try { var s = window.__mlsDayHistoryPull && window.__mlsDayHistoryPull.state; if (s && (s.running || s.busy)) return 'pull'; } catch (e) {}
       try { if (typeof window.__mlsPtsPullActive === 'function' && window.__mlsPtsPullActive()) return 'pull'; } catch (e) {}
       try { if (typeof isRecording === 'function' && isRecording()) return 'recording'; } catch (e) {}
       return '';
@@ -64550,13 +64550,8 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
       if (age <= 210000) { ST.lastVerdict = 'native-keepalive-healthy'; return; }
       var why = busyNow();
       if (why) { ST.lastVerdict = 'stale-but-' + why + '-running'; return; }
-      if (now - ST.lastGoHomeAt < 480000) { ST.lastVerdict = 'stale-cooling-down'; return; }
-      ST.lastGoHomeAt = now; ST.goHomes++;
-      ST.lastVerdict = 'go-home-sent';
-      note({ act: 'goHome', kaAgeMs: age });
-      ask('mlsAppGoHome', 'mlsAppGoHomeResult', 30000).then(function (r) {
-        note({ act: 'goHome-result', ok: !!(r && r.ok), reason: r && (r.reason || r.error) || '' });
-      });
+      ST.lastVerdict = 'native-keepalive-stale-no-navigation';
+      note({ act: 'health-stale', kaAgeMs: age });
     }
     function tick() { ask('mlsExtHealth', 'mlsExtHealthResult', 12000).then(onHealth); }
     try {
