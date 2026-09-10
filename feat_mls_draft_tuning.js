@@ -1359,7 +1359,7 @@
       'box-sizing:border-box;white-space:normal;padding:8px 10px;line-height:1.3}';
     try { (document.head || document.documentElement).appendChild(style); } catch (e) {}
     sec.innerHTML =
-      '<p class="set-head">🤖 AI output formats</p>' +
+      '<p class="set-head">🎚️ AI draft tuning</p>' +
       '<p class="set-desc">Choose an output, then review the saved format and template that will shape it. Uploading an example creates an editable preview; nothing is kept until you apply it and save Settings.</p>' +
       '<div class="field"><label for="mlsDtFamily">Output type</label><select class="sf-select" id="mlsDtFamily"></select></div>' +
       '<div id="mlsDtEffectiveSummary" role="status" style="margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--soft,#f8fafc);font-size:13px;line-height:1.45"></div>' +
@@ -1381,6 +1381,7 @@
           '<button type="button" class="btn-green" id="mlsDtSectionImportApply">Apply preview to this saved format</button>' +
         '</div>' +
       '</div></div>' +
+      '<div class="field" id="mlsDtSectionTemplateHost"><label for="mlsDtSectionTemplate">How closely to follow this template</label><select class="sf-select" id="mlsDtSectionTemplate">' + optionHtml([['strict','Strict — keep its headings, order, and standard wording'],['adapt','Follow template (recommended) — keep its structure'],['guide','Guide only — headings and layout may change']]) + '</select><p class="mini" id="mlsDtTemplateModeHelp"></p></div>' +
       '<p class="mini" id="mlsDtAppliedStatus" role="status" style="margin:8px 0 12px;color:var(--muted)"></p>' +
       '<details id="mlsDtAdvanced" style="margin-top:10px;border:1px solid var(--line);border-radius:10px;padding:10px 12px">' +
         '<summary style="cursor:pointer;font-weight:700">Advanced style and automatic routing</summary>' +
@@ -1392,7 +1393,6 @@
           '<div class="field" id="mlsDtExtraHost"><label for="mlsDtExtra" id="mlsDtExtraLabel">Draft option</label><select class="sf-select" id="mlsDtExtra"></select></div>' +
           '<div class="field" id="mlsDtSectionWhenHost"><label for="mlsDtSectionWhen">Use automatically when</label><input type="text" class="mls-dt-short-field" id="mlsDtSectionWhen" maxlength="180" placeholder="e.g. stable routine follow-up"><button type="button" class="btn-ghost" id="mlsDtSectionWhenSuggest" style="margin-top:6px" title="Read the template for this saved format and propose the words that should pick it">Suggest from this template</button><p class="mini" id="mlsDtSectionWhenWhy" role="status" style="display:none;color:#8A5A00"></p><p class="mini">Leave blank to keep this as the account default or choose it for one visit.</p></div>' +
           '<div class="field" id="mlsDtSectionModeHost"><label for="mlsDtSectionMode" id="mlsDtSectionModeLabel">Section format</label><select class="sf-select" id="mlsDtSectionMode"></select></div>' +
-          '<div class="field" id="mlsDtSectionTemplateHost"><label for="mlsDtSectionTemplate">How closely to follow the template</label><select class="sf-select" id="mlsDtSectionTemplate">' + optionHtml([['strict','Strict — keep its headings, order, and standard wording'],['adapt','Follow template (recommended) — keep its structure'],['guide','Guide only — headings and layout may change']]) + '</select><p class="mini" id="mlsDtTemplateModeHelp"></p></div>' +
         '</div>' +
         '<div class="field"><label for="mlsDtInstructions" id="mlsDtInstructionsLabel">AI prompt comments for this saved format</label><textarea id="mlsDtInstructions" class="note-box mls-dt-comments-field" maxlength="600" placeholder="Non-patient writing preferences only…" style="min-height:96px;height:96px;box-sizing:border-box"></textarea><p class="mini" id="mlsDtCount">0 / 600</p></div>' +
         '<div class="field" id="mlsDtFamilyInstructionsHost"><label for="mlsDtFamilyInstructions">Standing instructions for this output type</label><textarea id="mlsDtFamilyInstructions" class="note-box mls-dt-comments-field" maxlength="600" placeholder="Account-wide non-patient writing preferences only…" style="min-height:96px;height:96px;box-sizing:border-box"></textarea><p class="mini">Applied in addition to the selected saved format for this output type.</p></div>' +

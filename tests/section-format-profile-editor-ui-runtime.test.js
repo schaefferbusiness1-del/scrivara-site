@@ -38,6 +38,9 @@ const { chromium } = require('playwright');
 
     await page.selectOption('#mlsDtFamily', 'hpi');
     assert.equal(await page.locator('#mlsDtAdvanced').getAttribute('open'), null, 'advanced settings should start collapsed');
+    assert.equal(await page.locator('#mlsDtSectionTemplate').isVisible(), true, 'template-following mode is hidden from the primary template editor');
+    assert.equal(await page.locator('#mlsDtSectionTemplateHost').evaluate(el => !!el.closest('#mlsDtAdvanced')), false, 'template-following mode is still nested under Advanced');
+    assert.match(await page.locator('#mlsDtSectionTemplate option[value=adapt]').textContent(), /Follow template \(recommended\)/i, 'recommended template-following mode is unclear');
     assert.match(await page.textContent('#mlsDtEffectiveSummary'), /HPI section will use/i, 'effective format summary is missing');
     assert.equal(await page.isDisabled('#mlsDtSectionTemplate'), true, 'template fidelity is active with no template');
     for (const id of ['#mlsDtSectionName', '#mlsDtSectionWhen', '#mlsDtSectionImportNamePreview']) {
