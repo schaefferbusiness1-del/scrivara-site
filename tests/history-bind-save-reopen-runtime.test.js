@@ -38,6 +38,7 @@ const context = {
   getActivePtId() { return active && active.id || ''; },
   findPatient(id) { return String(id) === patient.id ? patient : null; },
   getVisitComment() { return ''; },
+  getNotes() { return []; },
   currentNoteId: 'note-synthetic-1', currentCoding: null, lastEMR: null,
   currentFormat: 'soap', currentSoap: nodes.noteBox.value, currentInsurance: '',
   currentNoteProvenance: 'generated_soap', currentAthenaNote: '', currentAthenaNoteProvenance: 'none', currentAthenaNoteSourceFingerprint: '',
@@ -53,19 +54,31 @@ vm.createContext(context);
 vm.runInContext(between(shell, 'function _athenaPatientSnapshot(', '/* dayvs-1.0.0', 'canonical binding freezer'), context);
 vm.runInContext('let currentVisitAthenaBinding=null,currentVisitAthenaCompromised=false,currentVisitAthenaAwayFingerprint=null,currentVisitAthenaEpoch=0;\n' +
   between(shell, 'function _athenaSetVisitBinding(', 'function _athenaCurrentMatchesBound(', 'canonical binding owner'), context);
+vm.runInContext(between(shell, 'function _mlsAthenaSourceState(', 'function _mlsAthenaGenerationSourceFingerprint(', 'explicit Bind source re-anchor'), context);
+vm.runInContext(between(shell, 'function _mlsSavedAthenaFingerprintMatchesRecord(', 'function _mlsSavedAthenaCanonicalForWrite(', 'saved fingerprint comparator'), context);
 vm.runInContext(between(writeflow, 'function p1SamePatient(', 'function p1ProviderNorm(', 'exact patient comparator'), context);
 vm.runInContext(between(writeflow, 'function wfbindEditorFingerprint()', 'function wfbindFinish(', 'explicit Bind bridge'), context);
 vm.runInContext(between(shell, 'function noteRecordFromState(', 'function upsertNote(', 'saved-note serializer'), context);
 vm.runInContext(between(shell, 'function _athenaBindingForSavedRecord(', 'function _athenaBoundVisitForAction(', 'History binding restore'), context);
 
 const expectedContext = {
-  visitDate: '2026-08-25', provider: 'Synthetic Provider', appointmentId: 'appointment-synthetic-25',
+  visitDate: '8/25/2026', provider: 'Synthetic Provider', appointmentId: 'appointment-synthetic-25',
   encounterId: '', encounterUrl: ''
 };
 const state = {
   editorFingerprint,
   manifest: { patient: { patientId: patient.id, name: patient.name, dob: patient.dob, mrn: patient.mrn } }
 };
+const generatedBinding = context._athenaFreezeVisitBinding(patient, {
+  source: 'generated-visit', historical: true,
+  visitContext: { visitDate: '2026-09-10', provider: expectedContext.provider, appointmentId: '', encounterId: '', encounterUrl: '' }
+});
+assert.strictEqual(context._athenaSetVisitBinding(generatedBinding, true), true);
+context.currentAthenaNote = 'Synthetic canonical note.';
+context.currentAthenaNoteProvenance = 'generated';
+context.currentAthenaNoteSourceFingerprint = context._mlsAthenaSourceFingerprint();
+const preBindFingerprint = context.currentAthenaNoteSourceFingerprint;
+const sourceBeforeBind = [nodes.transcript.value, nodes.noteBox.value, context.currentSoap];
 assert.strictEqual(context.wfbindCommitCanonical(state, { expectedContext, visitTimestamp: 1787659200000 }), true,
   'explicit exact appointment Bind did not reach the canonical Visit binding');
 
@@ -73,10 +86,92 @@ const saved = context.noteRecordFromState(false);
 assert.strictEqual(saved.patientId, patient.id, 'Save History lost the exact patient');
 assert.strictEqual(saved.appointmentId, expectedContext.appointmentId, 'Save History lost the explicitly bound appointment');
 assert.strictEqual(saved.visitDate, expectedContext.visitDate, 'Save History lost the explicitly bound visit date');
+assert.strictEqual(context._mlsSavedAthenaFingerprintMatchesRecord(saved.athenaNoteSourceFingerprint, saved), true,
+  'explicit Bind left the saved note with its pre-bind appointment fingerprint');
+assert.deepStrictEqual([nodes.transcript.value, nodes.noteBox.value, context.currentSoap], sourceBeforeBind,
+  'explicit Bind mutated clinical source text while re-anchoring metadata');
 const reopened = context._athenaBindingForSavedRecord(saved);
 assert.strictEqual(reopened.patient.patientId, patient.id, 'History reopen lost the exact patient');
 assert.strictEqual(reopened.visitContext.appointmentId, expectedContext.appointmentId, 'History reopen lost the saved appointment');
 assert.strictEqual(reopened.visitContext.visitDate, expectedContext.visitDate, 'History reopen lost the saved visit date');
+
+// A pre-fix saved note is recoverable only through a fresh explicit choice of
+// its same stored appointment and exact unchanged source/patient bytes.
+const legacySaved = Object.assign({}, saved, {
+  visitDate: '8/25/2026',
+  athenaNote: 'Synthetic canonical note.', athenaNoteProvenance: 'generated',
+  athenaNoteSourceFingerprint: preBindFingerprint
+});
+context.getNotes = () => [legacySaved];
+context.currentAthenaNote = '';
+context.currentAthenaNoteProvenance = 'stale';
+context.currentAthenaNoteSourceFingerprint = '';
+context._mlsSetAthenaNote = function (text, provenance) {
+  assert.strictEqual(text, nodes.noteBox.value, 'legacy recovery did not derive from the unchanged displayed SOAP');
+  context.currentAthenaNote = text;
+  context.currentAthenaNoteProvenance = provenance;
+  context.currentAthenaNoteSourceFingerprint = context._mlsAthenaSourceFingerprint();
+};
+context._mlsAthenaFingerprintMatchesCurrent = expected => expected === context._mlsAthenaSourceFingerprint();
+const legacyState = JSON.parse(preBindFingerprint);
+const legacyRecordState = { v: 2, transcript: legacySaved.transcript, context: legacySaved.context, visitComment: legacySaved.visitComment,
+  standardNote: legacySaved.soap, activePatientId: legacySaved.patientId,
+  patient: { patientId: legacySaved.patientId, name: legacySaved.patient, dob: legacySaved.patientDob, mrn: legacySaved.patientMrn },
+  visit: { visitDate: legacySaved.visitDate, provider: legacySaved.provider, appointmentId: legacySaved.appointmentId,
+    encounterId: legacySaved.encounterId, encounterUrl: legacySaved.encounterUrl } };
+assert.strictEqual(context._mlsAthenaBindClinicalPatientSame(legacyState, legacyRecordState), true, 'fixture legacy source/patient proof is invalid');
+assert.strictEqual(context._mlsAthenaBindClinicalPatientSame(legacyRecordState, context._mlsAthenaSourceState(context._athenaGetVisitBinding(), true)), true, 'fixture live source/patient proof is invalid');
+assert.strictEqual(context._mlsAthenaBindDayKey(legacyRecordState.visit.visitDate), context._mlsAthenaBindDayKey(context._mlsAthenaSourceState(context._athenaGetVisitBinding(), true).visit.visitDate), 'fixture saved/live dates do not identify the same day');
+assert.strictEqual(context.wfbindCommitCanonical(state, { expectedContext, visitTimestamp: 1787659200000 }), true,
+  'fresh explicit re-bind of the exact saved appointment was refused');
+assert.strictEqual(context.currentAthenaNoteProvenance, 'edited', 'exact saved-note recovery did not restore a current canonical sidecar');
+assert.strictEqual(context._mlsAthenaFingerprintMatchesCurrent(context.currentAthenaNoteSourceFingerprint), true,
+  'saved-note recovery did not re-anchor to the explicitly selected appointment');
+const recoveredSaved = context.noteRecordFromState(false);
+assert.strictEqual(context._mlsSavedAthenaFingerprintMatchesRecord(recoveredSaved.athenaNoteSourceFingerprint, recoveredSaved), true,
+  'Save after legacy re-bind did not persist one internally consistent appointment proof');
+assert.deepStrictEqual([nodes.transcript.value, nodes.noteBox.value, context.currentSoap], sourceBeforeBind,
+  'saved-note recovery mutated transcript or displayed SOAP');
+
+context.currentAthenaNote = '';
+context.currentAthenaNoteProvenance = 'stale';
+context.currentAthenaNoteSourceFingerprint = '';
+const differentAppointment = Object.assign({}, expectedContext, { appointmentId: 'appointment-synthetic-other' });
+assert.strictEqual(context.wfbindCommitCanonical(state, { expectedContext: differentAppointment }), true,
+  'an ineligible stale sidecar incorrectly blocked the explicit visit binding');
+assert.strictEqual(context.currentAthenaNoteProvenance, 'stale', 'a different appointment improperly recovered the saved canonical sidecar');
+assert.strictEqual(context._athenaGetVisitBinding().visitContext.appointmentId, differentAppointment.appointmentId,
+  'the valid explicit binding was rolled back only because canonical recovery was ineligible');
+
+function expectRecoveryRefusal(label, savedOverride, mutate, restore) {
+  context.getNotes = () => [savedOverride || legacySaved];
+  context.currentAthenaNote = '';
+  context.currentAthenaNoteProvenance = 'stale';
+  context.currentAthenaNoteSourceFingerprint = '';
+  if (mutate) mutate();
+  assert.strictEqual(context.wfbindCommitCanonical(state, { expectedContext }), true, label + ' blocked a valid explicit Bind');
+  assert.strictEqual(context.currentAthenaNoteProvenance, 'stale', label + ' improperly recovered the canonical sidecar');
+  if (restore) restore();
+}
+expectRecoveryRefusal('changed transcript', null, () => { nodes.transcript.value += ' changed'; }, () => { nodes.transcript.value = legacySaved.transcript; });
+expectRecoveryRefusal('changed context', null, () => { nodes.contextBox.value = 'changed context'; }, () => { nodes.contextBox.value = legacySaved.context; });
+expectRecoveryRefusal('changed displayed SOAP', null, () => { nodes.noteBox.value += ' changed'; }, () => { nodes.noteBox.value = legacySaved.soap; });
+expectRecoveryRefusal('changed internal SOAP', null, () => { context.currentSoap += ' changed'; }, () => { context.currentSoap = legacySaved.soap; });
+expectRecoveryRefusal('changed saved patient', Object.assign({}, legacySaved, { patient: 'Different Synthetic Patient' }));
+const priorAppointmentState = JSON.parse(preBindFingerprint);
+priorAppointmentState.visit.appointmentId = 'appointment-from-another-bind';
+expectRecoveryRefusal('fingerprint with an existing different appointment', Object.assign({}, legacySaved, { athenaNoteSourceFingerprint: JSON.stringify(priorAppointmentState) }));
+
+context.getNotes = () => [legacySaved];
+assert.strictEqual(context.wfbindCommitCanonical(state, { expectedContext }), true,
+  'returning to the exact saved appointment did not remain recoverable');
+assert.strictEqual(context.currentAthenaNoteProvenance, 'edited', 'exact saved appointment did not recover after an ineligible binding');
+const stableFingerprint = context.currentAthenaNoteSourceFingerprint;
+const sameReadback = context._athenaGetVisitBinding();
+assert.strictEqual(context._mlsAthenaReanchorExplicitBinding(sameReadback, sameReadback), true,
+  'reused identical binding readback caused a re-anchor loop/refusal');
+assert.strictEqual(context.currentAthenaNoteSourceFingerprint, stableFingerprint,
+  'identical binding readback changed an already current fingerprint');
 
 const accepted = context._athenaGetVisitBinding();
 
@@ -117,4 +212,4 @@ for (const rel of ['1p/index.html', '1pScribeFlow.html']) {
     rel + ' does not expose canonical binding readback');
 }
 
-console.log('PASS History Bind/Save/reopen runtime: explicit exact appointment survives Save History and reopen; setter/read-back, stale-note, and same-name different-ID refusals preserve the prior binding');
+console.log('PASS History Bind/Save/reopen runtime: explicit exact appointment re-anchors unchanged source through Save/History; exact legacy re-bind recovers without AI; setter/read-back, stale-note, and same-name different-ID refusals preserve the prior binding');
