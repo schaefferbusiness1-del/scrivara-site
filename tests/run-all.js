@@ -855,6 +855,7 @@ const tests = [
      noteRecordFromState() stamped B's id onto A's chart data. Carries its own
      causal control against origin/main's shell bytes. */
   '1p-visit-owner-isolation-runtime.test.js',
+  'visit-new-intent-cancels-restore-runtime.test.js',
   '1p-provider-unknown-census-runtime.test.js',
   '1p-provider-day-calendar-runtime.test.js',
   /* b1026's pdr-1.0.0 provider Day render fix was never ported to the fork, so

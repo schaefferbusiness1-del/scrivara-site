@@ -54098,6 +54098,8 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
 
   var MAX_PATIENTS = 6;        /* newest kept; a stash is a convenience, not a record */
   var MAX_CHARS = 240000;      /* one entry; sessionStorage is finite */
+  var freshVisitEpoch = 0;     /* explicit New visit outranks queued switch-back restore */
+  var restoreIntentSerial = 0; /* only the newest real patient switch may restore */
 
   function stashKey() {
     return safe(function () { return (typeof uns === 'function') ? uns('visitDraftByPt') : 'mls_visitDraftByPt'; }, 'mls_visitDraftByPt');
@@ -54110,6 +54112,13 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
     }, {});
   }
   function writeStash(map) { safe(function () { sessionStorage.setItem(stashKey(), JSON.stringify(map)); }); }
+  function discardStashFor(id) {
+    var key = str(id);
+    if (!key) return false;
+    var map = readStash();
+    if (!Object.prototype.hasOwnProperty.call(map, key)) return false;
+    delete map[key]; writeStash(map); return true;
+  }
 
   function editorState() {
     var t = safe(function () { return str((el('transcript') || {}).value); }, '');
@@ -54450,6 +54459,18 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
       var r = orig.apply(this, arguments);
       safe(clearVisitResidue);
       window.__mlsVisitEditorOwnerId = activeId();
+      var opts = arguments[0] || {};
+      /* OpenSwitchFix must empty the newly selected patient's editor before
+         the queued switch-back restore. That internal reset preserves the
+         resumable per-patient slot. Startup's preserveRecovery pass likewise
+         preserves recovery data. Every ordinary newVisit call is the doctor's
+         fresh-encounter intent: advance the epoch and retire only this active
+         patient's ephemeral switch-back stash, never their History record. */
+      if (!(opts && (opts.patientSwitchReset === true || opts.preserveRecovery === true))) {
+        freshVisitEpoch++;
+        restoreIntentSerial++;
+        safe(function () { discardStashFor(activeId()); });
+      }
       return r;
     };
   });
@@ -54483,7 +54504,11 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
        the same task as this event, so a restore must wait for the next one. A
        timer, never requestAnimationFrame: rAF does not fire in a tab that is
        not compositing, and this must work in a background tab. */
-    setTimeout(function () { safe(function () { restoreFor(next); }); }, 0);
+    var intent = ++restoreIntentSerial, epoch = freshVisitEpoch;
+    setTimeout(function () { safe(function () {
+      if (intent !== restoreIntentSerial || epoch !== freshVisitEpoch || activeId() !== next) return;
+      restoreFor(next);
+    }); }, 0);
   }
   window.addEventListener('mls:active-patient-changed', onSwitched);
 
