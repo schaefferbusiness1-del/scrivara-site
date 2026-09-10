@@ -54,7 +54,8 @@ for (const rel of shells) {
   assert.deepStrictEqual(calls.slice(refusedAt + 1, refusedAt + 5), [
     ['patient', patient.id], ['view', 'visit'], ['load', generated.id, generated.appointmentId], ['bar']
   ], rel + ': continuation did not restore patient, route, and exact saved record in order');
-  assert.strictEqual(calls.filter(x => x[0] === 'scroll').length, 1, rel + ': continuation has more than one scroll owner');
+  assert.strictEqual(calls.filter(x => x[0] === 'scroll').length, 0, rel + ': continuation jumped to the hidden Advanced note card');
+  assert(source.includes('onclick="reopenViewed()" style="flex:1">↩ Continue this draft</button>'), rel + ': legacy saved-note modal uses a different name for the shared continuation action');
 
   const before = calls.length;
   assert.strictEqual(context._mlsSavedRecordCanReopen({ id: 'chart-receipt', patientId: patient.id, cc: 'Athena chart import', text: 'clinical history' }), false,
@@ -73,4 +74,4 @@ assert(detail.includes('editorPatient && canContinueInVisitEditor(note) && isFn(
 assert(detail.includes('if (window._mlsContinueSavedRecord(note)) closeModal(false);'), 'rich detail closes before a refused patient switch can be reported');
 assert(!/function canContinueInVisitEditor[\s\S]*?note\.text/.test(detail), 'arbitrary clinical-history text can qualify as an editable Visit draft');
 
-console.log('PASS History generated-note continuation: exact patient and appointment restore, clinical-history exclusion, and one scroll owner');
+console.log('PASS History generated-note continuation: exact patient and appointment restore, clinical-history exclusion, and zero surprise scrolls');

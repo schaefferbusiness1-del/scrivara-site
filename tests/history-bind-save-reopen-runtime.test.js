@@ -59,6 +59,12 @@ vm.runInContext(between(shell, 'function _mlsSavedAthenaFingerprintMatchesRecord
 vm.runInContext(between(writeflow, 'function p1SamePatient(', 'function p1ProviderNorm(', 'exact patient comparator'), context);
 vm.runInContext(between(writeflow, 'function wfbindEditorFingerprint()', 'function wfbindFinish(', 'explicit Bind bridge'), context);
 vm.runInContext(between(shell, 'function noteRecordFromState(', 'function upsertNote(', 'saved-note serializer'), context);
+let storedByNormalSave = null;
+context._athenaGuardBoundEditor = () => true;
+context.applyVisitCommentToNote = () => {};
+context.upsertNote = rec => { storedByNormalSave = rec; };
+context.toast = () => {};
+vm.runInContext(between(shell, 'function saveCurrentNote(announce){', '/* Best-effort backend persistence.', 'normal Save wrapper'), context);
 vm.runInContext(between(shell, 'function _athenaBindingForSavedRecord(', 'function _athenaBoundVisitForAction(', 'History binding restore'), context);
 
 const expectedContext = {
@@ -136,9 +142,13 @@ assert.strictEqual(context.wfbindCommitCanonical(state, { expectedContext, visit
 assert.strictEqual(context.currentAthenaNoteProvenance, 'edited', 'exact saved-note recovery did not restore a current canonical sidecar');
 assert.strictEqual(context._mlsAthenaFingerprintMatchesCurrent(context.currentAthenaNoteSourceFingerprint), true,
   'saved-note recovery did not re-anchor to the explicitly selected appointment');
-const recoveredSaved = context.noteRecordFromState(false);
-assert.strictEqual(context._mlsSavedAthenaFingerprintMatchesRecord(recoveredSaved.athenaNoteSourceFingerprint, recoveredSaved), true,
-  'Save after legacy re-bind did not persist one internally consistent appointment proof');
+assert.strictEqual(context.saveCurrentNote(false), true, 'normal Save refused the recovered unchanged note');
+assert(storedByNormalSave, 'normal Save did not replace the current History record');
+assert.strictEqual(storedByNormalSave.id, legacySaved.id, 'normal Save created a duplicate instead of replacing the reopened record');
+assert.strictEqual(storedByNormalSave.appointmentId, expectedContext.appointmentId, 'normal Save lost the recovered exact appointment');
+assert.strictEqual(storedByNormalSave.visitDate, expectedContext.visitDate, 'normal Save lost the recovered visit date');
+assert.strictEqual(context._mlsSavedAthenaFingerprintMatchesRecord(storedByNormalSave.athenaNoteSourceFingerprint, storedByNormalSave), true,
+  'normal Save after legacy re-bind did not persist one internally consistent appointment proof');
 assert.deepStrictEqual([nodes.transcript.value, nodes.noteBox.value, context.currentSoap], sourceBeforeBind,
   'saved-note recovery mutated transcript or displayed SOAP');
 
