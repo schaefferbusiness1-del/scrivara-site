@@ -27,8 +27,9 @@
  *   5. an unbindable visit (no schedule row for this patient) is offered no
  *      cure and stays CANNOT SEND;
  *   6. an IDENTITY-blocked row never advertises a cure a pull cannot deliver;
- *   7. the cure assigns no visit field and mints no appointment id — the only
- *      thing that can bind is the ordinary resolver.
+ *   7. the cure assigns no manifest visit field and mints no appointment id —
+ *      the ordinary resolver supplies it, then the exact explicit choice is
+ *      read back from the canonical Visit binding before success.
  */
 
 const assert = require('assert');
@@ -64,11 +65,14 @@ const CURE_LABEL = 'Bind this visit to its Athena appointment — re-pulls this 
   ok(block.length > 500, 'the wfbind-1.0.0 block must exist in the fork');
   ok(src.indexOf("var WFBIND_LABEL = '" + CURE_LABEL + "'") > 0,
     'the cure control must carry the exact name the owner asked for');
-  /* The cure may never write a binding. It may only re-pull and re-ask. */
+  /* The cure never mutates its manifest or invents a binding. It re-pulls,
+     re-asks the ordinary resolver, then commits only that explicit result. */
   ok(!/\bvisit\.(appointmentId|encounterId|encounterUrl|visitDate|provider)\s*=[^=]/.test(block),
     'the cure must never assign a visit field');
   ok(!/capability\s*=\s*['"]ready['"]/.test(block), 'the cure must never mark a row ready');
   ok(/expectedVisitContext\(/.test(block), 'the cure must re-ask the ordinary resolver');
+  ok(/wfbindCommitCanonical/.test(block) && /_athenaGetVisitBinding/.test(block),
+    'the explicit resolved binding must reach the canonical Visit owner and be read back');
   ok(/openUnifiedConfirmation\(/.test(block), 'the cure must rebuild through the reopen path, never mutate a manifest');
   ok(/observed !== day/.test(block), 'the cure must refuse to pull a day athenaOne did not paint');
   ok(/WFBIND_POLL_TICKS = 36/.test(block), 'the cure poll must be bounded');
@@ -142,6 +146,16 @@ function makeContext(opts) {
     pullScheduleViaAssist: function () { pulls.push({ at: Date.now(), skipProbe: window.pullScheduleViaAssist.__skipProbe === true }); },
     toast: (msg) => { toasts.push(String(msg)); }
   };
+  let visitBinding = null;
+  window.activePatient = () => PATIENT;
+  window._athenaEditorFingerprint = () => 'bind-cure-editor-fingerprint';
+  window._athenaFreezeVisitBinding = (patient, meta) => ({
+    id: 'bind-cure-' + Date.now(),
+    patient: { patientId: patient.id || patient.patientId, name: patient.name, dob: patient.dob, mrn: patient.mrn },
+    visitContext: Object.assign({}, meta.visitContext), source: meta.source
+  });
+  window._athenaSetVisitBinding = (binding) => { visitBinding = binding || null; return true; };
+  window._athenaGetVisitBinding = () => visitBinding;
   window.window = window;
   const ctx = vm.createContext({
     window, document, localStorage,

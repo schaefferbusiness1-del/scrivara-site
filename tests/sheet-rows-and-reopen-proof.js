@@ -104,9 +104,13 @@ const HEAD_REGIONS = [
     ok(AUTO_CHAIN.indexOf(got) > 0,
       'tests/write-auto-chain.test.js does not carry this region\'s current digest - the pins have drifted apart: ' + name);
   });
-  /* and this lane never reaches for the app's own visit binding */
-  eq(FLOW.indexOf('_athenaSetVisitBinding'), -1,
-    'THE WRITE FLOW NOW SETS THE APP\'S VISIT BINDING - a sheet may read a binding, never assign one');
+  /* One narrow bridge carries an explicit, resolved Bind choice into the app's
+     save owner. It must remain fingerprint-, patient-, and readback-gated. */
+  eq((FLOW.match(/_athenaSetVisitBinding/g) || []).length, 1,
+    'the write flow has more than one path that can assign the app visit binding');
+  const bindBridge = FLOW.slice(FLOW.indexOf('function wfbindCommitCanonical('), FLOW.indexOf('function wfbindFinish('));
+  ok(bindBridge.indexOf('editorFingerprint') >= 0 && bindBridge.indexOf('p1SamePatient') >= 0 && bindBridge.indexOf('_athenaGetVisitBinding') >= 0,
+    'the explicit Bind bridge lost stale-note, exact-patient, or canonical-readback protection');
 }
 
 /* ------------------------------------------------------------------ fixtures */

@@ -35036,6 +35036,7 @@ function _athenaSetVisitBinding(binding,replaceExisting){
   currentVisitAthenaEpoch++;
   return true;
 }
+function _athenaGetVisitBinding(){return currentVisitAthenaBinding;}
 function _athenaCurrentMatchesBound(binding){
   if(!binding||!binding.patient)return false;
   var active=null; try{active=(typeof activePatient==='function')?activePatient():null;}catch(e){}

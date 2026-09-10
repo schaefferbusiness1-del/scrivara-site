@@ -1271,6 +1271,7 @@ const tests = [
   'visit-draft-lifecycle-runtime.test.js',
   'history-raw-note-wrapper-runtime.test.js',
   'history-generated-note-continuation.test.js',
+  'history-bind-save-reopen-runtime.test.js',
   'recording-no-appointment-consent.test.js',
   'quick-find-lifecycle-runtime.test.js',
   'find-canonical-route-runtime.test.js',
