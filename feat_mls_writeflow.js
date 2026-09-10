@@ -6449,11 +6449,11 @@
     return '<details style="margin-top:12px"><summary style="cursor:pointer;font-weight:750;color:#204034;font-size:11.5px">Patient, visit and manifest identity</summary>' +
       '<div style="display:grid;grid-template-columns:118px 1fr;gap:5px 9px;margin-top:7px;padding:11px 12px;background:#f7f9fb;border:1px solid #e2e8f2;border-radius:10px;overflow-wrap:anywhere"><span>Patient</span><b>' + esc(manifest.patient.name || '(missing)') + '</b><span>DOB</span><b>' + esc(manifest.patient.dob || '(missing)') + '</b><span>MRN</span><b>' + esc(manifest.patient.mrn || 'verified from Athena before writing') + '</b><span>MLS patient ID</span><b>' + esc(manifest.patient.patientId || '(missing)') + '</b><span>Expected visit</span><b>' + esc(manifest.visit.visitDate || 'unique encounter must be discovered') + '</b><span>Expected provider</span><b>' + esc(manifest.visit.provider || 'verified from Athena before writing') + '</b><span>Appointment ID</span><b>' + esc(manifest.visit.appointmentId || 'verified from Athena before writing') + '</b><span>Expected encounter</span><b>' + esc(manifest.visit.encounterId || 'verified from Athena before writing') + '</b><span>Manifest</span><b>' + esc(manifest.manifestHash) + '</b></div></details>';
   }
-  /* A missing/stale canonical Athena sidecar is a LOCAL generation problem,
-     not an encounter-binding problem. Keep the two remedies deliberately
-     separate: wfbind may only re-pull identity; this explicit control invokes
-     the page's ordinary generation gate and then asks the ordinary Athena
-     review entrypoint to rebuild every row from persisted, validated output. */
+  /* A missing/stale canonical Athena sidecar is a local source-review
+     problem, not an encounter probe. Most cases return to the retained note.
+     The one older saved-binding mismatch gets an explicit zero-AI recovery
+     press below, guarded by the same frozen editor and exact patient checks as
+     every other appointment Bind. */
   function unifiedCanonicalGenerationIssue(opts) {
     var issue = S(opts && opts.generationIssue).trim();
     return /^(?:athena-note-|generated-soap-format$)/.test(issue) ? issue : '';
@@ -6540,14 +6540,31 @@
       return merged;
     } catch (e) { return opts; }
   }
+  /* bindfp-1.1.0: pure reachability test for the one legacy saved-note shape
+     the shell can recover after a fresh explicit press. It neither binds nor
+     repairs anything. The action itself still passes wfbindCommitCanonical's
+     frozen-editor and exact-patient checks before the shell may re-anchor. */
+  function unifiedCanonicalRecoveryBinding(state) {
+    try {
+      var issue = unifiedCanonicalGenerationIssue(state && state.sourceOpts);
+      if (!/^athena-note-(?:stale-canonical-provenance|canonical-source-changed)$/.test(issue)) return null;
+      var getBinding = window._athenaGetVisitBinding, eligible = window._mlsAthenaCanRecoverExplicitBinding;
+      if (typeof getBinding !== 'function' || typeof eligible !== 'function') return null;
+      var binding = getBinding(), bc = binding && binding.visitContext || {}, visit = state && state.manifest && state.manifest.visit || {};
+      if (!binding || !p1SamePatient(binding.patient, state.manifest.patient) || !S(bc.appointmentId).trim()) return null;
+      if (visitDay(bc.visitDate) !== visitDay(visit.visitDate) || S(bc.provider) !== S(visit.provider) || S(bc.appointmentId) !== S(visit.appointmentId) || S(bc.encounterId) !== S(visit.encounterId) || S(bc.encounterUrl) !== S(visit.encounterUrl)) return null;
+      return eligible(binding) ? binding : null;
+    } catch (e) { return null; }
+  }
   function unifiedCanonicalGenerationHtml(state) {
     var issue = unifiedCanonicalGenerationIssue(state && state.sourceOpts);
     if (!issue) return '';
-    var stale = /(?:stale|changed|malformed|format)/i.test(issue);
+    var recoverable = !!unifiedCanonicalRecoveryBinding(state);
     return '<section data-mls-canonical-generation="1" style="margin-top:12px;padding:13px 14px;border:1px solid #cfe0d7;background:#f7fbf9;border-radius:11px;color:#204034">' +
-      '<div style="font-size:13.5px;font-weight:850">Return to the note to review the five Athena draft fields</div>' +
-      '<div style="font-size:12px;color:#52675c;margin-top:4px">The existing note is retained, but its HPI, ROS, Physical Exam, Assessment, and Plan / Follow-up payload is ' + (stale ? 'stale or malformed' : 'missing') + '. Review or update the note and its source, then open Send to Athena again. Nothing was checked or sent.</div>' +
+      '<div style="font-size:13.5px;font-weight:850">' + (recoverable ? 'Use the retained note for this exact visit' : 'Return to the note to review the five Athena draft fields') + '</div>' +
+      '<div style="font-size:12px;color:#52675c;margin-top:4px">' + (recoverable ? 'The note text and patient are unchanged; only its older saved visit link needs to be refreshed for this already selected appointment. This preserves the exact text, uses no AI, then opens the ordinary read-only encounter check. Nothing has been checked or sent yet.' : 'Existing note retained; review the updated source or complete its five sections. Nothing has been checked or sent.') + '</div>' +
       '<div style="display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-top:10px"><button type="button" id="mlsAthenaUnifiedReturnToNote" style="border:0;background:#204034;color:#fff;border-radius:9px;padding:9px 13px;font-weight:800;cursor:pointer">Return to note</button>' +
+      (recoverable ? '<button type="button" id="mlsAthenaUnifiedRecoverSaved" style="border:1px solid #204034;background:#fff;color:#204034;border-radius:9px;padding:9px 13px;font-weight:800;cursor:pointer">Use this note for this visit</button>' : '') +
       '<span id="mlsAthenaUnifiedGenerateStatus" role="status" style="font-size:11.5px;color:#52675c">No Athena check or write has started.</span></div></section>';
   }
   function unifiedCanonicalGenerationStatus(state, text, isError) {
@@ -6563,6 +6580,31 @@
     if (target && typeof target.focus === 'function') setTimeout(function () {
       try { target.focus({ preventScroll: true }); } catch (e1) { try { target.focus(); } catch (e2) {} }
     }, 0);
+  }
+  function runUnifiedCanonicalRecovery(state, button) {
+    if (!state || state.closed || unifiedAthenaState !== state || state.running || state.binding) return;
+    var binding = unifiedCanonicalRecoveryBinding(state);
+    if (!binding) { unifiedCanonicalGenerationStatus(state, 'This retained note no longer exactly matches the saved source, patient, and appointment. Return to the note to review it; nothing was checked or sent.', true); return; }
+    var opts = {}, base = state.reopenOpts || {}, k;
+    for (k in base) if (Object.prototype.hasOwnProperty.call(base, k)) opts[k] = base[k];
+    opts.expectedContext = stableClone(state.manifest.visit);
+    if (button) { button.disabled = true; button.setAttribute('aria-disabled', 'true'); }
+    if (!wfbindCommitCanonical(state, opts)) { if (button) { button.disabled = false; button.removeAttribute('aria-disabled'); } return; }
+    var canonical = null;
+    try { canonical = typeof window._mlsAthenaCanonicalForWrite === 'function' ? window._mlsAthenaCanonicalForWrite() : null; } catch (eCanonical) {}
+    if (!canonical || canonical.required !== true || canonical.ok !== true) {
+      if (button) { button.disabled = false; button.removeAttribute('aria-disabled'); }
+      unifiedCanonicalGenerationStatus(state, 'The visit was kept, but the retained note did not pass the exact five-section source check. Return to the note to review it; nothing was checked or sent.', true);
+      return;
+    }
+    var reopen = null; try { reopen = window.pushEntireVisitToAthena; } catch (eOpen) {}
+    if (typeof reopen !== 'function') {
+      if (button) { button.disabled = false; button.removeAttribute('aria-disabled'); }
+      unifiedCanonicalGenerationStatus(state, 'The note is ready for this visit, but the Athena review is still loading. Open Send to Athena again; nothing was checked or sent.', true);
+      return;
+    }
+    closeUnifiedConfirmation();
+    try { reopen(null); } catch (eReopen) {}
   }
   function runUnifiedCanonicalGeneration(state, button) {
     if (!state || state.closed || unifiedAthenaState !== state || state.generating) return;
@@ -6626,6 +6668,7 @@
        must do in Athena personally lives in one collapsed drawer instead of a
        wall of groups. */
     var generationIssue = unifiedCanonicalGenerationIssue(state.sourceOpts);
+    var canonicalRecovery = generationIssue ? !!unifiedCanonicalRecoveryBinding(state) : false;
     /* sheetux-1.0.0: the one shared "How" for every READY row, said once here
        instead of repeated verbatim inside each row. */
     var sharedHow = readyRows.some(function (row) { return row.action === 'write_note'; })
@@ -6735,12 +6778,14 @@
        capability branches, 1p-writeflow-sheet-ux counts the guide exactly
        once); they are one fold down. */
     var capabilityLine = generationIssue
-      ? (esc(S(manifest.patient.name) || 'This note') + ' &middot; the existing note is retained while you review or update its missing or stale five-field clinical draft; no Athena write is available until the rows pass the exact encounter check.')
+      ? (canonicalRecovery
+        ? (esc(S(manifest.patient.name) || 'This note') + ' &middot; The note is unchanged and only its saved visit link needs to be refreshed for this selected appointment.')
+        : (esc(S(manifest.patient.name) || 'This note') + ' &middot; Existing note retained; review the updated source or complete its five sections.'))
       : (athenaFinalActionsReady()
         ? 'Reviewed note writes, Save Draft, billing staging, Sign &amp; Save, and each supported catalog-bound order run only after their own explicit confirmation; medication and injection orders stay yours in Athena.'
         : 'Only reviewed note write and Save Draft can be confirmed here; signing, billing and orders stay yours in Athena.');
     var boundaryLine = generationIssue
-      ? 'Return to the note to review or update its source, then open this review again. Nothing here checks an encounter, writes Athena, or changes the retained note.'
+      ? (canonicalRecovery ? 'Use the retained-note action to refresh only this saved visit link, then MLS opens the ordinary read-only encounter check. The note text remains exact and nothing is written.' : 'Existing note retained; review the updated source or complete its five sections. Nothing here checks an encounter, writes Athena, or changes the retained note.')
       : (athenaFinalActionsReady()
         ? 'One READY row is pre-selected and checked read-only; each Confirm &amp; Send click runs exactly that one action, and MLS never retries or auto-chains. Sign &amp; Save unlocks only after a verified note write; a reviewed catalog-bound order places only that item; prescriptions and claim submission stay yours in Athena.'
         : 'One READY note row is pre-selected and checked read-only; each Confirm &amp; Send click runs exactly that one action, and MLS never retries or auto-chains. Billing, orders, prescriptions, signature, attestation, and claim submission stay yours in Athena.');
@@ -6753,7 +6798,7 @@
          reads here instead of competing with the status pill. The walkthrough
          strip and the residue overlay both read its textContent, which a closed
          disclosure keeps intact. */
-      '<div id="mlsAthenaUnifiedContext" style="margin-top:9px;padding:10px 12px;border:1px solid #cfe0d7;background:#f7fbf9;border-radius:10px;color:#204034;overflow-wrap:anywhere"><b>Exact Athena encounter:</b> ' + (generationIssue ? 'kept fail-closed while the five local draft fields are generated.' : 'being verified read-only now.') + '</div>' +
+      '<div id="mlsAthenaUnifiedContext" style="margin-top:9px;padding:10px 12px;border:1px solid #cfe0d7;background:#f7fbf9;border-radius:10px;color:#204034;overflow-wrap:anywhere"><b>Exact Athena encounter:</b> ' + (generationIssue ? (canonicalRecovery ? 'ready to refresh its saved link before the ordinary read-only check.' : 'not checked while the retained note needs review.') : 'being verified read-only now.') + '</div>' +
       '</details>';
     card.innerHTML =
       '<div id="mlsAthenaUnifiedBody" style="flex:1 1 auto;min-height:0;overflow:auto;padding:20px 22px 4px">' +
@@ -6783,7 +6828,7 @@
          writeui-1.0.0: painted as ONE pill plus ONE sentence. Same node, same
          data-mls-sheet-state / data-mls-state-word / data-mls-state-short
          hooks, same derivation - only the box around the word is new. */
-      '<div id="mlsAthenaUnifiedState" role="status" aria-live="polite" style="margin-top:11px" data-mls-sheet-state="' + (generationIssue ? 'NEEDS ONE STEP' : 'CHECKING') + '"><div data-mls-state-word="1" style="display:inline-block;border-radius:999px;padding:3px 13px;background:#fff7e6;border:1.5px solid currentColor;font-size:19px;line-height:1.2;font-weight:900;letter-spacing:.3px;color:' + (generationIssue ? '#7a5a16' : '#6d5010') + '">' + (generationIssue ? 'NEEDS ONE STEP' : 'CHECKING') + '</div><div data-mls-state-short="1" style="margin-top:5px;color:#385b49;font-size:12.5px">' + (generationIssue ? 'No Athena check or write has started. Generate the five local draft fields first; nothing here can be sent until they pass.' : 'MLS is reading the exact Athena chart read-only. Nothing has been sent.') + '</div></div>' +
+      '<div id="mlsAthenaUnifiedState" role="status" aria-live="polite" style="margin-top:11px" data-mls-sheet-state="' + (generationIssue ? 'NEEDS ONE STEP' : 'CHECKING') + '"><div data-mls-state-word="1" style="display:inline-block;border-radius:999px;padding:3px 13px;background:#fff7e6;border:1.5px solid currentColor;font-size:19px;line-height:1.2;font-weight:900;letter-spacing:.3px;color:' + (generationIssue ? '#7a5a16' : '#6d5010') + '">' + (generationIssue ? 'NEEDS ONE STEP' : 'CHECKING') + '</div><div data-mls-state-short="1" style="margin-top:5px;color:#385b49;font-size:12.5px">' + (generationIssue ? (canonicalRecovery ? 'Note unchanged. Refresh its saved visit link for this selected appointment; no Athena check or write has started.' : 'Existing note retained; review the updated source or complete its five sections. No Athena check or write has started.') : 'MLS is reading the exact Athena chart read-only. Nothing has been sent.') + '</div></div>' +
       /* wfprog-1.1.0 lives with the words it belongs to: the read-only ladder is
          the LONG stretch, and its bar was rendered far below the state line, off
          the bottom of a scrolled sheet. It is the second thing you read now. */
@@ -6803,7 +6848,7 @@
          one's open state is owned here - a refusal must force it OPEN. Wearing
          that pass's own "already handled" mark keeps the two from fighting. */
       '<details id="mlsAthenaUnifiedDetails" data-mls-clunky-seen="1" style="margin-top:7px"><summary style="cursor:pointer;font-weight:750;color:#52675c;font-size:11.5px">What MLS is doing, in full</summary>' +
-      '<div id="mlsAthenaUnifiedProbe" role="status" style="margin-top:6px;color:#6d5010">' + (generationIssue ? 'No Athena check or write has started. Generate the local fields first.' : 'Checking the exact chart read-only &mdash; nothing is sent yet.') + '</div></details>' +
+      '<div id="mlsAthenaUnifiedProbe" role="status" style="margin-top:6px;color:#6d5010">' + (generationIssue ? (canonicalRecovery ? 'The exact note text is retained. Its saved visit link can be refreshed before the ordinary read-only check.' : 'Existing note retained; review the updated source or complete its five sections. No Athena check or write has started.') : 'Checking the exact chart read-only &mdash; nothing is sent yet.') + '</div></details>' +
       /* mrnadopt-1.0.0: what MLS changed in the patient record to unblock this
          review, stated durably. The status line above is repainted by the very
          next read-only check, so a transient sentence would vanish before the
@@ -6880,6 +6925,8 @@
     }
     var returnToNoteButton = card.querySelector('#mlsAthenaUnifiedReturnToNote');
     if (returnToNoteButton) returnToNoteButton.addEventListener('click', function () { unifiedReturnToNote(state); });
+    var recoverSavedButton = card.querySelector('#mlsAthenaUnifiedRecoverSaved');
+    if (recoverSavedButton) recoverSavedButton.addEventListener('click', function () { runUnifiedCanonicalRecovery(state, recoverSavedButton); });
     var radios = card.querySelectorAll('input[name="mlsAthenaUnifiedAction"]');
     for (var i = 0; i < radios.length; i++) radios[i].addEventListener('change', function () { probeUnifiedRow(state, this.value); });
     var acceptBtns = card.querySelectorAll('[data-mls-accept-order]');
