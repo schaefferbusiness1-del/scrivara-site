@@ -30903,7 +30903,7 @@ function mlsDraftFailureMessage(err){
     if(m) return (m[2].toUpperCase()+' section had an invalid heading');
     return 'output safety check: '+code.replace(/_/g,' ');
   });
-  return 'Note was rejected by the safety checks. Nothing changed.'+(readable.length?' Details: '+readable.join('; ')+'.':' Retry Generate after confirming the transcript has enough documented detail.');
+  return 'Note generation could not finish its safety checks. Your prior draft was retained if one was already open.'+(readable.length?' Details: '+readable.join('; ')+'. Retry Generate when ready.':' Retry Generate after confirming the transcript has enough documented detail.');
 }
 function _mlsUnsupportedClinicalClaimFailure(err){
   var ai=err&&err.mlsAi||{};
@@ -30926,9 +30926,20 @@ async function _mlsRepairUnsupportedClinicalClaim(sys,user,draftTuning,signal){
     });
     if(!response.ok)return '';
     var payload=await response.json();
-    return String((payload&&payload.content)||'').trim();
+    var repaired=String((payload&&payload.content)||'').trim();
+    if(!repaired)return '';
+    /* The generic completion route returns a JSON string, not a checked note
+       object. Parse and apply the same final five-field + selected-template
+       contract before this repair can rejoin normal generation. */
+    var candidate=parseGenJSON(repaired);
+    _mlsValidateStructuredNoteResult(candidate,draftTuning);
+    return repaired;
   }catch(error){
     if(signal&&signal.aborted)throw error;
+    /* A malformed repair is a generation failure, not permission to display
+       it or silently substitute a different note. The outer generation catch
+       keeps the clinician's prior draft untouched. */
+    if(error&&(error.mlsStructuredNoteQuality||error.mlsAthenaNoteQuality))throw error;
     return '';
   }
 }
@@ -30946,20 +30957,72 @@ function _mlsDocumentedOnlyNoteResult(transcript){
     mlsDocumentedOnlyFallback:true
   };
 }
-function _mlsValidateStructuredNoteResult(result){
+function _mlsTemplateHeadingParts(value){
+  var line=String(value||'').trim().replace(/^\s*(?:#{1,6}\s*|[-*•]\s+|\d+[.)]\s+)/,'').trim();
+  line=line.replace(/^(?:\*\*|__|`+)/,'').replace(/(?:\*\*|__|`+)$/,'').trim();
+  var colon=line.indexOf(':'),raw=colon>=0?line.slice(0,colon):line;
+  var label=raw.replace(/(?:\*\*|__|`+)$/,'').trim();
+  return {label:label,normalized:label.replace(/:\s*$/,'').replace(/\s+/g,' ').trim().toUpperCase(),hasColon:colon>=0};
+}
+function _mlsTemplateHeadingIsReserved(normalized){
+  var key=String(normalized||'').replace(/\s+/g,' ').trim().toUpperCase();
+  return ['HPI','ROS','EXAM','ASSESSMENT','PLAN','SUBJECTIVE','OBJECTIVE','SIGNATURE','ATTESTATION','DATE OF SERVICE','ENCOUNTER MODALITY','VISIT TYPE','ASSESSMENT AND PLAN','ASSESSMENT & PLAN'].indexOf(key)>=0;
+}
+function _mlsRequiredTemplateHeadings(profile,family){
+  try{
+    var mode=String(profile&&profile.templateMode||'').toLowerCase(),text=String(profile&&profile.templateText||'');
+    if((mode!=='strict'&&mode!=='adapt')||!text.trim())return [];
+    var lines=text.split(/\r?\n/),candidates=[];
+    for(var i=0;i<lines.length;i++){
+      var part=_mlsTemplateHeadingParts(lines[i]),label=part.label;
+      if(!label||label.length>80||/^\[[^\]]+\]$/.test(label))continue;
+      var words=label.match(/[A-Za-z0-9]+/g)||[],next='';
+      for(var n=i+1;n<lines.length;n++){if(lines[n].trim()){next=lines[n];break;}}
+      var nextPlaceholder=/^\s*\[[^\]]+\]\s*$/.test(next),allCaps=/[A-Z]/.test(label)&&label===label.toUpperCase();
+      if(!words.length||words.length>10||(!part.hasColon&&!allCaps&&!nextPlaceholder))continue;
+      if(part.normalized===String(family||'').toUpperCase()||_mlsTemplateHeadingIsReserved(part.normalized))continue;
+      if(!candidates.some(function(row){return row.heading===part.normalized;}))candidates.push({heading:part.normalized,index:i,hasColon:part.hasColon,nextPlaceholder:nextPlaceholder});
+    }
+    /* Match the backend extractor: a leading all-caps title without a colon or
+       following placeholder is preamble, not a required clinical field. */
+    var first=lines.findIndex(function(line){return line.trim();});
+    if(candidates.length>1&&candidates[0].index===first&&!candidates[0].hasColon&&!candidates[0].nextPlaceholder)candidates.shift();
+    /* One label is commonly prose or a title. Two or more ordered labels are
+       the smallest unambiguous template structure; placeholder-only and
+       natural-text templates therefore remain guidance rather than gates. */
+    return candidates.length>=2?candidates.map(function(row){return row.heading;}).slice(0,16):[];
+  }catch(e){return [];}
+}
+function _mlsValidateActiveTemplateStructure(canonical,tuning){
+  var families=tuning&&tuning.families||{},sections=canonical&&canonical.sections||[];
+  ['hpi','ros','exam','assessment','plan'].forEach(function(family){
+    var required=_mlsRequiredTemplateHeadings(families[family],family);
+    if(!required.length)return;
+    var section=sections.filter(function(row){return row&&row.key===family;})[0],lines=String(section&&section.text||'').split(/\r?\n/),at=-1;
+    /* The clinical evidence contract owns the exact no-evidence body.
+       A presentation template cannot require invented inner fields there. */
+    if(String(section&&section.text||'').trim()==="Not documented in today's transcript.")return;
+    for(var i=0;i<required.length;i++){
+      var next=-1;
+      for(var j=at+1;j<lines.length;j++){if(_mlsTemplateHeadingParts(lines[j]).normalized===required[i]){next=j;break;}}
+      if(next<0)throw _mlsStructuredNoteQualityError('active '+String(families[family].templateMode||'template')+' '+family+' template structure was not preserved');
+      at=next;
+    }
+  });
+  return canonical;
+}
+function _mlsValidateStructuredNoteResult(result,tuning){
   if(!result || typeof result!=='object' || Array.isArray(result)) throw _mlsStructuredNoteQualityError('response is not an object');
   if(typeof result.note!=='string') throw _mlsStructuredNoteQualityError('note is not a string');
   var note=result.note.trim();
   if(!note) throw _mlsStructuredNoteQualityError('note is blank');
   if(note.length>50000) throw _mlsStructuredNoteQualityError('note exceeds the browser safety bound');
-  var anchors=[
-    /\b(?:subjective|hpi|history of present illness|chief complaint)\b/i,
-    /\b(?:objective|physical exam|examination|exam|review of systems|\bros\b)\b/i,
-    /\b(?:assessment|impression|diagnos(?:is|es))\b/i,
-    /\b(?:plan|follow[- ]?up|recommendations?)\b/i
-  ];
-  var sections=anchors.reduce(function(count,re){return count+(re.test(note)?1:0);},0);
-  if(note.length<24 || sections<2) throw _mlsStructuredNoteQualityError('note is not a structured clinical draft');
+  /* Visit notes are now one fixed, exact five-field display. Validate the
+     bytes the clinician would see before any editor/canonical mutation. */
+  var canonical;
+  try{canonical=_mlsValidateAthenaNote(note);}
+  catch(error){throw _mlsStructuredNoteQualityError(String(error&&error.mlsAi&&error.mlsAi.detail||'note did not contain the exact five fields'));}
+  _mlsValidateActiveTemplateStructure(canonical,tuning);
   return result;
 }
 
@@ -30994,6 +31057,7 @@ function _mlsValidateAthenaNote(text){
   var labels={hpi:'HPI',ros:'Review of Systems',exam:'Physical Exam',assessment:'Assessment',plan:'Plan / Follow-up'};
   var lines=src.split('\n'), flat=/^\s*(HPI|ROS|EXAM|ASSESSMENT|PLAN)\s*:?\s*(.*)$/i, combinedWrapper=/^\s*(?:#{1,6}\s*|\*{1,3}\s*|_{1,3}\s*|`{1,3}\s*)?ASSESSMENT\s*(?:AND|&)\s*PLAN\b/i;
   var malformed=/^\s*(?:#{1,6}\s*|\*{1,3}\s*|_{1,3}\s*|\x60{1,3}\s*|\d+[.)]\s*|[-•]\s+)?(?:HPI|ROS|EXAM|ASSESSMENT|PLAN|SUBJECTIVE|OBJECTIVE|ASSESSMENT\s*(?:AND|&)\s*PLAN|REVIEW\s+OF\s+SYSTEMS|PHYSICAL\s+EXAM)\b\s*(?:[*_\x60]+)?\s*:?\s*$/i;
+  var signatureHeading=/^\s*(?:#{1,6}\s*|\*{1,3}\s*|_{1,3}\s*|\x60{1,3}\s*|\d+[.)]\s*|[-•]\s+)?SIGNATURE\s*(?:[*_\x60]+)?\s*:?\s*(?:[*_\x60]+\s*)?(?:\[[^\]\n]*\])?\s*$/i;
   var bodies={}, current=null, seen={}, order=[];
   for(var i=0;i<lines.length;i++){
     var line=lines[i], trimmed=line.trim(); if(!trimmed)continue;
@@ -31006,6 +31070,7 @@ function _mlsValidateAthenaNote(text){
        was reviewed") stays writable - measured false-positive class. */
     if(/\([^)\n]*carried[^)\n]*\)/i.test(line)||/\([^)\n]*(?:last|prior|previous)\s+visit[^)\n]*review/i.test(line)||/\([^)\n]*review[^)\n]*(?:last|prior|previous)\s+visit[^)\n]*\)/i.test(line)||/^\s*(?:PAST\s+MEDICAL\s+HISTORY|MEDICAL\s+HISTORY|PAST\s+MEDICAL\s+HX|PMHX?|PAST\s+SURGICAL\s+HISTORY|SURGICAL\s+HISTORY|PAST\s+SURGERIES|PAST\s+SURGICAL\s+HX|PSHX?|FAMILY\s+HISTORY|FAMILY\s+HX|FHX?|SOCIAL\s+HISTORY|SOCIAL\s+HX|SHX?|ALLERGIES|ALLERGY|DRUG\s+ALLERGIES)\s*\([^)\n]*\)\s*:/i.test(line)||/={2,}\s*(?:END\s+)?CARRIED\s+HISTORY/i.test(line))throw _mlsAthenaNoteQualityError('carried-forward content is not allowed in athena_note');
     if(combinedWrapper.test(line))throw _mlsAthenaNoteQualityError('combined Assessment and Plan heading is not allowed');
+    if(signatureHeading.test(line))throw _mlsAthenaNoteQualityError('signature heading is not allowed');
     var m=flat.exec(line);
     if(m){
       var key=m[1].toLowerCase();
@@ -31712,6 +31777,26 @@ function _mlsGenerationDraftTuning(evidence){
   }
   return tuning;
 }
+function _mlsFreezeGenerationDraftTuning(value){
+  var copy;
+  try{copy=JSON.parse(JSON.stringify(value||{families:{}}));}catch(e){copy={families:{}};}
+  try{
+    (function freezeTree(node){
+      if(!node||typeof node!=='object'||Object.isFrozen(node))return;
+      Object.keys(node).forEach(function(key){freezeTree(node[key]);});
+      Object.freeze(node);
+    })(copy);
+  }catch(eFreeze){}
+  return copy;
+}
+function _mlsResolvedGenerationDraftTuning(transcript,evidence){
+  try{
+    var requested=_mlsGenerationDraftTuning(evidence),api=window.__mlsDraftTuning;
+    if(!api||!api.installed)return _mlsFreezeGenerationDraftTuning(requested);
+    if(typeof api.autoRoute==='function')requested=api.autoRoute({todayTranscript:String(transcript||'')},requested);
+    return _mlsFreezeGenerationDraftTuning(typeof api.forStructured==='function'?api.forStructured(requested):requested);
+  }catch(e){return _mlsFreezeGenerationDraftTuning(_mlsGenerationDraftTuning(evidence));}
+}
 async function generateNote(){
   /* gsup-1.0.0 (measured 2026-09-02 10:xx): the supersede abort lives ONLY in
      _mlsStartGeneration, where a replacement run really is being created. A
@@ -31757,6 +31842,7 @@ async function generateNote(){
     const generationSourceRest=_mlsGenerationSourceRest(generationSourceFingerprint);
     const generationStyle=getGenStyle();
     const key=getKey();
+    const generationDraftTuning=_mlsResolvedGenerationDraftTuning(transcript,evidence);
     if(!hasAiNow){
       currentSoap=_reorderNoteForStyle(offlineExampleNote(), generationStyle);
       currentNoteProvenance='typed';
@@ -31789,7 +31875,7 @@ async function generateNote(){
     try{
       result=await _mlsAwaitGeneration(
         run,
-        callOpenAI(transcript,key,{signal:run.controller.signal,evidence:evidence}),
+        callOpenAI(transcript,key,{signal:run.controller.signal,evidence:evidence,resolvedDraftTuning:generationDraftTuning}),
         _mlsGenerationTimeoutMs('main',90000),
         'generation-timeout'
       );
@@ -31800,11 +31886,11 @@ async function generateNote(){
     /* Validate before currentSoap/currentInsurance/currentCoding or any editor
        surface changes.  A bad model/backend response leaves the current draft
        intact and remains explicitly retryable. */
-    _mlsValidateStructuredNoteResult(result);
+    _mlsValidateStructuredNoteResult(result,generationDraftTuning);
     /* noteq-1.0.0 (b1169): grade the validated draft and, when it lands under
        floor, run the ONE permitted repair pass - before any editor surface is
        mutated, so a failed retry cannot disturb a good draft. */
-    try{ result=await _mlsNoteQualityRepairStructured(result,transcript,key,evidence,run); }catch(eNoteqRepair){}
+    try{ result=await _mlsNoteQualityRepairStructured(result,transcript,key,evidence,run,generationDraftTuning); }catch(eNoteqRepair){}
     /* Older /api/generate deployments may return the already-valid flat SOAP
        note without the newer athena_note sidecar. Reuse it only when it
        independently passes the exact five-destination validator; narrative,
@@ -33558,14 +33644,14 @@ For red_flags/suggested_orders/differentials/opioids/recommendations: use ONLY w
     templateName:(tplContract&&tplContract.name)?tplContract.name:'',
     findings:options.noteqFindings||null
   });
-  return await postChat(sys+tplSysLine,'TODAY_TRANSCRIPT_BEGIN\n'+transcript+'\nTODAY_TRANSCRIPT_END'+ctxLine+turnsBlock+seedLine+tplBlock+noteqBlock,key,{draftTuning:_mlsGenerationDraftTuning(options.evidence),specialty:spec,signal:options.signal});
+  return await postChat(sys+tplSysLine,'TODAY_TRANSCRIPT_BEGIN\n'+transcript+'\nTODAY_TRANSCRIPT_END'+ctxLine+turnsBlock+seedLine+tplBlock+noteqBlock,key,{draftTuning:options.resolvedDraftTuning||_mlsGenerationDraftTuning(options.evidence),draftTuningResolved:!!options.resolvedDraftTuning,specialty:spec,signal:options.signal});
 }
 
 /* noteq-1.0.0 (b1169): ONE repair pass for the PRIMARY structured note.
    Runs after the first result validates and BEFORE any editor surface is
    mutated, so a failed or worse retry leaves the original draft untouched.
    Returns the result to display, and stamps the grade for the strip. */
-async function _mlsNoteQualityRepairStructured(result,transcript,key,evidence,run){
+async function _mlsNoteQualityRepairStructured(result,transcript,key,evidence,run,generationDraftTuning){
   var firstText='';
   try{ firstText=String((result&&result.soap)||''); }catch(eNoteqFirst){ firstText=''; }
   if(!firstText.trim()) return result;
@@ -33587,11 +33673,11 @@ async function _mlsNoteQualityRepairStructured(result,transcript,key,evidence,ru
   try{
     var second=await _mlsAwaitGeneration(
       run,
-      callOpenAI(transcript,key,{signal:run.controller.signal,evidence:evidence,noteqFindings:res}),
+      callOpenAI(transcript,key,{signal:run.controller.signal,evidence:evidence,noteqFindings:res,resolvedDraftTuning:generationDraftTuning}),
       _mlsGenerationTimeoutMs('main',90000),
       'generation-timeout'
     );
-    _mlsValidateStructuredNoteResult(second);
+    _mlsValidateStructuredNoteResult(second,generationDraftTuning);
     var secondText=String((second&&second.soap)||'');
     var secondRes=__mlsNoteQualityGrade(secondText,'visit-note-soap',ctx);
     var pick=__mlsNoteQualityBetter(firstText,res,secondText,secondRes);
@@ -33905,7 +33991,7 @@ async function aiCallRaw(sys,user,key,opts){
            against TODAY_TRANSCRIPT. autoRoute returns profile ids only, so
            background chart text and patient wording never enter settings or
            the tuning payload. An explicit one-visit picker always wins. */
-        if(typeof _dt.autoRoute==='function'){
+        if(opts.draftTuningResolved!==true&&typeof _dt.autoRoute==='function'){
           var _routeOptions=_draftFamily==='soap'?(_effectiveDraftTuning||{}):{families:{}};
           if(_draftFamily!=='soap') _routeOptions.families[_draftFamily]=_effectiveDraftTuning||{};
           var _routedTuning=_dt.autoRoute({todayTranscript:_mlsTemplateRoutingSource(user,opts)},_routeOptions);
@@ -33915,7 +34001,9 @@ async function aiCallRaw(sys,user,key,opts){
             if(_routedFamily) _effectiveDraftTuning=Object.assign({},_effectiveDraftTuning||{},_routedFamily);
           }
         }
-        _draftTuning=(!_draftFamily||_draftFamily!=='soap')
+        _draftTuning=opts.draftTuningResolved===true&&_draftFamily==='soap'
+          ? _effectiveDraftTuning
+          : (!_draftFamily||_draftFamily!=='soap')
           ? _dt.forFamily(_draftFamily,_effectiveDraftTuning)
           : (typeof _dt.forStructured==='function'
             ? _dt.forStructured(_effectiveDraftTuning)

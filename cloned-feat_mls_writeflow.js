@@ -935,7 +935,7 @@
    'mrn-adopted mrn-conflict name-not-found ' +
    'manual-only-final-action named-section-final-action-unsupported no-athena-tab no-chart-open no-name-match no-response no-results ' +
    'not-persisted not-watching ' +
-   'note-content-required note-destination-mismatch note-editor-not-empty note-payload-mismatch ' +
+   'note-content-required note-destination-mismatch note-editor-not-empty note-editor-unreadable note-payload-mismatch ' +
    'note-section-count-mismatch note-section-not-on-surface note-section-payload-mismatch note-write-proof-expired note-write-proof-used ' +
    'note-write-unverified numeric-only-field-refused one-exact-order-isolated-readback-verified slate-paste-not-handled ' +
    'open-deadline-exceeded open-timeout order-client-id-mismatch order-exact-already-present ' +
@@ -3359,6 +3359,8 @@
     /* ---- one named step (amber) ------------------------------------- */
     'note-editor-not-empty': { fix: true, copy: true,
       say: 'One step needed: {where} already has text in it. MLS never types over text a person or an Athena template put there - for an op note that text is usually the procedure template skeleton. Clear that field in athenaOne (or keep what is already documented there), then press Check Athena again. Copy this section below if you would rather paste it yourself.' },
+    'note-editor-unreadable': { fix: true, copy: true,
+      say: 'MLS could not read the contents of {where}, so it stopped before writing. Check this field in Athena. Your reviewed text is retained below.' },
     /* secsurf-1.0.0 (app side of MLS Assist 3.0.109; measured live 2026-09-02
        00:5x-01:1x on the owner's tab under 3.0.107). Reviewed HPI, ROS and
        Physical Exam each verified and read back inside ~30s; "Write reviewed
