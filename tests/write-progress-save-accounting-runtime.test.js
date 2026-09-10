@@ -25,11 +25,13 @@ function extract(name) {
 }
 
 const SAVENAMED_ROW_ID = 'save-named-sections';
-const factory = new Function('S', 'SAVENAMED_ROW_ID', 'wfprogCounts', 'savenamedVerified', 'savenamedRow',
+const factory = new Function('S', 'SAVENAMED_ROW_ID', 'wfprogCounts', 'savenamedVerified', 'savenamedRow', 'savenamedNativeVerified', 'nativeNamedSectionPersistenceReady',
   extract('wfprogSaveStep') + '\n' + extract('wfprogFooterText') + '\nreturn wfprogFooterText;');
 const footer = factory(String, SAVENAMED_ROW_ID, () => ({}),
   state => !!state.saved,
-  state => state.hasSave ? { id: SAVENAMED_ROW_ID } : null);
+  state => state.hasSave ? { id: SAVENAMED_ROW_ID } : null,
+  state => !!state.native,
+  () => false);
 
 let checks = 0;
 function eq(actual, expected, message) { assert.strictEqual(actual, expected, message); checks++; }

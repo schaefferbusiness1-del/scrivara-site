@@ -767,16 +767,18 @@
             try { if (typeof opts.onResult === 'function') opts.onResult(resp, { action: action, context: lockedContext, verifiedWrite: null }); } catch (e1) {}
             return;
           }
-          actionSay(opts, 'The exact reviewed unsigned note was written and verified in this Athena encounter. It was not saved, signed, billed, ordered, or prescribed. Sign & Save is now available for this receipt only.', 'ok');
+          actionSay(opts, nativeSectionPersistenceResponse(resp)
+            ? 'The exact reviewed unsigned draft was written, persisted by Athena, and read back from this encounter. It was not signed, billed, ordered, or prescribed.'
+            : 'The exact reviewed unsigned note was written and verified in this Athena encounter. It was not saved, signed, billed, ordered, or prescribed. Sign & Save is now available for this receipt only.', 'ok');
           try { if (typeof opts.onVerifiedWrite === 'function') opts.onVerifiedWrite(writeReceipt); } catch (e2) {}
           try { if (typeof opts.onResult === 'function') opts.onResult(resp, { action: action, context: lockedContext, verifiedWrite: writeReceipt }); } catch (e3) {}
           return;
         }
         if (action === 'sign_encounter' && resp.signed !== true) { actionSay(opts, 'Athena did not confirm the encounter was signed. Check the open encounter; MLS is not marking it complete.', ''); try { if (typeof opts.onResult === 'function') opts.onResult(resp, { action: action, context: lockedContext, verifiedWrite: matchedWriteReceipt }); } catch (es) {} return; }
-        if (action === 'save_draft' && !(resp.saved === true || resp.persisted === true || resp.serverVerified === true || resp.verified === true)) { actionSay(opts, 'Athena returned from Save, but durable save verification was not reported. Check the open encounter; MLS is not marking it complete.', ''); try { if (typeof opts.onResult === 'function') opts.onResult(resp, { action: action, context: lockedContext, verifiedWrite: null }); } catch (ev) {} return; }
+        if (action === 'save_draft' && (S(resp.reason) === 'exact-section-persistence-reconciled' ? !nativeReconciledSaveResponse(resp) : !(resp.saved === true || resp.persisted === true || resp.serverVerified === true || resp.verified === true))) { actionSay(opts, S(resp.reason) === 'exact-section-persistence-reconciled' ? 'Athena did not return the complete five-section to four-destination persistence proof. Inspect the unsigned note before retrying; MLS did not press Save.' : 'Athena returned from Save, but durable save verification was not reported. Check the open encounter; MLS is not marking it complete.', ''); try { if (typeof opts.onResult === 'function') opts.onResult(resp, { action: action, context: lockedContext, verifiedWrite: null }); } catch (ev) {} return; }
         if (action === 'stage_billing' && !(resp.staged === true || resp.verified === true)) { actionSay(opts, 'Athena returned from billing staging, but no committed billing codes were verified. Review the billing slate; no claim was submitted.', ''); try { if (typeof opts.onResult === 'function') opts.onResult(resp, { action: action, context: lockedContext, verifiedWrite: null }); } catch (eb) {} return; }
         if (action === 'place_order' && !(resp.orderPlaced === true || resp.alreadyPresent === true) ) { actionSay(opts, 'Athena did not return an isolated exact-order verification. Inspect the Orders workspace before retrying; no other action ran.', 'err'); try { if (typeof opts.onResult === 'function') opts.onResult(resp, { action: action, context: lockedContext, verifiedWrite: null }); } catch (eo) {} return; }
-        actionSay(opts, action === 'stage_billing' ? ('Billing result verified in Athena. ' + (billingResultSummary(resp, payload) || 'All requested E/M and CPT/HCPCS codes were verified in the billing slate. No claim was submitted.')) : (action === 'place_order' ? (resp.alreadyPresent ? 'Athena verified this exact order was already present. Nothing was added and no other action ran.' : 'Athena verified exactly one reviewed order was placed. No Save, Sign, billing, prescription, or second order ran.') : (action === 'save_draft' ? 'Athena confirmed the exact reviewed encounter content was saved as a draft. It was not signed or billed.' : 'Athena confirmed the exact reviewed encounter was signed and saved. Billing was not submitted.')), 'ok');
+        actionSay(opts, action === 'stage_billing' ? ('Billing result verified in Athena. ' + (billingResultSummary(resp, payload) || 'All requested E/M and CPT/HCPCS codes were verified in the billing slate. No claim was submitted.')) : (action === 'place_order' ? (resp.alreadyPresent ? 'Athena verified this exact order was already present. Nothing was added and no other action ran.' : 'Athena verified exactly one reviewed order was placed. No Save, Sign, billing, prescription, or second order ran.') : (action === 'save_draft' ? (nativeReconciledSaveResponse(resp) ? SAVENAMED_NATIVE_VERIFIED_MSG : 'Athena confirmed the exact reviewed encounter content was saved as a draft. It was not signed or billed.') : 'Athena confirmed the exact reviewed encounter was signed and saved. Billing was not submitted.')), 'ok');
         try { if (typeof opts.onResult === 'function') opts.onResult(resp, { action: action, context: lockedContext, verifiedWrite: findVerifiedWrite(lockedPatient, previewHash, opts, payload, lockedContext) }); } catch (e4) {}
       });
     });
@@ -927,14 +929,14 @@
       with no reason at all. 'exact-save-control-context-verified' is the
       leg's VERIFIED code, not a refusal - it is listed here so a receipt can
       name it, and it deliberately has no WFCLAR entry (see that table). */
-   'duplicate-session encounter-mismatch exact-chart-match exact-note-editor-verified-unsaved ' +
-   'exact-save-control-context-verified extension-error forbidden-control frame-coverage-unverified ' +
+   'duplicate-session encounter-mismatch exact-chart-match exact-note-editor-persisted exact-note-editor-verified-unsaved ' +
+   'exact-save-control-context-verified exact-section-persistence-reconciled extension-error forbidden-control frame-coverage-unverified ' +
    'frame-generation-changed fresh-trusted-click-required goto-date-deadline-exceeded ' +
    'goto-date-relay-deadline-exceeded high-risk-order-blocked invalid-binding invalid-target-retry ' +
    'local-patient-id-required local-row-missing loopback-synthetic-only missing-order-fields missing-session ' +
    'mrn-adopted mrn-conflict name-not-found ' +
    'manual-only-final-action named-section-final-action-unsupported no-athena-tab no-chart-open no-name-match no-response no-results ' +
-   'not-persisted not-watching ' +
+   'native-persistence-request-ambiguous native-persistence-request-missing native-persistence-response-failed native-persistence-readback-mismatch not-persisted not-watching ' +
    'note-content-required note-destination-mismatch note-editor-not-empty note-editor-unreadable note-payload-mismatch ' +
    'note-section-count-mismatch note-section-not-on-surface note-section-payload-mismatch note-write-proof-expired note-write-proof-used ' +
    'note-write-unverified numeric-only-field-refused one-exact-order-isolated-readback-verified slate-paste-not-handled ' +
@@ -947,7 +949,7 @@
       refuse before anything is clicked, plus the read-back that never arrived. */
    'save-control-ambiguous save-control-not-active-surface save-control-not-found save-readback-missing ' +
    'schedule-date-missing-after-recovery schedule-date-restore-failed search-deadline-exceeded ' +
-   'session-expired sign-prerequisite-mismatch store-refused store-unavailable synthetic-local-only ' +
+   'section-persistence-proof-expired section-persistence-proof-mismatch section-persistence-proof-missing session-expired sign-prerequisite-mismatch store-refused store-unavailable synthetic-local-only ' +
    'taught-destination-binding-mismatch ' +
    'taught-destination-control-mismatch taught-destination-expired taught-destination-fingerprint-mismatch ' +
    'taught-destination-frame-mismatch taught-destination-invalid taught-destination-label-mismatch ' +
@@ -1219,6 +1221,10 @@
   var SAVENAMED_PILL_LABEL = 'ONE PRESS LEFT';
   var SAVENAMED_PILL_SHORT = 'Every checked section is in athenaOne. One press is left: MLS presses Save in this encounter for you and reads the save back. It never signs.';
   var SAVENAMED_DONE_SHORT = 'Every checked section is in athenaOne and MLS saved this encounter there and read the save back. Only Sign is left, and Sign stays your own click in athenaOne.';
+  var SAVENAMED_NATIVE_PRESS_LABEL = 'Verify saved unsigned note in Athena';
+  var SAVENAMED_NATIVE_WAITING_MSG = 'Every checked section was persisted and read back. This final read-only step reconciles the five reviewed sections with Athena\'s four saved destinations; it does not press Save and never signs.';
+  var SAVENAMED_NATIVE_VERIFIED_MSG = 'The five reviewed sections match Athena\'s four persisted destinations. The unsigned note is saved and verified; MLS did not press Save and did not sign or bill.';
+  var SAVENAMED_NATIVE_DONE_SHORT = 'Every checked section is saved in athenaOne and read back. MLS verified the five reviewed sections across Athena\'s four persisted destinations without pressing Save. Only Sign is left.';
   var SAVENAMED_BANNER_TAIL = ' MLS also saved this encounter in athenaOne and read the save back; only Sign is left, and Sign stays your own click.';
   var SAVENAMED_SUMMARY_SAVED = ' MLS saved the encounter in athenaOne and read the save back. Nothing was signed - Sign stays your own click in athenaOne.';
   var SAVENAMED_SUMMARY_UNSAVED = ' Nothing was signed. Sign stays your own click in athenaOne.';
@@ -1248,6 +1254,9 @@
        _mlsActionLabelMatches) - keep this phrase exact. */
     place_order: 'Confirm and place one reviewed order in Athena'
   };
+  function unifiedAriaFor(action) {
+    return action === 'save_draft' && nativeNamedSectionPersistenceReady() ? 'Verify saved unsigned note in Athena' : (UNIFIED_ARIA[action] || '');
+  }
 
   function deepFreeze(value) {
     if (!value || typeof value !== 'object' || Object.isFrozen(value)) return value;
@@ -1676,8 +1685,9 @@
          landed" - is the ROW'S OWN rule (savenamedArmed below), not a new
          control: this row carries no include checkbox, so bx-1.0.0 law is
          intact and write_note rows are still the only rows that get one. */
-      addRow({ id: SAVENAMED_ROW_ID, action: 'save_draft', kind: 'save', label: SAVENAMED_ROW_LABEL, destination: SAVENAMED_ROW_DESTINATION,
-        capability: commonBlock ? 'blocked' : 'ready', reason: commonBlock, consequence: SAVENAMED_ROW_CONSEQUENCE, payload: notePayload, order: UNIFIED_ORDER.save_draft });
+      var nativeNamedSave = nativeNamedSectionPersistenceReady();
+      addRow({ id: SAVENAMED_ROW_ID, action: 'save_draft', kind: 'save', label: nativeNamedSave ? 'Verify the saved unsigned note' : SAVENAMED_ROW_LABEL, destination: nativeNamedSave ? 'Athena encounter > persisted named note sections' : SAVENAMED_ROW_DESTINATION,
+        capability: commonBlock ? 'blocked' : 'ready', reason: commonBlock, consequence: nativeNamedSave ? 'MLS reconciles the five reviewed sections with Athena\'s four persisted destinations. This final check is read-only: it does not press Save and never signs or bills.' : SAVENAMED_ROW_CONSEQUENCE, payload: notePayload, order: UNIFIED_ORDER.save_draft });
       addRow({ id: 'sign-named-sections-manual', action: '', kind: 'sign', label: 'Sign & Save named sections in Athena', destination: 'Athena encounter > Sign & Save control',
         capability: 'manual', reason: namedFinalReason, consequence: 'Nothing is signed automatically from this row.', payload: notePayload, order: UNIFIED_ORDER.sign_encounter });
     }
@@ -2196,8 +2206,9 @@
       var queue = wfnextQueueRows(state), n = wfnextNoteRows(queue).length;
       if (!n) return '';
       var saving = queue.some(savenamedIsRow);
+      var nativeFinish = saving && nativeNamedSectionPersistenceReady();
       return 'One press writes all ' + n + ' checked section' + (n === 1 ? '' : 's') +
-        ', one at a time, each read back before the next' + (saving ? ', then saves the encounter.' : '.') +
+        ', one at a time, each read back before the next' + (saving ? (nativeFinish ? ', then verifies the saved unsigned note without pressing Save.' : ', then saves the encounter.') : '.') +
         (saving ? READYSAY_SAVE_TAIL : READYSAY_TAIL);
     } catch (e) { return ''; }
   }
@@ -2213,7 +2224,7 @@
         try { nextRow = wfnextRemainingRows(state)[0] || null; } catch (eR) { nextRow = null; }
         action = nextRow ? S(nextRow.action).trim() : '';
       }
-      var arm = UNIFIED_ARIA[action] || '';
+      var arm = unifiedAriaFor(action);
       var full = (arm ? arm + '. ' : '') + readysayButtonText(label, say);
       go.setAttribute('aria-label', full);
       go.title = full;
@@ -2242,7 +2253,7 @@
        part-way through a run reads PARTLY DONE with the next press named under
        it, rather than claiming a readiness it has not re-earned. */
     var nextNote = ''; try { nextNote = wfnextNote(state); } catch (eNext) {}
-    if (nextNote && out.label !== SAVENAMED_PILL_LABEL && out.label !== 'UNCERTAIN') out = { label: out.label, color: out.color, short: out.short + nextNote };
+    if (nextNote && out.label !== SAVENAMED_PILL_LABEL && out.label !== 'VERIFY SAVED NOTE' && out.label !== 'UNCERTAIN') out = { label: out.label, color: out.color, short: out.short + nextNote };
     if (WFAUTO_SKIP_LABELS[out.label] === 1) return out;
     var note = ''; try { note = wfautoNote(state); } catch (e) {}
     return note ? { label: out.label, color: out.color, short: out.short + note } : out;
@@ -2265,19 +2276,23 @@
           short: 'MLS is checking Athena read-only for ' + (batchRow ? batchRow.label : 'the next destination') + batchWhere + '. Nothing new is being sent during this check.' };
       }
       if (savenamedIsRow(batchRow)) {
-        return { label: 'SAVING DRAFT', color: '#204034',
-          short: 'MLS is pressing Save for this exact encounter' + batchWhere + ' and waiting for Athena to verify it. It never signs.' };
+        return savenamedNativeSectionsPersisted(state)
+          ? { label: 'VERIFYING SAVED NOTE', color: '#204034', short: 'MLS is reconciling the persisted section receipts for this exact encounter' + batchWhere + '. This is read-only; it does not press Save and never signs.' }
+          : { label: 'SAVING DRAFT', color: '#204034', short: 'MLS is pressing Save for this exact encounter' + batchWhere + ' and waiting for Athena to verify it. It never signs.' };
       }
-      return { label: 'SENDING', color: '#204034',
-        short: 'MLS is writing ' + (batchRow ? batchRow.label : 'the reviewed text') + ' into its exact Athena field' + batchWhere + '. It has not saved or signed the encounter.' };
+      return nativeNamedSectionPersistenceReady()
+        ? { label: 'WRITING DRAFT', color: '#204034', short: 'MLS is writing and verifying ' + (batchRow ? batchRow.label : 'the reviewed text') + ' in its exact Athena field' + batchWhere + '. Athena persists this unsigned field as it is written; MLS never signs.' }
+        : { label: 'SENDING', color: '#204034', short: 'MLS is writing ' + (batchRow ? batchRow.label : 'the reviewed text') + ' into its exact Athena field' + batchWhere + '. It has not saved or signed the encounter.' };
     }
     if (state.running) {
       if (savenamedIsRow(unifiedRow(state.manifest, state.selectedRowId))) {
-        return { label: 'SAVING DRAFT', color: '#204034',
-          short: 'MLS is saving this exact encounter and waiting for Athena to verify the result. It never signs.' };
+        return savenamedNativeSectionsPersisted(state)
+          ? { label: 'VERIFYING SAVED NOTE', color: '#204034', short: 'MLS is reconciling the persisted section receipts for this exact encounter. This is read-only; it does not press Save and never signs.' }
+          : { label: 'SAVING DRAFT', color: '#204034', short: 'MLS is saving this exact encounter and waiting for Athena to verify the result. It never signs.' };
       }
-      return { label: 'SENDING', color: '#204034',
-        short: 'MLS is writing the reviewed text into the exact Athena field. It never saves and never signs.' };
+      return nativeNamedSectionPersistenceReady()
+        ? { label: 'WRITING DRAFT', color: '#204034', short: 'MLS is writing and verifying the reviewed unsigned draft in the exact Athena field. Athena persists the field as it is written; MLS never signs.' }
+        : { label: 'SENDING', color: '#204034', short: 'MLS is writing the reviewed text into the exact Athena field. It never saves and never signs.' };
     }
     var n = sheetclarInAthena(state);
     /* owner 2026-08-31: after Done, Save / Sign must be unmissable as THE next
@@ -2292,8 +2307,10 @@
          stays his own click - as the only thing left. A review with no save
          row at all (a generic encounter note, an op note) keeps the old
          sentence byte for byte. */
-      if (savenamedOwedRow(state)) return { label: SAVENAMED_PILL_LABEL, color: '#6d5010', short: SAVENAMED_PILL_SHORT };
-      if (savenamedVerified(state)) return { label: 'DONE', color: '#205c43', short: SAVENAMED_DONE_SHORT };
+      if (savenamedOwedRow(state)) return savenamedNativeSectionsPersisted(state)
+        ? { label: 'VERIFY SAVED NOTE', color: '#6d5010', short: SAVENAMED_NATIVE_WAITING_MSG }
+        : { label: SAVENAMED_PILL_LABEL, color: '#6d5010', short: SAVENAMED_PILL_SHORT };
+      if (savenamedVerified(state)) return { label: 'DONE', color: '#205c43', short: savenamedNativeVerified(state) ? SAVENAMED_NATIVE_DONE_SHORT : SAVENAMED_DONE_SHORT };
       return { label: 'DONE', color: '#205c43',
         short: 'Now do the last step yourself in athenaOne: Save, then Sign. MLS never saves and never signs.' };
     }
@@ -2342,7 +2359,9 @@
       var svRiding = !probeOnlyActive() && !savenamedIsRow(readyRow) && !!savenamedOwedRow(state);
       if (svRiding) {
         return { label: 'READY', color: '#205c43',
-          short: 'One click on Confirm & Send runs ' + S(readyRow.label) + ', then MLS saves the encounter in athenaOne. Nothing else: no signature, no billing, no orders.' };
+          short: 'One click on Confirm & Send runs ' + S(readyRow.label) + (nativeNamedSectionPersistenceReady()
+            ? ', then MLS verifies the saved unsigned note from Athena\'s persisted fields without pressing Save.'
+            : ', then MLS saves the encounter in athenaOne.') + ' Nothing else: no signature, no billing, no orders.' };
       }
       return { label: probeOnlyActive() ? 'READY (PROBE ONLY)' : 'READY', color: '#205c43',
         short: 'One click on Confirm & Send runs only ' + S(readyRow.label) + '. Nothing else' +
@@ -2576,12 +2595,16 @@
   var WFNEXT_DEFERRED_MSG = 'This section did not answer twice, so MLS moved it to the end of the list and is writing the other checked sections first. It is still checked and still owed - your presses come back to it.';
   var WFNEXT_DEFERRED_CLAUSE = ' One section was moved to the end after it did not answer twice; MLS is writing the others first and comes back to it.';
   var wfnextBatchArmSeen = false;
+  var wfNativeNamedPersistenceSeen = false;
+  var wfCapabilityPongSeen = false;
   /* READ-ONLY CAPABILITY DETECTION. The extension pongs on its own heartbeat,
      so listening costs nothing and no new traffic; the one ping below only
      shortens the wait on a sheet opened between beats. */
   function wfnextReadPong(d) {
     try {
       if (!d || d.source !== 'mls-ext' || d.type !== 'mlsPong') return false;
+      wfCapabilityPongSeen = true;
+      if (d.capabilities && d.capabilities.nativeNamedSectionPersistenceV1 === true) wfNativeNamedPersistenceSeen = true;
       if (S(d.batchArm).trim() || (d.capabilities && d.capabilities.batchArmV1 === true)) { wfnextBatchArmSeen = true; return true; }
     } catch (e) {}
     return false;
@@ -2592,11 +2615,16 @@
     try { if (window.__mlsExtensionCapabilities && window.__mlsExtensionCapabilities.batchArmV1 === true) return true; } catch (e) {}
     return false;
   }
+  function nativeNamedSectionPersistenceReady() {
+    if (wfNativeNamedPersistenceSeen) return true;
+    try { if (window.__mlsExtensionCapabilities && window.__mlsExtensionCapabilities.nativeNamedSectionPersistenceV1 === true) return true; } catch (e) {}
+    return false;
+  }
   function wfnextAskCapability(state) {
-    if (wfnextBatchArmSeen) return;
+    if (wfCapabilityPongSeen) return;
     try {
       bridge('mlsPing', null, 'mlsPong', 3500).then(function (pong) {
-        if (!wfnextReadPong(pong)) return;
+        wfnextReadPong(pong);
         try { if (state && !state.closed && unifiedAthenaState === state) wfnextPaintPrimary(state); } catch (e) {}
       });
     } catch (e2) {}
@@ -2641,6 +2669,48 @@
     } catch (e) { return null; }
   }
   function savenamedIsRow(row) { return !!(row && row.id === SAVENAMED_ROW_ID && row.action === 'save_draft'); }
+  function nativeSectionPersistenceResponse(resp) {
+    var results = resp && Array.isArray(resp.results) ? resp.results.filter(function (row) { return !row || row.execute !== false; }) : [];
+    return !!(resp && resp.ok === true && resp.attempted === true && resp.written === true && resp.verified === true && resp.saved === true && resp.persisted === true && resp.serverVerified === true && S(resp.reason) === 'exact-note-editor-persisted' && results.length && results.every(function (row) { return row && row.attempted === true && row.written === true && row.verified === true && row.saved === true && row.persisted === true && row.serverVerified === true; }));
+  }
+  function nativeReconciledSaveResponse(resp) {
+    return !!(resp && resp.ok === true && resp.saved === true && resp.persisted === true && S(resp.reason) === 'exact-section-persistence-reconciled' && Number(resp.sectionsDeclared) === 5 && Number(resp.persistedDestinations) === 4);
+  }
+  function nativePersistedReceipt(state, row) {
+    try {
+      var rec = (state.receipts && state.receipts[row.id]) || sectionLedger[ledgerKey(state, row.id)];
+      return !!(rec && rec.status === 'verified' && rec.persistenceMode === 'native-section');
+    } catch (e) { return false; }
+  }
+  function savenamedNativeSectionsPersisted(state) {
+    try {
+      var notes = bxCheckedRows(state) || [];
+      if (!notes.length || !savenamedSectionsLanded(state)) return false;
+      return notes.every(function (row) {
+        if (nativePersistedReceipt(state, row)) return true;
+        var covered = apCovered(state, row), group = apGroupKind(row);
+        if (covered === APCOVER_BY_COMBINED) {
+          return state.manifest.rows.some(function (candidate) { return apGroupKind(candidate) === 'assessment_and_plan' && nativePersistedReceipt(state, candidate); });
+        }
+        if (covered === APCOVER_BY_SEPARATE && group === 'assessment_and_plan') {
+          var a = false, p = false;
+          state.manifest.rows.forEach(function (candidate) {
+            var kind = apGroupKind(candidate);
+            if (kind === 'assessment' && nativePersistedReceipt(state, candidate)) a = true;
+            if (kind === 'plan' && nativePersistedReceipt(state, candidate)) p = true;
+          });
+          return a && p;
+        }
+        return false;
+      });
+    } catch (e) { return false; }
+  }
+  function savenamedNativeVerified(state) {
+    try {
+      var row = savenamedRow(state), rec = row && ((state.receipts && state.receipts[row.id]) || sectionLedger[ledgerKey(state, row.id)]);
+      return !!(rec && rec.status === 'verified' && rec.persistenceMode === 'native-reconciled');
+    } catch (e) { return false; }
+  }
   function unifiedUncertainReceipt(state) {
     try {
       var rows = (state && state.manifest && state.manifest.rows) || [];
@@ -2724,11 +2794,18 @@
       sectionRefused + ' not sent, ' + sectionPending + ' still to go.';
     var save = wfprogSaveStep(state), saveText = '';
     if (save) {
-      if (save.phase === 'done' || save.phase === 'already') saveText = ' Encounter saved and read back. MLS never signs.';
+      if (save.phase === 'done' || save.phase === 'already' || save.phase === 'verified') saveText = savenamedNativeVerified(state)
+        ? ' Saved unsigned note verified from persisted section receipts; MLS did not press Save and never signs.'
+        : ' Encounter saved and read back. MLS never signs.';
       else if (save.phase === 'refused' || save.phase === 'timeout' || save.phase === 'skipped') saveText = ' Encounter save was not verified. Inspect Athena before retrying. MLS never signs.';
+      else if (save.phase === 'verify') saveText = ' Saved-note receipt verification is in progress. This is read-only; MLS does not press Save and never signs.';
       else if (save.phase === 'check' || save.phase === 'write') saveText = ' Encounter save is in progress. MLS never signs.';
-      else saveText = ' After the checked sections are verified, this same Confirm saves the encounter. MLS never signs.';
-    } else if (savenamedVerified(state)) saveText = ' Encounter saved and read back. MLS never signs.';
+      else saveText = nativeNamedSectionPersistenceReady()
+        ? ' After the checked sections are persisted, this same Confirm runs a read-only saved-note verification. MLS does not press Save and never signs.'
+        : ' After the checked sections are verified, this same Confirm saves the encounter. MLS never signs.';
+    } else if (savenamedVerified(state)) saveText = savenamedNativeVerified(state)
+      ? ' Saved unsigned note verified from persisted section receipts; MLS did not press Save and never signs.'
+      : ' Encounter saved and read back. MLS never signs.';
     else if (savenamedRow(state)) saveText = ' The encounter save remains a separate Confirm step. MLS never signs.';
     else saveText = ' MLS never saves or signs.';
     return sectionText + saveText;
@@ -2834,11 +2911,11 @@
     var next = remaining[0];
     /* savenamed-app-1.0.0: the save is the last press of the review, and when
        it is the only thing left the button says exactly what it does. */
-    if (savenamedIsRow(next)) return SAVENAMED_PRESS_LABEL;
+    if (savenamedIsRow(next)) return savenamedNativeSectionsPersisted(state) ? SAVENAMED_NATIVE_PRESS_LABEL : SAVENAMED_PRESS_LABEL;
     /* the "N sections" numbers count SECTIONS; the save press is named by its
        own clause instead of being counted as one. */
     var total = wfnextNoteRows(checked).length, left = wfnextNoteRows(remaining).length;
-    var saveTail = remaining.length > left ? SAVENAMED_LABEL_TAIL : '';
+    var saveTail = remaining.length > left ? (nativeNamedSectionPersistenceReady() ? ', then verify the saved unsigned note' : SAVENAMED_LABEL_TAIL) : '';
     if (wfnextBatchArmReady() && remaining.length > 1) {
       return 'Confirm & write all ' + left + ', starting with ' + wfnextShortName(next) + saveTail;
     }
@@ -2860,11 +2937,14 @@
     }
     /* every section landed and only the save is owed - one press, said plainly */
     if (saveLeft && !left) {
-      return 'All ' + total + ' checked section' + (total === 1 ? ' is' : 's are') + ' in Athena and verified. ' + SAVENAMED_ONE_PRESS_LEFT;
+      return 'All ' + total + ' checked section' + (total === 1 ? ' is' : 's are') + ' in Athena and verified. ' +
+        (savenamedNativeSectionsPersisted(state) ? 'One read-only verification is left: MLS reconciles the saved section receipts without pressing Save. Sign stays your own click.' : SAVENAMED_ONE_PRESS_LEFT);
     }
     /* sections still owed AND the save owed is only ever the batch lane, where
        one press writes them and then saves - so it is said as one press. */
-    var saveClause = saveLeft ? SAVENAMED_UPFRONT_TAIL : '';
+    var saveClause = saveLeft ? (nativeNamedSectionPersistenceReady()
+      ? ' Athena persists each modern section as it is written; the same press then verifies the complete saved unsigned note without pressing Save. Sign stays your own click.'
+      : SAVENAMED_UPFRONT_TAIL) : '';
     if (total === 1) return 'One section checked - one press writes it, and MLS reads it back before it says so.' + saveClause;
     /* wfstarve-1.0.0: one appended clause, and ONLY when a checked section has
        actually been moved to the back - the sentences above are unchanged in
@@ -2887,7 +2967,9 @@
       var total = wfnextNoteRows(checked).length, left = wfnextNoteRows(remaining).length;
       if (!checked.length || !remaining.length || checked.length === remaining.length) return '';
       /* savenamed-app-1.0.0: the save is the last press and it is not a section */
-      if (savenamedIsRow(remaining[0])) return SAVENAMED_PILL_NOTE;
+      if (savenamedIsRow(remaining[0])) return savenamedNativeSectionsPersisted(state)
+        ? ' One read-only verification is left: MLS reconciles the saved section receipts without pressing Save. Nothing runs until you press.'
+        : SAVENAMED_PILL_NOTE;
       /* wfstarve-1.0.0: same one clause, same condition, so the pill sentence
          and the up-front sentence can never disagree about the deferral. */
       var deferClause = wfnextAnyDeferred(state, remaining) ? WFNEXT_DEFERRED_CLAUSE : '';
@@ -2981,11 +3063,11 @@
        just pressed, and the sheet is wedged for good. A probe that refused, or
        one that never answered, still leaves this null. */
     var next = (armNext === true && (wfnextLandedCount(state) > 0 || wfnextCheckPassedFor(state, remaining[0]))) ? (remaining[0] || null) : null;
-    if (next && !go.getAttribute('data-mls-primary-blocked') && ATHENA_EXECUTABLE_ACTIONS[next.action] && UNIFIED_ARIA[next.action]) {
+    if (next && !go.getAttribute('data-mls-primary-blocked') && ATHENA_EXECUTABLE_ACTIONS[next.action] && unifiedAriaFor(next.action)) {
       try {
         go.setAttribute('data-mls-athena-action', next.action);
         go.setAttribute('data-mls-preview-hash', state.manifest.previewHash);
-        go.setAttribute('aria-label', UNIFIED_ARIA[next.action]);
+        go.setAttribute('aria-label', unifiedAriaFor(next.action));
       } catch (eArm) {}
     }
     wfnextPaintBatchAttrs(state, go, remaining);
@@ -3104,7 +3186,7 @@
   var WFAUTO_WAKE_DEBOUNCE_MS = 5000;
   var WFAUTO_MAX_PAINT = 5;
   var WFAUTO_MAX_SETTLED = 3;          /* owner: "max a few automatic re-probes" */
-  var WFAUTO_SKIP_LABELS = { SENDING: 1, DONE: 1, READY: 1, 'READY (PROBE ONLY)': 1 };
+  var WFAUTO_SKIP_LABELS = { SENDING: 1, 'WRITING DRAFT': 1, 'VERIFYING SAVED NOTE': 1, DONE: 1, READY: 1, 'READY (PROBE ONLY)': 1 };
   var wfautoOff = false;
   function wfautoClearTimer(state) {
     var a = state && state.wfauto;
@@ -4163,7 +4245,7 @@
         go.disabled = false; go.setAttribute('aria-disabled', 'false');
         go.textContent = probeOnlyActive() ? 'Confirm (PROBE ONLY — nothing is written)' : (row.action === 'save_draft' ? 'Confirm & Save draft in Athena' : 'Confirm & Send to Athena');
         go.setAttribute('data-mls-athena-action', row.action);
-        go.setAttribute('data-mls-preview-hash', state.manifest.previewHash); go.setAttribute('aria-label', UNIFIED_ARIA[row.action]); go.title = UNIFIED_ARIA[row.action] + '. Runs only this selected action.';
+        go.setAttribute('data-mls-preview-hash', state.manifest.previewHash); go.setAttribute('aria-label', unifiedAriaFor(row.action)); go.title = unifiedAriaFor(row.action) + '. Runs only this selected action.';
         if (row.action === 'place_order') { go.setAttribute('data-mls-row-hash', row.rowHash); go.setAttribute('data-mls-client-order-id', probedClientOrderId); }
       }
       setUnifiedReadyTick(row.id);
@@ -4279,7 +4361,7 @@
   function savenamedRowState(state, row) {
     var rec = (state.receipts && state.receipts[row.id]) || sectionLedger[ledgerKey(state, row.id)];
     if (rec) {
-      if (rec.status === 'verified') return { status: 'verified', message: SAVENAMED_VERIFIED_MSG };
+      if (rec.status === 'verified') return { status: 'verified', message: rec.persistenceMode === 'native-reconciled' ? SAVENAMED_NATIVE_VERIFIED_MSG : SAVENAMED_VERIFIED_MSG };
       if (rec.status === 'uncertain') return rec;
       if (rec.status === 'needs save') return rec;
       return { status: SAVENAMED_NOT_SENT, message: S(rec.message) || 'Athena refused the encounter save; nothing was saved.' };
@@ -4287,7 +4369,7 @@
     var att = rowAttempt(state, row.id);
     if (att) return att;
     return savenamedArmed(state)
-      ? { status: 'waiting for your press', message: SAVENAMED_WAITING_MSG }
+      ? { status: 'waiting for your press', message: savenamedNativeSectionsPersisted(state) ? SAVENAMED_NATIVE_WAITING_MSG : SAVENAMED_WAITING_MSG }
       : { status: 'waiting for your press', message: SAVENAMED_OWED_MSG };
   }
   function receiptStateForRow(state, row) {
@@ -4422,7 +4504,7 @@
     var nb = sheetclarInAthena(state), nbSaveOwed = savenamedOwedRow(state), nbSavePresent = !!savenamedRow(state);
     var banner = (nb.total && nb.landed === nb.total && !nbSaveOwed && (!nbSavePresent || savenamedVerified(state)))
       ? '<div style="border:1px solid #bfe0cf;background:#eef7f2;color:#205c43;border-radius:10px;padding:10px 12px;margin-bottom:8px;font-weight:800">&#10003; Everything on this review is in Athena — ' + nb.landed + ' of ' + nb.total + ' note sections verified.' +
-        (savenamedVerified(state) ? SAVENAMED_BANNER_TAIL : ' Nothing was saved or signed; finish Save / Sign in Athena yourself.') + '</div>'
+        (savenamedVerified(state) ? (savenamedNativeVerified(state) ? ' The unsigned note is saved and verified from Athena\'s persisted section receipts; MLS did not press Save. Nothing was signed.' : SAVENAMED_BANNER_TAIL) : ' Nothing was saved or signed; finish Save / Sign in Athena yourself.') + '</div>'
       : '';
     /* apsel-1.0.0: observation only - a landed A/P row teaches which shape this
        surface has, for the NEXT sheet's arrival tick. It writes no receipt,
@@ -4462,7 +4544,7 @@
         /* savenamed-app-1.0.0: the same fact, kept true. A review whose save has
            landed may not be told nothing was saved. */
         '<div style="margin-top:6px;color:#3d5147">Athena read each of these back from the exact field after the write. ' +
-        (savenamedVerified(state) ? 'MLS then saved the encounter in athenaOne and read the save back. Nothing was signed.' : 'Nothing was saved and nothing was signed.') + '</div>' +
+        (savenamedVerified(state) ? (savenamedNativeVerified(state) ? 'Athena persisted each field and MLS reconciled the saved unsigned note without pressing Save. Nothing was signed.' : 'MLS then saved the encounter in athenaOne and read the save back. Nothing was signed.') : (savenamedNativeSectionsPersisted(state) ? 'Athena persisted these unsigned fields as they were written. Complete saved-note verification is still owed; nothing was signed.' : 'Nothing was saved and nothing was signed.')) + '</div>' +
         (S(state.manifest.visit.encounterUrl).trim()
           ? '<div style="margin-top:7px"><a href="' + esc(S(state.manifest.visit.encounterUrl).trim()) + '" target="_blank" rel="noopener" style="color:#204034;font-weight:800">Open this encounter in athenaOne</a></div>'
           : '') + '</div>'
@@ -4525,7 +4607,7 @@
     } catch (eFoot) {}
   }
   function resultToUnifiedReceipt(state, row, resp, probe) {
-    resp = resp || {}; var status = 'blocked', message = '', verifiedWrite = null;
+    resp = resp || {}; var status = 'blocked', message = '', verifiedWrite = null, persistenceMode = '';
     var attempted = resp.attempted === true || resp.partialMutation === true || resp.reason === 'outcome-uncertain';
     if (resp.__timeout) { status = 'uncertain'; message = 'No completion response arrived. Athena may already have changed. Inspect the exact destination before any retry; no other action ran.'; }
     else if (row.action === 'stage_billing' && (resp.partialMutation === true || ((resp.stagedCodes || []).length && resp.ok !== true))) { status = 'uncertain'; message = billingResultSummary(resp, row.payload) || 'Billing was partially changed or not fully verified. Inspect the billing slate before retrying.'; }
@@ -4535,19 +4617,25 @@
          words. An ATTEMPTED outcome keeps the extension's exact sentence and
          its uncertain status - nothing about a partial mutation is ever
          paraphrased. */
-      var execClar = attempted ? null : wfClarify(resp.reason);
-      message = execClar ? wfClarityText(execClar, row) : (S(resp.error || resp.message || resp.reason) || 'Athena refused the selected action. No other action ran.');
+      var nativeFailure = nativePersistenceFailureMessage(resp);
+      var execClar = attempted || nativeFailure ? null : wfClarify(resp.reason);
+      message = nativeFailure || (execClar ? wfClarityText(execClar, row) : (S(resp.error || resp.message || resp.reason) || 'Athena refused the selected action. No other action ran.'));
     }
     else if (row.action === 'write_note') {
       verifiedWrite = resp.attempted === true ? rememberVerifiedWrite(probe.patient, state.manifest.previewHash, { receiptSessionId: state.manifest.receiptSessionId }, row.payload, probe.context, resp) : null;
       status = verifiedWrite ? 'verified' : 'uncertain';
-      message = verifiedWrite ? 'Inserted into the exact Athena field and read back successfully. It has not been saved or signed. Save, Sign, billing, orders, and prescriptions did not run.' : 'Athena did not return a verified exact-field insertion receipt. Inspect the field before retrying; Sign remains locked.';
+      if (verifiedWrite && nativeSectionPersistenceResponse(resp)) persistenceMode = 'native-section';
+      message = verifiedWrite ? (persistenceMode === 'native-section'
+        ? 'Written to the exact Athena field, persisted by Athena, and read back successfully. This unsigned draft section is saved; nothing was signed, billed, ordered, or prescribed.'
+        : 'Inserted into the exact Athena field and read back successfully. It has not been saved or signed. Save, Sign, billing, orders, and prescriptions did not run.') : 'Athena did not return a verified exact-field insertion receipt. Inspect the field before retrying; Sign remains locked.';
     } else if (row.action === 'stage_billing') {
       status = (resp.staged === true || resp.verified === true) ? 'verified' : 'uncertain';
       message = status === 'verified' ? (billingResultSummary(resp, row.payload) || 'The exact E/M and CPT/HCPCS codes were verified in the billing slate. No claim was submitted.') : 'Athena did not durably verify the billing result. Inspect the billing slate before retrying.';
     } else if (row.action === 'save_draft') {
-      status = (resp.saved === true || resp.persisted === true || resp.serverVerified === true || resp.verified === true) ? 'verified' : 'uncertain';
-      message = status === 'verified' ? 'Athena verified Save / Save Draft for the exact encounter. It was not signed or billed.' : 'Athena returned from Save without durable verification. Inspect the encounter before retrying.';
+      var nativeReconciled = nativeReconciledSaveResponse(resp);
+      if (nativeReconciled) persistenceMode = 'native-reconciled';
+      status = (nativeReconciled || (S(resp.reason) !== 'exact-section-persistence-reconciled' && (resp.saved === true || resp.persisted === true || resp.serverVerified === true || resp.verified === true))) ? 'verified' : 'uncertain';
+      message = status === 'verified' ? (nativeReconciled ? SAVENAMED_NATIVE_VERIFIED_MSG : 'Athena verified Save / Save Draft for the exact encounter. It was not signed or billed.') : (S(resp.reason) === 'exact-section-persistence-reconciled' ? 'Athena did not return the complete five-section to four-destination persistence proof. Inspect the unsigned note before retrying; MLS did not press Save.' : 'Athena returned from Save without durable verification. Inspect the encounter before retrying.');
     } else if (row.action === 'sign_encounter') {
       status = resp.signed === true ? 'verified' : 'uncertain';
       message = status === 'verified' ? 'Athena confirmed the exact encounter was signed and saved. Billing was not submitted.' : 'Athena did not verify the electronic signature. Inspect the encounter; MLS will not retry or auto-chain.';
@@ -4559,11 +4647,19 @@
        the chart it acted on, alongside the intended patient id. A twin or a
        name+DOB collision is then legible in the receipt itself rather than
        being confirmed by the parameters we happened to send. */
-    var receipt = deepFreeze({ rowId: row.id, action: row.action, status: status, message: message, patientId: S(state.manifest.patient && state.manifest.patient.patientId).trim(), responseIdentity: stableClone((probe && probe.responseIdentity) || null), manifestHash: state.manifest.manifestHash, rowHash: row.rowHash, context: stableClone(probe && probe.context), completedAt: new Date().toISOString() });
+    var receipt = deepFreeze({ rowId: row.id, action: row.action, status: status, message: message, persistenceMode: persistenceMode, saved: resp.saved === true, persisted: resp.persisted === true, serverVerified: resp.serverVerified === true, reason: S(resp.reason), patientId: S(state.manifest.patient && state.manifest.patient.patientId).trim(), responseIdentity: stableClone((probe && probe.responseIdentity) || null), manifestHash: state.manifest.manifestHash, rowHash: row.rowHash, context: stableClone(probe && probe.context), completedAt: new Date().toISOString() });
     state.receipts[row.id] = receipt;
     rememberRowOutcome(state, row.id, receipt); /* wfsum-1.0.0: survives sheet reopens */
     if (status === 'uncertain') state.halted = true;
     return receipt;
+  }
+  function nativePersistenceFailureMessage(resp) {
+    var reason = S(resp && resp.reason);
+    if (/^native-persistence-(?:request-missing|request-ambiguous|response-failed|readback-mismatch)$/.test(reason))
+      return 'Athena did not provide one exact persistence and read-back proof for this unsigned draft section. Inspect this exact field before any retry; MLS will not retry automatically.';
+    if (/^section-persistence-proof-(?:missing|mismatch|expired)$/.test(reason))
+      return 'The unsigned sections were persisted, but MLS could not reconcile all five reviewed sections with Athena\'s four saved destinations. Inspect the saved note before retrying. This verification step was read-only and did not press Save.';
+    return '';
   }
   /* ===== wfprog-1.0.0 (owner 2026-08-27: "make it easy and simple with a good
      loading bar") ===========================================================
@@ -4586,7 +4682,9 @@
     wait: { label: 'waiting', color: '#52675c' },
     check: { label: 'checking Athena', color: '#6d5010' },
     write: { label: 'writing', color: '#6d5010' },
+    verify: { label: 'verifying saved note', color: '#6d5010' },
     done: { label: 'written', color: '#205c43' },
+    verified: { label: 'verified', color: '#205c43' },
     already: { label: 'already in Athena', color: '#205c43' },
     refused: { label: 'not sent', color: '#8b2525' },
     timeout: { label: 'timed out', color: '#8b2525' },
@@ -4708,7 +4806,7 @@
       rememberRowAttempt(state, rowId, prev === 'write' ? WFATT_WRITE_TIMEOUT : WFATT_CHECK_TIMEOUT,
         prev === 'write' ? WFATT_WRITE_TIMEOUT_MSG : WFATT_CHECK_TIMEOUT_MSG);
     }
-    if (phase === 'check' || phase === 'write') state.prog.secs = 0;
+    if (phase === 'check' || phase === 'write' || phase === 'verify') state.prog.secs = 0;
     wfprogPaint(state);
   }
   function wfprogTick(state, secs) {
@@ -4726,7 +4824,7 @@
     var p = state && state.prog; if (!p) return out;
     out.total = p.rows.length;
     p.rows.forEach(function (r) {
-      if (r.phase === 'done' || r.phase === 'already') out.written++;
+      if (r.phase === 'done' || r.phase === 'already' || r.phase === 'verified') out.written++;
       else if (r.phase === 'refused' || r.phase === 'timeout' || r.phase === 'skipped') out.refused++;
       else out.pending++;
     });
@@ -4755,14 +4853,14 @@
     if (p.done) return S(p.summary);
     for (var i = 0; i < p.rows.length; i++) {
       var r = p.rows[i];
-      if (r.phase !== 'check' && r.phase !== 'write') continue;
+      if (r.phase !== 'check' && r.phase !== 'write' && r.phase !== 'verify') continue;
       /* wfscope-1.0.0: "2 of 6", counted over the review the doctor checked,
          not over the one-section queue this press was handed. Identical to the
          old bytes whenever the scope IS the queue (scopeDone 0, scopeTotal ===
          p.total), which is every batch-arm run and every single-section
          review. */
       var at = (Number(p.scopeDone) || 0) + i + 1, of = Number(p.scopeTotal) || p.total;
-      return (r.phase === 'write' ? 'Writing ' : 'Checking Athena for ') + at + ' of ' + of +
+      return (r.phase === 'write' ? 'Writing ' : (r.phase === 'verify' ? 'Verifying saved note ' : 'Checking Athena for ')) + at + ' of ' + of +
         ' - ' + r.label + (p.secs ? ' (' + p.secs + 's)' : '') + (r.phase === 'write' ? '' : ' - nothing sent yet');
     }
     var unit = wfprogSaveStep(state) ? 'step' : 'section';
@@ -4842,7 +4940,7 @@
     var savedNow = false, hasSaveRow = false;
     try { savedNow = savenamedVerified(state); hasSaveRow = !!savenamedRow(state); } catch (eSv) { savedNow = false; hasSaveRow = false; }
     var tail = (stopMsg ? ' ' + stopMsg : '') +
-      (savedNow ? SAVENAMED_SUMMARY_SAVED : (hasSaveRow ? SAVENAMED_SUMMARY_UNSAVED : ' Nothing was saved or signed; finish Save / Sign in Athena yourself.'));
+      (savedNow ? (savenamedNativeVerified(state) ? ' Athena persisted the unsigned note fields and MLS verified the complete saved note without pressing Save. Nothing was signed.' : SAVENAMED_SUMMARY_SAVED) : (hasSaveRow ? SAVENAMED_SUMMARY_UNSAVED : ' Nothing was saved or signed; finish Save / Sign in Athena yourself.'));
     /* wfscope-1.0.0: the word "Done" belongs to the REVIEW, not to the queue.
        If checked sections of this review still have no verified receipt and
        were not on this press, say so and count over the review. Wrapped because
@@ -4889,12 +4987,13 @@
     /* wfsum-1.0.0 loading bar: the owner watched "Working…" for up to 40s with
        no sign of life. Tick the elapsed seconds on the button itself and fill
        it left-to-right (capped at 95% - only the receipt claims completion). */
-    var wfsumT0 = Date.now(), wfsumVerb = probeOnlyActive() ? 'Checking (probe only)' : (row.action === 'save_draft' ? 'Saving draft in Athena' : 'Writing to Athena');
+    var nativeSaveVerify = row.action === 'save_draft' && savenamedNativeSectionsPersisted(state);
+    var wfsumT0 = Date.now(), wfsumVerb = probeOnlyActive() ? 'Checking (probe only)' : (row.action === 'save_draft' ? (nativeSaveVerify ? 'Verifying saved note in Athena' : 'Saving draft in Athena') : 'Writing to Athena');
     /* wfprog-1.0.0: inside a batch the driver owns the button's N-of-M label,
        so the tick must not overwrite it - it decorates that label instead. A
        lone press starts its own one-section progress surface. */
     if (!state.batchRunning) wfprogStart(state, [row], false);
-    wfprogPhase(state, row.id, 'write');
+    wfprogPhase(state, row.id, nativeSaveVerify ? 'verify' : 'write');
     var wfsumTick = setInterval(function () {
       try {
         if (state.closed || unifiedAthenaState !== state || !state.running) { clearInterval(wfsumTick); return; }
@@ -4967,7 +5066,7 @@
       var receipt = resultToUnifiedReceipt(state, row, resp || {}, completedProbe);
       /* wfprog-1.0.0: the per-section verdict comes from the receipt the line
          above minted, never from having reached this callback. */
-      wfprogPhase(state, row.id, receipt.status === 'verified' ? 'done' : 'refused');
+      wfprogPhase(state, row.id, receipt.status === 'verified' ? (receipt.persistenceMode === 'native-reconciled' ? 'verified' : 'done') : 'refused');
       if (!state.batchRunning) wfprogFinish(state, wfprogSummaryText(state, [row], state.halted ? 'This review is halted on an uncertain outcome.' : ''));
       state.probe = null;
       renderUnifiedReceipts(state);
@@ -5422,9 +5521,10 @@
           else wfprogPhase(state, row.id, 'refused');
           skipped.push(row.label); step(i + 1); return;
         }
-        state.batchLabel = 'Writing ' + (i + 1) + ' of ' + rows.length;
+        var nativeSaveVerify = savenamedIsRow(row) && savenamedNativeSectionsPersisted(state);
+        state.batchLabel = (nativeSaveVerify ? 'Verifying saved note ' : 'Writing ') + (i + 1) + ' of ' + rows.length;
         if (btn) btn.textContent = state.batchLabel + '...';
-        wfprogPhase(state, row.id, 'write');
+        wfprogPhase(state, row.id, nativeSaveVerify ? 'verify' : 'write');
         executeUnifiedSelection(state);
         bxWait(function () {
           if (state.closed || unifiedAthenaState !== state) return true;
@@ -6791,7 +6891,7 @@
     /* sheetux-1.0.0: the one shared "How" for every READY row, said once here
        instead of repeated verbatim inside each row. */
     var sharedHow = readyRows.some(function (row) { return row.action === 'write_note'; })
-      ? ' Leave the sections you want checked, then press <b>Confirm &amp; Send to Athena</b> once. Each checked section still gets its own read-only Athena check, its own write and its own receipt; MLS can save an unsigned draft when you choose Save draft, and never signs.'
+      ? (' Leave the sections you want checked, then press <b>Confirm &amp; Send to Athena</b> once. Each checked section still gets its own read-only Athena check, its own write and its own receipt; ' + (nativeNamedSectionPersistenceReady() ? 'Athena persists modern named fields as they are written, and MLS finishes with a read-only saved-note verification. It does not press Save and never signs.' : 'MLS can save an unsigned draft when you choose Save draft, and never signs.'))
       : ' Every READY item needs its own Confirm &amp; Send.';
     /* writeui-1.0.0 (b1184): the What -> Where -> How paragraph is the same
        paragraph, byte for byte - it moved OUT of the doctor's first screen and
@@ -6990,7 +7090,7 @@
          aria-describedby, so it stays visible and outside every fold; the long
          boundary sentence it used to carry is one fold down in How this works,
          where it is still read by every pin that reads it. */
-      '<div id="mlsAthenaUnifiedSafety" style="margin-top:12px;padding:9px 11px;border:1px solid #f0d79a;background:#fff7e6;border-radius:9px;color:#6d5010;font-size:12px"><b>Nothing has changed yet.</b> Nothing leaves MLS until you press Confirm &amp; Send. MLS writes the reviewed sections and can save an unsigned draft when you choose Save draft; it never signs.</div>' +
+      '<div id="mlsAthenaUnifiedSafety" style="margin-top:12px;padding:9px 11px;border:1px solid #f0d79a;background:#fff7e6;border-radius:9px;color:#6d5010;font-size:12px"><b>Nothing has changed yet.</b> Nothing leaves MLS until you press Confirm &amp; Send. ' + (nativeNamedSectionPersistenceReady() ? 'MLS writes and verifies each reviewed unsigned draft section; Athena persists these modern named fields as they are written. The final saved-note check is read-only, and MLS never signs.' : 'MLS writes the reviewed sections and can save an unsigned draft when you choose Save draft; it never signs.') + '</div>' +
       wfxEvidenceHtml(state) + /* wfx-1.0.0: W1 staleness, W2 contradiction screen, W4 completeness tally */
       howHtml +
       unifiedIdentityHtml(manifest) +

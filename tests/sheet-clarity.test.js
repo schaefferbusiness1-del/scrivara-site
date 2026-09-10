@@ -96,13 +96,13 @@ const HEAD_REGIONS = [
      tests/write-generality-proof.js. */
   ['probe ladder (probeUnifiedRow: every refusal, auto-open, day-mismatch gate)',
     '  function probeUnifiedRow(state, rowId) {', '  /* wfsum-1.0.0 (owner 2026-08-26, watching his own writes land while the sheet',
-    '274310df634a2e6272669a49296dd43f757506dd1622c1fc7699cca775e2e831'],
+    '0435a7355d23ecc1e262a7ddca9c8ec3f010e3eb4bcb808995e03ad8b4883a95'],
   ['receipt mint (resultToUnifiedReceipt: verified / uncertain / halt)',
     '  function resultToUnifiedReceipt(state, row, resp, probe) {', '  /* ===== wfprog-1.0.0 (owner 2026-08-27:',
-    '82451a857daa88c986222abdca94ea4bdf504207cf11a6ac894bc25a52824de9'],
+    '3c920a362765d5b9f30fdb0c546d70dae2d002db6921ac03a1c483ab3b8c7f9a'],
   ['execute (executeUnifiedSelection: the only code that writes)',
     '  function executeUnifiedSelection(state) {', '  /* bx-1.0.0 - batch send (owner 2026-08-26:',
-    'ec12f88d20f2cc1639b79c26cb7d3ca490e7e9479b3ac014a5f3c0e419baedbb'],
+    '9899793443dc4bb5f9d97f141fd435c3b747854ff5de4b072bbb7b5c2ccc44a0'],
   /* MOVED DELIBERATELY, wfnext-1.0.0 (2026-09-01) - owner ruling 23:05,
      verbatim: "nothing here should be blocked or manual or not attempted once
      its run". MEASURED 22:50-22:56 on his own tab: one trusted press, six
@@ -134,7 +134,7 @@ const HEAD_REGIONS = [
      tests/paintwait-queue-proof.js. */
   ['batch queue (runUnifiedBatchSend: per-row probe/execute/receipt sequencing)',
     '  function runUnifiedBatchSend(state, btn) {', '  function reopenOptions(opts, manifest) {',
-    '265db89e13cded73072959ead3170c88a7e834a8e843a7f753d9f56e12060493'],
+    'bdd788bbeb2e715512453301ef660c9cc692b4a406dfb8a32d0e0f7cbc72ca92'],
   ['closed allowlist ATHENA_EXECUTABLE_ACTIONS', '  var ATHENA_EXECUTABLE_ACTIONS = ', '\n',
     '27406852d9632ee5db6a143ac989eafa0308ac6e4a84326c731076941f2538a5'],
   ['closed allowlist OPBATCH_ACTIONS', '  var OPBATCH_ACTIONS = ', '\n',

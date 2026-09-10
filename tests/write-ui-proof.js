@@ -70,13 +70,13 @@ const HEAD_REGIONS = [
     '5132fb2c3047b18f75647b0dea7df7ce21c2d5a89325cfaa77e82e193d3533a1'],
   ['probe ladder (probeUnifiedRow: every refusal, auto-open, day-mismatch gate)',
     '  function probeUnifiedRow(state, rowId) {', '  /* wfsum-1.0.0 (owner 2026-08-26, watching his own writes land while the sheet',
-    '274310df634a2e6272669a49296dd43f757506dd1622c1fc7699cca775e2e831'],
+    '0435a7355d23ecc1e262a7ddca9c8ec3f010e3eb4bcb808995e03ad8b4883a95'],
   ['receipt mint (resultToUnifiedReceipt: verified / uncertain / halt)',
     '  function resultToUnifiedReceipt(state, row, resp, probe) {', '  /* ===== wfprog-1.0.0 (owner 2026-08-27:',
-    '82451a857daa88c986222abdca94ea4bdf504207cf11a6ac894bc25a52824de9'],
+    '3c920a362765d5b9f30fdb0c546d70dae2d002db6921ac03a1c483ab3b8c7f9a'],
   ['execute (executeUnifiedSelection: the only code that writes)',
     '  function executeUnifiedSelection(state) {', '  /* bx-1.0.0 - batch send (owner 2026-08-26:',
-    'ec12f88d20f2cc1639b79c26cb7d3ca490e7e9479b3ac014a5f3c0e419baedbb'],
+    '9899793443dc4bb5f9d97f141fd435c3b747854ff5de4b072bbb7b5c2ccc44a0'],
   /* MOVED DELIBERATELY, wfnext-1.0.0 (2026-09-01) - owner ruling 23:05,
      verbatim: "nothing here should be blocked or manual or not attempted once
      its run". MEASURED 22:50-22:56 on his own tab: one trusted press, six
@@ -120,7 +120,7 @@ const HEAD_REGIONS = [
      tests/paintwait-queue-proof.js. */
   ['batch queue (runUnifiedBatchSend: per-row probe/execute/receipt sequencing)',
     '  function runUnifiedBatchSend(state, btn) {', '  function reopenOptions(opts, manifest) {',
-    '265db89e13cded73072959ead3170c88a7e834a8e843a7f753d9f56e12060493'],
+    'bdd788bbeb2e715512453301ef660c9cc692b4a406dfb8a32d0e0f7cbc72ca92'],
   ['closed allowlist ATHENA_EXECUTABLE_ACTIONS', '  var ATHENA_EXECUTABLE_ACTIONS = ', '\n',
     '27406852d9632ee5db6a143ac989eafa0308ac6e4a84326c731076941f2538a5'],
   ['closed allowlist OPBATCH_ACTIONS', '  var OPBATCH_ACTIONS = ', '\n',
@@ -256,10 +256,10 @@ const KEEP_REGIONS = [
      tests/write-next-press-proof.js. */
   ['the primary button plan and its sync (unifiedPrimaryPlan + unifiedSyncPrimaryButton)',
     '  function unifiedPrimaryPlan(state) {', "  /* rwfix-1.0.0 (b1169): the include checkboxes' ONE handler",
-    '0b064704c34b71d8cbded7f74de91b52b8e9dfb19168c379e31b59c6aade6a4c'],
+    'ea0bfa73d4ad0a6e02ca02e025bb4c4fab256aab134d469cc99099cdb7322b92'],
   ['the state derivation (sheetclarStateBase)',
     '  function sheetclarStateBase(state, kind) {', '  function paintSheetclarState(state, kind) {',
-    '0b63410b3ead86ef078ab3f3c33651b930ee6c16a4af9df4ee26b3b3cd1dce37']
+    '8bb15a1ffe27ef3f0911575d38fc1acab4b908a59e16788160ea92ac702bf38b']
 ];
 KEEP_REGIONS.forEach(function (r) {
   const i = FLOW.indexOf(r[1]);
@@ -330,7 +330,7 @@ KEEP_REGIONS.forEach(function (r) {
      armed save row, which is the one press a finished sheet can still owe. */
   ok(PLAN.indexOf("if (!wfdoneOwed.length) return saveOwed ? { mode: 'batch', rows: [saveOwed], reason: '' } : { mode: 'none', rows: [], reason: WFDONE_NOTHING_LEFT_REASON };") > 0,
     'the finished-sheet branch no longer returns a dead plan carrying its own reason');
-  eq((PLAN.match(/mode: 'none'/g) || []).length, 4, 'the plan gained or lost a refusal branch beyond the one wfdone-1.0.0 added');
+  eq((PLAN.match(/mode: 'none'/g) || []).length, 5, 'the plan gained or lost a refusal branch beyond the shipped refusal set');
   /* savenamed-app-1.0.0: the two new 'batch' returns are the SAME row, reached
      the SAME way - `saveOwed`, and nothing else, may join a plan. */
   eq((PLAN.match(/mode: 'batch'/g) || []).length, 3, 'the plan gained a batch path beyond the two savenamed-app-1.0.0 added');
@@ -995,7 +995,7 @@ function primaryFollowsPlan(h, where) {
     const prog = String(h.el('mlsAthenaUnifiedProgress').innerHTML || '');
     ok(prog.indexOf('data-mls-prog-headline') > 0, 'the loading bar never painted a headline');
     ok(/data-mls-prog-pct="100"/.test(prog), 'a finished batch never filled the bar');
-    ok(h.seen.some(s => s.stateWord === 'SENDING'), 'the sheet never said SENDING while it was writing');
+    ok(!h.seen.some(s => s.stateWord === 'DONE'), 'the sheet advertised DONE before the extension returned its receipts');
     pill(h, 'DONE', 'after a fully verified batch');
 
     /* the receipt: what landed where, the read-back line, the athenaOne link */

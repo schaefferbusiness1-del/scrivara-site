@@ -75,8 +75,9 @@ function eq(a, b, msg) { assert.strictEqual(a, b, msg + ' (got ' + JSON.stringif
  * runtime section below runs against BOTH sources and asserts that the pre-fix
  * one cannot answer - so this suite can never pass by measuring nothing. */
 const SHIPPED_ROW =
-  "      addRow({ id: SAVENAMED_ROW_ID, action: 'save_draft', kind: 'save', label: SAVENAMED_ROW_LABEL, destination: SAVENAMED_ROW_DESTINATION,\n" +
-  "        capability: commonBlock ? 'blocked' : 'ready', reason: commonBlock, consequence: SAVENAMED_ROW_CONSEQUENCE, payload: notePayload, order: UNIFIED_ORDER.save_draft });";
+  "      var nativeNamedSave = nativeNamedSectionPersistenceReady();\n" +
+  "      addRow({ id: SAVENAMED_ROW_ID, action: 'save_draft', kind: 'save', label: nativeNamedSave ? 'Verify the saved unsigned note' : SAVENAMED_ROW_LABEL, destination: nativeNamedSave ? 'Athena encounter > persisted named note sections' : SAVENAMED_ROW_DESTINATION,\n" +
+  "        capability: commonBlock ? 'blocked' : 'ready', reason: commonBlock, consequence: nativeNamedSave ? 'MLS reconciles the five reviewed sections with Athena\\'s four persisted destinations. This final check is read-only: it does not press Save and never signs or bills.' : SAVENAMED_ROW_CONSEQUENCE, payload: notePayload, order: UNIFIED_ORDER.save_draft });";
 const PREFIX_ROW =
   "      addRow({ id: 'save-named-sections-manual', action: '', kind: 'save', label: 'Save named sections in Athena', destination: 'Athena encounter > section-specific Save controls',\n" +
   "        capability: 'manual', reason: namedFinalReason, consequence: 'Nothing is saved automatically from this row.', payload: notePayload, order: UNIFIED_ORDER.save_draft });";
