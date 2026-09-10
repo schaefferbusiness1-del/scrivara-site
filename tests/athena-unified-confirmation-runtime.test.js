@@ -303,8 +303,8 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 8));
   assert(!actionMessages().some(message => message.action === 'sign_encounter'), 'Sign auto-chained from a newly written note');
   assert(/VERIFIED/.test(byId.mlsAthenaUnifiedReceipt.innerHTML), 'per-row verified receipt was not rendered');
   const signRow = manifest.rows.find(row => row.id === 'sign-encounter');
-  assert(signRow && signRow.capability === 'ready' && signRow.action === 'sign_encounter', 'capable extension did not expose Sign as its own immutable, proof-gated row');
-  assert.strictEqual(actionMessages().filter(message => message.action === 'sign_encounter').length, 0, 'proof-gated Sign ran without a separate row selection and confirmation');
+  assert(signRow && signRow.capability === 'manual' && !signRow.action, 'Sign became an executable MLS action; it must remain the doctor\'s own Athena click');
+  assert.strictEqual(actionMessages().filter(message => message.action === 'sign_encounter').length, 0, 'Sign ran without a separate doctor action in Athena');
 
   console.log('PASS unified Athena runtime: exact taught destination bound through probe + one confirmed execute, one page, per-row receipt, separate proof-gated Sign with no auto-chain');
 })().catch(error => {
