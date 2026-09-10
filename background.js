@@ -979,6 +979,11 @@ async function mlsAthenaActionV2DriverFn(req) {
     var SNV_SAVE_CORES = { 'save': 1, 'save draft': 1, 'save note': 1 };
     var SNV_FORBIDDEN_SAVE_LABEL = /\b(sign|bill|billing|order|orders|close|finalize|finalise|attest|submit|post|charge|charges|claim|claims|delete|discard|void|cancel)\b/;
     var SNV_BANNED_REGION = /\b(order|orders|billing|charge|charges|claim|claims|prescription|prescriptions|medication|medications|erx|e rx|sign|signature|signoff|attest|finalize|finalise)\b/;
+    /* Athena keeps closed Visits and Cases projections mounted far outside the
+       viewport. Their document footer has an ordinary Save button, so style
+       visibility plus a non-zero rectangle is not evidence that it belongs to
+       the active encounter surface. */
+    var SNV_PROJECTED_REGION = /\b(external encounter|visits and cases|slideout|projected|projection|history (?:projection|slideout|drawer|view))\b/;
     var SNV_ENCOUNTER_REGION = /\b(encounter|visit|clinical|chart|documentation|note)\b/;
     function snvLabelSources(el) {
       var raw = [];
@@ -1020,24 +1025,31 @@ async function mlsAthenaActionV2DriverFn(req) {
       var cur = control, guard = 0, scope = null;
       while (cur && guard++ < 12) {
         var snvD = snvOwnDescriptor(cur);
-        if (SNV_BANNED_REGION.test(snvD)) return null;
+        if (SNV_BANNED_REGION.test(snvD) || SNV_PROJECTED_REGION.test(snvD)) return null;
         if (!scope && SNV_ENCOUNTER_REGION.test(snvD)) scope = cur;
         cur = parentAcrossRoots(cur);
       }
       if (scope) return scope;
       try { return (frame && frame.doc && frame.doc.body) || null; } catch (eSnvSc) { return null; }
     }
+    function snvInActiveViewport(frame, el) {
+      try {
+        if (!frame || !frame.w || !el || typeof el.getBoundingClientRect !== 'function') return false;
+        var r = el.getBoundingClientRect(), vw = Number(frame.w.innerWidth || 0), vh = Number(frame.w.innerHeight || 0);
+        return vw > 0 && vh > 0 && r.width >= 2 && r.height >= 2 && r.right > 0 && r.bottom > 0 && r.left < vw && r.top < vh;
+      } catch (eSnvVp) { return false; }
+    }
     function snvFindEncounterSave(frame) {
-      var all = [], accepted = [], refused = 0, i, snvScope;
+      var all = [], accepted = [], refused = 0, offSurface = 0, i, snvScope;
       try { all = interactive(frame.doc, frame.w); } catch (eSnvAll) { all = []; }
       for (i = 0; i < all.length; i++) {
         if (!exactSave(all[i])) continue;
         if (snvForbiddenSaveLabel(all[i]) || wsForbiddenControl(all[i])) { refused++; continue; }
         snvScope = snvSaveScope(frame, all[i]);
-        if (!snvScope) { refused++; continue; }
+        if (!snvScope || !snvInActiveViewport(frame, all[i]) || !snvInActiveViewport(frame, snvScope)) { offSurface++; continue; }
         accepted.push({ control: all[i], editor: all[i], root: snvScope, strength: 3, encounterSave: true, labelCore: snvSaveCore(all[i]) });
       }
-      var snvWhy = accepted.length === 1 ? 'found' : (accepted.length > 1 ? 'save-control-ambiguous' : (refused ? 'forbidden-control' : 'save-control-not-found'));
+      var snvWhy = accepted.length === 1 ? 'found' : (accepted.length > 1 ? 'save-control-ambiguous' : (offSurface ? 'save-control-not-active-surface' : (refused ? 'forbidden-control' : 'save-control-not-found')));
       if (hetDiag.savenamed !== 'found') hetDiag.savenamed = snvWhy;
       return accepted.length === 1 ? accepted[0] : null;
     }
@@ -1600,6 +1612,7 @@ async function mlsAthenaActionV2DriverFn(req) {
       var snvGate = String(hetDiag.postGate || ''), snvWhy = String(hetDiag.savenamed || '');
       if (snvGate === 'encounter-id' || snvGate === 'appointment-id') return { ok: false, blocked: true, action: action, savenamed: true, encounterMatched: false, reason: 'encounter-mismatch', hetDiag: hetDiag, hetFrames: hetFrames, error: 'The encounter open in athenaOne is not the encounter in this review. Nothing was saved.', noAutomaticChaining: 'no-automatic-chaining' };
       if (snvWhy === 'save-control-ambiguous') return { ok: false, blocked: true, action: action, savenamed: true, encounterMatched: snvGate === 'pushed', reason: 'save-control-ambiguous', hetDiag: hetDiag, hetFrames: hetFrames, error: 'More than one Save control is showing in this encounter, so MLS cannot tell which one saves it. Save it in athenaOne. Nothing was changed.', noAutomaticChaining: 'no-automatic-chaining' };
+      if (snvWhy === 'save-control-not-active-surface') return { ok: false, blocked: true, action: action, savenamed: true, encounterMatched: snvGate === 'pushed', reason: 'save-control-not-active-surface', hetDiag: hetDiag, hetFrames: hetFrames, error: 'MLS found Save only in a closed or offscreen encounter projection, not on the active encounter surface. Nothing was changed.', noAutomaticChaining: 'no-automatic-chaining' };
       if (snvWhy === 'forbidden-control') return { ok: false, blocked: true, action: action, savenamed: true, encounterMatched: snvGate === 'pushed', reason: 'forbidden-control', hetDiag: hetDiag, hetFrames: hetFrames, error: 'The only Save-like control MLS can see in this encounter is a Sign, billing, order or close control. MLS will never click one. Nothing was changed.', noAutomaticChaining: 'no-automatic-chaining' };
       if (snvWhy === 'save-control-not-found') return { ok: false, blocked: true, action: action, savenamed: true, encounterMatched: snvGate === 'pushed', reason: 'save-control-not-found', hetDiag: hetDiag, hetFrames: hetFrames, error: 'MLS could not see one exact Save control in the open encounter. Nothing was changed.', noAutomaticChaining: 'no-automatic-chaining' };
     }
@@ -1663,7 +1676,28 @@ async function mlsAthenaActionV2DriverFn(req) {
     /* ATHENA_ACTION_V2_MUTATION_BOUNDARY */
 
     function setNoteEditorExact(el, value) {
+      var attempted = false, isSlate = false;
       try {
+        isSlate = el.isContentEditable && String(el.getAttribute && el.getAttribute('data-slate-editor') || '').toLowerCase() === 'true';
+        if (isSlate) {
+          /* Slate is a controlled editor: changing its child nodes edits only
+             the rendered projection and can throw Athena's model out of sync.
+             Give the text to Slate's own React onPaste path and proceed only
+             when that handler consumes the event. Synthetic paste has no
+             browser default insertion, so an unhandled event changes nothing. */
+          var slateDoc = el.ownerDocument, slateWin = slateDoc && slateDoc.defaultView;
+          if (!slateWin || typeof slateWin.DataTransfer !== 'function' || typeof slateWin.ClipboardEvent !== 'function') return { ok: false, attempted: false, slate: true };
+          var slateSel = slateWin.getSelection && slateWin.getSelection(), slateRange = slateDoc.createRange();
+          slateRange.selectNodeContents(el); slateRange.collapse(false);
+          if (!slateSel) return { ok: false, attempted: false, slate: true };
+          slateSel.removeAllRanges(); slateSel.addRange(slateRange);
+          var slateData = new slateWin.DataTransfer(); slateData.setData('text/plain', String(value));
+          var slatePaste = new slateWin.ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: slateData });
+          attempted = true; mutationAttempted = true;
+          el.dispatchEvent(slatePaste);
+          return { ok: slatePaste.defaultPrevented === true, attempted: true, slate: true };
+        }
+        attempted = true; mutationAttempted = true;
         if (el.isContentEditable) {
           /* wv-1.3 (3.0.40): a literal \n inside one text node renders as a SPACE unless the editor uses pre-wrap, so the innerText readback lost every newline and multi-paragraph notes returned note-write-unverified with the mangled text LEFT in the editor. Text+<br> nodes round-trip through innerText exactly. */
           try { while (el.firstChild) el.removeChild(el.firstChild); } catch (eClr) {}
@@ -1679,8 +1713,8 @@ async function mlsAthenaActionV2DriverFn(req) {
           try { el.dispatchEvent(new hit.frame.w.InputEvent('input', { bubbles: true, inputType: 'insertText', data: value })); } catch (e2) { el.dispatchEvent(new hit.frame.w.Event('input', { bubbles: true })); }
         }
         el.dispatchEvent(new hit.frame.w.Event('change', { bubbles: true }));
-      } catch (e3) { return false; }
-      return true;
+      } catch (e3) { return { ok: false, attempted: attempted, slate: isSlate }; }
+      return { ok: true, attempted: true, slate: false };
     }
 
     /* ATHENA_ACTION_V2_WRITE_NOTE_START */
@@ -1701,9 +1735,9 @@ async function mlsAthenaActionV2DriverFn(req) {
       if (!focusedNoteEditor) return { ok: false, blocked: true, action: action, attempted: false, written: false, verified: false, draftEntered: false, draftVerified: false, reason: 'context-mismatch', context: context, results: [{ key: requestedNoteSection, attempted: false, written: false, verified: false, reason: 'context-mismatch' }], noAutomaticChaining: 'no-automatic-chaining' };
       noteEditor = focusedNoteEditor;
       if (editorValue(noteEditor)) return noteEditorNotEmptyReceipt();
-      var noteAttempted = true;
-      mutationAttempted = true;
-      if (!setNoteEditorExact(noteEditor, req.noteText)) return { ok: false, action: action, attempted: true, partialMutation: true, written: false, verified: false, draftEntered: false, draftVerified: false, reason: 'outcome-uncertain', context: context, results: [{ key: requestedNoteSection, attempted: true, written: false, verified: false, reason: 'note-write-unverified' }], noAutomaticChaining: 'no-automatic-chaining' };
+      var noteSet = setNoteEditorExact(noteEditor, req.noteText), noteAttempted = !!(noteSet && noteSet.attempted);
+      mutationAttempted = mutationAttempted || noteAttempted;
+      if (!noteSet || !noteSet.ok) return { ok: false, blocked: !noteAttempted, action: action, attempted: noteAttempted, partialMutation: noteAttempted, written: false, verified: false, draftEntered: false, draftVerified: false, reason: noteSet && noteSet.slate ? 'slate-paste-not-handled' : 'outcome-uncertain', context: context, results: [{ key: requestedNoteSection, attempted: noteAttempted, written: false, verified: false, reason: noteSet && noteSet.slate ? 'slate-paste-not-handled' : 'note-write-unverified' }], noAutomaticChaining: 'no-automatic-chaining' };
       await sleep(250);
       var verifiedEditor = currentExactNoteEditor();
       var noteVerified = !!verifiedEditor && editorValue(verifiedEditor) === reviewedNote;
@@ -1717,13 +1751,21 @@ async function mlsAthenaActionV2DriverFn(req) {
         verifiedEditor = currentExactNoteEditor();
         noteVerified = !!verifiedEditor && editorValue(verifiedEditor) === reviewedNote;
       }
+      /* Re-resolving after blur catches a controlled Slate view that appeared
+         correct in one DOM paint but never entered the editor model. */
+      if (noteVerified && noteSet && noteSet.slate) {
+        try { verifiedEditor.blur(); } catch (eSlateBlur) {}
+        await sleep(450);
+        verifiedEditor = currentExactNoteEditor();
+        noteVerified = !!verifiedEditor && editorValue(verifiedEditor) === reviewedNote;
+      }
       if (!noteVerified) {
         /* wv-1.3 (3.0.40): never leave a HALF-VERIFIED note on screen - the doctor sees the text, distrusts the failure receipt, and can sign a note athena's model never received. The empty-editor precheck above means rollback == clearing back to empty. */
         var rolledBack = false;
         try {
           if (noteAttempted) {
             var rollbackEditor = currentExactNoteEditor() || ((noteEditor && noteEditor.isConnected !== false) ? noteEditor : null);
-            if (rollbackEditor) {
+            if (rollbackEditor && !(noteSet && noteSet.slate)) {
               if (rollbackEditor.isContentEditable) { while (rollbackEditor.firstChild) rollbackEditor.removeChild(rollbackEditor.firstChild); }
               else { var _rbProto = rollbackEditor.tagName === 'TEXTAREA' ? hit.frame.w.HTMLTextAreaElement.prototype : hit.frame.w.HTMLInputElement.prototype; var _rbDesc = Object.getOwnPropertyDescriptor(_rbProto, 'value'); if (_rbDesc && _rbDesc.set) _rbDesc.set.call(rollbackEditor, ''); else rollbackEditor.value = ''; }
               try { rollbackEditor.dispatchEvent(new hit.frame.w.Event('input', { bubbles: true })); } catch (eRb1) {}

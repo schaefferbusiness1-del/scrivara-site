@@ -48,6 +48,9 @@ function fixture(options = {}) {
   const semanticDecoys = options.semanticDecoys === true;
   const section = (key, label, id) => {
     if (omit.has(key)) return '';
+    if (key === 'hpi' && options.slateHpi === true) {
+      return `<section data-testid="hpi-section" aria-label="${label}"><h2>${label}</h2><div id="${id}" contenteditable="true" data-slate-editor="true" data-appointment-id="8812345" aria-label="${label} editor"><span data-slate-node="text"><span data-slate-leaf="true"><span data-slate-string="true"></span></span></span></div></section>`;
+    }
     const machineKey = key === 'exam' ? 'physical-exam' : key;
     const one = machineOnly.has(key)
       ? `<section data-testid="${machineKey}-section"><textarea id="${id}" data-testid="${machineKey}-editor" data-appointment-id="8812345"></textarea></section>`
@@ -140,6 +143,120 @@ async function values(page) {
         checks += 13;
       });
     }
+
+    /* Slate must receive text through its controlled paste handler. Directly
+       replacing contenteditable children can look correct for one paint while
+       leaving Slate's model empty; the live Athena editor then reloads empty. */
+    await withPage(browser, fixture({ slateHpi: true }), async page => {
+      await page.evaluate(() => {
+        window.__slateProof = { model: '', pastes: 0, inputs: 0, changes: 0, rawRemoves: 0, remounts: 0 };
+        function arm(el) {
+          el.removeChild = function () { window.__slateProof.rawRemoves++; throw new Error('raw Slate child removal'); };
+          el.addEventListener('input', () => window.__slateProof.inputs++);
+          el.addEventListener('change', () => window.__slateProof.changes++);
+        }
+        function remount() {
+          const old = document.getElementById('hpi-editor');
+          const fresh = old.cloneNode(false);
+          fresh.textContent = window.__slateProof.model;
+          old.replaceWith(fresh); arm(fresh); window.__slateProof.remounts++;
+        }
+        arm(document.getElementById('hpi-editor'));
+        document.addEventListener('paste', event => {
+          if (!(event.target && event.target.id === 'hpi-editor')) return;
+          event.preventDefault(); window.__slateProof.pastes++;
+          window.__slateProof.model = event.clipboardData.getData('text/plain');
+          event.target.textContent = window.__slateProof.model;
+          setTimeout(remount, 300);
+        });
+        document.addEventListener('focusout', event => {
+          if (event.target && event.target.id === 'hpi-editor') setTimeout(remount, 30);
+        }, true);
+      });
+      const text = 'Slate-controlled synthetic HPI.';
+      const result = await drive(page, request('hpi', text));
+      assert.strictEqual(result.ok, true, `Slate controlled paste was refused: ${JSON.stringify(result)}`);
+      assert.strictEqual(result.reason, 'exact-note-editor-verified-unsaved');
+      const proof = await page.evaluate(() => ({ ...window.__slateProof, shown: document.getElementById('hpi-editor').innerText }));
+      assert.strictEqual(proof.model, text, 'Slate model did not receive the exact text');
+      assert.strictEqual(proof.shown, text, 'Slate remount did not preserve the exact text');
+      assert.strictEqual(proof.pastes, 1, 'driver dispatched more than one Slate paste');
+      assert.strictEqual(proof.inputs, 0, 'driver also dispatched a raw input event into Slate');
+      assert.strictEqual(proof.changes, 0, 'driver also dispatched a raw change event into Slate');
+      assert.strictEqual(proof.rawRemoves, 0, 'driver directly removed Slate render nodes');
+      assert.ok(proof.remounts >= 2, 'fixture did not prove survival through repaint and blur remount');
+      checks += 9;
+    });
+
+    await withPage(browser, fixture({ slateHpi: true }), async page => {
+      const result = await drive(page, request('hpi', 'Unhandled Slate paste must refuse.'));
+      assert.strictEqual(result.ok, false, 'an unhandled Slate paste was reported as a write');
+      assert.strictEqual(result.blocked, false);
+      assert.strictEqual(result.attempted, true);
+      assert.strictEqual(result.partialMutation, true, 'a dispatched but unhandled paste lost conservative mutation accounting');
+      assert.strictEqual(result.reason, 'slate-paste-not-handled');
+      assert.strictEqual(await page.locator('#hpi-editor').innerText(), '', 'unhandled Slate paste changed the projection');
+      checks += 6;
+    });
+
+    await withPage(browser, fixture({ slateHpi: true }), async page => {
+      await page.evaluate(() => {
+        document.getElementById('hpi-editor').addEventListener('paste', event => {
+          event.target.textContent = event.clipboardData.getData('text/plain').slice(0, 9);
+          /* Deliberately do not preventDefault: consumption was not proven,
+             but a handler still mutated the controlled projection. */
+        });
+      });
+      const result = await drive(page, request('hpi', 'Unhandled mutating Slate handler.'));
+      assert.strictEqual(result.ok, false, 'unhandled mutating paste was reported as verified');
+      assert.strictEqual(result.blocked, false);
+      assert.strictEqual(result.attempted, true);
+      assert.strictEqual(result.partialMutation, true);
+      assert.strictEqual(result.reason, 'slate-paste-not-handled');
+      assert.notStrictEqual(await page.locator('#hpi-editor').innerText(), '', 'fixture did not perform its partial mutation');
+      checks += 6;
+    });
+
+    await withPage(browser, fixture({ slateHpi: true }), async page => {
+      await page.evaluate(() => {
+        document.getElementById('hpi-editor').addEventListener('paste', event => {
+          event.preventDefault();
+          event.target.textContent = event.clipboardData.getData('text/plain').slice(0, 8);
+          throw new Error('synthetic Slate handler failure after partial mutation');
+        });
+      });
+      const result = await drive(page, request('hpi', 'Throwing Slate handler must remain uncertain.'));
+      assert.strictEqual(result.ok, false, 'throw-after-mutation Slate handler was reported as verified');
+      assert.strictEqual(result.attempted, true);
+      assert.strictEqual(result.partialMutation, true);
+      assert.strictEqual(result.reason, 'outcome-uncertain');
+      assert.strictEqual(result.detail, 'note-write-unverified');
+      assert.notStrictEqual(await page.locator('#hpi-editor').innerText(), '', 'driver raw-rolled back a partially mutated Slate editor');
+      checks += 6;
+    });
+
+    await withPage(browser, fixture({ slateHpi: true }), async page => {
+      await page.evaluate(() => {
+        const editor = document.getElementById('hpi-editor');
+        editor.removeChild = function () { throw new Error('raw Slate rollback'); };
+        editor.addEventListener('paste', event => {
+          event.preventDefault();
+          event.target.textContent = event.clipboardData.getData('text/plain');
+          setTimeout(() => {
+            const fresh = event.target.cloneNode(false);
+            fresh.textContent = '';
+            event.target.replaceWith(fresh);
+          }, 300);
+        });
+      });
+      const result = await drive(page, request('hpi', 'Projection-only Slate text must not verify.'));
+      assert.strictEqual(result.ok, false, 'a Slate projection that vanished on remount was verified');
+      assert.strictEqual(result.reason, 'outcome-uncertain');
+      assert.strictEqual(result.detail, 'note-write-unverified');
+      assert.strictEqual(result.partialMutation, true, 'a consumed Slate paste with failed model readback lost uncertainty');
+      assert.strictEqual(await page.locator('#hpi-editor').innerText(), '', 'projection-only Slate fixture did not remount empty');
+      checks += 5;
+    });
 
     /* Exact machine-readable labels are valid even when Athena omits a visible
        heading/aria label. Separator normalization must not force the writer to
