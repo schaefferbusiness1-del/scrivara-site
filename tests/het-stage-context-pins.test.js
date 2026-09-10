@@ -40,6 +40,30 @@ assert.ok(bg.includes('if (provs.length !== 1) { hetCommit(); return null; }'),
 assert.ok(bg.includes('if (dates.length !== 1) { hetCommit(); return null; }'),
   'the unique-service-date refusal is gone');
 
+/* Modern encounter pages carry one owned clinical_encounter + appointment
+   object. Unrelated hydration entries must not add their IDs/dates to that
+   object's proof, while conflicting ownership still refuses. */
+{
+  const ownedStart = bg.indexOf('function hetOwnedHydrationContext');
+  const ownedEnd = bg.indexOf('function hetStageEncounterContext', ownedStart);
+  assert.ok(ownedStart > 0 && ownedEnd > ownedStart, 'the modern owned-hydration reader is missing');
+  const ownedReader = new Function('return ' + bg.slice(ownedStart, ownedEnd))();
+  const encounterId = '750001', appointmentId = '730001', patientId = '740001', visitDate = '2026-08-25';
+  const entry = (overrides = {}) => ({
+    clinical_encounter: Object.assign({ ID: encounterId, PatientID: patientId, AppointmentID: appointmentId, EncounterDate: { __CLASS__: 'Date', Date: visitDate } }, overrides.encounter || {}),
+    appointment: Object.assign({ ID: appointmentId, FullAppointmentDate: { __CLASS__: 'Date', Date: visitDate }, LocalFullAppointmentDate: { __CLASS__: 'Date', Date: visitDate } }, overrides.appointment || {})
+  });
+  const read = hydration => ownedReader({
+    url: `https://athenanet.athenahealth.com/ax/encounter/${encounterId}/intake`,
+    doc: { querySelectorAll: selector => selector === 'script#inline-page-data' ? [{ textContent: JSON.stringify(hydration) }] : [] }
+  }, { mrn: patientId }, encounterId, appointmentId);
+  const unrelated = entry({ encounter: { ID: '750002', PatientID: '740002', AppointmentID: '730002', EncounterDate: { __CLASS__: 'Date', Date: '2026-09-01' } }, appointment: { ID: '730002', FullAppointmentDate: { __CLASS__: 'Date', Date: '2026-09-01' } } });
+  assert.strictEqual(read({ exact: entry(), unrelated }).matched, true, 'an unrelated hydration date vetoed the uniquely owned exact encounter');
+  assert.strictEqual(read({ exact: entry({ appointment: { FullAppointmentDate: { __CLASS__: 'Date', Date: '2026-08-26' } } }) }).matched, false, 'conflicting dates inside the owned appointment were accepted');
+  assert.strictEqual(read({ exact: entry({ encounter: { AppointmentID: '730002' } }) }).matched, false, 'a conflicting owned clinical appointment ID was accepted');
+  assert.strictEqual(read({ exact: entry(), duplicate: entry() }).matched, false, 'two hydration objects claiming the same encounter/appointment were accepted');
+}
+
 /* het-1.0.4: N parseable, AGREEING copies of one patient's header collapse to
    one identity; any disagreement or parse failure stays ambiguous */
 assert.ok(bg.includes("if (allSame) return { identity: parsedAll[0], ambiguous: false };"),

@@ -1134,6 +1134,57 @@ async function mlsAthenaActionV2DriverFn(req) {
         return { identity: null, ambiguous: false, foreign: sawForeign };
       } catch (eHa) { return { identity: null, ambiguous: false, foreign: false }; }
     }
+    function hetOwnedHydrationContext(frame, expectedPatient, expectedEncounterId, expectedAppointmentId) {
+      var out = { present: false, matched: false, reason: 'absent', appointmentId: '', visitIso: '', contextCount: 0, relatedCount: 0, suppliedDateCount: 0, distinctDateCount: 0 };
+      try {
+        function ownDigits(value) { return String(value || '').replace(/\D/g, ''); }
+        function structuredDate(owner, key) {
+          var value = owner && owner[key];
+          if (!value || typeof value !== 'object' || Array.isArray(value) || !Object.prototype.hasOwnProperty.call(value, 'Date')) return '';
+          var match = /^(\d{4}-\d{2}-\d{2})/.exec(String(value.Date || ''));
+          return match ? match[1] : '';
+        }
+        var scripts = frame && frame.doc && frame.doc.querySelectorAll ? frame.doc.querySelectorAll('script#inline-page-data') : [];
+        if (!scripts.length) return out;
+        out.present = true;
+        if (scripts.length !== 1) { out.reason = 'inline-count'; return out; }
+        var root;
+        try { root = JSON.parse(String(scripts[0].textContent || '')); } catch (eJson) { out.reason = 'inline-json'; return out; }
+        if (!root || typeof root !== 'object' || Array.isArray(root)) { out.reason = 'inline-shape'; return out; }
+        var wantEncounter = ownDigits(expectedEncounterId), wantPatient = ownDigits(expectedPatient && expectedPatient.mrn), wantAppointment = ownDigits(expectedAppointmentId);
+        var routeMatch = /\/ax\/encounter\/(\d{3,})(?:\/|$)/i.exec(String(frame && frame.url || ''));
+        if (!routeMatch || ownDigits(routeMatch[1]) !== wantEncounter) { out.reason = 'route-encounter'; return out; }
+        var entries = Object.values(root).filter(function (entry) {
+          return entry && typeof entry === 'object' && !Array.isArray(entry) && entry.clinical_encounter && typeof entry.clinical_encounter === 'object' && !Array.isArray(entry.clinical_encounter);
+        });
+        out.contextCount = entries.length;
+        var related = entries.filter(function (entry) {
+          var appointment = entry.appointment && typeof entry.appointment === 'object' && !Array.isArray(entry.appointment) ? entry.appointment : null;
+          return ownDigits(entry.clinical_encounter.ID) === wantEncounter || ownDigits(entry.clinical_encounter.AppointmentID) === wantAppointment || !!(appointment && ownDigits(appointment.ID) === wantAppointment);
+        });
+        out.relatedCount = related.length;
+        if (related.length !== 1) { out.reason = related.length ? 'related-ambiguous' : 'related-missing'; return out; }
+        var exact = related[0], encounter = exact.clinical_encounter;
+        var appointment = exact.appointment && typeof exact.appointment === 'object' && !Array.isArray(exact.appointment) ? exact.appointment : null;
+        if (ownDigits(encounter.ID) !== wantEncounter || ownDigits(encounter.PatientID) !== wantPatient || ownDigits(encounter.AppointmentID) !== wantAppointment) { out.reason = 'owned-context-mismatch'; return out; }
+        if (!appointment || ownDigits(appointment.ID) !== wantAppointment) { out.reason = 'owned-appointment-mismatch'; return out; }
+        var encounterDate = structuredDate(encounter, 'EncounterDate');
+        if (!encounterDate) { out.reason = 'encounter-date'; return out; }
+        var supplied = [encounterDate];
+        var dateKeys = ['FullAppointmentDate', 'LocalFullAppointmentDate'];
+        for (var di = 0; di < dateKeys.length; di++) {
+          var dateKeyName = dateKeys[di], parsed = structuredDate(appointment, dateKeyName);
+          if (Object.prototype.hasOwnProperty.call(appointment, dateKeyName) && !parsed) { out.reason = 'appointment-date-shape'; return out; }
+          if (parsed) supplied.push(parsed);
+        }
+        out.suppliedDateCount = supplied.length;
+        var uniqueDates = supplied.filter(function (value, index, all) { return all.indexOf(value) === index; });
+        out.distinctDateCount = uniqueDates.length;
+        if (uniqueDates.length !== 1) { out.reason = 'owned-date-conflict'; return out; }
+        out.matched = true; out.reason = 'matched'; out.appointmentId = wantAppointment; out.visitIso = uniqueDates[0];
+      } catch (e) { out.reason = 'reader-error'; }
+      return out;
+    }
     function hetStageEncounterContext(frame, expectedPatient) {
       /* het-1.0.0/1.0.2: athena's own machine-typed encounter context, read
          off an athenaClinicals stage frame. Every field must resolve to
@@ -1166,6 +1217,23 @@ async function mlsAthenaActionV2DriverFn(req) {
           return out;
         }
         var appts = hetUniq(/"AppointmentID\\?"\s*:\s*\\?"(\d{3,})/g);
+        var provs = hetUniq(/"DisplayName\\?"\s*:\s*\\?"([^"\\]{4,70})\\?"/g, function (v) { return /,\s*(?:MD|DO|PA-C|CRNP|NP|DPM)\s*$/.test(v) ? v : ''; });
+        var hetWantAppt = '';
+        try { hetWantAppt = digits((expectedContext && expectedContext.appointmentId) || ''); } catch (eHetWa0) { hetWantAppt = ''; }
+        var ownedHydration = hetOwnedHydrationContext(frame, expectedPatient, encId, hetWantAppt);
+        if (ownedHydration.present) {
+          att.apptCount = ownedHydration.relatedCount;
+          if (!ownedHydration.matched) { hetCommit(); return null; }
+          att.rank = 3;
+          att.provCount = provs.length;
+          if (provs.length !== 1) { hetCommit(); return null; }
+          att.rank = 4;
+          att.dateCount = ownedHydration.distinctDateCount;
+          var ownedIso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ownedHydration.visitIso);
+          if (!ownedIso) { hetCommit(); return null; }
+          att.rank = 6; att.qualified = true; hetCommit();
+          return { encounterId: encId, appointmentId: ownedHydration.appointmentId, provider: text(provs[0]), visitDate: Number(ownedIso[2]) + '/' + Number(ownedIso[3]) + '/' + ownedIso[1] };
+        }
         att.apptCount = appts.length;
         /* het-1.2.0 (3.0.97, measured live 2026-08-31): a patient with TWO
            same-day appointments paints BOTH AppointmentIDs into the stage
@@ -1178,15 +1246,12 @@ async function mlsAthenaActionV2DriverFn(req) {
            same id against expectedContext.appointmentId, so a mismatch can
            never survive to a write. */
         if (appts.length !== 1) {
-          var hetWantAppt = '';
-          try { hetWantAppt = digits((expectedContext && expectedContext.appointmentId) || ''); } catch (eHetWa) { hetWantAppt = ''; }
           var hetApptHits = [];
           for (var hetAi = 0; hetAi < appts.length; hetAi++) { if (hetWantAppt && digits(appts[hetAi]) === hetWantAppt) hetApptHits.push(appts[hetAi]); }
           if (hetWantAppt && hetApptHits.length === 1) { appts = hetApptHits; }
           else { hetCommit(); return null; }
         }
         att.rank = 3;
-        var provs = hetUniq(/"DisplayName\\?"\s*:\s*\\?"([^"\\]{4,70})\\?"/g, function (v) { return /,\s*(?:MD|DO|PA-C|CRNP|NP|DPM)\s*$/.test(v) ? v : ''; });
         att.provCount = provs.length;
         if (provs.length !== 1) { hetCommit(); return null; }
         att.rank = 4;
@@ -14520,6 +14585,144 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
      (href, encounter markers, visible date strings) - identity rides the separate
      mlsReadChartIdentity injection so the banner-grade bar stays the one the chart
      read handler already trusts. Never clicks, never navigates. */
+  function mlsAlreadyOpenEncounterReaderFn(expectedAppointmentId, expectedPatientId, expectedScheduleDate) {
+    var out = { matched: false, reason: 'reader-error', encounterId: '', appointmentId: '', scheduleDate: '', metaCount: 0, inlineCount: 0, contextCount: 0, relatedCount: 0, routeEncounter: false, metaEncounterMatch: false, metaPatientMatch: false, contextEncounterMatch: false, contextPatientMatch: false, contextAppointmentMatch: false, nestedAppointmentPresent: false, nestedAppointmentMatch: false, encounterDatePresent: false, suppliedDateCount: 0, suppliedDatesMatch: false };
+    try {
+      function fail(reason) { out.reason = reason; return out; }
+      function onlyDigits(v) { return String(v || '').replace(/\D/g, ''); }
+      var wantAppointment = onlyDigits(expectedAppointmentId), wantPatient = onlyDigits(expectedPatientId);
+      var wantDate = /^\d{4}-\d{2}-\d{2}$/.test(String(expectedScheduleDate || '')) ? String(expectedScheduleDate) : '';
+      if (wantAppointment.length < 3 || wantPatient.length < 3 || !wantDate) return fail('expected-context-incomplete');
+      var href = String(location.href || '');
+      var routeMatch = /\/ax\/encounter\/(\d{3,})(?:\/|$)/i.exec(href);
+      if (!routeMatch) return fail('not-encounter-route');
+      out.routeEncounter = true;
+      var routeEncounter = onlyDigits(routeMatch[1]);
+      var metas = Array.prototype.slice.call(document.querySelectorAll('meta')).filter(function (meta) {
+        return /encounter_id/.test(String(meta.getAttribute('content') || ''));
+      });
+      out.metaCount = Math.min(9, metas.length);
+      if (metas.length !== 1) return fail('clinical-meta-count');
+      var items;
+      try { items = JSON.parse(String(metas[0].getAttribute('content') || '')); } catch (eMetaJson) { return fail('clinical-meta-json'); }
+      if (!Array.isArray(items)) return fail('clinical-meta-shape');
+      var context = {};
+      items.forEach(function (item) {
+        if (!item || typeof item !== 'object') return;
+        Object.keys(item).forEach(function (key) { context[key] = String(item[key]); });
+      });
+      var metaEncounter = onlyDigits(context.encounter_id), metaPatient = onlyDigits(context.patient_id);
+      out.metaEncounterMatch = !!metaEncounter && metaEncounter === routeEncounter;
+      out.metaPatientMatch = !!metaPatient && metaPatient === wantPatient;
+      if (!out.metaEncounterMatch) return fail('clinical-meta-encounter-mismatch');
+      if (!out.metaPatientMatch) return fail('clinical-meta-patient-mismatch');
+      var inline = document.querySelectorAll('script#inline-page-data');
+      out.inlineCount = Math.min(9, inline.length);
+      if (inline.length !== 1) return fail('inline-page-data-count');
+      var root;
+      try { root = JSON.parse(String(inline[0].textContent || '')); } catch (eInlineJson) { return fail('inline-page-data-json'); }
+      if (!root || typeof root !== 'object' || Array.isArray(root)) return fail('inline-page-data-shape');
+      var entries = Object.values(root).filter(function (entry) {
+        return entry && typeof entry === 'object' && !Array.isArray(entry) &&
+          entry.clinical_encounter && typeof entry.clinical_encounter === 'object' && !Array.isArray(entry.clinical_encounter);
+      });
+      out.contextCount = Math.min(9, entries.length);
+      /* One hydration object must own the current route encounter OR the
+         requested appointment. If two objects claim either side, their fields
+         cannot be safely joined, even when one happens to contain the desired
+         values. */
+      var related = entries.filter(function (entry) {
+        var nestedAppointment = entry.appointment && typeof entry.appointment === 'object' && !Array.isArray(entry.appointment) ? entry.appointment : null;
+        return onlyDigits(entry.clinical_encounter.ID) === routeEncounter ||
+          onlyDigits(entry.clinical_encounter.AppointmentID) === wantAppointment ||
+          !!(nestedAppointment && onlyDigits(nestedAppointment.ID) === wantAppointment);
+      });
+      out.relatedCount = Math.min(9, related.length);
+      if (related.length !== 1) return fail(related.length ? 'related-context-ambiguous' : 'related-context-not-found');
+      var exact = related[0], appointment = exact.appointment && typeof exact.appointment === 'object' && !Array.isArray(exact.appointment) ? exact.appointment : null;
+      out.contextEncounterMatch = onlyDigits(exact.clinical_encounter.ID) === routeEncounter;
+      out.contextPatientMatch = onlyDigits(exact.clinical_encounter.PatientID) === wantPatient;
+      out.contextAppointmentMatch = onlyDigits(exact.clinical_encounter.AppointmentID) === wantAppointment;
+      if (!out.contextEncounterMatch) return fail('context-encounter-mismatch');
+      if (!out.contextPatientMatch) return fail('context-patient-mismatch');
+      if (!out.contextAppointmentMatch) return fail('context-appointment-mismatch');
+      out.nestedAppointmentPresent = !!appointment;
+      out.nestedAppointmentMatch = !appointment || onlyDigits(appointment.ID) === wantAppointment;
+      if (!out.nestedAppointmentMatch) return fail('nested-appointment-mismatch');
+      function structuredDate(owner, key) {
+        var value = owner && owner[key];
+        if (!value || typeof value !== 'object' || Array.isArray(value) || !Object.prototype.hasOwnProperty.call(value, 'Date')) return '';
+        return String(value.Date || '').slice(0, 10);
+      }
+      var encounterDate = structuredDate(exact.clinical_encounter, 'EncounterDate');
+      out.encounterDatePresent = !!encounterDate;
+      if (!encounterDate) return fail('encounter-date-missing');
+      var suppliedDates = [encounterDate];
+      if (appointment) {
+        var fullDate = structuredDate(appointment, 'FullAppointmentDate');
+        var localDate = structuredDate(appointment, 'LocalFullAppointmentDate');
+        if (Object.prototype.hasOwnProperty.call(appointment, 'FullAppointmentDate') && !fullDate) return fail('full-appointment-date-invalid');
+        if (Object.prototype.hasOwnProperty.call(appointment, 'LocalFullAppointmentDate') && !localDate) return fail('local-appointment-date-invalid');
+        if (fullDate) suppliedDates.push(fullDate);
+        if (localDate) suppliedDates.push(localDate);
+      }
+      out.suppliedDateCount = Math.min(3, suppliedDates.length);
+      out.suppliedDatesMatch = !suppliedDates.some(function (value) { return value !== wantDate; });
+      if (!out.suppliedDatesMatch) return fail('appointment-date-mismatch');
+      out.matched = true;
+      out.reason = 'matched';
+      out.encounterId = metaEncounter;
+      out.appointmentId = wantAppointment;
+      out.scheduleDate = wantDate;
+    } catch (e) { out.reason = 'reader-error'; }
+    return out;
+  }
+
+  function mlsAlreadyOpenIdentityDecision(lightIdentity, shadowIdentity, expectedName, expectedDob, expectedMrn) {
+    var out = { matched: false, reason: 'identity-not-found', identity: null, credibleCount: 0, exactCount: 0, conflict: false, lightCredible: false, shadowCredibleCount: 0 };
+    try {
+      function nameTokens(value) {
+        var suffix = /^(?:jr|sr|ii|iii|iv|v|esq|junior|senior)$/;
+        return String(value || '').replace(/\([^)]*\)/g, ' ').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).filter(function (token) { return token && token.length > 1 && !suffix.test(token); });
+      }
+      function nameMatches(observed, expected) {
+        var have = nameTokens(observed), need = nameTokens(expected), counts = {};
+        if (have.length < 2 || need.length < 2) return false;
+        have.forEach(function (token) { counts[token] = (counts[token] || 0) + 1; });
+        for (var ni = 0; ni < need.length; ni++) { if (!counts[need[ni]]) return false; counts[need[ni]]--; }
+        return true;
+      }
+      function dateKey(value) {
+        var match = /^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/.exec(String(value || '').trim());
+        var year, month, day;
+        if (match) { year = +match[1]; month = +match[2]; day = +match[3]; }
+        else { match = /^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/.exec(String(value || '').trim()); if (!match) return ''; year = +match[3]; month = +match[1]; day = +match[2]; }
+        if (year < 1900 || month < 1 || month > 12 || day < 1 || day > 31) return '';
+        return year + '-' + month + '-' + day;
+      }
+      function credible(value) {
+        return !!(value && /^(?:banner|shadow-labels|shadow-banner)$/.test(String(value.via || '')) && String(value.name || '').trim() && dateKey(value.dob) && /^\d{3,}$/.test(String(value.mrn || '').replace(/\D/g, '')));
+      }
+      function exact(value) {
+        return credible(value) && nameMatches(value.name, expectedName) && dateKey(value.dob) === dateKey(expectedDob) && String(value.mrn || '').replace(/\D/g, '') === String(expectedMrn || '').replace(/\D/g, '');
+      }
+      var candidates = [];
+      if (credible(lightIdentity)) { out.lightCredible = true; candidates.push(lightIdentity); }
+      var shadowCandidates = shadowIdentity && Array.isArray(shadowIdentity.candidates) && shadowIdentity.candidates.length ? shadowIdentity.candidates : (shadowIdentity ? [shadowIdentity] : []);
+      shadowCandidates.forEach(function (candidate) { if (credible(candidate)) { out.shadowCredibleCount++; candidates.push(candidate); } });
+      out.credibleCount = candidates.length;
+      var exacts = candidates.filter(exact);
+      out.exactCount = exacts.length;
+      out.conflict = candidates.some(function (candidate) { return !exact(candidate); });
+      if (out.conflict) { out.reason = 'identity-conflict'; return out; }
+      if (!exacts.length) { out.reason = candidates.length ? 'identity-mismatch' : 'identity-not-found'; return out; }
+      out.matched = true;
+      out.reason = 'matched';
+      out.identity = exacts[0];
+    } catch (e) { out.reason = 'identity-reader-error'; }
+    return out;
+  }
+
   function mlsEncounterAcceptanceReaderFn() {
     try {
       var href = ''; try { href = String(location.href || '').slice(0, 200); } catch (e0) {}
@@ -14968,6 +15171,34 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         var openDeadline = openStartedAt + openBudgetMs;
         if (Number.isFinite(callerDeadline) && callerDeadline > 0) openDeadline = Math.min(openDeadline, callerDeadline);
         var openGuard = Object.freeze({ deadline: openDeadline, token: openRequestToken });
+        var alreadyOpenDebug = {
+          attempted: false,
+          bootstrapIdentity: bootstrapIdentity,
+          hasAppointmentId: /^\d{3,}$/.test(frozenApptId),
+          hasPatientId: /^\d{3,}$/.test(frozenMrn),
+          hasScheduleDate: !!frozenScheduleDate,
+          hasName: !!String(msg.name || '').trim(),
+          hasDob: !!String(msg.dob || '').trim(),
+          probeTimedOut: false,
+          readerResultCount: 0,
+          matchedFrameCount: 0,
+          reasonCodes: [],
+          identityAttempted: false,
+          identityTimedOut: false,
+          shadowIdentityAttempted: false,
+          shadowIdentityTimedOut: false,
+          identityDecisionCode: '',
+          credibleIdentityCount: 0,
+          shadowCredibleIdentityCount: 0,
+          identityConflict: false,
+          bannerGradeIdentity: false,
+          nameMatched: false,
+          dobMatched: false,
+          mrnMatched: false
+        };
+        function searchOpenDiag(diag) {
+          return Object.assign({}, diag || {}, { alreadyOpen: alreadyOpenDebug });
+        }
         sendResponse = function (payload) {
           if (responseSent) return; responseSent = true;
           rawSendResponse(Object.assign({}, payload || {}, { requestId: openGuard.token, deadlineAt: openGuard.deadline }));
@@ -15024,12 +15255,64 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
              unrelated browser page. */
           var tab = picked.value || null;
           var __searchTabUrl = String(tab && tab.url || '');
-          var __searchExactAthena = !!tab
-            && /athenahealth|athenanet|athenaone|athena\.io|\.px\.athena/i.test(__searchTabUrl)
-            && !/^(?:https?:\/\/)?(?:identity|login|signin|sso|auth|accounts|okta|myapps)\./i.test(__searchTabUrl.replace(/^https?:\/\//i, ''))
-            && !/\/login\b|sign-?in|\/auth\b|\/authn\b|\/oauth|\/sso\b|\bwww\.athenahealth\.com\b/i.test(__searchTabUrl);
-          if (!__searchExactAthena) { sendResponse({ ok: false, reason: 'no-athena-tab', error: 'Open your signed-in athenaOne in another tab, then try again.' }); return; }
-          /* v1.91 (§2.9): athena reliably freezes after ~5-9 rapid chart opens+reads,
+           var __searchExactAthena = !!tab
+             && /athenahealth|athenanet|athenaone|athena\.io|\.px\.athena/i.test(__searchTabUrl)
+             && !/^(?:https?:\/\/)?(?:identity|login|signin|sso|auth|accounts|okta|myapps)\./i.test(__searchTabUrl.replace(/^https?:\/\//i, ''))
+             && !/\/login\b|sign-?in|\/auth\b|\/authn\b|\/oauth|\/sso\b|\bwww\.athenahealth\.com\b/i.test(__searchTabUrl);
+           if (!__searchExactAthena) { sendResponse({ ok: false, reason: 'no-athena-tab', error: 'Open your signed-in athenaOne in another tab, then try again.' }); return; }
+           /* alreadyopen-3.0.113: a checked-in or cancelled appointment can
+              already have its exact encounter open while no schedule row is
+              available. Before any recovery, date navigation, or row click,
+              accept that frame only when four independent bindings agree:
+              /ax/encounter/<id>, clinical_encounter metadata for the same id
+              and patient id, the exact AppointmentID + one exact visit date in
+              hydration, and banner-grade name/DOB/MRN in that SAME frame. */
+           if (bootstrapIdentity && frozenScheduleDate && /^\d{3,}$/.test(frozenApptId) && /^\d{3,}$/.test(frozenMrn) && String(msg.name || '').trim() && String(msg.dob || '').trim()) {
+             alreadyOpenDebug.attempted = true;
+             var alreadyX = await execOpen({ target: { tabId: tab.id, allFrames: true }, func: mlsAlreadyOpenEncounterReaderFn, args: [frozenApptId, frozenMrn, frozenScheduleDate] }, 9000);
+             alreadyOpenDebug.probeTimedOut = !!alreadyX.timeout;
+             if (!alreadyX.timeout) {
+               var alreadyReaderResults = (alreadyX.r || []).map(function (entry) { return entry && entry.result; }).filter(Boolean);
+               alreadyOpenDebug.readerResultCount = Math.min(99, alreadyReaderResults.length);
+               alreadyOpenDebug.reasonCodes = alreadyReaderResults.map(function (value) { return String(value.reason || 'no-code').slice(0, 48); }).filter(function (value, index, allCodes) { return allCodes.indexOf(value) === index; }).slice(0, 12);
+               var alreadyMatches = (alreadyX.r || []).filter(function (entry) { return entry && typeof entry.frameId === 'number' && entry.result && entry.result.matched === true; });
+               alreadyOpenDebug.matchedFrameCount = Math.min(9, alreadyMatches.length);
+               if (alreadyMatches.length === 1) {
+                 var alreadyFrameId = alreadyMatches[0].frameId;
+                 alreadyOpenDebug.identityAttempted = true;
+                 var alreadyIdentityX = await execOpen({ target: { tabId: tab.id, frameIds: [alreadyFrameId] }, func: mlsReadChartIdentity }, 9000);
+                 alreadyOpenDebug.identityTimedOut = !!alreadyIdentityX.timeout;
+                 alreadyOpenDebug.shadowIdentityAttempted = true;
+                 var alreadyShadowIdentityX = await execOpen({ target: { tabId: tab.id, frameIds: [alreadyFrameId] }, func: mlsReadChartIdentityShadow }, 9000);
+                 alreadyOpenDebug.shadowIdentityTimedOut = !!alreadyShadowIdentityX.timeout;
+                 if (!alreadyIdentityX.timeout && !alreadyShadowIdentityX.timeout) {
+                   var alreadyIdentity = alreadyIdentityX.r && alreadyIdentityX.r[0] && alreadyIdentityX.r[0].result;
+                   var alreadyShadowIdentity = alreadyShadowIdentityX.r && alreadyShadowIdentityX.r[0] && alreadyShadowIdentityX.r[0].result;
+                   var alreadyIdentityDecision = mlsAlreadyOpenIdentityDecision(alreadyIdentity, alreadyShadowIdentity, msg.name || '', msg.dob || '', frozenMrn);
+                   alreadyOpenDebug.identityDecisionCode = String(alreadyIdentityDecision.reason || '').slice(0, 48);
+                   alreadyOpenDebug.credibleIdentityCount = Math.min(9, Number(alreadyIdentityDecision.credibleCount || 0));
+                   alreadyOpenDebug.shadowCredibleIdentityCount = Math.min(9, Number(alreadyIdentityDecision.shadowCredibleCount || 0));
+                   alreadyOpenDebug.identityConflict = !!alreadyIdentityDecision.conflict;
+                   var alreadyChosenIdentity = alreadyIdentityDecision.identity;
+                   alreadyOpenDebug.bannerGradeIdentity = !!alreadyChosenIdentity;
+                   alreadyOpenDebug.nameMatched = !!alreadyChosenIdentity;
+                   alreadyOpenDebug.dobMatched = !!alreadyChosenIdentity;
+                   alreadyOpenDebug.mrnMatched = !!alreadyChosenIdentity;
+                   var alreadyExactIdentity = alreadyIdentityDecision.matched === true;
+                   if (alreadyExactIdentity) {
+                     var alreadyContext = alreadyMatches[0].result;
+                     try {
+                       self.__mlsExpectOpen = { name: msg.name || '', dob: msg.dob || '', mrn: frozenMrn, tabId: tab.id, at: Date.now(), requestId: openGuard.token, appointmentId: frozenApptId, encounterId: String(alreadyContext.encounterId || ''), encounterAccepted: true, appointmentIdBound: true, appointmentNavigationFrameIds: [alreadyFrameId], scheduleDate: frozenScheduleDate };
+                       self.__mlsWriteTarget = { name: msg.name || '', dob: msg.dob || '', mrn: frozenMrn, tabId: tab.id, appTabId: senderTab || null, at: Date.now() };
+                     } catch (eAlreadyState) {}
+                     sendResponse({ ok: true, opened: true, encounterOpen: { ran: false, hadMeta: true, clicked: false, metaAfter: true, waitedMs: 0 }, via: 'already-open-appointment', candidates: 1, appointmentId: frozenApptId, encounterAccepted: true, appointmentIdBound: true, appointmentNavigationFrameIds: [alreadyFrameId], athenaTabId: tab.id, diag: searchOpenDiag({ alreadyOpenMatched: true, exactAppointment: true, exactIdentity: true }) });
+                     return;
+                   }
+                 }
+               }
+             }
+           }
+           /* v1.91 (§2.9): athena reliably freezes after ~5-9 rapid chart opens+reads,
              and the findpatient-first flow never goes Home, so the go-home chunker
              (>=6) no longer runs on bulk pulls. Chunk HERE at the same natural
              boundary: run the SESSION-SAFE recovery before the next open once enough reads
@@ -15195,7 +15478,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                     } catch (eEncAccept) {}
                   }
                   if (!appointmentNavigationProven) {
-                    sendResponse({ ok: false, opened: false, reason: 'appointment-navigation-unverified', error: 'Athena did not prove navigation from the exact appointment row. Nothing was read.' }); return;
+                    sendResponse({ ok: false, opened: false, reason: 'appointment-navigation-unverified', error: 'Athena did not prove navigation from the exact appointment row. Nothing was read.', diag: searchOpenDiag({ appointmentNavigationProven: false }) }); return;
                   }
                 }
                 try { self.__mlsOpenPref = 'schedule'; } catch (e0) {}
@@ -15301,7 +15584,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             }
           }
           if (bootstrapIdentity) {
-            sendResponse({ ok: false, opened: false, reason: (sched && sched.reason) || 'appointment-id-not-found', error: 'The exact Athena appointment row could not be opened. No name fallback was attempted.', diag: (sched && sched.diag) || null }); /* 3.0.63: the driver's PHI-free diag (frame host, rows scanned, scrollers, apptIdBound) now reaches the app so it can say "no schedule grid is showing" vs "N rows scanned, this appointment is not among them" */
+            sendResponse({ ok: false, opened: false, reason: (sched && sched.reason) || 'appointment-id-not-found', error: 'The exact Athena appointment row could not be opened. No name fallback was attempted.', diag: searchOpenDiag((sched && sched.diag) || null) }); /* 3.0.63: the driver's PHI-free diag (frame host, rows scanned, scrollers, apptIdBound) now reaches the app so it can say "no schedule grid is showing" vs "N rows scanned, this appointment is not among them" */
             return;
           }
           // === legacy fallback: synthetic global-search (kept for off-schedule patients; may fail on v26.3) ===

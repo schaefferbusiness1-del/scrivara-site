@@ -1368,6 +1368,7 @@ const tests = [
   'visit-body-identity-302-contract.test.js',
   'history-absolute-deadline-runtime.test.js',
   'background-final-patient-timeout-runtime.test.js',
+  'already-open-appointment-short-circuit.test.js',
   'appointment-id-bootstrap-contract.test.js',
   'appointment-nonclinical-route-guard.test.js',
   'day-schedule-absolute-deadline-runtime.test.js',
