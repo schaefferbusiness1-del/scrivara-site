@@ -364,174 +364,52 @@ function shippedFunction(name) {
     assert.strictEqual(state.halted, true, 'attempted:false did not halt the manifest');
   }
 
-  /* ======================================================================
-   * The two unlocked lanes the gate never executed (readiness verdict 2).
-   * Three passing 1p suites already cover the unlocked action set, the
-   * stale-extension degrade and the MRN identity lock. Neither `noteWriteProof`
-   * nor `opts.rowHash` appeared in ANY 1p test, so the two guards that make
-   * sign_encounter and place_order safe were source-only. Both are executed
-   * here against the shipped 1p bytes, each with a positive control so a
-   * universal refusal cannot masquerade as a proof.
-   * ==================================================================== */
-
+  /* Owner 2026-09-10: final actions are manual regardless of extension
+     capabilities or a planted note proof. A two-action positive control
+     demonstrates that the closed boundary did not disable note/save probes. */
   const CAPABLE = { athenaFinalActionsV1: true, supervisedOrderPlacementV2: true };
-
-  /* ---- (b) place_order refuses without the immutable review row hash ---- */
   const ORDER = {
-    type: 'imaging', clientOrderId: 'synthetic-order-1', displayLabel: 'MRI Left Knee w/o contrast',
-    query: 'MRI knee left without contrast', catalogCode: 'SYN-MRI-KNEE-L',
-    fields: { study: 'MRI knee', region: 'Left knee', indication: 'Synthetic indication' },
+    type: 'imaging', clientOrderId: 'synthetic-order-1', displayLabel: 'Synthetic study',
+    query: 'Synthetic study', catalogCode: 'SYN-STUDY',
+    fields: { study: 'Synthetic study', region: 'Synthetic region', indication: 'Synthetic indication' },
     reviewStatus: 'accepted', source: 'provider-entered'
   };
-  const EXACT_ORDER_CONTEXT = {
-    appointmentId: APPOINTMENT, encounterId: '', encounterUrl: '',
-    visitDate: DAY, provider: 'Synthetic Clinician One, MD'
-  };
-  {
-    const h = makeHarness({ capabilities: CAPABLE });
-    const refused = await refusal(h, h.window.__mlsWriteFlow.startAthenaAction('place_order', {
-      patient: clone(PATIENT), order: clone(ORDER) /* no rowHash */
+  const context = { appointmentId: APPOINTMENT, encounterId: '80000017',
+    encounterUrl: 'https://athena.synthetic/encounter/80000017', visitDate: DAY, provider: 'Synthetic Clinician One, MD' };
+  const options = () => ({ patient: clone(PATIENT), expectedContext: clone(context),
+    receiptSessionId: 'synthetic-final-policy', previewHash: 'synthetic-preview',
+    sections: [{ key: 'note', text: 'Synthetic reviewed note body.' }], order: clone(ORDER),
+    rowHash: 'synthetic-row-hash', noteWriteProof: 'synthetic-proof', billing: { em: '99213' } });
+  for (const capabilities of [null, CAPABLE]) {
+    for (const action of ['stage_billing', 'sign_encounter', 'place_order']) {
+      const h = makeHarness({ capabilities, dom: true });
+      const refused = await refusal(h, h.window.__mlsWriteFlow.startAthenaAction(action, options()));
+      assert.strictEqual(refused.ok, false, 'an excluded action was permitted');
+      assert.strictEqual(refused.error, 'manual-only-final-action', 'an excluded action escaped the current policy boundary');
+      assert.strictEqual(h.posted.length, 0, 'an excluded action reached the extension');
+      assert.strictEqual(h.mounted.length, 0, 'an excluded action offered an executable confirmation');
+    }
+    const h = makeHarness({ capabilities });
+    const manifest = h.window.__mlsWriteFlow.buildUnifiedManifest(Object.assign(options(), {
+      plan: [{ kind: 'billing', billing: { em: '99213' }, body: 'Reviewed code' },
+        { kind: 'orders', orderDrafts: [clone(ORDER)] }]
     }));
-    assert.strictEqual(refused.ok, false, 'place_order ran without an immutable review row hash (result: ' +
-      JSON.stringify(refused) + ')');
-    assert.strictEqual(refused.error, 'order-row-hash-required',
-      'place_order without opts.rowHash refused for the wrong reason: ' + refused.error);
-    assert.strictEqual(h.posted.length, 0, 'a row-hash-less order still reached the extension bridge');
-    assert(h.said.some(entry => /immutable review hash/.test(entry.message) && entry.kind === 'err'),
-      'the row-hash refusal was silent');
-
-    /* positive control: the SAME call with a row hash gets past this gate */
-    const g = makeHarness({ capabilities: CAPABLE });
-    g.window.__mlsWriteFlow.startAthenaAction('place_order', {
-      patient: clone(PATIENT), order: clone(ORDER), rowHash: 'synthetic-row-hash',
-      expectedContext: clone(EXACT_ORDER_CONTEXT)
-    });
-    await g.settle();
-    assert.strictEqual(g.posted.length, 1,
-      'positive control failed: place_order WITH a row hash never reached the read-only probe, ' +
-      'so the refusal above proves nothing about rowHash');
-    assert.strictEqual(g.posted[0].mode, 'probe', 'the order probe was not read-only');
-    assert.strictEqual(g.posted[0].rowHash, 'synthetic-row-hash', 'the reviewed row hash was not carried to the extension');
-    assert.strictEqual(g.posted[0].clientOrderId, 'synthetic-order-1', 'the immutable client order id was not carried');
-    assert(!g.posted.some(message => message.mode === 'execute'), 'an order crossed the mutation boundary during probe');
+    for (const kind of ['billing', 'orders', 'sign']) {
+      const row = manifest.rows.find(r => r.kind === kind);
+      assert(row && row.capability === 'manual' && row.action === '', 'a complete final-action row was executable');
+      assert(!/update MLS Assist|until you update/i.test(row.label + ' ' + row.consequence), 'manual action copy advertises an upgrade cure');
+    }
   }
-
-  /* ---- (a) sign_encounter refuses unless the verified-write receipt is
-   * bound to the EXACT encounter Athena just returned ------------------- */
-  /* The receipt key is derived by running the shipped normalizers, not by
-   * re-implementing them, so the derivation cannot drift away from the guard. */
-  function sliceFn(name) {
-    return shippedFunction(name);
-  }
-  const keyBox = vm.createContext({ Date, Math, JSON, Number, String, RegExp, Object, Array });
-  vm.runInContext([
-    'var S = function (x) { return x == null ? \'\' : String(x); };',
-    sliceFn('nrmName'), sliceFn('nrmDob'), sliceFn('contextValue'),
-    sliceFn('actionPatientKey'), sliceFn('actionContextSignature'),
-    'this.patientKey = actionPatientKey; this.sig = actionContextSignature;'
-  ].join('\n'), keyBox);
-
-  const SESSION = 'synthetic-receipt-session';
-  const PREVIEW = 'mls-preview-synthetic-sign';
-  const NOTE_TEXT = 'Synthetic reviewed note body.';
-  const SIGN_OPTS = () => ({
-    patient: clone(PATIENT), receiptSessionId: SESSION, previewHash: PREVIEW,
-    sections: [{ key: 'note', text: NOTE_TEXT }], expectedContext: clone(BOUND_CONTEXT)
-  });
-  const BOUND_CONTEXT = {
-    encounterId: '80000017', encounterUrl: 'https://athena.synthetic/encounter/80000017',
-    visitDate: '8/17/2026', provider: 'Synthetic Clinician Two, MD'
-  };
-  const OTHER_CONTEXT = {
-    encounterId: '80000099', encounterUrl: 'https://athena.synthetic/encounter/80000099',
-    visitDate: '8/17/2026', provider: 'Synthetic Clinician Two, MD'
-  };
-  function plantReceipt(h, context, proof) {
-    const hash = h.window.__mlsWriteFlow.previewHash;
-    const prefix = [SESSION, keyBox.patientKey(PATIENT), PREVIEW, hash(NOTE_TEXT)].join('||');
-    const key = prefix + '||' + keyBox.sig(context);
-    assert(keyBox.sig(context), 'the synthetic encounter context does not produce a signature');
-    h.window.__mlsWriteFlow.state.verifiedWrites[key] = {
-      action: 'write_note', noteWriteProof: proof, noteWriteProofExpiresAt: Date.now() + 600000,
-      contextSignature: keyBox.sig(context), context: context, verified: true
-    };
-    return key;
-  }
-  function signProbe(context, token) {
-    const base = success(context.provider, token || 'synthetic-sign-token');
-    base.action = 'sign_encounter';
-    Object.assign(base.context, context);
-    base.context.encounterDate = context.visitDate;
-    return base;
-  }
-
-  /* (a-0) no verified write at all: the outer gate refuses before any bridge */
-  {
+  for (const action of ['write_note', 'save_draft']) {
     const h = makeHarness({ capabilities: CAPABLE });
-    const refused = await refusal(h, h.window.__mlsWriteFlow.startAthenaAction('sign_encounter', SIGN_OPTS()));
-    assert.strictEqual(refused.ok, false, 'sign_encounter ran with no verified note write at all (result: ' +
-      JSON.stringify(refused) + ')');
-    assert.strictEqual(refused.error, 'verified-note-write-required',
-      'sign_encounter with no receipt refused for the wrong reason: ' + refused.error);
-    assert.strictEqual(h.posted.length, 0, 'an unverified Sign & Save reached the extension bridge');
-  }
-
-  /* (a-1) a receipt exists, but for a DIFFERENT encounter than the one Athena
-   * returned: the outer prefix gate passes, the exact-context gate refuses. */
-  {
-    const h = makeHarness({ capabilities: CAPABLE, dom: true });
-    plantReceipt(h, BOUND_CONTEXT, 'synthetic-note-write-proof');
-    h.window.__mlsWriteFlow.startAthenaAction('sign_encounter', SIGN_OPTS());
+    h.window.__mlsWriteFlow.startAthenaAction(action, options());
     await h.settle();
-    assert.strictEqual(h.posted.length, 1,
-      'setup failed: the planted verified-write receipt did not satisfy the outer Sign & Save gate, ' +
-      'so the exact-context guard below was never reached');
-    assert.strictEqual(h.posted[0].mode, 'probe', 'Sign & Save probed with a mutating request');
-    assert.strictEqual(h.posted[0].noteWriteProof, 'synthetic-note-write-proof',
-      'the verified-write proof was not carried into the read-only probe');
-    h.deliver(h.posted[0], signProbe(OTHER_CONTEXT));
-    await h.settle(12);
-    assert(h.said.some(entry => /Sign & Save is still locked/.test(entry.message) && entry.kind === 'err'),
-      'a note-write proof bound to a DIFFERENT encounter did not lock Sign & Save. Said: ' +
-      JSON.stringify(h.said.map(entry => entry.message)));
-    assert.strictEqual(h.mounted.length, 0, 'the confirmation overlay opened for an unproven encounter');
-    assert(!h.posted.some(message => message.mode === 'execute'), 'Sign & Save crossed the mutation boundary');
-  }
-
-  /* (a-2) positive control: the identical run whose ONLY difference is that
-   * the returned encounter matches the receipt reaches the confirmation. */
-  {
-    const h = makeHarness({ capabilities: CAPABLE, dom: true });
-    plantReceipt(h, BOUND_CONTEXT, 'synthetic-note-write-proof');
-    h.window.__mlsWriteFlow.startAthenaAction('sign_encounter', SIGN_OPTS());
-    await h.settle();
-    assert.strictEqual(h.posted.length, 1, 'positive control never probed');
-    h.deliver(h.posted[0], signProbe(BOUND_CONTEXT));
-    await h.settle(12);
-    assert(!h.said.some(entry => /Sign & Save is still locked/.test(entry.message)),
-      'positive control was refused, so the (a-1) refusal proves nothing about noteWriteProof matching. Said: ' +
-      JSON.stringify(h.said.map(entry => entry.message)));
-    assert.strictEqual(h.mounted.length, 1,
-      'positive control did not reach the confirmation overlay, so the guard under test is unproven');
-    assert.strictEqual(h.mounted[0].id, 'mlsAthenaActionConfirm', 'a different node was mounted');
-    /* the confirmation is a STOP: still nothing executed without a real click */
-    assert(!h.posted.some(message => message.mode === 'execute'),
-      'the matching encounter auto-executed without a clinician confirmation click');
-  }
-
-  /* (a-3) a receipt whose proof string is empty is not a receipt. */
-  {
-    const h = makeHarness({ capabilities: CAPABLE, dom: true });
-    plantReceipt(h, BOUND_CONTEXT, '');
-    const refused = await refusal(h, h.window.__mlsWriteFlow.startAthenaAction('sign_encounter', SIGN_OPTS()));
-    assert.strictEqual(refused.ok, false, 'an empty note-write proof unlocked Sign & Save (result: ' +
-      JSON.stringify(refused) + ')');
-    assert.strictEqual(refused.error, 'verified-note-write-required',
-      'an empty note-write proof refused for the wrong reason: ' + refused.error);
-    assert.strictEqual(h.posted.length, 0, 'an empty-proof Sign & Save reached the extension bridge');
+    assert.strictEqual(h.posted.length, 1, 'an allowed note/save action never reached its read-only check');
+    assert.strictEqual(h.posted[0].mode, 'probe', 'an allowed action skipped its read-only check');
+    assert.strictEqual(h.posted[0].action, action, 'the allowed action changed during dispatch');
   }
 
   assert(/var probeSequence = Promise\.resolve\(\)/.test(SOURCE) && !/Promise\.all\(attempts\)/.test(SOURCE), 'provider probes are not structurally serialized');
   COMPLETED = true;
-  console.log('PASS 1p Athena unlock adversarial runtime: exact-one provider, serial/cancelled probes, stale/patient/replay/error blocks, discarded discovery tokens, frozen manual final lanes, place_order row-hash gate (+control), and the sign_encounter exact-encounter noteWriteProof gate (+control)');
+  console.log('PASS 1p Athena unlock adversarial runtime: exact-one provider, serial/cancelled probes, stale/patient/replay/error blocks, discarded discovery tokens, manual final actions regardless of capabilities or supplied proof, and note/save read-only positive controls');
 })().catch(error => { console.error(error); process.exit(1); });

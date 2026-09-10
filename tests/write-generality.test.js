@@ -1,4 +1,9 @@
 'use strict';
+
+/* 2026-09-10 owner policy: only write_note/save_draft execute. The pinned
+ * probe/execute paths now require every checked section before Save; the batch
+ * skips Save after a refusal. Runtime proof: savenamed-app-proof.js. */
+
 /* =============================================================================
    write-generality  (wfgen-1.0.0 / apptpick-1.0.0 / mrnopen-1.0.0 /
                             mergeid-1.0.0)
@@ -771,7 +776,7 @@ function dayRow(id, athenaId, hhmm, provider) {
   ok(src.includes("if (row.action === 'sign_encounter' && (!exactWrite || !exactWrite.noteWriteProof))"),
     'the Sign-after-exact-encounter-proof gate left the probe path');
   ok(src.includes("notePolicy: 'empty_only'"), 'the empty-field-only note policy left the request');
-  ok(src.includes("var ATHENA_EXECUTABLE_ACTIONS = { write_note: true, save_draft: true, stage_billing: true, sign_encounter: true, place_order: true };"),
+  ok(src.includes("var ATHENA_EXECUTABLE_ACTIONS = { write_note: true, save_draft: true };"),
     'the executable-action allowlist changed shape');
   /* the queue still refuses to start under the conditions that make it unsafe */
   const start = src.slice(src.indexOf('function opBatchStart'), src.indexOf('function opBatchCancel'));

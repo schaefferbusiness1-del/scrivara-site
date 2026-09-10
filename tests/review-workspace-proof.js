@@ -1,5 +1,10 @@
 'use strict';
 
+/* 2026-09-10 owner policy: only write_note/save_draft execute. The pinned
+ * probe/execute paths now require every checked section before Save; the batch
+ * skips Save after a refusal. Runtime proof: savenamed-app-proof.js. */
+
+
 /* review-workspace-proof.js  --  revwork-1.0.0 (b1169)
  * ============================================================================
  * The owner's 2026-09-01 report, turned into pins and into a running proof.
@@ -210,7 +215,7 @@ for (const forbidden of ['write_note', 'save_draft', 'sign_encounter', 'stage_bi
   ok(CODE.indexOf(forbidden) < 0, 'the review workspace names the write-path token ' + forbidden);
 }
 /* And the write path's own closed executable set is untouched. */
-ok(WRITEFLOW.indexOf('var ATHENA_EXECUTABLE_ACTIONS = { write_note: true, save_draft: true, stage_billing: true, sign_encounter: true, place_order: true };') > 0,
+ok(WRITEFLOW.indexOf('var ATHENA_EXECUTABLE_ACTIONS = { write_note: true, save_draft: true };') > 0,
   'the writeflow executable-action set moved - this change may not touch it');
 
 /* ==========================================================================

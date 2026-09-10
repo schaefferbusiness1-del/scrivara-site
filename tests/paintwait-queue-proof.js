@@ -1,5 +1,10 @@
 'use strict';
 
+/* 2026-09-10 owner policy: only write_note/save_draft execute. The pinned
+ * probe/execute paths now require every checked section before Save; the batch
+ * skips Save after a refusal. Runtime proof: savenamed-app-proof.js. */
+
+
 /* paintwait-1.0.0 / pullshield-1.0.0 / ledger-1.0.0 - THE READ-ONLY CHECK, THE
  * TAB IT SHARES, AND THE LEDGER THAT OUTLIVED ITS OWN TRUTH.
  *
@@ -114,7 +119,7 @@ ok(NO_LEDGER.length < FLOW.length, 'the ledger negative control is byte-identica
 
 /* ============================================ 0. THE BYTES THAT MAY NOT MOVE */
 {
-  ok(FLOW.indexOf('var ATHENA_EXECUTABLE_ACTIONS = { write_note: true, save_draft: true, stage_billing: true, sign_encounter: true, place_order: true };') > 0,
+  ok(FLOW.indexOf('var ATHENA_EXECUTABLE_ACTIONS = { write_note: true, save_draft: true };') > 0,
     'the executable-action allowlist was rewritten - not one of these three fixes needed anything from it');
   ok(FLOW.indexOf('var OPBATCH_ACTIONS = { write_note: 1, save_draft: 1 };') > 0,
     'the batch lane\'s CLOSED two-action allowlist was rewritten');

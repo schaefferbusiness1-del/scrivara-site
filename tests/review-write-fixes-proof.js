@@ -1,5 +1,10 @@
 'use strict';
 
+/* 2026-09-10 owner policy: only write_note/save_draft execute. The pinned
+ * probe/execute paths now require every checked section before Save; the batch
+ * skips Save after a refusal. Runtime proof: savenamed-app-proof.js. */
+
+
 /* rwfix-1.0.0 (b1169) - THE REVIEW/WRITE SHEET SAYS WHAT IT ACTUALLY DID.
  *
  * Six measured dishonesty defects, each proved here against the SHIPPED text -
@@ -123,7 +128,7 @@ const FLOWS = [FLOW_FILE, 'feat_mls_writeflow.js', 'cloned-feat_mls_writeflow.js
     ok(src.indexOf('rwfix-1.0.0 (b1169)') > 0, f + ': the rwfix-1.0.0 pass is not in this lane at all');
     /* THE TWO CLOSED ALLOWLISTS. This lane is words and counts; if either of
        these moved, something reached into the write path. */
-    ok(src.indexOf('var ATHENA_EXECUTABLE_ACTIONS = { write_note: true, save_draft: true, stage_billing: true, sign_encounter: true, place_order: true };') > 0,
+    ok(src.indexOf('var ATHENA_EXECUTABLE_ACTIONS = { write_note: true, save_draft: true };') > 0,
       f + ': the executable-action allowlist changed under a wording lane');
     ok(src.indexOf('var OPBATCH_ACTIONS = { write_note: 1, save_draft: 1 };') > 0,
       f + ': the queue allowlist changed under a wording lane');

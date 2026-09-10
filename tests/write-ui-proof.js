@@ -1,5 +1,10 @@
 'use strict';
 
+/* 2026-09-10 owner policy: only write_note/save_draft execute. The pinned
+ * probe/execute paths now require every checked section before Save; the batch
+ * skips Save after a refusal. Runtime proof: savenamed-app-proof.js. */
+
+
 /* writeui-1.0.0 (b1184) — the owner, 2026-09-01 20:10, looking at the op-note
  * send: "the write UI we have right now I don't love; if you could also
  * completely fix it please. I do like the loading bar from it though."
@@ -65,13 +70,13 @@ const HEAD_REGIONS = [
     '5132fb2c3047b18f75647b0dea7df7ce21c2d5a89325cfaa77e82e193d3533a1'],
   ['probe ladder (probeUnifiedRow: every refusal, auto-open, day-mismatch gate)',
     '  function probeUnifiedRow(state, rowId) {', '  /* wfsum-1.0.0 (owner 2026-08-26, watching his own writes land while the sheet',
-    'b969672ecd13d4afd4c8f4e86e12cbc6a0799e32ffdee30744a4c68a1f8c2005'],
+    '274310df634a2e6272669a49296dd43f757506dd1622c1fc7699cca775e2e831'],
   ['receipt mint (resultToUnifiedReceipt: verified / uncertain / halt)',
     '  function resultToUnifiedReceipt(state, row, resp, probe) {', '  /* ===== wfprog-1.0.0 (owner 2026-08-27:',
     '82451a857daa88c986222abdca94ea4bdf504207cf11a6ac894bc25a52824de9'],
   ['execute (executeUnifiedSelection: the only code that writes)',
     '  function executeUnifiedSelection(state) {', '  /* bx-1.0.0 - batch send (owner 2026-08-26:',
-    '13d1a666cb827dfa7561a4daeb394bdba7a990f4d4e322fcdc08317a438b80b5'],
+    'ec12f88d20f2cc1639b79c26cb7d3ca490e7e9479b3ac014a5f3c0e419baedbb'],
   /* MOVED DELIBERATELY, wfnext-1.0.0 (2026-09-01) - owner ruling 23:05,
      verbatim: "nothing here should be blocked or manual or not attempted once
      its run". MEASURED 22:50-22:56 on his own tab: one trusted press, six
@@ -115,9 +120,9 @@ const HEAD_REGIONS = [
      tests/paintwait-queue-proof.js. */
   ['batch queue (runUnifiedBatchSend: per-row probe/execute/receipt sequencing)',
     '  function runUnifiedBatchSend(state, btn) {', '  function reopenOptions(opts, manifest) {',
-    '85e30a6375f57e7637dbc2a4380d978be55e47f7bd9b99b0ee7d60c11acceac1'],
+    '265db89e13cded73072959ead3170c88a7e834a8e843a7f753d9f56e12060493'],
   ['closed allowlist ATHENA_EXECUTABLE_ACTIONS', '  var ATHENA_EXECUTABLE_ACTIONS = ', '\n',
-    '5f712227078089f313988b254825795ed695d22fa6393e5a3c635d92ebcbb6f2'],
+    '27406852d9632ee5db6a143ac989eafa0308ac6e4a84326c731076941f2538a5'],
   ['closed allowlist OPBATCH_ACTIONS', '  var OPBATCH_ACTIONS = ', '\n',
     '35da13388ee65c349a310314a6b74ba28a492c98ca44e3e4a258c829302d89fa']
 ];
@@ -136,7 +141,7 @@ const HEAD_REGIONS = [
 
   /* the two closed allowlists say what they say, and say it once - the same
      byte-strings tests/day-writeall.test.js pins for the day/op-note queue. */
-  const EXEC_ALLOW = 'var ATHENA_EXECUTABLE_ACTIONS = { write_note: true, save_draft: true, stage_billing: true, sign_encounter: true, place_order: true };';
+  const EXEC_ALLOW = 'var ATHENA_EXECUTABLE_ACTIONS = { write_note: true, save_draft: true };';
   const BATCH_ALLOW = 'var OPBATCH_ACTIONS = { write_note: 1, save_draft: 1 };';
   const BATCH_KINDS = "var OPBATCH_KINDS = { '': 1, opnote: 1 };";
   eq(tally(FLOW, EXEC_ALLOW), 1, 'the executable-action allowlist must appear exactly once, byte for byte');
@@ -1014,15 +1019,11 @@ function primaryFollowsPlan(h, where) {
     await settle(300);
     h.wf.diagnostics.sheetUx.press(h.el('mlsAthenaUnifiedGo'));
     await settle(2600);
-    /* savenamed-app-1.0.0: the refused section is STILL never written - that is
-       the property this line guards, and it is asserted on the actions below.
-       What changed is that the same batch-arm press also runs the review's own
-       encounter save, which is a draft save of whatever DID land: it protects
-       the section that landed, it signs nothing, and the receipt below still
-       names the section that did not land and why. */
-    eq(h.executes().length, 2, 'the refused section was written anyway, or the encounter save did not ride the same press');
-    assert.deepStrictEqual(h.executes().map(m => m.action), ['write_note', 'save_draft'],
-      'the refused section was written anyway');
+    /* Save now waits for every checked section. The partial receipt keeps
+       the successful insertion and names the refused section for retry. */
+    eq(h.executes().length, 1, 'a refused checked section must prevent the encounter save');
+    assert.deepStrictEqual(h.executes().map(m => m.action), ['write_note'],
+      'the refused section or a premature save reached an execute');
     checks++;
     eq(h.executes().filter(m => m.rowHash === noteRows[1].rowHash).length, 0,
       'THE REFUSED SECTION REACHED AN EXECUTE');

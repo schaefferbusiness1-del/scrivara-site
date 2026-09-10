@@ -1,5 +1,10 @@
 'use strict';
 
+/* 2026-09-10 owner policy: only write_note/save_draft execute. The pinned
+ * probe/execute paths now require every checked section before Save; the batch
+ * skips Save after a refusal. Runtime proof: savenamed-app-proof.js. */
+
+
 /* wfnext-1.0.0 - ONE PRESS, ONE SECTION, SAID UP FRONT; AND NEVER A HANG.
  *
  * OWNER, 2026-09-01 23:05, verbatim: "nothing here should be blocked or manual
@@ -115,7 +120,7 @@ const HEAD_REGIONS = [
       'tests/write-auto-chain.test.js does not carry this region\'s current digest - the pins have drifted apart: ' + name);
   });
   /* and the closed allowlists still say exactly what they say */
-  ok(FLOW.indexOf('var ATHENA_EXECUTABLE_ACTIONS = { write_note: true, save_draft: true, stage_billing: true, sign_encounter: true, place_order: true };') > 0,
+  ok(FLOW.indexOf('var ATHENA_EXECUTABLE_ACTIONS = { write_note: true, save_draft: true };') > 0,
     'the executable-action allowlist was rewritten');
   ok(FLOW.indexOf('var OPBATCH_ACTIONS = { write_note: 1, save_draft: 1 };') > 0,
     'the batch lane\'s CLOSED two-action allowlist was rewritten');
@@ -651,6 +656,12 @@ function fireChange(box) { ((box.handlers && box.handlers.change) || []).forEach
     go.click();
     await settle(900);
     eq(h.executes().length, 4, 'the re-checked section was not written by its own press');
+    eq(go.disabled, false, 'the added section must leave a fresh Save available on an older one-action extension');
+    eq(go.textContent, 'Confirm & save the encounter in athenaOne', 'the earlier save incorrectly covers the new section');
+    go.click();
+    await settle(900);
+    eq(h.executes().length, 5, 'the new section never received its own fresh save');
+    eq(h.executes()[4].action, 'save_draft', 'the final press did not save the updated encounter');
     eq(go.disabled, true, 'the finished sheet left the button live again');
     eq(go.textContent, 'Nothing left to send', 'the finished sheet does not say there is nothing left');
   }

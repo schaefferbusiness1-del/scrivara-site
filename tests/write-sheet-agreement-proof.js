@@ -1,5 +1,10 @@
 'use strict';
 
+/* 2026-09-10 owner policy: only write_note/save_draft execute. The pinned
+ * probe/execute paths now require every checked section before Save; the batch
+ * skips Save after a refusal. Runtime proof: savenamed-app-proof.js. */
+
+
 /* readysay-1.0.0 / apcover-1.0.0 / preview-1.0.0 - THE SHEET SAYS ONE THING.
  *
  * MEASURED LIVE, 2026-09-02 16:29-16:31, the owner's own tab, MLS Assist
@@ -114,7 +119,7 @@ ok(NO_PREVIEW.length < FLOW.length, 'the preview negative control is byte-identi
 
 /* ============================================ 0. THE BYTES THAT MAY NOT MOVE */
 {
-  ok(FLOW.indexOf('var ATHENA_EXECUTABLE_ACTIONS = { write_note: true, save_draft: true, stage_billing: true, sign_encounter: true, place_order: true };') > 0,
+  ok(FLOW.indexOf('var ATHENA_EXECUTABLE_ACTIONS = { write_note: true, save_draft: true };') > 0,
     'the executable-action allowlist was rewritten - none of these three lanes needed anything from it');
   ok(FLOW.indexOf('var OPBATCH_ACTIONS = { write_note: 1, save_draft: 1 };') > 0, 'the batch lane\'s CLOSED two-action allowlist was rewritten');
   ok(FLOW.indexOf("addRow({ id: 'sign-named-sections-manual', action: '', kind: 'sign'") > 0, 'SIGN & SAVE CHANGED - it stays manual and unexecutable');

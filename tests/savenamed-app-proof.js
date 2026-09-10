@@ -88,8 +88,8 @@ ok(PREFIX !== FLOW && PREFIX.length !== FLOW.length, 'the negative control is by
 /* ================================================ 0. THE BYTES THAT MAY NOT MOVE
  * The two CLOSED action allowlists, and the include-control law. */
 {
-  ok(FLOW.indexOf('var ATHENA_EXECUTABLE_ACTIONS = { write_note: true, save_draft: true, stage_billing: true, sign_encounter: true, place_order: true };') > 0,
-    'the executable-action allowlist was rewritten - savenamed-app-1.0.0 needed nothing from it, because save_draft was ALREADY on it');
+  ok(FLOW.indexOf('var ATHENA_EXECUTABLE_ACTIONS = { write_note: true, save_draft: true };') > 0,
+    'the current owner policy permits only reviewed note writes and draft saves');
   ok(FLOW.indexOf('var OPBATCH_ACTIONS = { write_note: 1, save_draft: 1 };') > 0,
     'the batch lane\'s CLOSED two-action allowlist was rewritten');
   /* bx-1.0.0 law: the include checkbox is emitted for write_note rows and for
@@ -151,6 +151,7 @@ function makeDom() {
       removeAttribute(k) { delete el.attrs[k]; },
       addEventListener(t, fn) { (el.handlers[t] = el.handlers[t] || []).push(fn); },
       removeEventListener() {}, focus() {}, click() {},
+      dispatchEvent(event) { (el.handlers[event.type] || []).forEach(fn => fn(event)); },
       querySelector() { return null; }, querySelectorAll() { return []; }, closest() { return null; }
     };
     return el;
@@ -201,6 +202,7 @@ function makeDom() {
       },
       querySelectorAll(sel) { return /mls-bx-check/.test(String(sel || '')) ? boxesOf(el) : []; },
       closest() { return null; },
+      dispatchEvent(event) { (el.handlers[event.type] || []).forEach(fn => fn(event)); },
       click() { (el.handlers.click || []).forEach(fn => fn({ target: el })); }
     };
     let html = '', text = '';
@@ -324,6 +326,10 @@ function makeHarness(options) {
         capabilities: { supervisedOrderPlacementV2: true, destinationTeachingV2: true, athenaFinalActionsV1: true, phoneConfirmedWriteV1: true, batchArmV1: true } });
     }
     if (m.type === 'mlsAppAthenaActionV2') {
+      if (options.actionReply) {
+        const custom = options.actionReply(m);
+        if (custom) return deliver('mlsAppAthenaActionV2Result', m.requestId, custom);
+      }
       /* THE RUNNING EXTENSION. 3.0.107 / 3.0.110 refuse the named shape before
          the probe/execute split, with the code they have always used. */
       if (options.noSaveLeg && m.action === 'save_draft') {
@@ -633,5 +639,69 @@ function fireChange(box) { ((box.handlers && box.handlers.change) || []).forEach
       'the unsupported save was re-checked automatically - that is the loop');
   }
 
-  console.log('PASS savenamed-app-proof: ' + checks + ' checks - the named-section review\'s Save row is a supervised save_draft that sorts LAST, carries the all-named payload it already had and no include checkbox of its own; its readiness is a RULE (nothing checked, nothing armed; on an older extension it arms only once every checked section is VERIFIED and becomes the next "Confirm & save the encounter in athenaOne" press; on a batch-arm extension it rides the SAME press as the final item of the ordered authorization, and the button and the up-front sentence say so before the click); the row reads WAITING FOR YOUR PRESS -> VERIFIED ("Encounter saved in athenaOne and read back") -> NOT SENT with the refusal\'s own reason and never MANUAL; the DONE sentence says the encounter was saved and that only Sign is left; every new refusal code is a known reason with a doctor sentence, none is on an automatic re-check allowlist, and the one code minted after a click never claims nothing changed; the running 3.0.110 answers its old refusal and the sheet says in one sentence that MLS Assist is older than 3.0.111 without ever re-checking by itself; Sign & Save is still MANUAL and still not executable; and every runtime section is measured against the PRE-FIX bytes, where none of it happens');
+  /* The partial path is also a save contract: failed checked sections cannot
+     be skipped by Save, deferred writes stay ahead of it, and a later section
+     write supersedes an earlier save. These use the real button and bridge. */
+  {
+    let refuse = true;
+    const h = makeHarness({ batchArm: true, actionReply: m => refuse && m.action === 'write_note' && m.sections[0].key === 'ros'
+      ? { ok: false, blocked: true, reason: 'note-editor-not-empty' } : null });
+    h.wf.openUnifiedConfirmation({ patient: PATIENT, sections: clone(SECTIONS), expectedContext: BOUND, receiptSessionId: 'save-partial' });
+    await settle(160);
+    const go = h.el('mlsAthenaUnifiedGo');
+    go.click(); await settle(1800);
+    eq(h.executes().filter(m => m.action === 'write_note').length, 2, 'the partial fixture did not write the two available sections');
+    eq(h.executes().filter(m => m.action === 'save_draft').length, 0, 'Save executed while a checked section had refused');
+    eq(h.save().verified(), false, 'a partial write claims the encounter has been saved');
+    ok(/all 1 checked section/.test(h.wf.diagnostics.readySay.text()), 'READY counts landed sections as future writes');
+    go.click(); await settle(1800);
+    const queue = h.next().queueRows();
+    eq(queue[queue.length - 1].action, 'save_draft', 'a repeatedly refused note was sorted after Save');
+    refuse = false;
+    go.click(); await settle(1800);
+    assert.deepStrictEqual(h.executes().slice(-2).map(m => m.action), ['write_note', 'save_draft'], 'retry did not write the deferred section before Save'); checks++;
+    eq(h.save().verified(), true, 'the successful retry never saved');
+  }
+  {
+    const h = makeHarness({ batchArm: true });
+    h.wf.openUnifiedConfirmation({ patient: PATIENT, sections: clone(SECTIONS), expectedContext: BOUND, receiptSessionId: 'save-add-section' });
+    await settle(160);
+    const boxes = h.boxes(), go = h.el('mlsAthenaUnifiedGo');
+    boxes[2].checked = false;
+    boxes[2].dispatchEvent({ type: 'change', target: boxes[2] });
+    go.click(); await settle(1800);
+    eq(h.save().verified(), true, 'the initial selected subset was not saved');
+    boxes[2].checked = true;
+    boxes[2].dispatchEvent({ type: 'change', target: boxes[2] });
+    go.click(); await settle(1800);
+    eq(h.executes().filter(m => m.action === 'save_draft').length, 2, 'the new section was not saved by a fresh confirmed press');
+    eq(h.save().verified(), true, 'the second save did not verify');
+    assert.deepStrictEqual(h.executes().slice(-2).map(m => m.action), ['write_note', 'save_draft'], 'the added section did not receive a fresh save on the same press'); checks++;
+  }
+  /* Current owner policy overrides every legacy extension capability. Check
+     both public dispatch and the final private bridge boundary in the full
+     module; prototype properties are not members of the closed allowlist. */
+  {
+    const hook = '  window.__mlsWriteFlow = {';
+    ok(FLOW.includes(hook), 'the test bridge hook has no insertion point');
+    const h = makeHarness({ batchArm: true, src: FLOW.replace(hook, '  window.__policyBridge = bridge;\n' + hook) });
+    for (const action of ['stage_billing', 'sign_encounter', 'place_order', 'constructor', 'toString', '__proto__']) {
+      const before = h.posted.length;
+      const refused = await h.wf.startAthenaAction(action, { patient: PATIENT, expectedContext: BOUND, sections: clone(SECTIONS) });
+      eq(refused.ok, false, 'an excluded action passed the public action entry point');
+      eq(h.posted.length, before, 'an excluded action reached the extension through the public entry point');
+      const bridged = await h.window.__policyBridge('mlsAppAthenaActionV2', { action, mode: 'execute' }, 'mlsAppAthenaActionV2Result', 1);
+      eq(bridged.reason, 'manual-only-final-action', 'the final dispatch boundary admitted an excluded action');
+      eq(h.posted.length, before, 'an excluded action was posted through the private bridge');
+    }
+    const generic = h.wf.buildUnifiedManifest({ patient: PATIENT, expectedContext: BOUND,
+      sections: [{ key: 'note', text: 'Synthetic reviewed note.' }],
+      plan: [{ kind: 'billing', billing: { em: '99213' }, body: 'Reviewed code 99213' }] });
+    for (const kind of ['sign', 'billing']) {
+      const row = generic.rows.find(r => r.kind === kind);
+      ok(row && row.capability === 'manual' && !row.action, 'a generic review made a final action executable');
+      eq(/update MLS Assist|until you update|until then/i.test(row.label + ' ' + row.consequence), false, 'manual final-action copy advertises an upgrade cure');
+    }
+  }
+  console.log('PASS savenamed-app-proof: ' + checks + ' checks; named sections save last, refused sections block Save, later writes require a fresh save, and partial READY counts match the remaining queue.');
 })().catch(err => { console.error(err); process.exit(1); });
