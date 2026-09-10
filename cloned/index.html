@@ -5863,7 +5863,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     <p class="note" id="viewMeta"></p>
     <textarea id="viewBody" aria-label="Saved visit text" style="min-height:340px;font-size:14px" readonly></textarea>
     <div class="row">
-      <button class="btn-primary" onclick="reopenViewed()" style="flex:1">↩ Reopen in editor</button>
+      <button class="btn-primary" onclick="reopenViewed()" style="flex:1">↩ Continue this draft</button>
       <button class="btn-ghost" onclick="closeView()">Close</button>
     </div>
   </div>
@@ -27907,8 +27907,6 @@ function _mlsContinueSavedRecord(n){
   loadRecordIntoEditor(n);
   renderPatientBar();
   toast('Draft reopened with its patient and visit details. Save to history when you are done editing.','');
-  const noteCard=document.getElementById('noteCard');
-  if(noteCard&&noteCard.scrollIntoView) noteCard.scrollIntoView({behavior:'smooth',block:'start'});
   return true;
 }
 function reopenViewed(){
