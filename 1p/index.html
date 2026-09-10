@@ -27905,6 +27905,7 @@ function _mlsContinueSavedRecord(n){
   }
   showView('visit');
   loadRecordIntoEditor(n);
+  try{ const easy=window.__mlsEasyV32||window.__mlsEasyV3; if(easy&&typeof easy.open==='function') easy.open('doctor'); }catch(e){}
   renderPatientBar();
   toast('Draft reopened with its patient and visit details. Save to history when you are done editing.','');
   return true;
