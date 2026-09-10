@@ -1,13 +1,10 @@
-/* MLS Assist — write-safety guard (wsg-2.0.0).
+/* MLS Assist — write-safety guard (wsg-3.0.0).
  *
- * wsg-2.0.0 (owner directive 2026-08-12, released 2026-08-17): the wsg-1.x
- * "preview-only" EXECUTE refusal for sign_encounter / stage_billing /
- * place_order is LIFTED. BLOCKED_EXECUTE_ACTIONS is empty; every supervised V2
- * action executes behind the same correctness gates (exact identity + encounter
- * lock, one-use token, fresh trusted click, verified prior note write before
- * sign, one action per confirm, no automatic chaining). The forbidden-control
- * matchers, the production test-content policy and the identity helpers are
- * unchanged.
+ * Current owner contract: only write_note and save_draft may execute.
+ * Signing, orders, prescriptions, billing, check-in and finalization remain
+ * outside extension execution. Exact identity and encounter locks, one-use
+ * tokens, trusted gestures and read-back verification remain mandatory.
+ * The production test-content policy and identity helpers are unchanged.
  *
  * ONE module, THREE homes:
  *   1. Service worker (background.js `importScripts`) — action-policy gate,
@@ -32,7 +29,7 @@
 (function (root) {
   'use strict';
   if (root.MLSWriteSafety && root.MLSWriteSafety.version) return; // idempotent
-  var VERSION = 'wsg-2.0.0';
+  var VERSION = 'wsg-3.0.0';
 
   /* ------------------------------------------------------------------ *
    * Shared normalizers (mirror the V2 driver's conventions).           *
@@ -172,12 +169,9 @@
   /* ------------------------------------------------------------------ *
    * 2. ACTION POLICY — what the supervised V2 contract may EXECUTE      *
    * ------------------------------------------------------------------ */
-  /* wsg-2.0.0: NO action is refused by policy any more. The owner (sole owner
-     of MLS, directive 2026-08-12) lifted the wsg-1.x preview-only rule for the
-     sign / order / billing lanes; probe stays read-only, execute proceeds to
-     the driver's own supervised verification. The map is kept (empty) so the
-     gate keeps one shape and a future policy can be re-pinned in one place. */
-  var BLOCKED_EXECUTE_ACTIONS = {};
+  /* draftonly-1.0.0: this map describes known manual actions for reviewers;
+     enforcement uses the CLOSED allowlist below, including unknown actions. */
+  var BLOCKED_EXECUTE_ACTIONS = Object.freeze({ sign_encounter: 1, stage_billing: 1, place_order: 1 });
   var BLOCK_MESSAGE = 'This action is blocked by write-safety policy. Nothing was changed.';
 
   /* ------------------------------------------------------------------ *
@@ -233,8 +227,8 @@
      proceed to the existing supervised checks. */
   function gateActionRequest(req) {
     req = req || {};
-    var mode = String(req.mode || '').toLowerCase(), action = String(req.action || '').toLowerCase();
-    if (mode === 'execute' && BLOCKED_EXECUTE_ACTIONS[action]) {
+    var mode = String(req.mode || '').toLowerCase().trim(), action = String(req.action || '').toLowerCase().trim();
+    if (mode === 'execute' && !/^(write_note|save_draft)$/.test(action)) {
       return { ok: false, blocked: true, reason: 'write-safety-final-action-blocked', action: action, error: BLOCK_MESSAGE };
     }
     if (mode === 'execute' && (action === 'write_note' || action === 'save_draft')) {

@@ -325,6 +325,9 @@ const AUTOMATED_PROOF_FILES = new Set([
 ]);
 
 const tests = [
+  'visit-header-source-consistency.test.js',
+  'athena-draft-only-execution.test.js',
+  'athena-legacy-executor-closed.test.js',
   'public-publication-boundary.test.js',
   '1p-preview-contract.test.js',
   /* The /cloned lane: a byte-faithful production clone that /1p features are

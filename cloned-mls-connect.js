@@ -51905,7 +51905,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 }catch(e){}})();
 /* 2026-07-28 owner order: feat_mls_copilot_voice_v2.js retired (Copilot Voice removal) - loader stood down; file remains on disk and in the SW retired-asset sweep. */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_athena_status_unify.js"]'))return;var s=document.createElement('script');s.src='feat_athena_status_unify.js?v=20260711su2c1';s.setAttribute('data-mls-asset','feat_athena_status_unify.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item20: ONE unified, honest Athena status system (single source of truth: connection from __mlsConnTruth, one in-flight progress, one result; suppress contradictory/duplicate lines; always-preserve DOB) -- additive, reversible (window.__mlsAthenaStatusUnify.revert()) */
-;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_checker.js"]'))return;var s=document.createElement('script');s.src='feat_mls_checker.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_checker.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* item21: MLS Checker -- honest self-diagnostic registry of named checks (pass/fail + code + cause + fix) surfaced in the MLS Assistant -- additive, reversible (window.__mlsChecker.revert()) */ /* setfix-1.0.0 (b1169): the loader token was hand-pinned to '20260827chk3084' and never bumped across five SERVER_EXT_VERSION moves (3.0.84->3.0.101), so every returning browser kept running the 3.0.84 checker under sw.js's cache-first versioned-asset rule and EXT-003 told doctors they were current when they were not (n=39/60/73). Switched to the same __MLS_AV build token every other feat_* loader in this file uses -- it moves with every release and cannot go stale by omission. */;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_upnow_sync.js"]'))return;var s=document.createElement('script');s.src='feat_mls_upnow_sync.js?v=20260808uns6perf2';s.setAttribute('data-mls-asset','feat_mls_upnow_sync.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item22: sync top active patient/banner with NEXT UP "UP NOW" highlight (one source of truth) -- additive, reversible (window.__mlsUpNowSync.revert()) */
+;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_checker.js"]'))return;var s=document.createElement('script');s.src='feat_mls_checker.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_checker.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* item21: MLS Checker -- honest self-diagnostic registry of named checks (pass/fail + code + cause + fix) surfaced in the MLS Assistant -- additive, reversible (window.__mlsChecker.revert()) */ /* setfix-1.0.0 (b1169): the loader token was hand-pinned to '20260827chk3084' and never bumped across five SERVER_EXT_VERSION moves (3.0.84->3.0.101), so every returning browser kept running the 3.0.84 checker under sw.js's cache-first versioned-asset rule and EXT-003 told doctors they were current when they were not (n=39/60/73). Switched to the same __MLS_AV build token every other feat_* loader in this file uses -- it moves with every release and cannot go stale by omission. */;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_upnow_sync.js"]'))return;var s=document.createElement('script');s.src='feat_mls_upnow_sync.js?v=20260910uns7';s.setAttribute('data-mls-asset','feat_mls_upnow_sync.js');s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* item22: sync top active patient/banner with NEXT UP "UP NOW" highlight (one source of truth) -- additive, reversible (window.__mlsUpNowSync.revert()) */
 
 /* 2026-07-28 owner order: feat_mls_voice_ai.js retired (Copilot Voice removal) - loader stood down; file remains on disk and in the SW retired-asset sweep. */
 /* 2026-07-28 owner order: feat_mls_voice_copilot.js retired (Copilot Voice removal) - loader stood down; file remains on disk and in the SW retired-asset sweep. */
@@ -52790,7 +52790,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){var A="feat_mls_lastmonth_b51.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260706b51c1";s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);},{timeout:2500});}catch(e){}})(); /* b51: Pull Last Month button + honest relabel of the rolling pull button - see feat_mls_lastmonth_b51.js header. Revert: window.__mlsLastMonthB51.revert() */
 
 
-;(function(){try{var A="feat_mls_patientlock_b53.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260902b53c7";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b53: patient-context lock + writeback confirmation fallback (covers MLS Easy v2 too) - see feat_mls_patientlock_b53.js header. Token moved for nonag-1.0.0 (2026-09-02): the module changed, and a versioned asset is served cache-first, so a returning browser would keep replaying the nagging copy. Revert: window.__mlsPatientLock.revert() */
+;(function(){try{var A="feat_mls_patientlock_b53.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260910b53c8";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b53: patient-context lock + writeback confirmation fallback (covers MLS Easy v2 too) - see feat_mls_patientlock_b53.js header. Token moved for nonag-1.0.0 (2026-09-02): the module changed, and a versioned asset is served cache-first, so a returning browser would keep replaying the nagging copy. Revert: window.__mlsPatientLock.revert() */
 
 
 /* =========================================================================
@@ -66173,6 +66173,7 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
   var UPNOW_TAIL = {
     ready: 'loaded &amp; ready. Hit \uD83C\uDF99\uFE0F Start recording.',
     recording: 'recording now - stop when you are done.',
+    generating: 'generating your note - your transcript is safe.',
     transcript: 'transcript captured - Generate one note.',
     note: 'note ready - review, then send to Athena.',
     sent: 'in Athena - this note is written and verified.'
@@ -66240,6 +66241,7 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
     ctx = ctx || {};
     if (!upNowSamePerson(ctx.upName, ctx.activeName)) return 'elsewhere';
     if (ctx.recording) return 'recording';
+    if (ctx.generating) return 'generating';
     if (ctx.sent) return 'sent';
     if (String(ctx.note == null ? '' : ctx.note).trim()) return 'note';
     if (String(ctx.transcript == null ? '' : ctx.transcript).trim()) return 'transcript';
@@ -66256,6 +66258,7 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
       upName: ctx.upName || parts.name,
       activeName: ctx.activeName,
       recording: ctx.recording,
+      generating: ctx.generating,
       transcript: ctx.transcript,
       note: ctx.note,
       sent: ctx.sent
@@ -66334,6 +66337,7 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
     return {
       activeName: activeName,
       recording: upNowRecording(),
+      generating: safe(function () { return typeof window.__mlsGenerationRunState === 'function' && window.__mlsGenerationRunState().active === true; }, false),
       transcript: upNowFieldText('transcript'),
       note: upNowFieldText('noteBox'),
       sent: upNowSent(activeName)

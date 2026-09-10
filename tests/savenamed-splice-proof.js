@@ -227,7 +227,8 @@ console.log('  4. the splice is a pure insertion - every other byte of backgroun
   eq(between(spliced, a, b, what), between(original, a, b, what), what + ' is not byte-identical across the splice');
 });
 [
-  "    function clickOnce(el) { if (wsForbiddenControl(el) && !(action === 'sign_encounter' && exactSign(el))) throw new Error('forbidden-control-blocked'); try { el.scrollIntoView({ block: 'center' }); } catch (e) {} el.click(); }",
+  // draftonly-1.0.0 removed the historical sign exception; preserve the stricter boundary.
+  "    function clickOnce(el) { if (wsForbiddenControl(el)) throw new Error('forbidden-control-blocked'); try { el.scrollIntoView({ block: 'center' }); } catch (e) {} el.click(); }",
   "      return { ok: false, blocked: true, reason: 'named-section-final-action-unsupported', error: 'Review and save independently placed named sections directly in Athena.' };",
   "        noteTarget = (action === 'write_note' && requestedNoteSection !== 'note') ? findNamedNoteAction(fr, action, requestedNoteSection) : findNoteAction(fr, action);",
   "        if (mode !== 'teach' && action !== 'write_note' && currentNote !== reviewedNote) {",

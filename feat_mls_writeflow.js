@@ -116,6 +116,12 @@
      can no longer resolve each other's promise. */
   var BRIDGE_CORRELATED = { mlsAppAthenaActionV2: 1, mlsAppGotoDate: 1, mlsExtHealth: 1 };
   function bridge(type, payload, respType, timeout) {
+    /* Owner 2026-09-10: the only executable actions are note insertion and
+       draft save. Enforce this at dispatch as well as at both UI entry points. */
+    if (S(type) === 'mlsAppAthenaActionV2' && S(payload && payload.mode) === 'execute' &&
+      ATHENA_EXECUTABLE_ACTIONS[S(payload && payload.action)] !== true) {
+      return Promise.resolve({ ok: false, blocked: true, reason: 'manual-only-final-action' });
+    }
     if (syntheticLocalRuntime() && /^mlsAppAthenaAction/.test(S(type))) {
       return Promise.resolve({ ok: false, blocked: true, reason: 'synthetic-local-only', error: 'The local synthetic demo never connects to live Athena data or actions.' });
     }
@@ -147,8 +153,10 @@
      executes, so the rows say that instead of promising a send that the
      bridge would reject. The moment a capable extension is installed these
      rows go ready with zero further site change. */
-  function athenaFinalActionsReady() { try { return !!(window.__mlsExtensionCapabilities && window.__mlsExtensionCapabilities.athenaFinalActionsV1 === true); } catch (e) { return false; } }
-  var FINAL_ACTION_EXT_BLOCK = 'Your installed MLS Assist still enforces the previous write-safety policy and will refuse this action. Update MLS Assist (Settings > Get the extension, v3.0.62 or newer) to enable it.';
+  /* The current owner policy applies even if an older extension advertises
+     final-action capabilities. Signing, billing and orders stay in Athena. */
+  function athenaFinalActionsReady() { return false; }
+  var FINAL_ACTION_EXT_BLOCK = 'Complete this action directly in Athena. MLS only writes reviewed note text and saves unsigned drafts.';
 
   /* ---------------- explicit Athena actions ------------------------------ */
   /* Owner directive 2026-08-12 (extension released 2026-08-17 as MLS Assist
@@ -165,23 +173,23 @@
       consequence: 'Writes only the exact reviewed unsigned note text into the verified Athena encounter editor. It does not Save, Sign, bill, submit a claim, place an order, or prescribe. Review the result before choosing another action.'
     },
     stage_billing: {
-      label: 'Stage billing in Athena (update MLS Assist)',
-      consequence: 'Your installed MLS Assist still enforces the previous write-safety policy, so this stays review-only until you update it. Review the exact suggested E/M and CPT/HCPCS payload here; with MLS Assist 3.0.62 or newer this row stages the codes into the verified encounter\'s billing slate after your one-click confirm.'
+      label: 'Review billing codes',
+      consequence: 'Review the suggested E/M and CPT/HCPCS codes here, then enter and review billing directly in Athena. MLS does not stage billing or submit claims.'
     },
     save_draft: {
       label: 'Save draft in Athena',
       consequence: 'After verifying that this exact reviewed note is in the exact encounter editor, clicks that encounter\'s verified Save / Save Draft control. It does not sign the note, submit billing, or place an order.'
     },
     sign_encounter: {
-      label: 'Sign & Save in Athena (update MLS Assist)',
-      consequence: 'Your installed MLS Assist still enforces the previous write-safety policy, so this stays review-only until you update it. With MLS Assist 3.0.62 or newer, after MLS verifies this exact reviewed note was written to this exact encounter, your one-click confirm clicks that encounter\'s verified Sign & Save control.'
+      label: 'Sign in Athena',
+      consequence: 'Review the saved draft, then sign it yourself in Athena. MLS never signs, closes or finalizes an encounter.'
     },
     place_order: {
-      label: 'Place reviewed order in Athena (update MLS Assist)',
-      consequence: 'Your installed MLS Assist still enforces the previous write-safety policy, so this stays review-only until you update it. With MLS Assist 3.0.62 or newer, your one-click confirm selects exactly this catalog item in the verified encounter\'s Orders workspace and places only it, verified by an isolated read-back.'
+      label: 'Review order for Athena',
+      consequence: 'Review this order here, then enter and confirm it directly in Athena. MLS does not place orders or prescribe.'
     }
   };
-  var ATHENA_EXECUTABLE_ACTIONS = { write_note: true, save_draft: true, stage_billing: true, sign_encounter: true, place_order: true };
+  var ATHENA_EXECUTABLE_ACTIONS = { write_note: true, save_draft: true };
   /* Capable-mode row text: rendered when the installed extension adverts
      athenaFinalActionsV1 (MLS Assist 3.0.62+). */
   var ATHENA_FINAL_READY = {
@@ -912,7 +920,7 @@
    'goto-date-relay-deadline-exceeded high-risk-order-blocked invalid-binding invalid-target-retry ' +
    'local-patient-id-required local-row-missing loopback-synthetic-only missing-order-fields missing-session ' +
    'mrn-adopted mrn-conflict name-not-found ' +
-   'named-section-final-action-unsupported no-athena-tab no-chart-open no-name-match no-response no-results ' +
+   'manual-only-final-action named-section-final-action-unsupported no-athena-tab no-chart-open no-name-match no-response no-results ' +
    'not-persisted not-watching ' +
    'note-content-required note-destination-mismatch note-editor-not-empty note-payload-mismatch ' +
    'note-section-count-mismatch note-section-not-on-surface note-section-payload-mismatch note-write-proof-expired note-write-proof-used ' +
@@ -1095,7 +1103,7 @@
   function startAthenaAction(action, opts) {
     opts = opts || {};
     if (!ATHENA_ACTIONS[action]) { actionSay(opts, 'Unsupported Athena action. Nothing was changed.', 'err'); return Promise.resolve({ ok: false, error: 'unsupported-action' }); }
-    if (!ATHENA_EXECUTABLE_ACTIONS[action]) {
+    if (ATHENA_EXECUTABLE_ACTIONS[action] !== true) {
       actionSay(opts, 'This payload is review-only here. Complete it directly in Athena; MLS keeps the exact payload visible for you.', '');
       return Promise.resolve({ ok: false, error: 'manual-only-final-action' });
     }
@@ -1624,7 +1632,7 @@
       } else {
         addRow({ id: 'sign-encounter', action: '', kind: 'sign', label: ATHENA_ACTIONS.sign_encounter.label, destination: 'Athena encounter > Sign & Save control',
           capability: 'manual',
-          reason: FINAL_ACTION_EXT_BLOCK + ' Until then, complete Sign & Save directly in Athena.',
+          reason: FINAL_ACTION_EXT_BLOCK + ' Sign stays your own click in Athena.',
           consequence: ATHENA_ACTIONS.sign_encounter.consequence, payload: notePayload, order: UNIFIED_ORDER.sign_encounter });
       }
     } else if (noteText && hasNamedNoteSections) {
@@ -2163,10 +2171,9 @@
       if (!wfnextBatchArmReady()) return '';
       var boxes = []; try { boxes = bxCheckBoxes(); } catch (eB) { boxes = []; }
       if (!boxes.length) return '';
-      var n = 0;
-      try { n = wfnextNoteRows(bxCheckedRows(state) || []).length; } catch (eN) { n = 0; }
+      var queue = wfnextQueueRows(state), n = wfnextNoteRows(queue).length;
       if (!n) return '';
-      var saving = false; try { saving = savenamedArmed(state) === true; } catch (eS) { saving = false; }
+      var saving = queue.some(savenamedIsRow);
       return 'One press writes all ' + n + ' checked section' + (n === 1 ? '' : 's') +
         ', one at a time, each read back before the next' + (saving ? ', then saves the encounter.' : '.') +
         (saving ? READYSAY_SAVE_TAIL : READYSAY_TAIL);
@@ -2600,6 +2607,15 @@
     var row = savenamedRow(state);
     return !!row && savenamedLanded(state, row);
   }
+  function savenamedSectionsLanded(state) {
+    try {
+      var notes = bxCheckedRows(state) || [];
+      return notes.length > 0 && notes.every(function (row) {
+        return savenamedLanded(state, row) || !!apCovered(state, row);
+      });
+    } catch (e) { return false; }
+  }
+  var SAVENAMED_PENDING_SECTIONS = 'Finish the remaining checked sections, then MLS can save the encounter. Press Confirm again to retry those sections.';
   function savenamedArmed(state) {
     try {
       if (!savenamedRow(state)) return false;
@@ -2609,14 +2625,14 @@
       for (var i = 0; i < notes.length; i++) {
         /* a section that has not landed yet arms the save ONLY on the batch-arm
            lane, where this same press writes it AHEAD of the save */
-        if (!savenamedLanded(state, notes[i])) return wfnextBatchArmReady();
+        if (!savenamedLanded(state, notes[i]) && !apCovered(state, notes[i])) return wfnextBatchArmReady();
       }
       return true;
     } catch (e) { return false; }
   }
   function savenamedOwedRow(state) {
     var row = savenamedRow(state);
-    if (!row || savenamedVerified(state)) return null;
+    if (!row || (savenamedVerified(state) && savenamedSectionsLanded(state))) return null;
     return savenamedArmed(state) ? row : null;
   }
   /* the checked NOTE sections of a list - the numbers every "N sections"
@@ -2678,18 +2694,19 @@
     var rows = wfnextCheckedRows(state), notes = [], drafts = [], back = [];
     for (var i = 0; i < rows.length; i++) {
       var rec = state.receipts[rows[i].id];
-      if (rec && rec.status === 'verified') continue;
+      if (rec && rec.status === 'verified' && !savenamedIsRow(rows[i])) continue;
       /* apcover-1.0.0 (2026-09-02): the A/P shape this athenaOne does NOT have
          is covered by the one that landed, so it leaves the queue and the
          button's "k of N" instead of being offered as a press that can only
          refuse. It stays on the sheet, stays checked, and carries its own
          sentence in the receipt; nothing here unticks or hides anything. */
       if (apCovered(state, rows[i])) continue;
+      if (rows[i].action === 'save_draft') { drafts.push(rows[i]); continue; }
       if (wfnextDeferred(state, rows[i].id)) { back.push(rows[i]); continue; }
-      if (rows[i].action === 'save_draft') drafts.push(rows[i]); else notes.push(rows[i]);
+      notes.push(rows[i]);
     }
     back.sort(function (a, b) { return wfnextSettleCount(state, a.id) - wfnextSettleCount(state, b.id); });
-    return notes.concat(drafts).concat(back);
+    return notes.concat(back).concat(drafts);
   }
   function wfnextLandedCount(state) {
     return wfnextCheckedRows(state).length - wfnextRemainingRows(state).length;
@@ -3786,7 +3803,8 @@
   function probeUnifiedRow(state, rowId) {
     if (!state || state.closed || state.running || state.halted) return;
     var row = unifiedRow(state.manifest, rowId), go = document.getElementById('mlsAthenaUnifiedGo');
-    if (!row || row.capability !== 'ready' || !row.action) { unifiedStatus(state, 'That destination is not executable. Its payload remains visible for manual review.', 'err'); return; }
+    if (!row || row.capability !== 'ready' || ATHENA_EXECUTABLE_ACTIONS[row.action] !== true) { unifiedStatus(state, 'That destination is not executable. Its payload remains visible for manual review.', 'err'); return; }
+    if (savenamedIsRow(row) && !savenamedSectionsLanded(state)) { unifiedStatus(state, SAVENAMED_PENDING_SECTIONS, 'fix'); unifiedRecheckButton(state, row.id); return; }
     if (state.receipts[row.id] && state.receipts[row.id].status === 'verified') { unifiedStatus(state, 'That exact action is already verified in this review. MLS will not repeat it.', ''); return; }
     state.selectedRowId = row.id; state.probe = null; state.probeGeneration += 1;
     var generation = state.probeGeneration;
@@ -4076,7 +4094,22 @@
   function forgetRowAttempt(state, rowId) { try { if (state && S(rowId)) delete attemptLedger[ledgerKey(state, rowId)]; } catch (e) {} }
   function rowAttempt(state, rowId) { try { return (state && attemptLedger[ledgerKey(state, rowId)]) || null; } catch (e) { return null; } }
   function rememberRowOutcome(state, rowId, receipt) {
-    try { if (receipt && (receipt.status === 'verified' || receipt.status === 'uncertain')) sectionLedger[ledgerKey(state, rowId)] = receipt; } catch (e) {}
+    try {
+      if (!receipt || (receipt.status !== 'verified' && receipt.status !== 'uncertain')) return;
+      sectionLedger[ledgerKey(state, rowId)] = receipt;
+      /* A save proves the encounter as it stood at that time. A later section
+         write makes that save historical, including after reopening this same
+         review. Keep the old receipt as evidence and require a fresh Save. */
+      if (receipt.action !== 'write_note') return;
+      var save = savenamedRow(state);
+      if (!save) return;
+      var prior = (state.receipts && state.receipts[save.id]) || sectionLedger[ledgerKey(state, save.id)];
+      if (!prior || prior.status !== 'verified') return;
+      var pending = deepFreeze({ rowId: save.id, action: 'save_draft', status: 'needs save',
+        message: 'A section changed after the earlier save. Confirm once more to save the updated encounter.', previousSave: prior });
+      state.receipts[save.id] = pending;
+      sectionLedger[ledgerKey(state, save.id)] = pending;
+    } catch (e) {}
   }
   /* savenamed-app-1.0.0: THE SAVE ROW'S OWN WORDS. It carries no include
      checkbox, so without this it fell through to "Ready, but not attempted in
@@ -4089,10 +4122,11 @@
      extension's exact sentence and halts the review, exactly as it does for a
      note write. This renderer decides nothing: it reads receipts. */
   function savenamedRowState(state, row) {
-    var rec = state.receipts && state.receipts[row.id];
+    var rec = (state.receipts && state.receipts[row.id]) || sectionLedger[ledgerKey(state, row.id)];
     if (rec) {
       if (rec.status === 'verified') return { status: 'verified', message: SAVENAMED_VERIFIED_MSG };
       if (rec.status === 'uncertain') return rec;
+      if (rec.status === 'needs save') return rec;
       return { status: SAVENAMED_NOT_SENT, message: S(rec.message) || 'Athena refused the encounter save; nothing was saved.' };
     }
     var att = rowAttempt(state, row.id);
@@ -4689,7 +4723,8 @@
   function executeUnifiedSelection(state) {
     if (!state || state.closed || state.running || state.halted) return;
     var row = unifiedRow(state.manifest, state.selectedRowId), probe = state.probe, go = document.getElementById('mlsAthenaUnifiedGo');
-    if (!row || !ATHENA_EXECUTABLE_ACTIONS[row.action]) { unifiedStatus(state, 'That row is review-only. Complete it directly in Athena; MLS did not run a final action.', 'err'); return; }
+    if (!row || ATHENA_EXECUTABLE_ACTIONS[row.action] !== true) { unifiedStatus(state, 'That row is review-only. Complete it directly in Athena; MLS did not run a final action.', 'err'); return; }
+    if (savenamedIsRow(row) && !savenamedSectionsLanded(state)) { unifiedStatus(state, SAVENAMED_PENDING_SECTIONS, 'fix'); return; }
     if (!row || row.capability !== 'ready' || !probe || probe.rowId !== row.id || probe.rowHash !== row.rowHash || probe.manifestHash !== state.manifest.manifestHash) { unifiedStatus(state, 'The selected action is not bound to a fresh exact Athena check. Nothing was changed.', 'err'); return; }
     if (!go || go.getAttribute('data-mls-athena-action') !== row.action || go.getAttribute('data-mls-preview-hash') !== state.manifest.previewHash || (row.action === 'place_order' && (go.getAttribute('data-mls-row-hash') !== row.rowHash || go.getAttribute('data-mls-client-order-id') !== S(row.payload.order && row.payload.order.clientOrderId).trim()))) { unifiedStatus(state, 'The confirmation binding changed. Nothing was written; select the action again.', 'err'); return; }
     var currentTaughtDestination = taughtDestinationFor(state.manifest, row);
@@ -5152,6 +5187,10 @@
       if (state.halted) { stopMsg = 'Halted on an uncertain outcome - inspect Athena before retrying anything.'; finish(); return; }
       var row = rows[i];
       if (state.receipts[row.id] && state.receipts[row.id].status === 'verified') { okCount++; wfprogPhase(state, row.id, 'already'); step(i + 1); return; }
+      if (savenamedIsRow(row) && !savenamedSectionsLanded(state)) {
+        rememberRowAttempt(state, row.id, 'waiting for sections', SAVENAMED_PENDING_SECTIONS);
+        wfprogPhase(state, row.id, 'skipped'); skipped.push(row.label); step(i + 1); return;
+      }
       /* wfnext-1.0.0: THE READ-ONLY STAGE IS BOUNDED, AND IT RETRIES ONCE.
          Measured 2026-09-01 22:53: this stage ran past three minutes against a
          150-second bound with the pill stuck on SENDING and no next step. The

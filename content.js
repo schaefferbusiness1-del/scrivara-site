@@ -99,6 +99,7 @@
     catch (e) { return String(Date.now()) + '-' + String(Math.random()).slice(2); }
   }
   function _mlsActionLabelMatches(action, label) {
+    if (!/^(write_note|save_draft)$/.test(action)) return false; // draftonly-1.0.0
     label = String(label || '').replace(/\s+/g, ' ').trim();
     if (action === 'write_note') return /\bconfirm\s+write\s+reviewed\s+note\b/i.test(label);
     if (action === 'stage_billing') return /\bconfirm\s+stage\s+billing(?:\s+codes?)?(?:\s+in\s+athena)?\b/i.test(label); /* wsg-2.0.0: the app confirm aria reads Confirm stage billing in Athena - accept both the codes and in-Athena forms (no quotes here: test block scanners treat quotes as strings) */
@@ -122,12 +123,9 @@
           if (actionable) {
             try { var cs = getComputedStyle(t), rect = t.getBoundingClientRect(); actionable = cs.display !== 'none' && cs.visibility !== 'hidden' && Number(cs.opacity || 1) > 0.05 && rect.width > 2 && rect.height > 2; } catch (eVisible) { actionable = false; }
           }
-          /* wsg-2.0.0 (owner directive 2026-08-12, released 2026-08-17): every
-             supervised action arms from a real trusted click on ITS OWN exact
-             confirm button - sign_encounter, place_order and stage_billing
-             included. The label must still match the action (no cross-arming),
-             and the arm is single-use and short-lived. */
-          if (actionable && /^(write_note|save_draft|stage_billing|sign_encounter|place_order)$/.test(action) && _mlsActionLabelMatches(action, label)) {
+          /* draftonly-1.0.0: only reviewed note writes and draft saves arm.
+             Labels must match; gestures remain single-use and short-lived. */
+          if (actionable && /^(write_note|save_draft)$/.test(action) && _mlsActionLabelMatches(action, label)) {
             _mlsAthenaActionGesture = {
               action: action,
               until: Date.now() + 20000,
@@ -269,7 +267,7 @@
       reply({ source: 'mls-ext', type: 'mlsBridgeBlocked', requestId: mlsStr(d.requestId || d.id, 100), resp: { ok: false, blocked: true, reason: 'loopback-synthetic-only' } });
       return;
     }
-    if (d.type === 'mlsPing') { var __v = '', __b = ''; try { var __m = chrome.runtime.getManifest(); __v = __m.version || ''; __b = __m.version_name || __v; } catch (e) {} reply({ source: 'mls-ext', type: 'mlsPong', requestId: mlsStr(d.requestId || d.id, 100), version: __v, buildId: __b, capabilities: { supervisedOrderPlacementV2: true, destinationTeachingV2: true, athenaFinalActionsV1: true, phoneConfirmedWriteV1: true, batchArmV1: true }, batchArm: '1.0.0' }); return; }
+    if (d.type === 'mlsPing') { var __v = '', __b = ''; try { var __m = chrome.runtime.getManifest(); __v = __m.version || ''; __b = __m.version_name || __v; } catch (e) {} reply({ source: 'mls-ext', type: 'mlsPong', requestId: mlsStr(d.requestId || d.id, 100), version: __v, buildId: __b, capabilities: { supervisedOrderPlacementV2: false, destinationTeachingV2: true, athenaFinalActionsV1: false, phoneConfirmedWriteV1: true, batchArmV1: true }, batchArm: '1.0.0' }); return; }
     if (d.type === 'mlsExtHealth') { var __healthRequestId = mlsStr(d.requestId || d.id, 100); try { mlsRelayRetry({ type: 'mlsExtHealthRequest' }, function (resp) { var le = chrome.runtime.lastError; reply({ source: 'mls-ext', type: 'mlsExtHealthResult', requestId: __healthRequestId, resp: resp || { ok: false, reason: le ? 'worker-unreachable' : 'no-response' } }); }); } catch (e2) { reply({ source: 'mls-ext', type: 'mlsExtHealthResult', requestId: __healthRequestId, resp: { ok: false, reason: 'bridge-error' } }); } return; }
     if (d.type === 'mlsAppCapture') {
       try {
@@ -843,15 +841,13 @@
          mode:'probe'|'execute' plus the concrete action. */
       if (!athMode && athAction === 'probe') { athMode = 'probe'; athAction = String(d.targetAction || '').toLowerCase().trim(); }
       var mutating = athMode === 'execute';
-      if (!/^(probe|execute)$/.test(athMode) || !/^(write_note|stage_billing|save_draft|sign_encounter|place_order)$/.test(athAction)) {
-        reply({ source: 'mls-ext', type: 'mlsAppAthenaActionV2Result', requestId: mlsStr(d.requestId, 100), resp: { ok: false, blocked: true, reason: 'bad-action', error: 'Choose one typed note, billing, save, sign, or single reviewed-order action.' } });
+      if (!/^(probe|execute)$/.test(athMode) || !/^(write_note|save_draft)$/.test(athAction)) {
+        reply({ source: 'mls-ext', type: 'mlsAppAthenaActionV2Result', requestId: mlsStr(d.requestId, 100), resp: { ok: false, blocked: true, reason: 'write-safety-final-action-blocked', error: 'MLS can write the reviewed note and save a draft. Complete other actions directly in athenaOne.' } });
         return;
       }
-      /* MLS_WRITE_SAFETY_BRIDGE_GATE (wsg-2.0.0): the wsg-1.0.0 execute refusal
-         for sign/order/billing is LIFTED by owner directive (2026-08-12,
-         released 2026-08-17). Every action still needs a fresh trusted-click
-         arm for its own button (below), the one-use background token, the
-         exact identity + encounter lock, and the driver verification. */
+      /* MLS_WRITE_SAFETY_BRIDGE_GATE (draftonly-1.0.0): the closed action
+         gate precedes gesture consumption and transport. Identity,
+         encounter, token and read-back gates remain mandatory. */
       var previewHash = mlsStr(d.previewHash, 160);
       var orderRowHash = mlsStr(d.rowHash, 160);
       var orderClientOrderId = mlsStr(d.clientOrderId || (d.order && d.order.clientOrderId) || (d.payload && d.payload.order && d.payload.order.clientOrderId), 160);

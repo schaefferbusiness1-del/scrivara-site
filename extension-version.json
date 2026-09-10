@@ -1,5 +1,5 @@
 {
-  "version": "3.0.111",
+  "version": "3.0.112",
   "minChrome": 116,
-  "notes": "v3.0.111 - Writes: after the reviewed note sections land, MLS Assist can now save the encounter in athenaOne itself on your press - it finds the encounter's own Save control (never Sign, never billing or orders), checks it read-only first, clicks it once, and reads athenaOne's saved confirmation back before it says so. Sign stays your click. Everything from v3.0.110 remains. Requires Chrome 116+."
+  "notes": "v3.0.112 - MLS Assist writes reviewed note sections and saves drafts in athenaOne. Signing, orders and billing stay with the clinician. This release closes older action paths at the extension bridge, worker and chart driver while preserving patient identity checks, trusted confirmation and read-back verification. Includes the section-paint wait and encounter Save support from v3.0.111. Requires Chrome 116+."
 }

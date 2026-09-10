@@ -210,15 +210,12 @@ async function mlsAthenaActionV2DriverFn(req) {
     var mutationAttempted = false;
     var orderFinalActionAttempted = false;
     var sleep = function (ms) { return (function (ms) { var __hsAt = Date.now() + Math.max(0, Number(ms || 0)); return new Promise(function (r) { /* mls-hs-1.0.0: hidden tab => timers throttled to 1/s then 1/min; yield through a MessageChannel (not a timer) until the wall clock passes. */ if (typeof document === 'undefined' || !document.hidden) { setTimeout(r, Math.max(0, __hsAt - Date.now())); return; } var __ch = null; try { __ch = new MessageChannel(); } catch (e) { __ch = null; } if (!__ch) { setTimeout(r, Math.max(0, __hsAt - Date.now())); return; } __ch.port1.onmessage = function () { if (Date.now() >= __hsAt) { try { __ch.port1.onmessage = null; __ch.port1.close(); __ch.port2.close(); } catch (e2) {} r(); return; } if (!document.hidden) { try { __ch.port1.onmessage = null; __ch.port1.close(); __ch.port2.close(); } catch (e3) {} setTimeout(r, Math.max(0, __hsAt - Date.now())); return; } try { __ch.port2.postMessage(0); } catch (e4) { setTimeout(r, Math.max(0, __hsAt - Date.now())); } }; __ch.port2.postMessage(0); }); })(ms); };
-    var ACTIONS = { write_note: 1, stage_billing: 1, save_draft: 1, sign_encounter: 1, place_order: 1 };
-    if (!ACTIONS[action]) return { ok: false, blocked: true, reason: 'unknown-action' };
-    /* MLS_WRITE_SAFETY_DRIVER_GUARD_START (wsg-1.0.0)  self-contained in-page
-       defense in depth. wsg-2.0.0: the driver EXECUTES every supervised action
-       (the execute refusal below is lifted), while clickOnce still refuses ANY
-       control whose own label or machine name marks a final/irrevocable action
-       (submit, send, approve, finalize, prescribe, transmit, post charges, file
-       claim...) except the exact 'Sign and Save' control for sign_encounter.
-       This list mirrors write_safety_guard.js FORBIDDEN_LABEL_SOURCES / _ATTR_FRAGMENTS. */
+    var ACTIONS = { write_note: 1, save_draft: 1 } /* draftonly-1.0.0: signing, orders and billing stay manual */;
+    if (!Object.prototype.hasOwnProperty.call(ACTIONS, action)) return { ok: false, blocked: true, reason: 'unknown-action' };
+    /* MLS_WRITE_SAFETY_DRIVER_GUARD_START (draftonly-1.0.0)
+       The closed action map permits only note writes and draft saves.
+       clickOnce refuses every forbidden final control without exception.
+       These matchers mirror write_safety_guard.js. */
     var WS_FORBIDDEN_LABELS = [/\bsign\b/, /\bsigns?\s+and\s+saves?\b/, /\bco\s?sign\b/, /\battest\b/, /\bsubmit\b/, /\bsend\b/, /\bapprove\b/, /\bfinali[sz]e\b/, /\bplace\s+orders?\b/, /\badd\s+orders?\b/, /\bprescribe\b/, /\be\s?(?:rx|prescribe|prescription)\b/, /\btransmit\b/, /\bpost\s+charges?\b/, /\bfile\s+claims?\b/, /\bsubmit\s+claims?\b/, /\bbill\s+(?:now|patient|insurance)\b/, /\bclose\s+encounter\b/, /\bdelete\s+(?:chart|patient|encounter)\b/];
     var WS_FORBIDDEN_ATTRS = ['signoff','sign-off','sign_off','signandsave','sign-and-save','sign_and_save','signsave','signencounter','sign-encounter','sign_encounter','placeorder','place-order','place_order','submitorder','submit-order','submit_order','sendorder','send-order','send_order','approveorder','approve-order','prescribe','e-rx','erx-send','sendrx','send-rx','transmitrx','transmit-rx','sendtopharmacy','send-to-pharmacy','finalizenote','finalize-note','finalize_note','postcharge','post-charge','post_charge','submitclaim','submit-claim','fileclaim','file-claim','closeencounter','close-encounter','mls-forbidden'];
     function wsForbiddenControl(el) {
@@ -2253,7 +2250,7 @@ async function mlsAthenaActionV2DriverFn(req) {
     /* STAGE_BILLING_END */
     /* ATHENA_ACTION_V2_STAGE_BILLING_END */
 
-    function clickOnce(el) { if (wsForbiddenControl(el) && !(action === 'sign_encounter' && exactSign(el))) throw new Error('forbidden-control-blocked'); try { el.scrollIntoView({ block: 'center' }); } catch (e) {} el.click(); }
+    function clickOnce(el) { if (wsForbiddenControl(el)) throw new Error('forbidden-control-blocked'); try { el.scrollIntoView({ block: 'center' }); } catch (e) {} el.click(); }
 
     /* ATHENA_ACTION_V2_SAVENAMED_EXECUTE_START */
     /* savenamed-1.0.0 (3.0.111, owner ruling 2026-09-02): a trusted press on
@@ -3456,9 +3453,9 @@ function mlsAthenaTeachWatcherFn(config) {
         return { ok: true, state: 'failed', reason: 'cancelled' };
       }
 
-      var action = clean(msg.action).toLowerCase(), ACTIONS = { write_note: 1, stage_billing: 1, save_draft: 1, sign_encounter: 1, place_order: 1 };
+      var action = clean(msg.action).toLowerCase(), ACTIONS = { write_note: 1, save_draft: 1 } /* draftonly-1.0.0: signing, orders and billing stay manual */;
       var binding = teachBinding(msg.binding), patient = msg.expectedPatient || {}, context = msg.expectedContext || {};
-      if (!ACTIONS[action] || !validTeachBinding(binding, action)) return { ok: false, state: 'failed', reason: 'invalid-binding', message: 'The destination is not bound to one exact review row.' };
+      if (!Object.prototype.hasOwnProperty.call(ACTIONS, action) || !validTeachBinding(binding, action)) return { ok: false, state: 'failed', reason: 'invalid-binding', message: 'The destination is not bound to one exact review row.' };
       if (existing) return { ok: false, state: 'failed', reason: 'duplicate-session', message: 'This teaching request is already active.' };
       if (!clean(patient.patientId) || !clean(patient.name) || !dateKey(patient.dob) || !digits(patient.mrn)) return { ok: false, state: 'failed', reason: 'patient-mismatch', message: 'An exact local patient ID, name, DOB, and Athena MRN are required before teaching.' };
       if (!expectedContextShape(context, false) || !dateKey(context.visitDate) || !norm(context.provider) ||
@@ -3567,14 +3564,12 @@ function mlsAthenaTeachWatcherFn(config) {
     if (!msg || msg.type !== 'mlsAppAthenaActionV2Request') return;
     (async function () {
       var mode = clean(msg.mode).toLowerCase(), action = clean(msg.action).toLowerCase();
-      var ACTIONS = { write_note: 1, stage_billing: 1, save_draft: 1, sign_encounter: 1, place_order: 1 };
-      if (!/^(probe|execute)$/.test(mode) || !ACTIONS[action]) return { ok: false, blocked: true, reason: 'unknown-action' };
-      /* MLS_WRITE_SAFETY_GATE_START (wsg-1.1.0)  sign/order/billing lanes are
-         EXECUTABLE (wsg-2.0.0, owner directive): gateActionRequest no longer
-         refuses any execute action by policy; the driver executes them behind
-         the same supervised checks. Test/staging note content is still refused
-         in production; it belongs in an explicitly configured Preview sandbox.
-         Fail closed for every execute action if the guard is absent. */
+      var ACTIONS = { write_note: 1, save_draft: 1 } /* draftonly-1.0.0: signing, orders and billing stay manual */;
+      if (!/^(probe|execute)$/.test(mode) || !Object.prototype.hasOwnProperty.call(ACTIONS, action)) return { ok: false, blocked: true, reason: 'unknown-action' };
+      /* MLS_WRITE_SAFETY_GATE_START (draftonly-1.0.0)
+         The dispatch map and shared policy independently permit only
+         write_note/save_draft. Identity and test-content gates remain.
+         A missing shared guard fails closed for every execute request. */
       if (self.MLSWriteSafety) {
         var wsGate = self.MLSWriteSafety.gateActionRequest({ mode: mode, action: action, expectedPatient: msg.expectedPatient, noteText: msg.noteText, isTest: msg.isTest === true });
         if (wsGate) return wsGate;
@@ -6470,13 +6465,17 @@ async function mlsAthenaDrive(op, params, cfg) {
     } catch (e) { return 0; }
   }
   function fireClick(el) {
+    // draftonly-1.0.0: caller configuration cannot authorize final controls.
+    var own = String((el && (el.textContent || el.value)) || '') + ' ' + ['aria-label', 'title', 'id', 'name', 'data-action', 'data-testid'].map(function (k) { return el && el.getAttribute ? el.getAttribute(k) || '' : ''; }).join(' ');
+    var human = own.toLowerCase().replace(/[^a-z0-9]+/g, ' ');
+    if (/\b(save|sign|attest|submit|send|approve|finalize|finalise|order|orders|prescribe|prescription|bill|billing|charge|charges|claim|claims|delete|remove|void|discard|close|check\s*(?:in|out))\b/.test(human) || /signandsave|signsave|signencounter|placeorder|submitorder|checkin|checkout|closeencounter|postcharge|submitclaim/.test(human)) return false;
     try { el.scrollIntoView && el.scrollIntoView({ block: 'center' }); } catch (e) {}
     var V = (el.ownerDocument && el.ownerDocument.defaultView) || (typeof window !== 'undefined' ? window : null);
     ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(function (tp) {
       try { var Ctor = (V && (tp.indexOf('pointer') === 0 ? V.PointerEvent : V.MouseEvent)) || (V && V.Event); el.dispatchEvent(new Ctor(tp, { bubbles: true, cancelable: true })); }
       catch (e) { try { el.dispatchEvent(new Event(tp, { bubbles: true })); } catch (e2) {} }
     });
-    try { el.click && el.click(); } catch (e) {}
+    try { el.click && el.click(); } catch (e) {} return true;
   }
   function fmtDate(el, ymd) {
     var t = lc(el.getAttribute && el.getAttribute('type'));
@@ -6511,10 +6510,11 @@ async function mlsAthenaDrive(op, params, cfg) {
   }
   if (op === 'next') {
     var n2 = findNext(); if (!n2) return { ok: true, op: 'next', clicked: false };
-    var desc = btnText(n2).slice(0, 40); fireClick(n2);
+    var desc = btnText(n2).slice(0, 40); if (!fireClick(n2)) return { ok: false, blocked: true, reason: 'final-action-blocked', op: 'next', clicked: false };
     return { ok: true, op: 'next', clicked: true, nextDesc: desc };
   }
   if (op === 'fill') {
+    return { ok: false, blocked: true, reason: 'report-filter-scope-unverified', op: 'fill', acted: false }; // draftonly-1.0.0: no typing without a proven report scope
     var res = { ok: true, op: 'fill', acted: false, controls: {} };
     var cpt = (params.cpt && params.cpt[0]) || '', proc = params.procedureName || '';
     var f = null;
@@ -6528,7 +6528,7 @@ async function mlsAthenaDrive(op, params, cfg) {
     if (params.dateFrom && df) { res.controls.from = labelText(df).slice(0, 40); if (await typeInto(df, fmtDate(df, params.dateFrom))) { res.filledFrom = true; res.acted = true; } }
     if (params.dateTo && dt) { res.controls.to = labelText(dt).slice(0, 40); if (await typeInto(dt, fmtDate(dt, params.dateTo))) { res.filledTo = true; res.acted = true; } }
     var rb = findButton(C.runLabels);
-    if (rb) { res.controls.run = btnText(rb).slice(0, 40); fireClick(rb); res.clickedRun = true; res.acted = true; } else { res.noRunButton = true; }
+    if (rb) { if (!fireClick(rb)) return { ok: false, blocked: true, reason: 'final-action-blocked', op: 'fill', clickedRun: false, acted: res.acted }; res.controls.run = btnText(rb).slice(0, 40); res.clickedRun = true; res.acted = true; } else { res.noRunButton = true; }
     return res;
   }
   return { ok: false, error: 'bad-op' };
@@ -10246,8 +10246,8 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         if (!tab) return sendResponse({ ok: false, msg: 'No active tab.' });
         /* wv-1.2 (3.0.40): free-typing actions are DISABLED on athenaOne, matching the mlsAppPasteRequest refusal. The pastenote branch typed into the LARGEST visible free-text box with no patient-identity gate, no note-scope proof and no review screen - a drafted note for patient A could land in patient B's message body and be reported 'verified'. Athena writes go through the supervised V2 lane (probe + review sheet + trusted click) only; read/scroll/click keep working. */
-        if (/^https:\/\/athenanet\.athenahealth\.com\//.test(String(tab.url || '')) && action && /^(type|pastenote)$/.test(String(action.type || ''))) {
-          return sendResponse({ ok: false, blocked: true, msg: 'Typing into athenaOne from this panel is disabled for safety. Use the reviewed write flow in MLS (Review selected Athena routes) so the patient banner, the exact field and your confirmation are verified first.' });
+        if (/^https:\/\/athenanet\.athenahealth\.com\//.test(String(tab.url || '')) && action && String(action.type || '').toLowerCase().trim() !== 'scroll') {
+          return sendResponse({ ok: false, blocked: true, msg: 'Use Send to Athena in MLS to write the reviewed note or save a draft. This assistant panel can only read and scroll Athena.' });
         }
         // Frame routing: a "#index" target may live inside an iframe (Athena, etc.).
         // Look it up in the map built by mlsAssistElements and run the action in THAT
@@ -15490,6 +15490,7 @@ async function mlsAthenaSignSave(mode) {
   // verified, frame-scored paste of the note (PATIENT GATE already enforced by
   // doWriteBack). Reuses the proven mlsFieldScanner + mlsNotePaster path. Never signs.
   function overlayPasteNote(arg) {
+    return Promise.resolve({ ok: false, blocked: true, reason: 'legacy-write-route-disabled', error: 'Use Send to Athena in MLS to review and confirm the note.' }); // draftonly-1.0.0
     var noteObj = (arg && arg.note != null) ? arg.note : arg;
     var text = overlayNoteText(noteObj);
     var scanner = fn('mlsFieldScanner'), paster = fn('mlsNotePaster'), segmenter = fn('mlsSegmentNote');
@@ -15761,6 +15762,7 @@ async function mlsAthenaSignSave(mode) {
 
     // ---------- WRITEBACK: gate -> note paste -> codes (NEVER signs) ----------
     if (msg.type === 'MLS_OVL_WRITEBACK') {
+      sendResponse({ ok: false, blocked: true, reason: 'legacy-write-route-disabled', error: 'Use Send to Athena in MLS to review and confirm the note.' }); return true; // draftonly-1.0.0
       doWriteBack(tabId, msg).then(function (r) { sendResponse(r); })
         .catch(function () { sendResponse({ error: 'write-failed', message: 'Write failed.' }); });
       return true;

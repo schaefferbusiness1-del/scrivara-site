@@ -175,7 +175,7 @@ const ROOT = path.resolve(__dirname, '..');
    clinical field still refuses. Measured: the test patient's saved sidecar
    carried the up-now patient's name in its fingerprint and the reopen went
    stale over that one field. */
-const FULL_GATE_TESTS = 963;
+const FULL_GATE_TESTS = 966;
 const DEFAULT_BASE = 'origin/main';
 const DEFAULT_STEP_TIMEOUT_MS = 180000;
 const DEFAULT_TOTAL_TIMEOUT_MS = 300000;
