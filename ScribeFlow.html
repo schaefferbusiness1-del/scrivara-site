@@ -31041,6 +31041,54 @@ function _mlsAthenaSourceState(binding,includeDisplay){
   }catch(e){return null;}
 }
 function _mlsAthenaSourceFingerprint(binding){var state=_mlsAthenaSourceState(binding,true);try{return state?JSON.stringify(state):'';}catch(e){return '';}}
+/* bindfp-1.0.0: An explicit appointment choice changes only the visit identity
+   attached to an otherwise unchanged generated note. Re-anchor that note's
+   source proof only after the Send sheet has frozen and read back the exact
+   patient + appointment. The ordinary path proves the prior fingerprint
+   against the prior binding byte for byte. The saved-note recovery is narrower:
+   it runs only on a fresh explicit choice of the same stored appointment, and
+   proves the current editor, stored source, and complete patient identity before
+   deterministically rebuilding the five-field Athena sidecar from currentSoap.
+   It never edits transcript/SOAP text and never makes the saved comparator lax. */
+function _mlsAthenaBindState(raw){try{var s=typeof raw==='string'?JSON.parse(raw):raw;return s&&s.v===2?s:null;}catch(e){return null;}}
+function _mlsAthenaBindClinicalPatientSame(a,b){
+  try{
+    if(!a||!b)return false;var ap=a.patient||{},bp=b.patient||{};
+    return String(a.transcript||'')===String(b.transcript||'')&&String(a.context||'')===String(b.context||'')&&String(a.visitComment||'')===String(b.visitComment||'')&&String(a.standardNote||'')===String(b.standardNote||'')&&
+      String(a.activePatientId||'')===String(b.activePatientId||'')&&String(ap.patientId||'')===String(bp.patientId||'')&&String(ap.name||'')===String(bp.name||'')&&String(ap.dob||'')===String(bp.dob||'')&&String(ap.mrn||'')===String(bp.mrn||'');
+  }catch(e){return false;}
+}
+function _mlsAthenaBindDayKey(v){var s=String(v||'').trim(),m=/^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s)||/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(s);if(!m)return s;if(s.indexOf('/')>=0)return m[3]+'-'+('0'+m[1]).slice(-2)+'-'+('0'+m[2]).slice(-2);return m[1]+'-'+('0'+m[2]).slice(-2)+'-'+('0'+m[3]).slice(-2);}
+function _mlsAthenaBindVisitSame(a,b){
+  try{var av=a&&a.visit||{},bv=b&&b.visit||{};return String(av.visitDate||'')===String(bv.visitDate||'')&&String(av.provider||'')===String(bv.provider||'')&&String(av.appointmentId||'')===String(bv.appointmentId||'')&&String(av.encounterId||'')===String(bv.encounterId||'')&&String(av.encounterUrl||'')===String(bv.encounterUrl||'');}catch(e){return false;}
+}
+function _mlsAthenaReanchorExplicitBinding(prior,readback){
+  try{
+    var rb=readback||{},rbc=rb.visitContext||{};
+    if(String(rb.source||'')!=='send-sheet-explicit-bind'||!String(rbc.appointmentId||'').trim())return false;
+    var live=_mlsAthenaSourceState(readback,true);if(!live)return false;
+    var old=_mlsAthenaBindState(typeof currentAthenaNoteSourceFingerprint!=='undefined'?currentAthenaNoteSourceFingerprint:'');
+    var before=_mlsAthenaSourceState(prior||{},true);
+    if((currentAthenaNoteProvenance==='generated'||currentAthenaNoteProvenance==='edited')&&old&&before&&_mlsAthenaBindClinicalPatientSame(old,before)&&_mlsAthenaBindVisitSame(old,before)&&_mlsAthenaBindClinicalPatientSame(old,live)){
+      currentAthenaNoteSourceFingerprint=JSON.stringify(live);return true;
+    }
+    /* A previously saved note from before bindfp-1.0.0 was marked stale during
+       History restore. Recover it only when this explicit choice names the same
+       stored appointment and every source/patient byte still proves ownership. */
+    if(typeof currentNoteId==='undefined'||!currentNoteId||typeof getNotes!=='function')return false;
+    var saved=(getNotes()||[]).find(function(n){return n&&String(n.id)===String(currentNoteId);});if(!saved)return false;
+    if(!/^(generated_soap|edited_generated_soap)$/.test(String(saved.noteProvenance||''))||!/^(generated|edited)$/.test(String(saved.athenaNoteProvenance||'')))return false;
+    if(String(saved.appointmentId||'')!==String(rbc.appointmentId||''))return false;
+    var stored=_mlsAthenaBindState(saved.athenaNoteSourceFingerprint);if(!stored||String((stored.visit||{}).appointmentId||''))return false;
+    var record={v:2,transcript:String(saved.transcript||''),context:String(saved.context||''),visitComment:String(saved.visitComment||''),standardNote:String(saved.soap||''),activePatientId:String(saved.patientId||''),patient:{patientId:String(saved.patientId||''),name:String(saved.patient||''),dob:String(saved.patientDob||saved.dob||''),mrn:String(saved.patientMrn||saved.mrn||'')},visit:{visitDate:String(saved.visitDate||''),provider:String(saved.provider||''),appointmentId:String(saved.appointmentId||''),encounterId:String(saved.encounterId||''),encounterUrl:String(saved.encounterUrl||'')}};
+    if(!_mlsAthenaBindClinicalPatientSame(stored,record)||String((stored.visit||{}).provider||'')!==record.visit.provider||String((stored.visit||{}).encounterId||'')!==record.visit.encounterId||String((stored.visit||{}).encounterUrl||'')!==record.visit.encounterUrl)return false;
+    var rv=record.visit||{},lv=live.visit||{};
+    if(!_mlsAthenaBindClinicalPatientSame(record,live)||String(((document.getElementById('noteBox')||{}).value)||'')!==String(saved.soap||'')||_mlsAthenaBindDayKey(rv.visitDate)!==_mlsAthenaBindDayKey(lv.visitDate)||String(rv.provider||'')!==String(lv.provider||'')||String(rv.appointmentId||'')!==String(lv.appointmentId||'')||String(rv.encounterId||'')!==String(lv.encounterId||'')||String(rv.encounterUrl||'')!==String(lv.encounterUrl||''))return false;
+    _mlsSetAthenaNote(String(typeof currentSoap!=='undefined'?currentSoap:''),'edited');
+    return _mlsAthenaFingerprintMatchesCurrent(currentAthenaNoteSourceFingerprint);
+  }catch(e){return false;}
+}
+window._mlsAthenaReanchorExplicitBinding=_mlsAthenaReanchorExplicitBinding;
 function _mlsAthenaGenerationSourceFingerprint(binding){var state=_mlsAthenaSourceState(binding,false);try{return state?JSON.stringify(state):'';}catch(e){return '';}}
 function _mlsAthenaFingerprintMatchesCurrent(expected){
   var want=String(expected||''); if(!want)return false;
@@ -46017,7 +46065,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1217';
+  window.__MLS_AV='b1218';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

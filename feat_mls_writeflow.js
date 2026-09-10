@@ -5545,6 +5545,12 @@
         unifiedStatus(state, 'The Visit editor could not verify the chosen appointment after binding it. The prior visit context was kept and nothing was sent.', 'err');
         return false;
       }
+      /* Binding remains useful for typed/empty or genuinely stale notes. A
+         generated note gets a fresh source anchor only when the shell can prove
+         that this explicit appointment choice changed metadata and no source or
+         patient bytes. Failure leaves the canonical note stale/blocked; it does
+         not undo the doctor's explicit visit choice. */
+      try { if (typeof window._mlsAthenaReanchorExplicitBinding === 'function') window._mlsAthenaReanchorExplicitBinding(prior || null, readback); } catch (eAnchor) {}
       return true;
     } catch (e) {
       unifiedStatus(state, 'The Visit editor could not apply this appointment binding. The review remains unchanged and nothing was sent.', 'err');
