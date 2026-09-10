@@ -29,23 +29,22 @@ function beforeMutation(source, needle, mutationNeedle) {
 /*
  * This is deliberately a separate, narrow capability from mlsAppWriteV2.
  * Generic AI/autopilot routes remain unable to Save, Sign, bill, or place an
- * order. wsg-2.0.0 (MLS Assist 3.0.62, owner directive 2026-08-12): every
- * supervised V2 action (write_note, save_draft, stage_billing, sign_encounter,
- * place_order) can receive a trusted-click arm from ITS OWN confirm button; the
- * production site (feat_mls_writeflow.js) exposes all five only through the
- * extension-capability, exact-context, proof, and one-use-token gates below.
+ * order. The owner policy of 2026-09-10 permits only write_note/save_draft.
+ * Those two still require their own trusted confirmation, exact context and
+ * one-use token. Dormant final-action defenses stay covered below.
  */
 assert(/mlsAppAthenaActionV2\s*:\s*1/.test(content), 'the typed Athena action must be origin-gated by the content bridge');
 
 const appActions = between(writeflow, '/* ---------------- explicit Athena actions', '/* ---- identity helpers');
 for (const action of ['write_note', 'save_draft', 'stage_billing', 'sign_encounter', 'place_order']) assert(appActions.includes(action), `app policy metadata must name ${action}`);
-assert(/ATHENA_EXECUTABLE_ACTIONS\s*=\s*\{\s*write_note\s*:\s*true\s*,\s*save_draft\s*:\s*true\s*,\s*stage_billing\s*:\s*true\s*,\s*sign_encounter\s*:\s*true\s*,\s*place_order\s*:\s*true\s*\}/.test(appActions), 'app executable allowlist must contain the five supervised typed actions');
+assert(/ATHENA_EXECUTABLE_ACTIONS\s*=\s*\{\s*write_note\s*:\s*true\s*,\s*save_draft\s*:\s*true\s*\}/.test(appActions), 'current owner policy permits only reviewed-note insertion and draft save');
 const appProbeStart = appActions.indexOf('function startAthenaAction(action, opts)');
 assert(appProbeStart >= 0);
 const appProbe = appActions.slice(appProbeStart);
 const capabilityRefusalAt = appProbe.indexOf('final-action-capability-required');
 const signProofRefusalAt = appProbe.indexOf('verified-note-write-required');
 const bridgeProbeAt = appProbe.indexOf("mode: 'probe'");
+assert(appProbe.indexOf('manual-only-final-action') >= 0 && appProbe.indexOf('manual-only-final-action') < capabilityRefusalAt, 'manual final-action policy must outrank every capability and proof');
 assert(capabilityRefusalAt >= 0 && bridgeProbeAt > capabilityRefusalAt, 'final actions must be refused before probe unless the extension advertises the typed capability');
 assert(signProofRefusalAt >= 0 && bridgeProbeAt > signProofRefusalAt, 'Sign must be refused before probe without an exact verified note-write proof');
 assert(appProbe.indexOf("mode: 'probe'") < appProbe.indexOf('showActionConfirm('), 'opening the action must probe read-only before showing confirmation');
@@ -106,24 +105,16 @@ const actionEl = {
 };
 capturedClick({ isTrusted: false, target: actionEl });
 assert.strictEqual(gateContext._mlsAthenaActionGesture.action, '', 'programmatic click armed an Athena mutation');
-/* wsg-2.0.0 CONTRACT CHANGE (owner directive 2026-08-12, MLS Assist 3.0.62):
-   the wsg-1.0.0 preview-only rule for billing/orders/sign is LIFTED. A
-   browser-trusted click on the exact confirm button of ANY supervised action
-   arms that one action (single-use, short-lived); a programmatic click still
-   never arms, and a trusted click whose label names a DIFFERENT action still
-   never arms (no cross-arming). Pinned both ways below. */
+/* An excluded action cannot arm, even on an exact browser-trusted click. */
 capturedClick({ isTrusted: true, target: actionEl });
-assert.strictEqual(gateContext._mlsAthenaActionGesture.action, 'stage_billing', 'wsg-2.0.0: a trusted click on the exact stage_billing confirm must arm stage_billing');
-assert.strictEqual(gateContext._mlsAthenaActionGesture.previewHash, 'preview-123');
+assert.strictEqual(gateContext._mlsAthenaActionGesture.action, '', 'billing must not arm even from its exact trusted confirmation');
+assert.strictEqual(gateContext._mlsAthenaActionGesture.previewHash, '', 'a blocked billing click retained a preview authorization');
 gateContext._mlsAthenaActionGesture = { action: '', until: 0, serial: '', previewHash: '', rowHash: '', clientOrderId: '' };
-/* the app's own aria phrase for the billing confirm ("Confirm stage billing in
-   Athena") must arm too - the 8/12 site lane wrote that phrase and 3.0.61's
-   regex demanded "codes", a mismatch that would have refused every billing
-   send with fresh-trusted-click-required. */
+/* Accessible labels cannot bypass the same action policy. */
 const billingAriaEl = Object.assign({}, actionEl, { textContent: 'Confirm & Send to Athena', getAttribute: name => ({ 'data-mls-athena-action': 'stage_billing', 'data-mls-preview-hash': 'preview-b2', 'aria-label': 'Confirm stage billing in Athena', title: '' })[name] || '' });
 billingAriaEl.closest = selector => selector.includes('data-mls-athena-action') || selector.startsWith('button') ? billingAriaEl : null;
 capturedClick({ isTrusted: true, target: billingAriaEl });
-assert.strictEqual(gateContext._mlsAthenaActionGesture.action, 'stage_billing', 'the app aria phrase "Confirm stage billing in Athena" must arm stage_billing');
+assert.strictEqual(gateContext._mlsAthenaActionGesture.action, '', 'an accessible billing label must not bypass the manual-action policy');
 gateContext._mlsAthenaActionGesture = { action: '', until: 0, serial: '', previewHash: '', rowHash: '', clientOrderId: '' };
 for (const [action, phrase] of [['sign_encounter', 'Confirm Sign and Save in Athena'], ['place_order', 'Confirm and place one reviewed order in Athena']]) {
   const el = { textContent: 'Confirm & Send to Athena', value: '', disabled: false, getBoundingClientRect: () => ({ width: 180, height: 40 }),
@@ -132,8 +123,9 @@ for (const [action, phrase] of [['sign_encounter', 'Confirm Sign and Save in Ath
   capturedClick({ isTrusted: false, target: el });
   assert.strictEqual(gateContext._mlsAthenaActionGesture.action, '', 'programmatic click must never arm ' + action);
   capturedClick({ isTrusted: true, target: el });
-  assert.strictEqual(gateContext._mlsAthenaActionGesture.action, action, 'wsg-2.0.0: a trusted click on the exact ' + action + ' confirm must arm it');
-  if (action === 'place_order') { assert.strictEqual(gateContext._mlsAthenaActionGesture.rowHash, 'row-1'); assert.strictEqual(gateContext._mlsAthenaActionGesture.clientOrderId, 'ord-1'); }
+  assert.strictEqual(gateContext._mlsAthenaActionGesture.action, '', 'a trusted final-action click must not arm signing or orders');
+  assert.strictEqual(gateContext._mlsAthenaActionGesture.rowHash, '', 'a blocked final action retained its row binding');
+  assert.strictEqual(gateContext._mlsAthenaActionGesture.clientOrderId, '', 'a blocked final action retained its order binding');
   gateContext._mlsAthenaActionGesture = { action: '', until: 0, serial: '', previewHash: '', rowHash: '', clientOrderId: '' };
 }
 /* no cross-arming: a trusted click whose label says "write reviewed note" but
@@ -163,12 +155,20 @@ assert.strictEqual(gateContext._mlsAthenaActionGesture.action, 'write_note');
 assert.strictEqual(gateContext._mlsAthenaActionGesture.previewHash, 'preview-123');
 assert(gateContext._mlsAthenaActionGesture.serial, 'trusted click did not mint a one-use gesture proof');
 assert(gateContext._mlsAthenaActionGesture.until > Date.now(), 'trusted click authorization was not fresh');
+gateContext._mlsAthenaActionGesture = { action: '', until: 0, serial: '', previewHash: '', rowHash: '', clientOrderId: '' };
+const saveEl = Object.assign({}, noteEl, { textContent: 'Confirm save draft', getAttribute: name => ({ 'data-mls-athena-action': 'save_draft', 'data-mls-preview-hash': 'preview-save' })[name] || '' });
+saveEl.closest = () => saveEl;
+capturedClick({ isTrusted: false, target: saveEl });
+assert.strictEqual(gateContext._mlsAthenaActionGesture.action, '', 'programmatic Save armed');
+capturedClick({ isTrusted: true, target: saveEl });
+assert.strictEqual(gateContext._mlsAthenaActionGesture.action, 'save_draft', 'trusted draft Save no longer arms');
+assert.strictEqual(gateContext._mlsAthenaActionGesture.previewHash, 'preview-save', 'Save arm lost its exact preview');
 
 const bridge = between(content, "if (d.type === 'mlsAppAthenaActionV2')", '/* ATHENA_ACTION_V2_BRIDGE_END */');
 assert(/d\.mode/.test(bridge), 'the app must send an explicit mode');
 assert(/['"]probe['"]/.test(bridge), 'preview/probe mode must be explicit');
 assert(/['"]execute['"]/.test(bridge), 'execute mode must be explicit');
-for (const action of ['stage_billing', 'save_draft', 'sign_encounter']) {
+for (const action of ['write_note', 'save_draft']) {
   assert(bridge.includes(action), `content bridge must recognize ${action} for probe/refusal policy`);
 }
 assert(bridge.includes('mlsAppAthenaActionV2Request'));
@@ -190,13 +190,11 @@ const safetyGateAt = handler.indexOf('MLS_WRITE_SAFETY_GATE_START');
 const tokenGateAt = handler.indexOf("if (mode === 'execute')");
 assert(safetyGateAt >= 0 && tokenGateAt > safetyGateAt, 'background final-action refusal must precede token and mutation processing');
 assert(/write-safety-guard-missing/.test(handler), 'background must fail closed if the final-action safety guard is unavailable');
-/* wsg-2.0.0: the bridge no longer refuses any execute action by policy. Pin
-   the LIFT: no policy refusal between the bridge-gate marker and the trusted-
-   click arm check, and the arm check itself still stands for every action. */
-const bridgeSafety = between(content, '/* MLS_WRITE_SAFETY_BRIDGE_GATE', 'var previewHash');
-assert(/wsg-2\.0\.0/.test(bridgeSafety), 'content bridge gate must carry the wsg-2.0.0 lift note');
-assert(!/write-safety-final-action-blocked/.test(bridgeSafety), 'wsg-2.0.0: the content bridge must not refuse execute by policy any more');
-assert(!/reply\(/.test(bridgeSafety), 'wsg-2.0.0: nothing may be replied (refused) inside the lifted bridge gate');
+/* The action policy precedes preview/gesture processing; accepted draft
+   actions still need the original action-exact trusted-click binding. */
+const bridgeSafety = bridge.slice(0, bridge.indexOf('var previewHash'));
+assert(/write-safety-final-action-blocked/.test(bridgeSafety), 'the content bridge must reject excluded actions before handling any preview or gesture');
+assert(/\^\(write_note\|save_draft\)\$/.test(bridgeSafety), 'the bridge action policy must be a closed two-action allowlist');
 assert(/fresh-trusted-click-required/.test(bridge), 'the trusted-click arm check must still stand for every execute');
 assert(/arm\.action !== athAction/.test(bridge), 'the arm must still be action-exact');
 assert(/mode[^\n]*(probe|execute)/.test(handler), 'handler must have explicit probe and execute modes');
@@ -401,4 +399,4 @@ const genericWriteDriver = between(background, 'async function mlsUnifiedWriteDr
 assert(/forcedHeld/.test(genericWriteDriver), 'generic write route must keep structured routes held');
 assert(!/sign_encounter|save_draft|stage_billing/.test(genericWriteDriver), 'generic note writer must not gain final-action capabilities');
 
-console.log('PASS Athena action contract (wsg-2.0.0): every supervised action arms only from its own trusted confirm click, no cross-arming, policy refusals lifted, dormant generic-writer defenses preserved');
+console.log('PASS Athena action contract: note and draft-save trusted-click positive controls, final-action refusals, no cross-arming, exact identity/context/token gates, and dormant generic-writer defenses preserved');

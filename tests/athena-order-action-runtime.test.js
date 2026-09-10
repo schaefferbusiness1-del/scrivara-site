@@ -46,29 +46,25 @@ const handlerSource = '/* ATHENA_ACTION_V2_HANDLER_START */' + between(backgroun
 for (const src of [flow, content, background]) assert(src.includes('place_order'), 'place_order review/refusal policy is missing from one hop');
 const clickGate = between(content, '/* ATHENA_ACTION_V2_CLICK_GATE_START */', '/* ATHENA_ACTION_V2_CLICK_GATE_END */');
 assert(/isTrusted\s*!==\s*true/.test(clickGate), 'note-lane mutation gate lost its trusted-click requirement');
-/* wsg-2.0.0 (MLS Assist 3.0.62): the trusted-click gate arms every supervised
-   action from ITS OWN confirm button - place_order included - and advertises
-   athenaFinalActionsV1 so the 1p site turns its order rows into typed rows. */
-assert(/\^\(write_note\|save_draft\|stage_billing\|sign_encounter\|place_order\)\$/.test(clickGate), 'trusted-click gate must arm every supervised action (wsg-2.0.0), place_order included');
-/* batcharm-1.0.0 (MLS Assist 3.0.108, owner 2026-09-01 "nothing blocked or not attempted once its
-   run"): the SAME trusted click may also mint a batch authorization, and that mint is deliberately
-   limited to the two executable note actions, so the note-only literal legitimately reappears INSIDE
-   the gate block. The wsg-1.0.0 property this pin guards is that the ARM LINE itself covers every
-   supervised action - so measure the arm line, not the whole block. */
+/* Current owner policy excludes orders from trusted-click authorization. */
+assert(/\^\(write_note\|save_draft\)\$/.test(clickGate), 'trusted-click gate must arm only note insertion and draft save');
+/* Both the single-action arm and the optional batch arm are draft-only. */
 const armLine = (clickGate.split(/\r?\n/).find(function (l) { return /actionable\s*&&\s*\/\^\(/.test(l); }) || '');
 assert(armLine, 'the arm line (actionable && /^(...)$/) must exist in the click gate');
-assert(!/\^\(write_note\|save_draft\)\$/.test(armLine), 'the wsg-1.0.0 note-only arm list must be gone from the arm line');
+assert(/\^\(write_note\|save_draft\)\$/.test(armLine), 'the exact trusted-click arm line must exclude orders and signing');
 assert(/batch/.test(clickGate) ? /\^\(write_note\|save_draft\)\$/.test(clickGate) : true, 'a batch mint, when present, is limited to write_note|save_draft');
 const capabilityObject = /capabilities:\s*\{([^}]*)\}/.exec(content);
-assert(capabilityObject && /supervisedOrderPlacementV2:\s*true/.test(capabilityObject[1]), 'current extension does not explicitly advertise the supervised-order capability');
+assert(capabilityObject && /supervisedOrderPlacementV2:\s*false/.test(capabilityObject[1]), 'current extension must not advertise order execution');
 assert(capabilityObject && /destinationTeachingV2:\s*true/.test(capabilityObject[1]), 'current extension does not explicitly advertise exact destination teaching');
-assert(capabilityObject && /athenaFinalActionsV1:\s*true/.test(capabilityObject[1]), 'wsg-2.0.0 extension must advertise athenaFinalActionsV1 in the pong');
+assert(capabilityObject && /athenaFinalActionsV1:\s*false/.test(capabilityObject[1]), 'current extension must not advertise final-action execution');
 assert(/arm\.rowHash\s*===\s*orderRowHash/.test(content) && /arm\.clientOrderId\s*===\s*orderClientOrderId/.test(content), 'trusted-click arm is not bound to the exact order row and local order ID');
 assert(/gestureRowHash/.test(content) && /gestureClientOrderId/.test(content), 'worker request loses the trusted-click row binding');
 assert(/rawFields\[key\]\.length\s*>\s*2000/.test(content) && !/fields\[key\]\s*=\s*mlsStr\([^\n]*2000/.test(content), 'content bridge still silently truncates reviewed order details');
 const actionLabelSource = extractFunction(clickGate, '_mlsActionLabelMatches');
 const actionLabelMatches = Function(`${actionLabelSource}; return _mlsActionLabelMatches;`)();
-assert.strictEqual(actionLabelMatches('place_order', 'Confirm & place one order'), true, 'dormant label parser fixture drifted');
+assert.strictEqual(actionLabelMatches('place_order', 'Confirm & place one order'), false, 'a valid order confirmation label must still be refused by policy');
+assert.strictEqual(actionLabelMatches('write_note', 'Confirm write reviewed note'), true, 'note confirmation parser positive control failed');
+assert.strictEqual(actionLabelMatches('save_draft', 'Confirm save draft'), true, 'draft-save confirmation parser positive control failed');
 assert.strictEqual(actionLabelMatches('place_order', 'Place Order'), false, 'an Athena DOM button could arm the MLS execute bridge without its confirmation label');
 for (const reason of [
   'order-catalog-near-match-rejected', 'order-catalog-duplicate-rejected',
@@ -159,13 +155,13 @@ for (const bad of ['Place Orders', 'Add another order', 'Save', 'Sign & Save', '
 assert.strictEqual(helper.oneExactOrderChoice([], 'order-place-control-missing', 'order-place-control-duplicate-rejected').reason, 'order-place-control-missing');
 assert.strictEqual(helper.oneExactOrderChoice([{ label: 'Place Order' }, { label: 'Add Order' }], 'order-place-control-missing', 'order-place-control-duplicate-rejected').reason, 'order-place-control-duplicate-rejected');
 
-// Run the worker authorization contract with a fake Athena driver. This tests
-// wrong-patient binding, complete-payload tamper detection, one-use replay,
-// and the immutable audit IDs independently of DOM fixtures.
+// Run the real worker handler with a fake driver. Final actions must never
+// inject; active note/save probes retain identity and token defenses.
 let listener = null;
 let tokenCounter = 0;
 let liveAthenaTabs = [{ id: 91, url: 'https://athenanet.athenahealth.com/encounter/77777' }];
 let probeInjectionTabIds = [];
+let executeInjections = 0;
 const lockedContext = {
   patientName: 'Example Patient', dob: '1/2/1980', mrn: '12345', appointmentId: '54321', encounterId: '77777',
   encounterUrl: 'https://athenanet.athenahealth.com/encounter/77777', visitDate: '7/14/2026',
@@ -185,6 +181,7 @@ const handlerContext = {
     scripting: { async executeScript(details) {
       const req = details.args[0];
       if (req.mode === 'probe') probeInjectionTabIds.push(details.target.tabId);
+      if (req.mode === 'execute') executeInjections++;
       return [{ result: req.mode === 'probe'
         ? { ok: true, contextVerified: true, readOnly: true, reason: 'order-workspace-context-verified', context: { ...lockedContext } }
         : { ok: true, verified: true, orderPlaced: true, alreadyPresent: false, reason: 'one-exact-order-isolated-readback-verified', context: { ...lockedContext } } }];
@@ -215,148 +212,55 @@ function send(message) {
   });
 }
 
+let completed = false;
+process.on('exit', (code) => { if (code === 0 && !completed) { console.error('FAIL: order-policy suite did not reach completion'); process.exitCode = 1; } });
 (async () => {
-  const missingLocal = await send({ ...probeMessage, expectedPatient: { ...patient, patientId: '' } });
-  assert.strictEqual(missingLocal.reason, 'local-patient-id-required');
+  // Every excluded action fails before any frame injection, even with exact
+  // identity, catalog fields, trusted-gesture claims and a supplied token.
+  for (const action of ['place_order', 'sign_encounter', 'stage_billing', 'constructor', 'toString', '__proto__']) {
+    for (const mode of ['probe', 'execute']) {
+      const refused = await send({ ...probeMessage, action, mode, actionToken: 'claimed-token',
+        expectedContext: { ...lockedContext }, probeContext: { ...lockedContext },
+        userGesture: true, gestureProof: 'claimed-trusted-proof',
+        gestureRowHash: probeMessage.rowHash, gestureClientOrderId: exactOrder.clientOrderId });
+      assert.strictEqual(refused.ok, false, 'an excluded action crossed the closed worker boundary');
+      assert.strictEqual(refused.reason, 'unknown-action', 'the worker did not reject the excluded action before other processing');
+      assert(!refused.actionToken, 'an excluded action received a one-use token');
+    }
+  }
+  assert.deepStrictEqual(probeInjectionTabIds, [], 'an excluded action injected a read-only driver');
+  assert.strictEqual(executeInjections, 0, 'an excluded action injected a mutation driver');
 
-  const missingCatalog = await send({ ...probeMessage, order: { ...exactOrder, catalogId: '', catalogCode: '' } });
-  assert.strictEqual(missingCatalog.reason, 'catalog-identity-required', 'label-only order payload was not rejected');
-  const overlongField = await send({ ...probeMessage, order: { ...exactOrder, fields: { ...exactOrder.fields, indication: 'x'.repeat(2001) } } });
-  assert.strictEqual(overlongField.reason, 'order-field-too-long', 'overlong order field was truncated or accepted');
-
-  // RELEASED 3.0.0 (accepted 2.9.43 core): the order lane has no pinned-tab
-  // continuation — that was part of the REJECTED 2.9.44 exact-encounter
-  // verifier. Two same-URL Athena tabs are an ambiguity the generic all-tab
-  // gate must refuse, and an advisory expectedAthenaTabId field must NEVER
-  // manufacture confidence the released bytes cannot verify.
-  liveAthenaTabs = [
-    { id: 91, url: lockedContext.encounterUrl },
-    { id: 92, url: lockedContext.encounterUrl }
-  ];
+  // Preserve the shared identity, unique-tab and one-use-token properties on
+  // the action that is actually executable under the current owner policy.
+  const noteText = 'Synthetic reviewed note body.';
+  const draft = { ...probeMessage, action: 'write_note', order: undefined,
+    rowHash: 'note-row', clientOrderId: '', noteText,
+    sections: [{ key: 'note', text: noteText, execute: true, destination: 'Athena encounter > Encounter note' }] };
+  const missingLocal = await send({ ...draft, expectedPatient: { ...patient, patientId: '' } });
+  assert.strictEqual(missingLocal.reason, 'local-patient-id-required', 'allowed note writes lost their immutable patient gate');
+  liveAthenaTabs = [{ id: 91, url: lockedContext.encounterUrl }, { id: 92, url: lockedContext.encounterUrl }];
   probeInjectionTabIds = [];
-  const pinnedTabProbe = await send({ ...probeMessage, expectedAthenaTabId: 91 });
-  assert.notStrictEqual(pinnedTabProbe.ok, true, 'an advisory tab pin must not bypass the released ambiguity gate');
-  probeInjectionTabIds = [];
-  const unpinnedGenericProbe = await send({ ...probeMessage });
-  assert.strictEqual(unpinnedGenericProbe.reason, 'ambiguous-athena-tabs', 'generic probe no longer scans every signed-in Athena tab');
-  assert.deepStrictEqual(probeInjectionTabIds, [91, 92], 'generic probe did not preserve all-tab unique discovery');
+  const ambiguous = await send({ ...draft, expectedAthenaTabId: 91 });
+  assert.strictEqual(ambiguous.reason, 'ambiguous-athena-tabs', 'an advisory tab pin bypassed exact unique-tab discovery');
+  assert.deepStrictEqual(probeInjectionTabIds, [91, 92], 'the allowed note probe did not inspect every signed-in tab');
   liveAthenaTabs = [{ id: 91, url: lockedContext.encounterUrl }];
-  probeInjectionTabIds = [];
-
-  /* wsg-2.0.0 (MLS Assist 3.0.62, owner directive 2026-08-12): the wsg-1.0.0
-     preview-only refusal for order placement is LIFTED. This block is the
-     ORIGINAL (pre-wsg-1.0.0) supervised single-order contract restored verbatim
-     from 98441b16^: stale-token invalidation, execute-time payload/row/client-id
-     tamper refusals, wrong-patient refusal, action-exact trusted click, ONE
-     verified isolated placement with immutable audit ids, replay refusal, and
-     encounter-only authorization. Every refusal here is a CORRECTNESS gate that
-     survives the policy lift. */
-  const rowA = { ...exactOrder, clientOrderId: 'local-order-a' };
-  const rowB = { ...exactOrder, clientOrderId: 'local-order-b' };
-  const pA = await send({ ...probeMessage, order: rowA, rowHash: 'row-hash-a', clientOrderId: rowA.clientOrderId });
-  const pB = await send({ ...probeMessage, order: rowB, rowHash: 'row-hash-b', clientOrderId: rowB.clientOrderId });
-  assert(pA.ok && pB.ok, 'independent row probes were not minted');
-  const staleA = await send({
-    ...probeMessage, mode: 'execute', actionToken: pA.actionToken, order: rowA, rowHash: 'row-hash-a', clientOrderId: rowA.clientOrderId,
-    expectedContext: { ...probeMessage.expectedContext },
-    probeContext: { ...lockedContext }, userGesture: true, gestureProof: 'trusted-row-a', gestureRowHash: 'row-hash-a', gestureClientOrderId: rowA.clientOrderId
-  });
-  assert.strictEqual(staleA.reason, 'token-used', 'a newer row probe did not invalidate the older same-manifest order token');
-
-  const concurrentRowA = { ...exactOrder, clientOrderId: 'local-order-concurrent-a' };
-  const concurrentRowB = { ...exactOrder, clientOrderId: 'local-order-concurrent-b' };
-  const [concurrentProbeA, concurrentProbeB] = await Promise.all([
-    send({ ...probeMessage, order: concurrentRowA, rowHash: 'row-hash-concurrent-a', clientOrderId: concurrentRowA.clientOrderId }),
-    send({ ...probeMessage, order: concurrentRowB, rowHash: 'row-hash-concurrent-b', clientOrderId: concurrentRowB.clientOrderId })
-  ]);
-  assert(concurrentProbeA.ok && concurrentProbeB.ok, 'overlapping order probes were not both answered');
-  const concurrentExecA = await send({
-    ...probeMessage, mode: 'execute', actionToken: concurrentProbeA.actionToken,
-    order: concurrentRowA, rowHash: 'row-hash-concurrent-a', clientOrderId: concurrentRowA.clientOrderId,
-    expectedContext: { ...concurrentProbeA.context }, probeContext: { ...lockedContext },
-    userGesture: true, gestureProof: 'trusted-concurrent-a',
-    gestureRowHash: 'row-hash-concurrent-a', gestureClientOrderId: concurrentRowA.clientOrderId
-  });
-  const concurrentExecB = await send({
-    ...probeMessage, mode: 'execute', actionToken: concurrentProbeB.actionToken,
-    order: concurrentRowB, rowHash: 'row-hash-concurrent-b', clientOrderId: concurrentRowB.clientOrderId,
-    expectedContext: { ...concurrentProbeB.context }, probeContext: { ...lockedContext },
-    userGesture: true, gestureProof: 'trusted-concurrent-b',
-    gestureRowHash: 'row-hash-concurrent-b', gestureClientOrderId: concurrentRowB.clientOrderId
-  });
-  assert.strictEqual([concurrentExecA, concurrentExecB].filter(result => result.ok === true).length, 1,
-    'overlapping same-manifest probes left zero or two executable order tokens');
-  assert.strictEqual([concurrentExecA, concurrentExecB].filter(result => result.reason === 'token-used').length, 1,
-    'overlapping same-manifest probes did not invalidate exactly one older token');
-
-  const p1 = await send(probeMessage);
-  assert(p1.ok && p1.actionToken && p1.readOnly, 'order probe did not return a read-only one-use token');
-  assert.strictEqual(p1.rowHash, probeMessage.rowHash, 'probe did not echo its exact immutable row binding');
-  assert.strictEqual(p1.clientOrderId, exactOrder.clientOrderId, 'probe did not echo its exact local order ID');
-  const executeContext = {
-    appointmentId: p1.context.appointmentId, encounterId: p1.context.encounterId,
-    encounterUrl: p1.context.encounterUrl, visitDate: p1.context.visitDate, provider: p1.context.provider
-  };
-  const executeBase = {
-    ...probeMessage, mode: 'execute', actionToken: p1.actionToken, expectedContext: executeContext,
-    probeContext: { ...lockedContext }, userGesture: true, gestureProof: 'trusted-click-1',
-    gestureRowHash: probeMessage.rowHash, gestureClientOrderId: exactOrder.clientOrderId
-  };
-  const tampered = await send({ ...executeBase, order: { ...exactOrder, query: 'CT Lumbar spine' } });
-  assert.strictEqual(tampered.reason, 'order-payload-mismatch', 'execute-time order tamper was not rejected');
-  const tamperReplay = await send(executeBase);
-  assert.strictEqual(tamperReplay.reason, 'token-used', 'tampered execute did not consume its token');
-
-  const p2 = await send(probeMessage);
-  const wrongPatient = await send({ ...executeBase, actionToken: p2.actionToken, expectedPatient: { ...patient, patientId: 'different-local-patient' }, gestureProof: 'trusted-click-2' });
-  assert.strictEqual(wrongPatient.reason, 'patient-mismatch', 'wrong local patient binding was accepted');
-
-  const p3 = await send(probeMessage);
-  const rowTamper = await send({ ...executeBase, actionToken: p3.actionToken, rowHash: 'different-row-hash', gestureProof: 'trusted-click-row-tamper', gestureRowHash: 'different-row-hash' });
-  assert.strictEqual(rowTamper.reason, 'order-row-mismatch', 'execute-time row swap was accepted');
-
-  const p4 = await send(probeMessage);
-  const clientTamper = await send({ ...executeBase, actionToken: p4.actionToken, clientOrderId: 'different-client-order', gestureProof: 'trusted-click-client-tamper', gestureClientOrderId: 'different-client-order' });
-  assert.strictEqual(clientTamper.reason, 'order-client-id-mismatch', 'execute-time local order ID swap was accepted');
-
-  const p5 = await send(probeMessage);
-  const gestureTamper = await send({ ...executeBase, actionToken: p5.actionToken, gestureProof: 'trusted-click-wrong-row', gestureRowHash: 'wrong-gesture-row' });
-  assert.strictEqual(gestureTamper.reason, 'fresh-trusted-click-required', 'a trusted click armed for another row was accepted');
-
-  const p6 = await send(probeMessage);
-  const success = await send({ ...executeBase, actionToken: p6.actionToken, gestureProof: 'trusted-click-3' });
-  assert.strictEqual(success.ok, true);
-  assert.strictEqual(success.orderPlaced, true);
-  assert.strictEqual(success.patientId, patient.patientId, 'result lost immutable local patient audit ID');
-  assert.strictEqual(success.clientOrderId, exactOrder.clientOrderId, 'result lost immutable local order audit ID');
-  assert.strictEqual(success.rowHash, probeMessage.rowHash, 'result lost immutable order-row audit hash');
-  assert.strictEqual(success.noAutomaticChaining, 'no-automatic-chaining');
-  const replay = await send({ ...executeBase, actionToken: p6.actionToken, gestureProof: 'trusted-click-4' });
-  assert.strictEqual(replay.reason, 'token-used', 'successful order token was replayable');
-
-  const encounterOrder = { ...exactOrder, clientOrderId: 'local-order-encounter-only' };
-  const encounterContext = {
-    visitDate: lockedContext.visitDate, provider: lockedContext.provider,
-    encounterId: lockedContext.encounterId, encounterUrl: lockedContext.encounterUrl
-  };
-  const encounterProbeMessage = {
-    ...probeMessage, previewHash: 'preview-order-encounter-only', expectedContext: encounterContext,
-    order: encounterOrder, rowHash: 'row-hash-encounter-only', clientOrderId: encounterOrder.clientOrderId
-  };
-  const encounterProbe = await send(encounterProbeMessage);
-  assert(encounterProbe.ok, 'encounter-only exact context could not be probed');
-  const encounterSuccess = await send({
-    ...encounterProbeMessage, mode: 'execute', actionToken: encounterProbe.actionToken,
-    expectedContext: {
-      appointmentId: encounterProbe.context.appointmentId, encounterId: encounterProbe.context.encounterId,
-      encounterUrl: encounterProbe.context.encounterUrl, visitDate: encounterProbe.context.visitDate, provider: encounterProbe.context.provider
-    },
-    probeContext: { ...lockedContext }, userGesture: true, gestureProof: 'trusted-encounter-only',
-    gestureRowHash: encounterProbeMessage.rowHash, gestureClientOrderId: encounterOrder.clientOrderId
-  });
-  assert.strictEqual(encounterSuccess.ok, true, 'probe-discovered appointment ID incorrectly invalidated encounter-only authorization');
-
-  console.log('PASS Athena single-order runtime (wsg-2.0.0): exact catalog/control, isolated readback, wrong-patient/tamper/replay gates, immutable audit IDs, and no chaining - the policy refusal is lifted, every correctness gate stands');
+  const p1 = await send(draft);
+  assert(p1.ok && p1.actionToken && p1.readOnly, 'allowed note probe never received a read-only one-use authorization');
+  const execute = { ...draft, mode: 'execute', actionToken: p1.actionToken,
+    expectedContext: { ...p1.context }, probeContext: { ...lockedContext }, userGesture: true, gestureProof: 'trusted-note-proof' };
+  const wrongPatient = await send({ ...execute, expectedPatient: { ...patient, patientId: 'different-local-patient' } });
+  assert.strictEqual(wrongPatient.reason, 'patient-mismatch', 'the allowed write accepted a different local patient');
+  const replay = await send(execute);
+  assert.strictEqual(replay.reason, 'token-used', 'a refused allowed write left its token reusable');
+  const p2 = await send(draft);
+  const wrongAction = await send({ ...execute, action: 'save_draft', actionToken: p2.actionToken, gestureProof: 'trusted-save-proof' });
+  assert.strictEqual(wrongAction.reason, 'token-action-mismatch', 'a note authorization could be reused for Save');
+  const saveProbe = await send({ ...draft, action: 'save_draft' });
+  assert(saveProbe.ok && saveProbe.actionToken && saveProbe.readOnly, 'allowed Save lost its read-only positive control');
+  assert.strictEqual(executeInjections, 0, 'a wrong-patient, replayed or action-swapped request injected a mutation');
+  completed = true;
+  console.log('PASS Athena order policy runtime: final actions never arm or inject; exact catalog/control and isolated-readback helper defenses retained; allowed note/save probes preserve patient, unique-tab, one-use and action-exact token gates');
 })().catch(err => {
   console.error(err);
   process.exitCode = 1;

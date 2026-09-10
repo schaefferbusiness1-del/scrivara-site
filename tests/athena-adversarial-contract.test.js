@@ -213,13 +213,9 @@ finding('dormant billing defense still has explicit preflight and partial-mutati
   assert(!/partialMutation[^]{0,500}Nothing was changed/i.test(showActionConfirm), 'partial mutation must never be described as Nothing was changed');
 });
 
-finding('Sign stays proof-gated end-to-end: the site offers it only with capability and proof, and the extension executes it ONLY behind that verified write_note proof (wsg-2.0.0)', function () {
-  /* The note proof is a durable write receipt AND (since wsg-2.0.0 / MLS Assist
-     3.0.62, owner directive 2026-08-12) the prerequisite the extension demands
-     before it will click the exact Sign & Save control. The production site
-     offers Sign only when the extension advertises the typed final-action
-     capability; the extension's policy refusal is lifted, its correctness
-     gates are not. */
+finding('Sign stays manual end-to-end while note-write proofs and dormant final-action defenses remain intact', function () {
+  /* Preserve proof integrity while enforcing the newer owner policy that
+     signing always stays manual, regardless of capabilities or proof. */
   assert(/noteWriteProofs\s*=\s*Object\.create\(null\)|new\s+Map\s*\(/.test(handler), 'background must own a note-write proof registry');
   assert(/action\s*===\s*['"]write_note['"](?=[^]{0,1800}executed\.attempted\s*===\s*true)(?=[^]{0,1800}(?:written|writeVerified))(?=[^]{0,1800}verified)(?=[^]{0,1800}noteWriteProof)/.test(handler), 'proof may be minted only after write_note actually attempted mutation and reports written and verified');
   assert(/probeContextMatches\(\s*(?:executed|result|writeResult)\.context\s*,\s*rec\.locked\s*\)|(?:executed|result|writeResult)\.context\.contextHash\s*===\s*rec\.locked\.contextHash/.test(handler), 'proof minting must re-check the driver result against the token-locked encounter');
@@ -230,24 +226,21 @@ finding('Sign stays proof-gated end-to-end: the site offers it only with capabil
   assert(/writeReceiptDrafts/.test(receiptAction) && /openUnifiedConfirmation\(/.test(writeReceiptDrafts), 'the top receipt write button must reach canonical write_note through the unified manifest review');
   assert(!/athenaReceiptSign/.test(receiptUi), 'top receipt must not render a Sign action, disabled or otherwise');
   assert(/Complete in Athena:[^]{0,260}Sign &amp; Save/.test(receiptUi), 'top receipt must visibly route Sign & Save to Athena');
-  assert(/ATHENA_EXECUTABLE_ACTIONS\s*=\s*\{\s*write_note\s*:\s*true\s*,\s*save_draft\s*:\s*true\s*,\s*stage_billing\s*:\s*true\s*,\s*sign_encounter\s*:\s*true\s*,\s*place_order\s*:\s*true\s*\}/.test(explicitActions), 'app allowlist must contain only the five supervised typed actions');
+  assert(/ATHENA_EXECUTABLE_ACTIONS\s*=\s*\{\s*write_note\s*:\s*true\s*,\s*save_draft\s*:\s*true\s*\}/.test(explicitActions), 'app allowlist must contain only note insertion and draft save');
   const capabilityRefusal = startAthenaAction.indexOf('final-action-capability-required');
   const proofRefusal = startAthenaAction.indexOf('verified-note-write-required');
   const probeBridge = startAthenaAction.indexOf("mode: 'probe'");
+  assert(startAthenaAction.indexOf('manual-only-final-action') >= 0 && startAthenaAction.indexOf('manual-only-final-action') < capabilityRefusal, 'manual policy must refuse before any capability or proof can authorize Sign');
   assert(capabilityRefusal >= 0 && probeBridge > capabilityRefusal, 'Sign must be refused before any bridge probe without the extension capability');
   assert(proofRefusal >= 0 && probeBridge > proofRefusal, 'Sign must be refused before any bridge probe without the matching note-write proof');
-  /* wsg-2.0.0: the policy refusal is GONE from the content bridge and the
-     driver (pinned absent, both), and what remains is the correctness chain:
-     the bridge still demands the action-exact trusted-click arm, the handler
-     still refuses sign without a matching note-write proof, and the driver
-     may click ONLY the exact 'Sign and Save' control (clickOnce carve-out). */
-  for (const source of [actionBridge, driver]) {
-    assert(!/write-safety-final-action-blocked/.test(source), 'wsg-2.0.0: a content/driver hop still carries the lifted policy refusal');
-    assert(/sign_encounter/.test(source), 'Sign is missing from a content/driver hop');
-  }
+  /* Every independent dispatch/control boundary closes; the dormant proof
+     chain cannot create an exception to the active action policy. */
+  assert(/write-safety-final-action-blocked/.test(actionBridge), 'the content bridge must refuse final actions');
+  assert(/ACTIONS = \{ write_note: 1, save_draft: 1 \}/.test(driver), 'driver policy must exclude Sign and other final actions');
+  assert(/!Object\.prototype\.hasOwnProperty\.call\(ACTIONS, action\)/.test(driver), 'driver policy must reject inherited object keys');
   assert(/fresh-trusted-click-required/.test(actionBridge) && /arm\.action !== athAction/.test(actionBridge), 'the bridge must still demand an action-exact trusted-click arm for sign');
   assert(/sign-prerequisite-mismatch/.test(handler) && /matchingNoteWriteProof\(/.test(handler), 'the handler must still refuse sign without a matching verified note-write proof');
-  assert(/function clickOnce\(el\) \{ if \(wsForbiddenControl\(el\) && !\(action === 'sign_encounter' && exactSign\(el\)\)\) throw/.test(driver), 'clickOnce must refuse every forbidden control except the exact Sign and Save control for sign_encounter');
+  assert(/function clickOnce\(el\) \{ if \(wsForbiddenControl\(el\)\) throw/.test(driver), 'clickOnce must refuse every forbidden control without a signing exception');
   assert(/MLS_WRITE_SAFETY_GATE_START/.test(handler) && /gateActionRequest/.test(handler), 'background no longer invokes the write-safety policy before execution');
   assert(/write-safety-guard-missing/.test(handler) && /sign_encounter/.test(handler), 'background no longer fails closed when its safety policy is unavailable');
 });
@@ -372,5 +365,5 @@ if (failures.length) {
   failures.forEach((f, i) => console.error(`  ${i + 1}. ${f.name}: ${f.message}`));
   process.exitCode = 1;
 } else {
-  console.log('PASS Athena adversarial contract: exact note lane, observed identity, scoped evidence, explicit partials, and proof-gated Sign');
+console.log('PASS Athena adversarial contract: exact note lane, observed identity, scoped evidence, explicit partials, manual Sign, and preserved proof integrity');
 }
