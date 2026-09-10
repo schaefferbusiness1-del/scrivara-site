@@ -228,6 +228,9 @@ function harness() {
         bodyMode: (document.getElementById('mlsEz3Body') || {}).getAttribute
           ? document.getElementById('mlsEz3Body').getAttribute('data-mls-easy-mode') : '',
         recordingClass: document.body.classList.contains('mls-recording'),
+        recordText: ((document.querySelector('.ez3fl-recbtn') || {}).textContent || '').trim(),
+        recordLabel: (document.querySelector('.ez3fl-recbtn') || {}).getAttribute
+          ? (document.querySelector('.ez3fl-recbtn').getAttribute('aria-label') || '') : '',
         phase, emode, screen,
         glowId: (g.lit[0] || {}).id || '',
         glowText: ((g.lit[0] || {}).text || '').slice(0, 40),
@@ -333,6 +336,8 @@ async function runtime() {
     ok(s.recordingClass, 'body.mls-recording was never set while capture was live');
     ok(/pause|stop/i.test(s.glowText),
       `while recording, the glow is on "${s.glowText}" — it must be the pause/stop control`);
+    ok(/^Pause recording(?: \u2014 next step:|$)/.test(s.recordLabel),
+      `the visible Pause recording control is announced as "${s.recordLabel}"`);
 
     /* ONLY #captureBtn is touched: no click, no input, nothing inside the lane.
        Both the lane and the glow must follow the recorder within one second. */
@@ -344,6 +349,8 @@ async function runtime() {
       `the recorder stopped and the next step still reads "${s.glowText}"`);
     s = await until(page, (x) => x.gen && x.glowId === 'ez3flGen', 6000);
     eq(s.glowId, 'ez3flGen', `paused with a transcript, the next step is ${s.glowId || '(nothing)'}, expected ez3flGen`);
+    ok(/^Resume recording(?: \u2014 next step:|$)/.test(s.recordLabel),
+      `the visible Resume recording control is announced as "${s.recordLabel}"`);
 
     /* ---- 4. THE `note` PHASE — THE 2026-08-18 BLOCKER ------------------- */
     const generatedNote = [

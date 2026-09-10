@@ -8912,6 +8912,22 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     value = String(value);
     if (el && el.getAttribute(name) !== value) el.setAttribute(name, value);
   }
+  /* The shared next-step owner composes its reason onto aria-label and saves
+     the control's original label in __mlsNgLabel. The record pill can change
+     from Pause to Resume while it is still marked, so changing only the
+     visible child leaves assistive tech announcing the prior action. Keep the
+     owned base label and the composed current label in step with the text;
+     when the glow moves, its deannotate() then restores the new base label. */
+  function setLaneControlLabel(el, value) {
+    if (!el) return;
+    value = String(value == null ? '' : value);
+    var current = String(el.getAttribute('aria-label') || '');
+    var marker = ' \u2014 next step: ';
+    var at = current.indexOf(marker);
+    var suffix = (el.getAttribute('data-mls-ng-note') === '1' && at >= 0) ? current.slice(at) : '';
+    if (el.getAttribute('data-mls-ng-note') === '1') el.__mlsNgLabel = value;
+    setLaneAttr(el, 'aria-label', value + suffix);
+  }
   /* ===== genvis-1.0.0 begin ============================================== */
   /* MEASURED LIVE 2026-09-01 in the owner's own tab on b1188. He pressed this
      lane's "Generate one note". The engine really started: window fired
@@ -9255,7 +9271,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         var dot = document.createElement('span'); dot.className = 'dot'; rb.appendChild(dot);
         rbLabel = document.createElement('span'); rbLabel.className = 'ez3fl-rblabel'; rb.appendChild(rbLabel);
       }
-      setLaneText(rbLabel, live ? '\u23F8 Pause recording' : (text.trim() && _recSessionSeen ? '\uD83C\uDFA4 Resume recording' : '\uD83C\uDFA4 ' + (pname ? 'Start recording - ' + pname : 'Start a visit recording')));
+      var recordLabel = live ? 'Pause recording' : (text.trim() && _recSessionSeen ? 'Resume recording' : (pname ? 'Start recording - ' + pname : 'Start a visit recording'));
+      setLaneText(rbLabel, live ? '\u23F8 ' + recordLabel : '\uD83C\uDFA4 ' + recordLabel);
+      setLaneControlLabel(rb, recordLabel);
       setLaneAttr(rb, 'aria-pressed', live ? 'true' : 'false');
     }
     /* walkfix-1.0.0 (b1184): ONE DOOR AT A TIME. #ez3Adv (the engine's own
