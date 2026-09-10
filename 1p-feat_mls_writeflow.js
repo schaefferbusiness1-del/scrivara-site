@@ -1771,7 +1771,7 @@
     try { if (rowId && unifiedAthenaState) unifiedAthenaState.probeSettled = unifiedAthenaState.probeGeneration; } catch (eBx) {}
     /* A passing re-check retires the patient-search fallback that belonged to
        this row. Keep this beside the READY latch so every success path agrees. */
-    try { if (rowId && unifiedAthenaState && S(unifiedAthenaState.wfdxNameRouteRowId) === S(rowId)) unifiedAthenaState.wfdxNameRouteRowId = ''; } catch (eNameRoute) {}
+    try { if (rowId !== null && rowId !== undefined && unifiedAthenaState) wfdxClearNameRoute(unifiedAthenaState, rowId); } catch (eNameRoute) {}
     /* wfatt-1.0.0 (2026-09-02): this is the READY terminal, so a wfauto
        re-check or a manual "Check Athena again" that finally succeeds erases
        the section's old failure and the row goes back to WAITING FOR YOUR
@@ -3619,7 +3619,8 @@
     wfdxHealth(false).then(function () { wfdxPaintDiag(state); });
   }
   function wfdxAppendNameRoute(state, rowId, host) {
-    if (!host || !state || state.closed || !S(rowId).trim() || S(state.wfdxNameRouteRowId) !== S(rowId)) return false;
+    var pending = state && state.wfdxNameRoutePending;
+    if (!host || !state || state.closed || !pending || !Object.prototype.hasOwnProperty.call(pending, 'rowId') || S(pending.rowId) !== S(rowId)) return false;
     if (host.querySelector('[data-mls-open-by-name]')) return;
     var btn = wfdxButton('Open by name instead',
       'Read-only: asks athenaOne’s own patient search for this chart. The search refuses an ambiguous or DOB-mismatched result, and the write check still re-verifies name, DOB and MRN before anything can be confirmed.',
@@ -3628,9 +3629,17 @@
     host.appendChild(btn);
     return true;
   }
+  function wfdxClearNameRoute(state, rowId) {
+    var pending = state && state.wfdxNameRoutePending;
+    if (!pending || !Object.prototype.hasOwnProperty.call(pending, 'rowId') || S(pending.rowId) !== S(rowId)) return false;
+    state.wfdxNameRoutePending = null;
+    return true;
+  }
   function wfdxOfferNameRoute(state, rowId) {
-    var host = wfdxFixHost(); if (!host || !state || state.closed || !S(rowId).trim()) return;
-    state.wfdxNameRouteRowId = S(rowId);
+    var host = wfdxFixHost(); if (!host || !state || state.closed) return;
+    /* Presence is explicit because an MRN-only blocked review intentionally
+       has no row id, yet still owns the same safe patient-search recovery. */
+    state.wfdxNameRoutePending = { rowId: S(rowId) };
     wfdxAppendNameRoute(state, rowId, host);
   }
   /* Compose the read-only ladder MLS Assist 3.0.62 exposes:
@@ -3665,7 +3674,7 @@
        row-not-painted refusal, not the gatekeeper. The goto bridge is LAZY now
        - constructing it eagerly fired the drive even on the row-first path. */
     function handleOpenSuccess(openRes) {
-      if (S(state.wfdxNameRouteRowId) === S(rowId)) state.wfdxNameRouteRowId = '';
+      wfdxClearNameRoute(state, rowId);
       done('', '');
       if (state.closed || unifiedAthenaState !== state) return;
       /* openpace-1.0.0: an athenaOne encounter page takes 30-60s to paint -
@@ -9422,9 +9431,10 @@
         press: function (btn) { return runUnifiedPrimarySend(unifiedAthenaState, btn || null); } },
       /* Read-only recovery-state seam. offer()/repaint() call the exact UI
          functions used in production; they never probe, navigate or write. */
-      nameRoute: { pending: function () { return unifiedAthenaState ? S(unifiedAthenaState.wfdxNameRouteRowId) : ''; },
+      nameRoute: { pending: function () { return unifiedAthenaState && unifiedAthenaState.wfdxNameRoutePending ? stableClone(unifiedAthenaState.wfdxNameRoutePending) : null; },
         offer: function (rowId) { return unifiedAthenaState ? wfdxOfferNameRoute(unifiedAthenaState, rowId) : false; },
-        repaint: function (rowId) { return unifiedAthenaState ? wfdxShowFixStrip(unifiedAthenaState, rowId) : false; } },
+        repaint: function (rowId) { return unifiedAthenaState ? wfdxShowFixStrip(unifiedAthenaState, rowId) : false; },
+        clear: function (rowId) { return unifiedAthenaState ? wfdxClearNameRoute(unifiedAthenaState, rowId) : false; } },
       /* wfnext-1.0.0 read-only seam: which rows THIS press authorizes, the
          label and up-front sentence derived from them, and the two timeout
          sentences. Every one of these is a pure read of the checked set and the

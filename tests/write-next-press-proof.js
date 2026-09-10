@@ -1020,12 +1020,34 @@ function fireChange(box) { ((box.handlers && box.handlers.change) || []).forEach
     r.wf.diagnostics.nameRoute.repaint(refusedId);
     ok(fixHost.querySelector('[data-mls-open-by-name]'),
       'an automatic refusal repaint erased Open by name instead');
-    eq(r.wf.diagnostics.nameRoute.pending(), refusedId,
+    eq(r.wf.diagnostics.nameRoute.pending().rowId, refusedId,
       'the safe name-search recovery lost its row ownership across repaint');
     const checkControls = [r.el('mlsAthenaUnifiedRecheck')].concat(fixHost.children)
       .filter(el => String(el && el.textContent || '') === 'Check Athena again');
     eq(checkControls.length, 1,
       'a row-level refusal rendered duplicate Check Athena again controls');
+
+    /* MRN-only reviews have no executable row id. Empty is still a real owner,
+       distinct from no pending fallback, and another row may not borrow it. */
+    r.wf.diagnostics.nameRoute.offer('');
+    ok(fixHost.querySelector('[data-mls-open-by-name]'),
+      'the unrowed review lost its patient-search recovery');
+    r.wf.diagnostics.nameRoute.repaint('');
+    ok(fixHost.querySelector('[data-mls-open-by-name]'),
+      'the unrowed patient-search recovery did not survive repaint');
+    eq(r.wf.diagnostics.nameRoute.pending().rowId, '',
+      'an empty row id was collapsed into no pending recovery');
+    r.wf.diagnostics.nameRoute.repaint('write-note-ros-wrong');
+    eq(fixHost.querySelector('[data-mls-open-by-name]'), null,
+      'an unrowed patient-search recovery appeared on a different row');
+    r.wf.diagnostics.nameRoute.repaint('');
+    ok(fixHost.querySelector('[data-mls-open-by-name]'),
+      'the correct unrowed recovery did not return after a wrong-row repaint');
+    eq(r.wf.diagnostics.nameRoute.clear(''), true,
+      'a successful unrowed open did not retire its recovery');
+    r.wf.diagnostics.nameRoute.repaint('');
+    eq(fixHost.querySelector('[data-mls-open-by-name]'), null,
+      'a successful unrowed open left its stale patient-search recovery visible');
 
     /* NEGATIVE 2 - the read-only check never answered at all. The bounded
        two-attempt stage and the sentence it settles in are unchanged, and it
