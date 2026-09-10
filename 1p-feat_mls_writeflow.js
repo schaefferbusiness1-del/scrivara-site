@@ -2272,6 +2272,10 @@
         short: 'MLS is writing ' + (batchRow ? batchRow.label : 'the reviewed text') + ' into its exact Athena field' + batchWhere + '. It has not saved or signed the encounter.' };
     }
     if (state.running) {
+      if (savenamedIsRow(unifiedRow(state.manifest, state.selectedRowId))) {
+        return { label: 'SAVING DRAFT', color: '#204034',
+          short: 'MLS is saving this exact encounter and waiting for Athena to verify the result. It never signs.' };
+      }
       return { label: 'SENDING', color: '#204034',
         short: 'MLS is writing the reviewed text into the exact Athena field. It never saves and never signs.' };
     }
@@ -3447,7 +3451,7 @@
     'save-control-not-found': { fix: true,
       say: 'One step needed: athenaOne has this encounter open, but MLS could not see one exact Save control on the screen it is showing. Bring the encounter itself up in athenaOne so its Save button is on screen, then press Check Athena again.' },
     'save-control-not-active-surface': { fix: true,
-      say: 'One step needed: MLS found this encounter\'s Save control, but it is not on the active encounter surface, so MLS refused to press it. Bring the exact encounter editor to the front in athenaOne, then press Check Athena again.' },
+      say: 'The active encounter\'s Save button is not available. MLS did not press another Save button. Check this encounter\'s note status in athenaOne before continuing.' },
     'save-control-ambiguous': { fix: true,
       say: 'One step needed: more than one Save control is showing in this encounter, and MLS will not guess which one saves it. Close the extra editor or pop-up in athenaOne so a single Save is left, then press Check Athena again - or save the encounter yourself in athenaOne.' },
     /* THE RUNNING EXTENSION'S ANSWER. MLS Assist 3.0.107 and 3.0.110 have no
