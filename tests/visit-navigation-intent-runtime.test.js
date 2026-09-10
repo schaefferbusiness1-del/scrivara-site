@@ -61,6 +61,49 @@ assert(!/installAutoAdvance|__ez3AutoGenWrap|ez3AutoGenerate|window\.stopCapture
   assert.strictEqual(S.appt, null, 'refused adoption changed the workspace');
 }
 {
+  const helpers = between("  function noteText() { var n = $('noteBox');", '  function signBtn()');
+  const clickWire = between("    on('ez3ActiveGo', function () {", "    on('ez3Choose', function () {");
+  const patient = { id: 'fixture-patient-one', name: 'Synthetic Patient', dob: '2000-01-02', mrn: 'MRN-1' };
+  const visit = { id: 'appointment-one', _patientId: patient.id, name: patient.name, dob: patient.dob, mrn: patient.mrn };
+  const S = { appt: visit, locked: { id: visit.id, name: patient.name, dob: patient.dob, mrn: patient.mrn }, phase: 'note', recStart: 0, genClickedAt: 0 };
+  const fields = { transcript: { value: 'Exact retained synthetic source.' }, noteBox: { value: 'Exact retained synthetic note.' },
+    ez3ActiveGo: { getAttribute: key => key === 'data-continue' ? '1' : '' } };
+  let active = patient, modeCalls = 0, recordCalls = 0, renderCalls = 0;
+  const originalVisit = JSON.stringify(visit), originalSource = fields.transcript.value, originalNote = fields.noteBox.value;
+  const ctx = {
+    S, String, $: id => fields[id] || null, canonicalActivePatient: () => active,
+    visitBindingOwnsPatient: id => String(id) === String(patient.id) && String(S.appt._patientId) === String(id),
+    nameMatch: (a, b) => String(a) === String(b), dobConflicts: (a, b) => !!a && !!b && a !== b,
+    mrnConflicts: (a, b) => !!a.mrn && !!b.mrn && a.mrn !== b.mrn,
+    captureBusy: () => false, esc: value => String(value), bannerPatient: () => active,
+    on(id, fn) { if (id === 'ez3ActiveGo') ctx.click = fn; },
+    setEasyMode(mode, screen, reason) { assert.deepStrictEqual([mode, screen, reason], ['doctor', 'doctor', 'home-continue-visit']); modeCalls++; },
+    render() { renderCalls++; }, bannerRowToday: () => { throw new Error('continuation resolved a new appointment'); },
+    lockAndStart() { recordCalls++; }, lockAndStartPatient() { recordCalls++; }
+  };
+  vm.createContext(ctx);
+  vm.runInContext(helpers + '\nthis.owns=homeOwnsContinuableVisit;this.action=activePatientHomeAction;', ctx);
+  assert.strictEqual(ctx.owns(patient), true, 'exact owned draft did not become continuable');
+  const html = ctx.action(patient, 'new visit detail', '');
+  assert(/>➡ Continue visit</.test(html), 'owned draft still rendered Start recording');
+  assert(/aria-label="Continue visit"/.test(html) && !/aria-label="[^"]*Synthetic Patient/.test(html), 'Continue visit accessible name includes a patient name');
+  vm.runInContext(clickWire, ctx);
+  ctx.click();
+  assert.strictEqual(modeCalls, 1, 'Continue visit did not navigate to the existing Doctor room');
+  assert.strictEqual(recordCalls, 0, 'Continue visit started recording or rebuilt the visit');
+  assert.strictEqual(renderCalls, 0, 'stable Continue visit needed an extra repaint');
+  assert.strictEqual(JSON.stringify(S.appt), originalVisit, 'Continue visit changed the visit binding');
+  assert.strictEqual(fields.transcript.value, originalSource, 'Continue visit changed the source');
+  assert.strictEqual(fields.noteBox.value, originalNote, 'Continue visit changed the note');
+
+  fields.transcript.value = ''; fields.noteBox.value = ''; S.phase = 'idle';
+  assert.strictEqual(ctx.owns(patient), false, 'a new empty visit was promoted to Continue');
+  assert(/Start Recording/.test(ctx.action(patient, 'new visit detail', '')), 'a new empty visit lost Start recording');
+  fields.transcript.value = 'Stale bytes from the prior patient.';
+  active = { id: 'fixture-patient-two', name: 'Other Patient', dob: '2001-03-04', mrn: 'MRN-2' };
+  assert.strictEqual(ctx.owns(active), false, 'stale other-patient source promoted Continue visit');
+}
+{
   const warningHelper = between('  function generationWarningDuplicatesLane(message)', '  /* =======================================================================\n   *  renderers');
   let hint = { state: 'failed', text: 'Generation could not finish. Your prior draft was retained. [draft_quality_failed]' };
   const ctx = { window: { __mlsEz3Flow: { genRun: { hint: () => hint } } } };

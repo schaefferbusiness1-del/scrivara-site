@@ -22252,6 +22252,29 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   function captureBusy() { return isRecording() || /^(starting|recording|stopping)$/.test(directCaptureStatus()); }
   function noteText() { var n = $('noteBox'); return n ? (n.value || '') : ''; }
+  /* Home may resume an existing visit only when the canonical active patient
+     still owns Easy's exact visit lock. Shared editor bytes alone are never
+     enough: they can outlive a patient switch. This reads state only. */
+  function homeOwnsContinuableVisit(p) {
+    try {
+      var active = canonicalActivePatient();
+      if (!p || p.id == null || !active || active.id == null || String(active.id) !== String(p.id)) return false;
+      /* S.locked.id is the appointment id for scheduled visits and the patient
+         id for ad-hoc visits; visitBindingOwnsPatient is the shared exact
+         ownership check for both shapes. */
+      if (!S.appt || !S.locked || !visitBindingOwnsPatient(p.id)) return false;
+      if (!nameMatch(S.locked.name, p.name) || dobConflicts(S.locked.dob, p.dob) || mrnConflicts(S.locked, p)) return false;
+      var tx = $('transcript'), hasSource = !!(tx && String(tx.value || '').trim());
+      var hasNote = !!String(noteText() || '').trim();
+      var live = captureBusy() || S.phase !== 'idle' || S.recStart > 0 || S.genClickedAt > 0;
+      return hasSource || hasNote || live;
+    } catch (e) { return false; }
+  }
+  function activePatientHomeAction(p, detail, extraClass) {
+    var resume = homeOwnsContinuableVisit(p);
+    return '<button type="button" class="ez3-big' + (extraClass ? ' ' + extraClass : '') + '" id="ez3ActiveGo" data-continue="' + (resume ? '1' : '0') + '" aria-label="' + (resume ? 'Continue visit' : 'Start recording') + '">' +
+      (resume ? '➡ Continue visit<small>Return to the existing note and transcript</small>' : '🎙 Start Recording — ' + esc(p.name) + '<small>' + detail + '</small>') + '</button>';
+  }
   function signBtn() { return $('signBtn'); }
   function signReady() { var b = signBtn(); return !!(b && !b.disabled); }
 
@@ -24064,8 +24087,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       try { apx = (isFn(window.verifiedActivePatient) && window.verifiedActivePatient()) || null; } catch (e) {}
       if (!apx) { try { apx = (isFn(window.activePatient) && window.activePatient()) || null; } catch (e) {} }
       if (apx && apx.name && apx.id != null) {
-        h += '<button type="button" class="ez3-big" id="ez3ActiveGo">🎙 Start Recording — ' + esc(apx.name) +
-             '<small>' + (apx.dob ? esc(String(apx.dob)) + ' · ' : '') + (function(){var dl=esc(visitDayShort());return dl==='today'?'no appointment today':'no appointment on '+dl;})() + ' — records as an ad-hoc visit</small></button>';
+        h += activePatientHomeAction(apx, (apx.dob ? esc(String(apx.dob)) + ' · ' : '') + (function(){var dl=esc(visitDayShort());return dl==='today'?'no appointment today':'no appointment on '+dl;})() + ' — records as an ad-hoc visit');
       }
       h += emptyTodayHtml();
     } else {
@@ -24101,10 +24123,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         h += '<div style="text-align:center"><span class="ez3-nowtag' + (bpIsNow ? '' : ' next') + '">' +
              (bpIsNow ? 'HAPPENING NOW · ' + esc(t12(bpRow)) : (bpRow ? 'SELECTED PATIENT · ' + esc(t12(bpRow)) : 'SELECTED PATIENT')) +
              '</span></div>' +
-             '<button type="button" class="ez3-big" id="ez3ActiveGo">🎙 Start Recording — ' + esc(bp.name) +
-             '<small>' + (bpRow ? dobLabelPlain(bpRow) + ' · ' + esc(visitType(bpRow))
-                                : dobLabelPlain(bp) + ' · ' + (function () { var dl = visitDayShort(); return dl === 'today' ? 'no appointment today' : 'no appointment on ' + esc(dl); })() + ' — records as an ad-hoc visit') +
-             '</small></button>';
+             activePatientHomeAction(bp, (bpRow ? dobLabelPlain(bpRow) + ' · ' + esc(visitType(bpRow))
+                                : dobLabelPlain(bp) + ' · ' + (function () { var dl = visitDayShort(); return dl === 'today' ? 'no appointment today' : 'no appointment on ' + esc(dl); })() + ' — records as an ad-hoc visit'));
       }
       /* The day is never dropped. When the banner patient leads, NOW/NEXT
          demote to the existing "➡ <name>" switch form — the same visual
@@ -24166,8 +24186,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         var bpWhy = bpAmbiguous
           ? 'a matching appointment is on ' + esc(visitDayShort()) + '’s schedule, but more than one chart shares this name and date of birth — records as an ad-hoc visit until you pick the right chart'
           : 'not on ' + esc(visitDayShort()) + '’s schedule — records as an ad-hoc visit';
-        h += '<button type="button" class="ez3-big ok" id="ez3ActiveGo">🎙 Start Recording — ' + esc(bp.name) +
-             '<small>the patient on your banner · ' + dobLabelPlain(bp) + ' · ' + bpWhy + '</small></button>';
+        h += activePatientHomeAction(bp, 'the patient on your banner · ' + dobLabelPlain(bp) + ' · ' + bpWhy, 'ok');
       }
     }
     /* one obvious action at a time: Choose only makes sense once rows exist */
@@ -24205,6 +24224,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     on('ez3ActiveGo', function () {
       var p = bannerPatient();
       if (!p) return;
+      var shownContinue = false;
+      try { shownContinue = $('ez3ActiveGo').getAttribute('data-continue') === '1'; } catch (eC) {}
+      var ownsContinue = homeOwnsContinuableVisit(p);
+      /* If ownership changed after paint, repaint instead of turning a button
+         the doctor read as one action into the other action under their hand. */
+      if (shownContinue !== ownsContinue) { render(); return; }
+      if (ownsContinue) { setEasyMode('doctor', 'doctor', 'home-continue-visit', true); return; }
       /* Prefer the appointment row: lockAndStartPatient builds an _pt row with
          id:null, which throws the Athena appointment id away. That is correct
          only when the patient genuinely has no appointment on this day. */
