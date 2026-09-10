@@ -775,7 +775,7 @@
           return;
         }
         if (action === 'sign_encounter' && resp.signed !== true) { actionSay(opts, 'Athena did not confirm the encounter was signed. Check the open encounter; MLS is not marking it complete.', ''); try { if (typeof opts.onResult === 'function') opts.onResult(resp, { action: action, context: lockedContext, verifiedWrite: matchedWriteReceipt }); } catch (es) {} return; }
-        if (action === 'save_draft' && (S(resp.reason) === 'exact-section-persistence-reconciled' ? !nativeReconciledSaveResponse(resp) : !(resp.saved === true || resp.persisted === true || resp.serverVerified === true || resp.verified === true))) { actionSay(opts, S(resp.reason) === 'exact-section-persistence-reconciled' ? 'Athena did not return the complete five-section to four-destination persistence proof. Inspect the unsigned note before retrying; MLS did not press Save.' : 'Athena returned from Save, but durable save verification was not reported. Check the open encounter; MLS is not marking it complete.', ''); try { if (typeof opts.onResult === 'function') opts.onResult(resp, { action: action, context: lockedContext, verifiedWrite: null }); } catch (ev) {} return; }
+        if (action === 'save_draft' && (S(resp.reason) === 'exact-section-persistence-reconciled' ? !nativeReconciledSaveResponse(resp) : !(resp.saved === true || resp.persisted === true || resp.serverVerified === true || resp.verified === true))) { actionSay(opts, S(resp.reason) === 'exact-section-persistence-reconciled' ? 'Athena did not prove that all reviewed sections match the saved note. Inspect the unsigned note before retrying; MLS did not press Save.' : 'Athena returned from Save, but durable save verification was not reported. Check the open encounter; MLS is not marking it complete.', ''); try { if (typeof opts.onResult === 'function') opts.onResult(resp, { action: action, context: lockedContext, verifiedWrite: null }); } catch (ev) {} return; }
         if (action === 'stage_billing' && !(resp.staged === true || resp.verified === true)) { actionSay(opts, 'Athena returned from billing staging, but no committed billing codes were verified. Review the billing slate; no claim was submitted.', ''); try { if (typeof opts.onResult === 'function') opts.onResult(resp, { action: action, context: lockedContext, verifiedWrite: null }); } catch (eb) {} return; }
         if (action === 'place_order' && !(resp.orderPlaced === true || resp.alreadyPresent === true) ) { actionSay(opts, 'Athena did not return an isolated exact-order verification. Inspect the Orders workspace before retrying; no other action ran.', 'err'); try { if (typeof opts.onResult === 'function') opts.onResult(resp, { action: action, context: lockedContext, verifiedWrite: null }); } catch (eo) {} return; }
         actionSay(opts, action === 'stage_billing' ? ('Billing result verified in Athena. ' + (billingResultSummary(resp, payload) || 'All requested E/M and CPT/HCPCS codes were verified in the billing slate. No claim was submitted.')) : (action === 'place_order' ? (resp.alreadyPresent ? 'Athena verified this exact order was already present. Nothing was added and no other action ran.' : 'Athena verified exactly one reviewed order was placed. No Save, Sign, billing, prescription, or second order ran.') : (action === 'save_draft' ? (nativeReconciledSaveResponse(resp) ? SAVENAMED_NATIVE_VERIFIED_MSG : 'Athena confirmed the exact reviewed encounter content was saved as a draft. It was not signed or billed.') : 'Athena confirmed the exact reviewed encounter was signed and saved. Billing was not submitted.')), 'ok');
@@ -949,7 +949,8 @@
       refuse before anything is clicked, plus the read-back that never arrived. */
    'save-control-ambiguous save-control-not-active-surface save-control-not-found save-readback-missing ' +
    'schedule-date-missing-after-recovery schedule-date-restore-failed search-deadline-exceeded ' +
-   'section-persistence-proof-expired section-persistence-proof-mismatch section-persistence-proof-missing session-expired sign-prerequisite-mismatch store-refused store-unavailable synthetic-local-only ' +
+   'section-persistence-frame-changed section-persistence-proof-ambiguous section-persistence-proof-expired section-persistence-proof-mismatch section-persistence-proof-missing ' +
+   'section-persistence-readback-ambiguous section-persistence-readback-mismatch section-persistence-readback-missing session-expired sign-prerequisite-mismatch store-refused store-unavailable synthetic-local-only ' +
    'taught-destination-binding-mismatch ' +
    'taught-destination-control-mismatch taught-destination-expired taught-destination-fingerprint-mismatch ' +
    'taught-destination-frame-mismatch taught-destination-invalid taught-destination-label-mismatch ' +
@@ -1223,7 +1224,7 @@
   var SAVENAMED_DONE_SHORT = 'Every checked section is in athenaOne and MLS saved this encounter there and read the save back. Only Sign is left, and Sign stays your own click in athenaOne.';
   var SAVENAMED_NATIVE_PRESS_LABEL = 'Verify saved unsigned note in Athena';
   var SAVENAMED_NATIVE_WAITING_MSG = 'Every checked section was persisted and read back. This final read-only step reconciles the five reviewed sections with Athena\'s four saved destinations; it does not press Save and never signs.';
-  var SAVENAMED_NATIVE_VERIFIED_MSG = 'The five reviewed sections match Athena\'s four persisted destinations. The unsigned note is saved and verified; MLS did not press Save and did not sign or bill.';
+  var SAVENAMED_NATIVE_VERIFIED_MSG = 'All reviewed sections match the saved Athena note. The unsigned note is saved and verified; MLS did not press Save and did not sign or bill.';
   var SAVENAMED_NATIVE_DONE_SHORT = 'Every checked section is saved in athenaOne and read back. MLS verified the five reviewed sections across Athena\'s four persisted destinations without pressing Save. Only Sign is left.';
   var SAVENAMED_BANNER_TAIL = ' MLS also saved this encounter in athenaOne and read the save back; only Sign is left, and Sign stays your own click.';
   var SAVENAMED_SUMMARY_SAVED = ' MLS saved the encounter in athenaOne and read the save back. Nothing was signed - Sign stays your own click in athenaOne.';
@@ -2674,7 +2675,15 @@
     return !!(resp && resp.ok === true && resp.attempted === true && resp.written === true && resp.verified === true && resp.saved === true && resp.persisted === true && resp.serverVerified === true && S(resp.reason) === 'exact-note-editor-persisted' && results.length && results.every(function (row) { return row && row.attempted === true && row.written === true && row.verified === true && row.saved === true && row.persisted === true && row.serverVerified === true; }));
   }
   function nativeReconciledSaveResponse(resp) {
-    return !!(resp && resp.ok === true && resp.saved === true && resp.persisted === true && S(resp.reason) === 'exact-section-persistence-reconciled' && Number(resp.sectionsDeclared) === 5 && Number(resp.persistedDestinations) === 4);
+    if (!(resp && resp.ok === true && resp.verified === true && resp.saved === true && resp.persisted === true && resp.serverVerified === true && S(resp.reason) === 'exact-section-persistence-reconciled' && Number(resp.sectionsDeclared) === 5 && Number(resp.persistedDestinations) === 4)) return false;
+    var rows = Array.isArray(resp.results) ? resp.results : [], seen = Object.create(null);
+    if (rows.length !== 4) return false;
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i], key = S(row && row.key).trim().toLowerCase();
+      if (!/^(hpi|ros|exam|ap)$/.test(key) || seen[key] || row.ok !== true || row.saved !== true || row.persisted !== true || row.verified !== true) return false;
+      seen[key] = true;
+    }
+    return ['hpi','ros','exam','ap'].every(function (key) { return seen[key] === true; });
   }
   function nativePersistedReceipt(state, row) {
     try {
@@ -3561,6 +3570,16 @@
        classifies the code says the same true thing. */
     'save-readback-missing': { fix: false, mutated: true,
       say: 'MLS pressed the encounter Save control once and athenaOne did not paint a saved confirmation it could read, so MLS will not claim this encounter is saved. Look at the encounter in athenaOne before you press anything again.' },
+    'section-persistence-frame-changed': { fix: true,
+      say: 'athenaOne refreshed the encounter while MLS was checking the saved unsigned note. Let the encounter finish loading, then press Check Athena again.' },
+    'section-persistence-proof-ambiguous': { fix: false,
+      say: 'MLS found conflicting saved-section receipts for this review, so it will not mark the note complete. Inspect the unsigned note in athenaOne before retrying.' },
+    'section-persistence-readback-missing': { fix: true,
+      say: 'MLS could not find one reviewed section while checking the saved unsigned note. Put that section on screen in athenaOne, then press Check Athena again.' },
+    'section-persistence-readback-ambiguous': { fix: false,
+      say: 'MLS found more than one possible copy of a reviewed section, so it will not guess which one is saved. Inspect the unsigned note in athenaOne before retrying.' },
+    'section-persistence-readback-mismatch': { fix: false,
+      say: 'A saved Athena section no longer matches the reviewed text. Inspect the unsigned note in athenaOne before retrying.' },
     'patient-mismatch': { fix: false,
       say: 'The chart athenaOne has open is not this patient. MLS will not write into it and there is no shortcut past this. Open the correct chart yourself, then press Check Athena again.' },
     'dob-mismatch': { fix: false,
@@ -4635,7 +4654,7 @@
       var nativeReconciled = nativeReconciledSaveResponse(resp);
       if (nativeReconciled) persistenceMode = 'native-reconciled';
       status = (nativeReconciled || (S(resp.reason) !== 'exact-section-persistence-reconciled' && (resp.saved === true || resp.persisted === true || resp.serverVerified === true || resp.verified === true))) ? 'verified' : 'uncertain';
-      message = status === 'verified' ? (nativeReconciled ? SAVENAMED_NATIVE_VERIFIED_MSG : 'Athena verified Save / Save Draft for the exact encounter. It was not signed or billed.') : (S(resp.reason) === 'exact-section-persistence-reconciled' ? 'Athena did not return the complete five-section to four-destination persistence proof. Inspect the unsigned note before retrying; MLS did not press Save.' : 'Athena returned from Save without durable verification. Inspect the encounter before retrying.');
+      message = status === 'verified' ? (nativeReconciled ? SAVENAMED_NATIVE_VERIFIED_MSG : 'Athena verified Save / Save Draft for the exact encounter. It was not signed or billed.') : (S(resp.reason) === 'exact-section-persistence-reconciled' ? 'Athena did not prove that all reviewed sections match the saved Athena note. Inspect the unsigned note before retrying; MLS did not press Save.' : 'Athena returned from Save without durable verification. Inspect the encounter before retrying.');
     } else if (row.action === 'sign_encounter') {
       status = resp.signed === true ? 'verified' : 'uncertain';
       message = status === 'verified' ? 'Athena confirmed the exact encounter was signed and saved. Billing was not submitted.' : 'Athena did not verify the electronic signature. Inspect the encounter; MLS will not retry or auto-chain.';
@@ -4657,8 +4676,8 @@
     var reason = S(resp && resp.reason);
     if (/^native-persistence-(?:request-missing|request-ambiguous|response-failed|readback-mismatch)$/.test(reason))
       return 'Athena did not provide one exact persistence and read-back proof for this unsigned draft section. Inspect this exact field before any retry; MLS will not retry automatically.';
-    if (/^section-persistence-proof-(?:missing|mismatch|expired)$/.test(reason))
-      return 'The unsigned sections were persisted, but MLS could not reconcile all five reviewed sections with Athena\'s four saved destinations. Inspect the saved note before retrying. This verification step was read-only and did not press Save.';
+    if (/^section-persistence-(?:frame-changed|proof-(?:missing|mismatch|expired|ambiguous)|readback-(?:missing|ambiguous|mismatch))$/.test(reason))
+      return 'MLS could not prove that all reviewed sections still match the saved Athena note. Inspect the unsigned note before retrying. This verification step was read-only and did not press Save.';
     return '';
   }
   /* ===== wfprog-1.0.0 (owner 2026-08-27: "make it easy and simple with a good

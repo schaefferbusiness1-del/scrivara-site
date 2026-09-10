@@ -243,7 +243,8 @@ function makeHarness(options) {
   function defaultAction(m) {
     if (m.mode === 'execute') {
       if (options.nativePersistence && m.action === 'save_draft') return { ok: true, mode: 'execute', action: m.action,
-        attempted: false, saved: true, persisted: true, reason: 'exact-section-persistence-reconciled', sectionsDeclared: 5, persistedDestinations: 4, context: clone(CONTEXT) };
+        attempted: false, verified: true, saved: true, persisted: true, serverVerified: true, reason: 'exact-section-persistence-reconciled', sectionsDeclared: 5, persistedDestinations: 4,
+        results: ['hpi','ros','exam','ap'].map(key => ({ ok: true, key, saved: true, persisted: true, verified: true })), context: clone(CONTEXT) };
       const out = { ok: true, mode: 'execute', action: m.action, attempted: true, verified: true, written: true,
         noteWriteProof: 'proof-' + ENCOUNTER, noteWriteProofExpiresAt: Date.now() + 600000, context: clone(CONTEXT) };
       if (options.nativePersistence && m.action === 'write_note') Object.assign(out, { saved: true, persisted: true, serverVerified: true,
@@ -449,7 +450,7 @@ async function settle(n) { for (let i = 0; i < (n || 400); i++) await new Promis
     const receipt = h.wf.diagnostics.state().receipts[finish.id];
     eq(receipt.status, 'uncertain', 'incomplete native reconciliation was marked saved and verified');
     eq(receipt.persistenceMode, '', 'incomplete native reconciliation received the verified-native marker');
-    ok(/complete five-section to four-destination persistence proof/.test(receipt.message), 'incomplete native reconciliation does not name the missing proof');
+    ok(/all reviewed sections match the saved Athena note/.test(receipt.message), 'incomplete native reconciliation does not explain the missing proof');
     ok(/did not press Save/.test(receipt.message), 'incomplete read-only reconciliation is described as a failed Save click');
   }
 

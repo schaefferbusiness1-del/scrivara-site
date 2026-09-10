@@ -2308,6 +2308,7 @@ const tests = [
      cannot overstate what landed; and neither op-note send path in either 1p
      shell dead-ends in silence. */
   '1p-writeflow-opnote-clarity-progress.test.js',
+  '1p-native-reconciled-save-contract.test.js',
   /* cap-mrn-1.0.0: the open-patient capture reply's MRN is digits-only. */
   'capture-mrn-normalize-pins.test.js',
   /* Codex 00:2x: capture-shaped legacy-grid attribution fixtures - the
