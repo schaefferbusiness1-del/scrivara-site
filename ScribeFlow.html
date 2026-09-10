@@ -27890,16 +27890,32 @@ function openNoteFromHistory(id){
   try{ _mlsHistRefusalClear(id); if(document.getElementById('histList')&&typeof renderHistory==='function') renderHistory(); }catch(eHR){}
 }
 function closeView(){ document.getElementById('viewModal').classList.remove('show'); }
-function reopenViewed(){
-  const n=getNotes().find(x=>x.id===viewingId);
-  if(!n) return;
-  closeView();
-  if(n.patientId && findPatient(n.patientId)) setActivePtId(n.patientId);
+function _mlsSavedRecordCanReopen(n){
+  if(!n||!n.id) return false;
+  if(typeof _mlsIsChartImportNote==='function'&&_mlsIsChartImportNote(n)) return false;
+  return !!(String(n.soap||'').trim()||String(n.transcript||'').trim()||String(n.athenaNote||'').trim()||
+    /^(typed|saved|generated_soap|edited_generated_soap|generated_nonsoap)$/.test(String(n.noteProvenance||'')));
+}
+function _mlsContinueSavedRecord(n){
+  if(!_mlsSavedRecordCanReopen(n)) return false;
+  if(n.patientId){
+    const p=typeof findPatient==='function'?findPatient(n.patientId):null;
+    if(!p){ try{ toast('This saved draft is not attached to a patient chart, so it was not loaded into the editor.','err'); }catch(e){} return false; }
+    if(String(getActivePtId()||'')!==String(p.id)) setActivePtId(p.id);
+    if(String(getActivePtId()||'')!==String(p.id)) return false;
+  }
   showView('visit');
   loadRecordIntoEditor(n);
   renderPatientBar();
-  toast('Reopened in editor. Edits create a new save unless you Save to history again.','');
-  document.getElementById('noteCard').scrollIntoView({behavior:'smooth'});
+  toast('Draft reopened with its patient and visit details. Save to history when you are done editing.','');
+  const noteCard=document.getElementById('noteCard');
+  if(noteCard&&noteCard.scrollIntoView) noteCard.scrollIntoView({behavior:'smooth',block:'start'});
+  return true;
+}
+function reopenViewed(){
+  const n=getNotes().find(x=>x.id===viewingId);
+  if(!n) return;
+  if(_mlsContinueSavedRecord(n)) closeView();
 }
 
 function loadRecordIntoEditor(n){
@@ -27923,7 +27939,7 @@ function loadRecordIntoEditor(n){
   paMode='auth'; setPaMode('auth');
   currentSurgicalData=(n.surgicalPlan&&typeof n.surgicalPlan==='object')?n.surgicalPlan:null;
   currentSurgicalPlan=n.surgicalPlanText||'';
-  if(currentSurgicalData){ try{ renderSurgicalPlan(currentSurgicalData); }catch(e){ const sp=document.getElementById('surgPlanCard'); if(sp) sp.style.display='none'; } }
+  if(currentSurgicalData){ try{ renderSurgicalPlan(currentSurgicalData,{scroll:false}); }catch(e){ const sp=document.getElementById('surgPlanCard'); if(sp) sp.style.display='none'; } }
   else { const sp=document.getElementById('surgPlanCard'); if(sp) sp.style.display='none'; currentSurgicalPlan=''; }
   if(currentRedFlags) renderRedFlags(currentRedFlags); else { const rc=document.getElementById('redflagCard'); if(rc) rc.style.display='none'; }
   if(currentDdx) showExtra('ddxCard','ddxBody',currentDdx); else { const dc=document.getElementById('ddxCard'); if(dc) dc.style.display='none'; }
@@ -32225,7 +32241,7 @@ function surgicalPlanText(result){
 
 /* AUTO-render the Surgical planning card from a parsed generate result.
    Shows only sub-sections with content; hides the whole card if all empty. */
-function renderSurgicalPlan(result){
+function renderSurgicalPlan(result,renderOptions){
   result=result||{};
   const card=document.getElementById('surgPlanCard');
   const body=document.getElementById('surgPlanBody');
@@ -32305,7 +32321,7 @@ function renderSurgicalPlan(result){
   body.innerHTML=html;
   currentSurgicalPlan=surgicalPlanText(result);
   card.style.display='block';
-  card.scrollIntoView({behavior:'smooth',block:'nearest'});
+  if(!(renderOptions&&renderOptions.scroll===false)) card.scrollIntoView({behavior:'smooth',block:'nearest'});
 }
 
 function copySurgicalPlan(){
@@ -46033,7 +46049,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1212';
+  window.__MLS_AV='b1213';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

@@ -32255,7 +32255,7 @@ function surgicalPlanText(result){
 
 /* AUTO-render the Surgical planning card from a parsed generate result.
    Shows only sub-sections with content; hides the whole card if all empty. */
-function renderSurgicalPlan(result,opts){
+function renderSurgicalPlan(result,renderOptions){
   result=result||{};
   const card=document.getElementById('surgPlanCard');
   const body=document.getElementById('surgPlanBody');
@@ -32335,7 +32335,7 @@ function renderSurgicalPlan(result,opts){
   body.innerHTML=html;
   currentSurgicalPlan=surgicalPlanText(result);
   card.style.display='block';
-  if(!(opts&&opts.scroll===false)) card.scrollIntoView({behavior:'smooth',block:'nearest'});
+  if(!(renderOptions&&renderOptions.scroll===false)) card.scrollIntoView({behavior:'smooth',block:'nearest'});
 }
 
 function copySurgicalPlan(){

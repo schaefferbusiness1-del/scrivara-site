@@ -19,6 +19,7 @@ function between(source, start, end, label) {
 for (const rel of shells) {
   const source = read(rel);
   const reopen = between(source, 'function _mlsSavedRecordCanReopen(n){', '\nfunction reopenViewed(){', rel + ' continuation');
+  new vm.Script(between(source, 'function renderSurgicalPlan(result,renderOptions){', '\nfunction copySurgicalPlan(){', rel + ' surgical renderer'));
   const calls = [];
   const noteCard = { scrollIntoView(opts) { calls.push(['scroll', opts]); } };
   const patient = { id: 'patient-local-1', name: 'Synthetic Patient' };
@@ -62,7 +63,7 @@ for (const rel of shells) {
   assert.strictEqual(calls.length, before, rel + ': rejected clinical-history receipt mutated the Visit editor');
 
   assert(source.includes('renderSurgicalPlan(currentSurgicalData,{scroll:false})'), rel + ': restore still lets surgical-plan rendering scroll');
-  assert(source.includes("if(!(opts&&opts.scroll===false)) card.scrollIntoView"), rel + ': surgical renderer cannot suppress its scroll during restore');
+  assert(source.includes("if(!(renderOptions&&renderOptions.scroll===false)) card.scrollIntoView"), rel + ': surgical renderer cannot suppress its scroll during restore');
   assert(source.includes("mine=(histData.byPatient&&histData.byPatient.get(ap.id))||[];"), rel + ': patient History no longer uses the canonical patientId index');
 }
 

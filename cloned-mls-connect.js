@@ -8354,7 +8354,15 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (_recFail && _recFail.why === why) return;   /* do not restart the row */
     _recFail = { why: why, kind: kind || 'err', at: Date.now() };
   }
-  function recFailClear() { _recFail = null; }
+  function recFailClear() {
+    _recFail = null;
+    /* A new press is a new attempt. Clear the prior attempt from the pixels
+       synchronously; waiting for the next lane frame can leave yesterday's
+       red refusal visible underneath a consent dialog opened by this press. */
+    try {
+      [].slice.call(document.querySelectorAll('.ez3fl-recfail')).forEach(function (row) { row.hidden = true; });
+    } catch (e) {}
+  }
   /* The consent dialog's own in-flight promise. A truthy value means the
      doctor is looking at "Patient consent required" right now, which is a
      legitimate not-yet and must never be painted as a failure. */
@@ -9268,6 +9276,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       else if (!_recLive.moved && (Date.now() - _recLive.since) > REC_SILENT_MS) recFailSet(REC_SILENT_WHY, 'warn');
     } else {
       _recLive = null;
+      /* Easy/hero starts reach the legacy capture button directly rather than
+         toggleTopRecording(), so they do not receive _recPending there. Adopt
+         the engine's in-flight consent promise here and replace any old error
+         with the current attempt's truthful wait state. */
+      if (_recArmed && consentAskOpen()) {
+        if (!_recPending) _recPending = { at: _recArmed.at };
+        recFailSet('Waiting on the consent dialog - confirm consent and capture starts.', 'wait');
+      }
       /* A start that was deferred behind the consent dialog: the dialog is
          gone and nothing is recording, so it was cancelled or declined. That
          is the one consent outcome the app never said anything about - the
@@ -23557,7 +23573,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      activates via the app's own selectPatient(id) (the Patients-page path,
      ScribeFlow.html:9464) instead of calStartVisit — same context lock and
      identity check as an appointment row. */
-  function lockAndStartPatient(p) {
+  function lockAndStartPatient(p, opts) {
+    opts = opts || {};
     /* v3.3: same mid-recording switch block as appointment rows */
     if (isRecording() && !(S.appt && S.appt._pt && String(S.appt._patientId) === String(p.id))) { blockSwitchWhileRecording(); return; }
     var a = { id: null, name: p.name || '', dob: p.dob || '', _patientId: p.id, _pt: true };
@@ -23569,14 +23586,18 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     (function check() {
       tries++;
       var an = activeName();
-      var ok = !(an && a.name) || nameMatch(an, a.name);
+      var active = canonicalActivePatient();
+      var exactPatient = !!(active && active.id != null && String(active.id) === String(p.id));
+      var ok = (!opts.record || exactPatient) && (!(an && a.name) || nameMatch(an, a.name));
       if (!ok && tries < 4) { setTimeout(check, 900); return; }
       if (!ok) {
         S.lastWarn = 'The open visit is labeled “' + an + '”, not “' + (a.name || '') +
                      '”. Nothing was started — pick the patient again.';
         render(); return;
       }
-      S.lastWarn = ''; render();
+      S.lastWarn = '';
+      if (opts.record && !isRecording()) { var c = captureBtn(); if (c) c.click(); }
+      render();
     })();
   }
 
@@ -24022,7 +24043,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          only when the patient genuinely has no appointment on this day. */
       var row = bannerRowToday();
       if (row) { lockAndStart(row, { record: true }); return; }
-      lockAndStartPatient(p);
+      lockAndStartPatient(p, { record: true });
     });
     on('ez3Choose', function () { S.screen = 'choose'; S.expanded = null; S.showCount = 5; S.query = ''; render(); });
     on('ez3Prep', openPrep);

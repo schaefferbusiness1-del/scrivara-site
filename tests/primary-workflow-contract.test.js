@@ -65,7 +65,7 @@ assert(!connect.includes('send-portal-invite.html'), 'primary workflow still ope
 assert(connect.includes('id="ez3Portal"') && connect.includes("var button = $('mlsPortalInviteBtn')"), 'primary patient area must delegate to the one exact-active-patient portal owner');
 
 // Starting a patient/recording must not force the optional workspace open.
-const startPatient = between(connect, 'function lockAndStart(a, opts)', 'function lockAndStartPatient(p)');
+const startPatient = between(connect, 'function lockAndStart(a, opts)', 'function lockAndStartPatient(p, opts)');
 assert(!/advOpen|ez3adv|openWorkspace/.test(startPatient), 'starting a recording must not open the advanced workspace');
 
 // Stop is a pause boundary, not Generate and not Discard. Resume starts from
