@@ -1908,6 +1908,12 @@
     }
     unifiedAthenaState = null;
     try { var ov = document.getElementById('mlsAthenaUnifiedConfirm'); if (ov) ov.remove(); } catch (e) {}
+    if (state) try {
+      var closedEvent = (typeof CustomEvent === 'function')
+        ? new CustomEvent('mls:athena-review-closed', { detail: { returnFocusId: returnFocus && returnFocus.id || '' } })
+        : (function () { var ce = document.createEvent('CustomEvent'); ce.initCustomEvent('mls:athena-review-closed', false, false, { returnFocusId: returnFocus && returnFocus.id || '' }); return ce; }());
+      window.dispatchEvent(closedEvent);
+    } catch (eCloseEvent) {}
     if (unifiedVisibleFocusTarget(returnFocus)) setTimeout(function () {
       try { returnFocus.focus({ preventScroll: true }); } catch (e1) { try { returnFocus.focus(); } catch (e2) {} }
     }, 0);

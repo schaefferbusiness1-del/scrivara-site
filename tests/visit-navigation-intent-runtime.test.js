@@ -93,6 +93,10 @@ function setup(options = {}) {
     currentNoteId: 'fixture-note-one', _mlsConsentEpoch: 1,
     currentVisitAthenaBinding: { patient: { id: 'fixture-patient-one' }, visitContext: { appointmentId: 'fixture-slot-one' } },
     CustomEvent: function (type, options) { this.type = type; this.detail = options.detail; },
+    verifiedActivePatient: () => ({ id: patientId }),
+    genTranscriptText: () => elements.transcript.value,
+    noteRecordIdentity: () => 'fixture-note-one',
+    noteTranscriptOutdated: () => false,
     noteLooksLikeRefusal: t => /^I cannot/.test(t), NEXTGATE_REFUSAL_WHY: 'Generate again before reviewing.',
     flowToast: (message, kind) => messages.push({ message, kind }), REVIEW_FIXED_FURNITURE: [],
     setTimeout(fn, delay) { const id = ++nextTimer; timers.set(id, { fn, at: time + delay }); return id; },
@@ -183,4 +187,77 @@ for (const note of ['', 'I cannot generate this note.']) {
   assert.strictEqual(h.counts().doorClicks, 0, 'empty/refusal note reached the review door');
   assert.strictEqual(h.messages.length, 1, 'empty/refusal gate stopped explaining its refusal');
 }
-console.log('PASS visit navigation intent: Pause stays paused; review acts once for the original visit, cancels stale work, preserves deliberate scrolling, and reports real sheet receipts');
+
+/* Closing the unified sheet must unwind the Easy-only review workspace. The
+ * marker is deliberately false for a clinician who opened Review from the
+ * advanced workspace, so that path must remain exactly where it was. */
+const closeReturn = between('  function laneUnifiedReviewClosed()', '  function laneSignal(');
+function setupCloseReturn(easyOwned) {
+  const flags = new Set(['ez3adv']);
+  const calls = { adv: 0, sync: 0, focus: 0, generated: 0 };
+  const elements = {
+    noteBox: { value: 'Exact saved synthetic note bytes.' },
+    ez3Adv: { click() { calls.adv++; flags.delete('ez3adv'); } },
+    ez3flReview: { hidden: false, focus(opts) { assert.strictEqual(opts.preventScroll, true); calls.focus++; } }
+  };
+  const ctx = {
+    _reviewStepOpen: easyOwned,
+    _primaryLane: { id: 'fixture-lane' },
+    window: { __mlsAdvQuietOpen: false },
+    document: {
+      body: { classList: { contains: value => flags.has(value) } },
+      querySelector() { return null; }
+    },
+    $: id => elements[id] || null,
+    setReviewStepOpen(value) { ctx._reviewStepOpen = !!value; },
+    syncTopLane(rec) { assert.strictEqual(rec, ctx._primaryLane); calls.sync++; },
+    setTimeout(fn) { fn(); }
+  };
+  vm.createContext(ctx);
+  vm.runInContext(closeReturn, ctx);
+  return { ctx, flags, calls, note: elements.noteBox.value };
+}
+{
+  const h = setupCloseReturn(true);
+  assert.strictEqual(h.ctx.laneUnifiedReviewClosed(), true, 'Easy-owned review did not return to its note screen');
+  assert.deepStrictEqual(h.calls, { adv: 1, sync: 1, focus: 1, generated: 0 });
+  assert.strictEqual(h.ctx._reviewStepOpen, false, 'Easy review ownership marker survived close');
+  assert.strictEqual(h.flags.has('ez3adv'), false, 'advanced workspace remained over the Easy note');
+  assert.strictEqual(h.note, 'Exact saved synthetic note bytes.', 'closing review changed the note');
+}
+{
+  const h = setupCloseReturn(false);
+  assert.strictEqual(h.ctx.laneUnifiedReviewClosed(), false, 'direct advanced review was claimed by Easy');
+  assert.deepStrictEqual(h.calls, { adv: 0, sync: 0, focus: 0, generated: 0 });
+  assert.strictEqual(h.flags.has('ez3adv'), true, 'direct advanced workspace was closed');
+}
+assert(/addEventListener\('mls:athena-review-closed', laneUnifiedReviewClosed\)/.test(source),
+  'Easy return is not wired to unified review close');
+assert(/removeEventListener\('mls:athena-review-closed', laneUnifiedReviewClosed\)/.test(source),
+  'Easy return listener is not removed during shell rollback');
+for (const file of ['1p-feat_mls_writeflow.js', 'feat_mls_writeflow.js']) {
+  const wfSource = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
+  const start = wfSource.indexOf('  function closeUnifiedConfirmation()');
+  const end = wfSource.indexOf('  /* sheetux-1.0.0', start);
+  assert(start >= 0 && end > start, file + ': unified close function missing');
+  let removed = false;
+  const events = [];
+  const closeCtx = {
+    unifiedAthenaState: { returnFocus: { id: 'ez3flReview' }, manifest: { rows: [] }, a11yKeyHandler: null },
+    destinationTeacher: () => null,
+    wfautoCancel() {},
+    unifiedVisibleFocusTarget: () => false,
+    setTimeout() { throw new Error('hidden old focus should not win after Easy closes its workspace'); },
+    CustomEvent: function (type, options) { this.type = type; this.detail = options.detail; },
+    document: { getElementById: () => ({ remove() { removed = true; } }) },
+    window: { dispatchEvent(ev) { assert.strictEqual(removed, true, 'close event preceded sheet removal'); events.push(ev); } }
+  };
+  vm.createContext(closeCtx);
+  vm.runInContext(wfSource.slice(start, end) + '\ncloseUnifiedConfirmation();', closeCtx);
+  assert.strictEqual(events.length, 1, file + ': unified close emitted no single lifecycle event');
+  assert.strictEqual(events[0].type, 'mls:athena-review-closed');
+  assert.strictEqual(events[0].detail.returnFocusId, 'ez3flReview');
+  assert.strictEqual(closeCtx.unifiedAthenaState, null, file + ': unified state survived close');
+}
+
+console.log('PASS visit navigation intent: Pause stays paused; review acts once for the original visit, cancels stale work, preserves deliberate scrolling, reports real sheet receipts, and closes back to its owning Easy note');
