@@ -1392,7 +1392,7 @@
           '<div class="field" id="mlsDtExtraHost"><label for="mlsDtExtra" id="mlsDtExtraLabel">Draft option</label><select class="sf-select" id="mlsDtExtra"></select></div>' +
           '<div class="field" id="mlsDtSectionWhenHost"><label for="mlsDtSectionWhen">Use automatically when</label><input type="text" class="mls-dt-short-field" id="mlsDtSectionWhen" maxlength="180" placeholder="e.g. stable routine follow-up"><button type="button" class="btn-ghost" id="mlsDtSectionWhenSuggest" style="margin-top:6px" title="Read the template for this saved format and propose the words that should pick it">Suggest from this template</button><p class="mini" id="mlsDtSectionWhenWhy" role="status" style="display:none;color:#8A5A00"></p><p class="mini">Leave blank to keep this as the account default or choose it for one visit.</p></div>' +
           '<div class="field" id="mlsDtSectionModeHost"><label for="mlsDtSectionMode" id="mlsDtSectionModeLabel">Section format</label><select class="sf-select" id="mlsDtSectionMode"></select></div>' +
-          '<div class="field" id="mlsDtSectionTemplateHost"><label for="mlsDtSectionTemplate">How closely to follow the template</label><select class="sf-select" id="mlsDtSectionTemplate">' + optionHtml([['strict','Strict — keep its headings, order, and standard wording'],['adapt','Adapt — keep its structure and fill only supported fields'],['guide','Guide — use its organization without copying every line']]) + '</select><p class="mini" id="mlsDtTemplateModeHelp"></p></div>' +
+          '<div class="field" id="mlsDtSectionTemplateHost"><label for="mlsDtSectionTemplate">How closely to follow the template</label><select class="sf-select" id="mlsDtSectionTemplate">' + optionHtml([['strict','Strict — keep its headings, order, and standard wording'],['adapt','Follow template (recommended) — keep its structure'],['guide','Guide only — headings and layout may change']]) + '</select><p class="mini" id="mlsDtTemplateModeHelp"></p></div>' +
         '</div>' +
         '<div class="field"><label for="mlsDtInstructions" id="mlsDtInstructionsLabel">AI prompt comments for this saved format</label><textarea id="mlsDtInstructions" class="note-box mls-dt-comments-field" maxlength="600" placeholder="Non-patient writing preferences only…" style="min-height:96px;height:96px;box-sizing:border-box"></textarea><p class="mini" id="mlsDtCount">0 / 600</p></div>' +
         '<div class="field" id="mlsDtFamilyInstructionsHost"><label for="mlsDtFamilyInstructions">Standing instructions for this output type</label><textarea id="mlsDtFamilyInstructions" class="note-box mls-dt-comments-field" maxlength="600" placeholder="Account-wide non-patient writing preferences only…" style="min-height:96px;height:96px;box-sizing:border-box"></textarea><p class="mini">Applied in addition to the selected saved format for this output type.</p></div>' +
@@ -1515,8 +1515,8 @@
   function templateModeHelp(mode, hasTemplate) {
     if (!hasTemplate) return 'Add or import a template before choosing how closely MLS should follow it.';
     if (mode === 'strict') return 'Strict keeps the template\'s headings, order, and standard wording, while leaving unsupported clinical facts unfilled.';
-    if (mode === 'guide') return 'Guide uses the template\'s organization as a preference and may rewrite or omit nonessential template wording.';
-    return 'Adapt keeps the template\'s structure and fills only fields supported by the visit.';
+    if (mode === 'guide') return 'Guide uses the template for ideas only. It does not preserve the template\'s headings, order, or layout.';
+    return 'Follow template is recommended for uploaded templates. It keeps the template\'s headings and order while filling only fields supported by the visit.';
   }
   function paintEffectiveSummary() {
     var summary = q('mlsDtEffectiveSummary'), preview = q('mlsDtEffectivePreview');
@@ -1548,7 +1548,7 @@
     var routing = profiles.length > 1
       ? ' It is the account default; another saved format can be chosen only when its Use automatically when rule matches or you pick it for one visit.'
       : ' It is the only saved format for this output.';
-    var modeSentence = mode === 'guide' ? ' It uses the template as a loose guide and may rewrite or omit nonessential template wording.' :
+    var modeSentence = mode === 'guide' ? ' It uses the template for ideas only and does not preserve its headings, order, or layout.' :
       (mode === 'strict' ? ' It keeps template headings, order, and standard wording.' : ' It keeps template headings and structure while filling supported content.');
     var templateSentence = templateText
       ? ' This Settings format has a ' + templateText.length + '-character template.' + modeSentence

@@ -143,7 +143,12 @@ const { chromium } = require('playwright');
     await page.waitForFunction(() => document.getElementById('mlsDtSectionImportPreview').style.display !== 'none');
     await page.click('#mlsDtSectionImportApply');
     assert.equal(await page.inputValue('#mlsDtSectionTemplate'), 'guide', 'explicit Guide choice was overwritten on first import');
-    assert.match(await page.textContent('#mlsDtEffectiveSummary'), /loose guide.*may rewrite or omit/i, 'collapsed summary hides Guide rewrite/omission behavior');
+    const guideOption = await page.locator('#mlsDtSectionTemplate option[value="guide"]').textContent();
+    const followOption = await page.locator('#mlsDtSectionTemplate option[value="adapt"]').textContent();
+    assert.match(guideOption, /Guide only.*headings and layout may change/i, 'Guide option can be mistaken for format-preserving behavior');
+    assert.match(followOption, /Follow template \(recommended\).*keep its structure/i, 'uploaded-template recommendation is unclear');
+    assert.match(await page.textContent('#mlsDtTemplateModeHelp'), /ideas only.*does not preserve.*headings, order, or layout/i, 'Guide helper hides that template presentation can change');
+    assert.match(await page.textContent('#mlsDtEffectiveSummary'), /ideas only.*does not preserve.*headings, order, or layout/i, 'collapsed summary hides Guide presentation behavior');
 
     await page.click('#mlsDtSectionImportOpen');
     await page.fill('#mlsDtSectionImportExample', 'Synthetic replacement for an existing guided Plan template.');
