@@ -1068,6 +1068,7 @@ const tests = [
   'generate-note-lifecycle-runtime.test.js',
   'generation-abort-transport-runtime.test.js',
   'generation-legacy-athena-sidecar-runtime.test.js',
+  'athena-reviewed-display-source-runtime.test.js',
   /* gkey/gsrc/gsx/gsup (2026-09-02): four measured defects on the ONE
      post-response guard, each proved against the shipped engine with the
      pre-fix bytes reverted in memory as its control - a cosmetic #patientLabel

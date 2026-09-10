@@ -1,35 +1,7 @@
 'use strict';
 
-/* note-format-default-proof — fmt-1.0.0
- *
- * OWNER, 2026-09-02, on a real visit: the generated note read
- *   "History: ... Examination: Not documented in today's transcript.
- *    Assessment: 1. ... Plan: Not documented in today's transcript."
- * — the NARRATIVE prose family — and he said "this is not a good format and its
- * missing the hpi and other stuff wtf". He expects the chart shape: HPI / ROS /
- * Exam / Assessment / Plan, the flat SOAP family hostedNotePreferences() maps to
- * the backend's flat_hpi_ros_exam_assessment_plan_v1.
- *
- * The stored uns('genStyle') held 'narrative'. Nothing in the app defaults to
- * narrative: the only writer is setGenStyle(), pressed by the five #genStyleSeg
- * buttons and the Easy view's chips that forward to them. The same account
- * carried draft-tuning formats named "QA HPI Template 2026 ..." and
- * "Engineering Compliance Assessment Template" — test-lane artifacts. A bare
- * string cannot tell a test lane's press from the doctor's.
- *
- * WHAT THIS PROVES, by EXECUTING the shipped resolver out of all three shells
- * (never a re-implementation) and the shipped draft-tuning module:
- *   1. unset                          -> soap
- *   2. stored 'narrative', no stamp   -> soap  (and the stored value SURVIVES)
- *   3. stored 'narrative' WITH stamp  -> narrative
- *   4. an explicit pick stamps {format, chosenAt, source}
- *   5. a malformed / unknown stamp is not a choice
- *   6. the Settings picker says which format matches the athena chart fields,
- *      and the note card carries the active format name
- *   7. QA-pattern saved formats are filtered from the PICKER and from the
- *      TUNING PAYLOAD, are counted for the Settings line, and are removed only
- *      on the doctor's call — never silently.
- */
+/* Visit notes always use HPI / ROS / Exam / Assessment / Plan, including
+ * accounts with legacy explicit choices. Tests execute shipped resolvers. */
 
 const assert = require('assert');
 const fs = require('fs');
@@ -128,16 +100,15 @@ for (const [name, file] of SHELLS) {
     eq(r.context.getGenStyleIgnored(), '', name + ': a stored soap was reported as an ignored format');
   }
 
-  /* (3) stored 'narrative' WITH an explicit-choice stamp -> narrative. A doctor
-     who really wants prose keeps it. */
+  /* (3) Even a legacy explicit narrative choice resolves to the fixed format. */
   {
     const r = runResolver(slice, {
       [FORMAT_KEY]: 'narrative',
       [STAMP_KEY]: JSON.stringify({ format: 'narrative', chosenAt: '2026-09-02T11:40:00.000Z', source: 'settings' })
     });
-    eq(r.context.getGenStyle(), 'narrative',
-      name + ': a STAMPED narrative was overridden — the migration is eating explicit choices');
-    eq(r.context.getGenStyleIgnored(), '', name + ': a stamped choice must not be reported as ignored');
+    eq(r.context.getGenStyle(), 'soap',
+      name + ': a legacy stamp changed the fixed five-field format');
+    eq(r.context.getGenStyleIgnored(), 'narrative', name + ': legacy alternate format is explained');
     const choice = r.context.getGenStyleChoice();
     ok(choice && choice.format === 'narrative' && choice.chosenAt && choice.source === 'settings',
       name + ': the stamp did not read back as {format, chosenAt, source}');
@@ -159,22 +130,21 @@ for (const [name, file] of SHELLS) {
     eq(r.context.getGenStyle(), 'soap', name + ': unparseable stamp bytes were accepted as an explicit choice');
   }
 
-  /* (4) an explicit pick STAMPS. Without this the press appears to do nothing,
-     because getGenStyle() would keep answering soap. */
+  /* (4) Compatibility setters cannot re-enable alternate formats. */
   {
     const r = runResolver(slice, {});
     r.context.setGenStyle('narrative');
-    eq(r.context.getGenStyle(), 'narrative', name + ': setGenStyle did not take effect');
-    eq(r.store.map.get(FORMAT_KEY), 'narrative', name + ': setGenStyle did not write the format');
+    eq(r.context.getGenStyle(), 'soap', name + ': legacy setter changed the fixed five-field format');
+    eq(r.store.map.get(FORMAT_KEY), 'soap', name + ': legacy setter must write fixed format');
     const stamp = JSON.parse(r.store.map.get(STAMP_KEY));
-    eq(stamp.format, 'narrative', name + ': the stamp records the wrong format');
+    eq(stamp.format, 'soap', name + ': legacy setter must stamp fixed format');
     eq(stamp.source, 'settings', name + ': the stamp lost its source');
     ok(typeof stamp.chosenAt === 'string' && !isNaN(Date.parse(stamp.chosenAt)),
       name + ': the stamp has no readable chosenAt');
     /* the pick survives a reload — the stamp, not the bare string, is what the
        next boot reads */
     const again = runResolver(slice, Object.fromEntries(r.store.map));
-    eq(again.context.getGenStyle(), 'narrative', name + ': the explicit pick did not survive a reload');
+    eq(again.context.getGenStyle(), 'soap', name + ': the fixed format did not survive reload');
     /* and it can be moved back */
     again.context.setGenStyle('soap');
     eq(again.context.getGenStyle(), 'soap', name + ': the doctor could not move the format back to SOAP');
@@ -204,13 +174,10 @@ for (const [name, file] of SHELLS) {
 for (const [name, file] of SHELLS) {
   const src = fs.readFileSync(file, 'utf8');
   ok(/id="noteFormatSel"/.test(src), name + ': the Settings note-format picker is gone');
-  ok(src.includes('<option value="soap">HPI / ROS / Exam / Assessment / Plan — matches the athena chart fields (recommended)</option>'),
-    name + ': the SOAP option no longer says it matches the athena chart fields');
+  ok(src.includes('<input type="hidden" id="noteFormatSel" value="soap">'), name + ': fixed format compatibility input missing');
+  ok(!/<select[^>]*id="noteFormatSel"/.test(src), name + ': alternate format picker remains');
   for (const value of ['apso', 'narrative', 'problem', 'hp']) {
-    const at = src.indexOf('<option value="' + value + '">');
-    ok(at > 0, name + ': the "' + value + '" option is missing from the Settings note-format picker');
-    const label = src.slice(at, src.indexOf('</option>', at));
-    ok(/—/.test(label), name + ': the "' + value + '" option does not explain what the format is');
+    ok(!src.includes('onclick="setGenStyle(\'' + value + '\')"'), name + ': alternate visit format button remains');
   }
   ok(/id="noteFormatMigrationNote"/.test(src),
     name + ': the line that tells the doctor their stored format is being ignored is gone');
@@ -222,13 +189,8 @@ for (const [name, file] of SHELLS) {
   ok(/id="noteFormatBadge"/.test(head), name + ': the note card no longer shows the active note format');
   ok(head.indexOf('id="noteFormatBadge"') < head.indexOf('id="statusBadge"'),
     name + ': the format badge is not in the note card header beside the status badge');
-  /* the visit-screen picker names the chart shape too */
-  ok(src.includes('title="HPI / ROS / Exam / Assessment / Plan — matches the athena chart fields">SOAP</button>'),
-    name + ': the visit-screen SOAP control no longer says what SOAP is');
-  /* the chips the Easy view forwards by LABEL must keep their labels */
-  for (const label of ['>SOAP<', '>APSO<', '>Narrative<', '>Problem-based<', '>H&amp;P<']) {
-    ok(src.includes(label), name + ': a #genStyleSeg button label changed — the Easy view forwards to these by label');
-  }
+  ok(src.includes('id="genStyleSeg" class="mini" aria-label="Note format">HPI / ROS / Exam / Assessment / Plan</div>'), name + ': fixed note structure missing from visit screen');
+
 }
 
 /* ---------------------------------------------------------------------------

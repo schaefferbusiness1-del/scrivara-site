@@ -22221,7 +22221,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function genBtnResolve() { var g = $('genBtn'); if (g && !g.disabled) return g; return byTextGuarded(/generate note/i); }
   function styleChipHosts() {
     var out = [], card = $('captureCard'); if (!card) return out;
-    ['SOAP', 'APSO', 'Narrative', 'Problem-based', 'H&P', 'Concise', 'Standard', 'Detailed'].forEach(function (t) {
+    ['Concise', 'Standard', 'Detailed'].forEach(function (t) {
       var b = [].slice.call(card.querySelectorAll('button')).find(function (x) { return (x.textContent || '').trim() === t; });
       if (b) out.push({ label: t, el: b });
     });
@@ -30169,7 +30169,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function genBtnResolve() { var g = $('genBtn'); if (g && !g.disabled) return g; return byTextGuarded(/generate note/i); }
   function styleChipHosts() {
     var out = [], card = $('captureCard'); if (!card) return out;
-    ['SOAP', 'APSO', 'Narrative', 'Problem-based', 'H&P', 'Concise', 'Standard', 'Detailed'].forEach(function (t) {
+    ['Concise', 'Standard', 'Detailed'].forEach(function (t) {
       var b = [].slice.call(card.querySelectorAll('button')).find(function (x) { return (x.textContent || '').trim() === t; });
       if (b) out.push({ label: t, el: b });
     });
@@ -32405,7 +32405,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function genBtnResolve() { var g = $('genBtn'); if (g && !g.disabled) return g; return byTextGuarded(/generate note/i); }
   function styleChipHosts() {
     var out = [], card = $('captureCard'); if (!card) return out;
-    ['SOAP', 'APSO', 'Narrative', 'Problem-based', 'H&P', 'Concise', 'Standard', 'Detailed'].forEach(function (t) {
+    ['Concise', 'Standard', 'Detailed'].forEach(function (t) {
       var b = [].slice.call(card.querySelectorAll('button')).find(function (x) { return (x.textContent || '').trim() === t; });
       if (b) out.push({ label: t, el: b });
     });
@@ -34342,7 +34342,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function genBtnResolve() { var g = $('genBtn'); if (g && !g.disabled) return g; return byTextGuarded(/generate note/i); }
   function styleChipHosts() {
     var out = [], card = $('captureCard'); if (!card) return out;
-    ['SOAP', 'APSO', 'Narrative', 'Problem-based', 'H&P', 'Concise', 'Standard', 'Detailed'].forEach(function (t) {
+    ['Concise', 'Standard', 'Detailed'].forEach(function (t) {
       var b = [].slice.call(card.querySelectorAll('button')).find(function (x) { return (x.textContent || '').trim() === t; });
       if (b) out.push({ label: t, el: b });
     });
@@ -36016,7 +36016,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function findBtnByText(re) { return byTextGuarded(re); }
   function styleChipHosts() {
     var out = [], card = $('captureCard'); if (!card) return out;
-    ['SOAP', 'APSO', 'Narrative', 'Problem-based', 'H&P', 'Concise', 'Standard', 'Detailed'].forEach(function (t) {
+    ['Concise', 'Standard', 'Detailed'].forEach(function (t) {
       var b = [].slice.call(card.querySelectorAll('button')).find(function (x) { return (x.textContent || '').trim() === t; });
       if (b) out.push({ label: t, el: b });
     });
