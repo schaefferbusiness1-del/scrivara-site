@@ -1519,6 +1519,7 @@ const tests = [
   'upsert-athena-proof-carryforward.test.js',
   'upsert-attested-slice-travels-with-receipt.test.js',
   'mrn-preserve-and-backfill.test.js',
+  'identity-enrichment-current-generation-runtime.test.js',
   'pull-visit-bodies-default-on.test.js',
   /* p3064-1.0.0 (exact 3.0.64 forensic golden at commit 2165bc2): successful
      scheduled rows keep the

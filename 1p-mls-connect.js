@@ -15466,30 +15466,50 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   /* v2.3 BACKFILL: the base pull path dedupes upstream and NEVER calls the
      import fn for rows already on the calendar, so import-time enrichment can
      never heal EXISTING rows. Whenever a structured v1.51 reply arrives, fill
-     MISSING dob (never overwrite; skip names with conflicting DOBs in the
-     reply) onto stored appointments + patient records, then persist. */
-  function dobNameMap() {
-    var byName = {}, bad = {};
-    (SCHED.appts || []).forEach(function (r) {
-      if (!r || !r.name || !r.dob) return;
-      var k = normName(r.name); if (!k) return;
-      if (byName[k] && byName[k] !== String(r.dob)) { bad[k] = 1; api.backfill.conflicts++; return; }
-      byName[k] = String(r.dob);
+     MISSING dob (never overwrite; require same MRN and veto conflicting
+     DOBs in the reply) onto stored appointments + patient records, then persist. */
+  /* A missing DOB cannot supply a name+DOB second factor. Cross-record
+     enrichment therefore requires the same explicit MRN, never a name or a
+     patient_external_id (which may belong to a different id namespace). */
+  function dobMrnKey(row) {
+    var keys = {}, fields = ['mrn', 'athenaId', 'athenaPatientId', 'athena_id', 'patient_mrn'];
+    fields.forEach(function (field) {
+      var value = String(row && row[field] || '').trim();
+      if (!value) return;
+      if (!/^[a-z0-9._-]{3,48}$/i.test(value) || !/\d/.test(value)) { keys.invalid = 1; return; }
+      keys[value.toLowerCase().replace(/[^a-z0-9]/g, '')] = 1;
     });
-    Object.keys(bad).forEach(function (k) { delete byName[k]; });
-    return byName;
+    var found = Object.keys(keys); return found.length === 1 && !keys.invalid ? found[0] : '';
+  }
+  function dobValueKey(value) {
+    var s = String(value || '').trim(), m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/), y, month, day;
+    if (m) { y = +m[1]; month = +m[2]; day = +m[3]; }
+    else { m = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/); if (!m) return ''; month = +m[1]; day = +m[2]; y = +m[3]; }
+    var d = new Date(Date.UTC(y, month - 1, day));
+    if (y < 1800 || d.getUTCFullYear() !== y || d.getUTCMonth() !== month - 1 || d.getUTCDate() !== day) return '';
+    return y + '-' + ('0' + month).slice(-2) + '-' + ('0' + day).slice(-2);
+  }
+  function dobIdentityMap() {
+    var byMrn = Object.create(null), bad = Object.create(null);
+    (SCHED.appts || []).forEach(function (r) {
+      var k = dobMrnKey(r), d = dobValueKey(r && r.dob); if (!k || !d) return;
+      if (byMrn[k] && byMrn[k] !== d) { bad[k] = 1; api.backfill.conflicts++; return; }
+      byMrn[k] = d;
+    });
+    Object.keys(bad).forEach(function (k) { delete byMrn[k]; });
+    return byMrn;
   }
   function backfillFromStash() {
     try {
       if (!SCHED.appts || !SCHED.appts.length) return;
       api.backfill.runs++;
-      var byName = dobNameMap();
-      if (!Object.keys(byName).length) return;
+      var byMrn = dobIdentityMap();
+      if (!Object.keys(byMrn).length) return;
       /* appointments (in-memory calendar rows) */
       try {
         var arr = (typeof window._calAppts === 'function') ? window._calAppts() : window._calAppts;
         (arr || []).forEach(function (a) {
-          if (a && !a.dob && a.name) { var d = byName[normName(a.name)]; if (d) { a.dob = d; api.backfill.apptDobs++; } }
+          if (a && !a.dob) { var d = byMrn[dobMrnKey(a)]; if (d) { a.dob = d; api.backfill.apptDobs++; } }
         });
       } catch (e) {}
       /* patient records (the dedup key + what the UI shows) */
@@ -15499,7 +15519,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         var ps = (typeof window.getPatients === 'function') ? (window.getPatients() || []) : [];
         var changed = 0, dirty = [];
         ps.forEach(function (p, index) {
-          if (p && !p.dob && p.name) { var d = byName[normName(p.name)]; if (d) {
+          if (p && !p.dob) { var d = byMrn[dobMrnKey(p)]; if (d) {
             var next = {}; for (var field in p) if (Object.prototype.hasOwnProperty.call(p, field)) next[field] = p[field];
             next.dob = d; next.updated = new Date().getTime(); ps[index] = next; dirty.push(next); changed++; api.backfill.patientDobs++;
           } }
@@ -15819,7 +15839,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         var byName = {};
         SCHED.appts.forEach(function (r) { if (r && r.name && r.dob) { var k = normName(r.name); if (k && !byName[k]) byName[k] = String(r.dob); } });
         (appts || []).forEach(function (a) {
-          if (a && !a.dob && a.name) { var d = byName[normName(a.name)]; if (d) { a.dob = d; api.hygiene.dobsAttached++; } }
+          if (a && !a.dob) { var d = byMrn[dobMrnKey(a)]; if (d) { a.dob = d; api.hygiene.dobsAttached++; } }
         });
       }
     } catch (e) {}
@@ -20760,30 +20780,50 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   /* v2.3 BACKFILL: the base pull path dedupes upstream and NEVER calls the
      import fn for rows already on the calendar, so import-time enrichment can
      never heal EXISTING rows. Whenever a structured v1.51 reply arrives, fill
-     MISSING dob (never overwrite; skip names with conflicting DOBs in the
-     reply) onto stored appointments + patient records, then persist. */
-  function dobNameMap() {
-    var byName = {}, bad = {};
-    (SCHED.appts || []).forEach(function (r) {
-      if (!r || !r.name || !r.dob) return;
-      var k = normName(r.name); if (!k) return;
-      if (byName[k] && byName[k] !== String(r.dob)) { bad[k] = 1; api.backfill.conflicts++; return; }
-      byName[k] = String(r.dob);
+     MISSING dob (never overwrite; require same MRN and veto conflicting
+     DOBs in the reply) onto stored appointments + patient records, then persist. */
+  /* A missing DOB cannot supply a name+DOB second factor. Cross-record
+     enrichment therefore requires the same explicit MRN, never a name or a
+     patient_external_id (which may belong to a different id namespace). */
+  function dobMrnKey(row) {
+    var keys = {}, fields = ['mrn', 'athenaId', 'athenaPatientId', 'athena_id', 'patient_mrn'];
+    fields.forEach(function (field) {
+      var value = String(row && row[field] || '').trim();
+      if (!value) return;
+      if (!/^[a-z0-9._-]{3,48}$/i.test(value) || !/\d/.test(value)) { keys.invalid = 1; return; }
+      keys[value.toLowerCase().replace(/[^a-z0-9]/g, '')] = 1;
     });
-    Object.keys(bad).forEach(function (k) { delete byName[k]; });
-    return byName;
+    var found = Object.keys(keys); return found.length === 1 && !keys.invalid ? found[0] : '';
+  }
+  function dobValueKey(value) {
+    var s = String(value || '').trim(), m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/), y, month, day;
+    if (m) { y = +m[1]; month = +m[2]; day = +m[3]; }
+    else { m = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/); if (!m) return ''; month = +m[1]; day = +m[2]; y = +m[3]; }
+    var d = new Date(Date.UTC(y, month - 1, day));
+    if (y < 1800 || d.getUTCFullYear() !== y || d.getUTCMonth() !== month - 1 || d.getUTCDate() !== day) return '';
+    return y + '-' + ('0' + month).slice(-2) + '-' + ('0' + day).slice(-2);
+  }
+  function dobIdentityMap() {
+    var byMrn = Object.create(null), bad = Object.create(null);
+    (SCHED.appts || []).forEach(function (r) {
+      var k = dobMrnKey(r), d = dobValueKey(r && r.dob); if (!k || !d) return;
+      if (byMrn[k] && byMrn[k] !== d) { bad[k] = 1; api.backfill.conflicts++; return; }
+      byMrn[k] = d;
+    });
+    Object.keys(bad).forEach(function (k) { delete byMrn[k]; });
+    return byMrn;
   }
   function backfillFromStash() {
     try {
       if (!SCHED.appts || !SCHED.appts.length) return;
       api.backfill.runs++;
-      var byName = dobNameMap();
-      if (!Object.keys(byName).length) return;
+      var byMrn = dobIdentityMap();
+      if (!Object.keys(byMrn).length) return;
       /* appointments (in-memory calendar rows) */
       try {
         var arr = (typeof window._calAppts === 'function') ? window._calAppts() : window._calAppts;
         (arr || []).forEach(function (a) {
-          if (a && !a.dob && a.name) { var d = byName[normName(a.name)]; if (d) { a.dob = d; api.backfill.apptDobs++; } }
+          if (a && !a.dob) { var d = byMrn[dobMrnKey(a)]; if (d) { a.dob = d; api.backfill.apptDobs++; } }
         });
       } catch (e) {}
       /* patient records (the dedup key + what the UI shows) */
@@ -20793,7 +20833,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         var ps = (typeof window.getPatients === 'function') ? (window.getPatients() || []) : [];
         var changed = 0, dirty = [];
         ps.forEach(function (p, index) {
-          if (p && !p.dob && p.name) { var d = byName[normName(p.name)]; if (d) {
+          if (p && !p.dob) { var d = byMrn[dobMrnKey(p)]; if (d) {
             var next = {}; for (var field in p) if (Object.prototype.hasOwnProperty.call(p, field)) next[field] = p[field];
             next.dob = d; next.updated = new Date().getTime(); ps[index] = next; dirty.push(next); changed++; api.backfill.patientDobs++;
           } }
@@ -21089,7 +21129,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         var byName = {};
         SCHED.appts.forEach(function (r) { if (r && r.name && r.dob) { var k = normName(r.name); if (k && !byName[k]) byName[k] = String(r.dob); } });
         (appts || []).forEach(function (a) {
-          if (a && !a.dob && a.name) { var d = byName[normName(a.name)]; if (d) { a.dob = d; api.hygiene.dobsAttached++; } }
+          if (a && !a.dob) { var d = byMrn[dobMrnKey(a)]; if (d) { a.dob = d; api.hygiene.dobsAttached++; } }
         });
       }
     } catch (e) {}

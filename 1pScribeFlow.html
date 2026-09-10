@@ -17441,8 +17441,8 @@ function _calResolveLocalPatient(a){
       var p=findPatient(id); if(!p) return null;
       var an=_calNameKeyFL(a.name),pn=_calNameKeyFL(p.name);
       var ad=_calDobKey(a.dob),pd=_calDobKey(p.dob);
-      var am=String(a.mrn||a.athenaId||a.patient_mrn||'').replace(/\D/g,'');
-      var pm=String(p.mrn||p.athenaId||'').replace(/\D/g,'');
+      var am=String(a.mrn||a.athenaId||a.athenaPatientId||a.patient_mrn||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+      var pm=String(p.mrn||p.athenaId||p.athenaPatientId||'').toLowerCase().replace(/[^a-z0-9]/g,'');
       if((an&&pn&&an!==pn)||(ad&&pd&&ad!==pd)||(am&&pm&&am!==pm)){
         a._mlsIdentityConflict='local-id-identity-conflict';
         return null;
@@ -17455,7 +17455,7 @@ function _calResolveLocalPatient(a){
         if(!((ad&&pd&&ad===pd)||(am&&pm&&am===pm))) return null;
         var compatible=(typeof getPatients==='function'?(getPatients()||[]):[]).filter(function(q){
           if(!q||q.id==null||_calNameKeyFL(q.name)!==an) return false;
-          var qd=_calDobKey(q.dob),qm=String(q.mrn||q.athenaId||'').replace(/\D/g,'');
+          var qd=_calDobKey(q.dob),qm=String(q.mrn||q.athenaId||q.athenaPatientId||'').toLowerCase().replace(/[^a-z0-9]/g,'');
           if((ad&&qd&&ad!==qd)||(am&&qm&&am!==qm)) return false;
           return !!((ad&&qd&&ad===qd)||(am&&qm&&am===qm));
         });
@@ -17470,11 +17470,11 @@ function _calResolveLocalPatient(a){
     if(a._mlsIdentityConflict) return null;
     var nm=String(a.name||'').trim().toLowerCase().replace(/\s+/g,' '); if(!nm) return null;
     var db=_calDobKey(a.dob);
-    var mr=String(a.mrn||a.athenaId||a.patient_mrn||'').replace(/\D/g,'');
+    var mr=String(a.mrn||a.athenaId||a.athenaPatientId||a.patient_mrn||'').toLowerCase().replace(/[^a-z0-9]/g,'');
     var hits=(typeof getPatients==='function'?(getPatients()||[]):[]).filter(function(p){
       if(String((p&&p.name)||'').trim().toLowerCase().replace(/\s+/g,' ')!==nm) return false;
       var pd=_calDobKey(p&&p.dob);
-      var pm=String((p&&p.mrn)||(p&&p.athenaId)||'').replace(/\D/g,'');
+      var pm=String((p&&p.mrn)||(p&&p.athenaId)||(p&&p.athenaPatientId)||'').toLowerCase().replace(/[^a-z0-9]/g,'');
       if(db&&pd&&db!==pd) return false;
       if(mr&&pm&&mr!==pm) return false;
       /* A sole same-name chart is not identity proof. Require an agreeing DOB
@@ -17500,22 +17500,23 @@ function _calResolveLocalPatient(a){
        into the banner but never set the active patient, so the banner showed a
        patient while every chart-grounded guard correctly reported none. Same
        root cause as the top card not following the visit. Fall back to a
-       first+last canonical key with the identity bar kept HIGH: the date of
-       birth must agree and exactly one chart may match, so this can never
-       silently link the wrong chart. */
-    if(db){
+       first+last canonical key with an agreeing DOB OR MRN. Missing DOB
+       must not hide an authoritative same-MRN match; conflicting nonempty
+       identity still refuses before a candidate can be selected. */
+    if(db||mr){
       var want=_calNameKeyFL(a.name);
       if(want){
         var fb=(typeof getPatients==='function'?(getPatients()||[]):[]).filter(function(p){
           if(!p||p.id==null) return false;
-          if(_calDobKey(p.dob)!==db) return false;
-          var pm=String(p.mrn||p.athenaId||'').replace(/\D/g,'');
+          var pd=_calDobKey(p.dob);
+          var pm=String(p.mrn||p.athenaId||p.athenaPatientId||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+          if(db&&pd&&db!==pd) return false;
           if(mr&&pm&&mr!==pm) return false;
-          return _calNameKeyFL(p.name)===want;
+          return _calNameKeyFL(p.name)===want&&!!((db&&pd&&db===pd)||(mr&&pm&&mr===pm));
         });
         if(fb.length===1){ a._mlsTargetPatientId=String(fb[0].id); return fb[0].id; }
         /* dupadopt-1.0.0: same survivor rule on the canonical first+last
-           fallback - the DOB already agreed for every candidate here. */
+           fallback - DOB or MRN agreed for every candidate here. */
         if(fb.length>1){
           var _fs=_calDupSurvivor(fb);
           if(_fs&&_fs.id!=null){ a._mlsTargetPatientId=String(_fs.id); return _fs.id; }
@@ -17537,13 +17538,13 @@ function _calDupSurvivor(pool){
     if(pool.length===1) return pool[0];
     var mrns={}, dobs={}, i, p, pm, pd;
     for(i=0;i<pool.length;i++){ p=pool[i]||{};
-      pm=String(p.mrn||p.athenaId||'').replace(/\D/g,''); if(pm) mrns[pm]=1;
+      pm=String(p.mrn||p.athenaId||p.athenaPatientId||'').toLowerCase().replace(/[^a-z0-9]/g,''); if(pm) mrns[pm]=1;
       pd=_calDobKey(p.dob); if(pd) dobs[pd]=1;
     }
     if(Object.keys(mrns).length>1) return null;
     if(Object.keys(dobs).length>1) return null;
     var s=pool.slice().sort(function(x,y){
-      var xm=(x.mrn||x.athenaId)?1:0, ym=(y.mrn||y.athenaId)?1:0;
+      var xm=(x.mrn||x.athenaId||x.athenaPatientId)?1:0, ym=(y.mrn||y.athenaId||y.athenaPatientId)?1:0;
       if(xm!==ym) return ym-xm;
       var xv=Array.isArray(x.visits)?x.visits.length:0, yv=Array.isArray(y.visits)?y.visits.length:0;
       if(xv!==yv) return yv-xv;
@@ -48419,14 +48420,20 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
   }
 
   /* ---- the sweep: chunked, idempotent, never blocking ------------------ */
-  var sweepState = { running: false, lastSig: '', lastAt: 0, timer: 0, reqTimer: 0 };
+  var sweepState = { running: false, lastSig: '', lastAt: 0, timer: 0, reqTimer: 0, sourceEpoch: 0 };
+  function sourceChanged() { sweepState.sourceEpoch++; }
   function signature(rows) {
     var missing = 0;
     for (var i = 0; i < rows.length; i++) {
       var r = rows[i];
       if (r && (!String(r.mrn == null ? '' : r.mrn).trim() || !String(r.dob == null ? '' : r.dob).trim())) missing++;
     }
-    return rows.length + '|' + missing;
+    var key = '', gen = '';
+    try { if (typeof window.uns === 'function') key = String(window.uns('patients') || ''); } catch (e) {}
+    try { var store = window.__mlsPtsStore; if (store && typeof store.genRead === 'function') gen = String(store.genRead()); } catch (e) {}
+    /* Chart text and aliases can arrive without changing either count. Use
+       the store generation and writer epoch; never hash clinical text. */
+    return key + '|' + gen + '|' + sweepState.sourceEpoch + '|' + rows.length + '|' + missing;
   }
   /* setTimeout, never requestAnimationFrame: rAF does not fire in a hidden or
      non-compositing tab, and a backfill that only runs when someone is
@@ -48531,11 +48538,11 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
   function install() {
     var done = 0;
     done += wrap('upsertPatient', function (orig) {
-      return function (p) { try { guardOne(p); } catch (e) {} return orig.apply(this, arguments); };
+      return function (p) { try { guardOne(p); } catch (e) {} var result = orig.apply(this, arguments); sourceChanged(); return result; };
     }) ? 1 : 0;
     /* The roster writer: the server hydrate and every other bulk path. */
     done += wrap('savePatients', function (orig) {
-      return function (arr) { try { if (Array.isArray(arr)) guardBulk(arr); } catch (e) {} return orig.apply(this, arguments); };
+      return function (arr) { try { if (Array.isArray(arr)) guardBulk(arr); } catch (e) {} var result = orig.apply(this, arguments); sourceChanged(); return result; };
     }) ? 1 : 0;
     /* The patient editor is the ONE deliberate path allowed to change or
        clear a stored identity. It calls the single-row writer synchronously,
@@ -48558,7 +48565,7 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
      turn the sweep's own writes into a loop. */
   try {
     setTimeout(function () { sweepRequest('boot', 0); }, 4000);
-    window.addEventListener('mls:patient-record-updated', function () { sweepRequest('record-updated', 5000); });
+    window.addEventListener('mls:patient-record-updated', function () { sourceChanged(); sweepRequest('record-updated', 5000); });
   } catch (e) {}
 
   window.mrnBackfillFromLocal = mrnBackfillFromLocal;
