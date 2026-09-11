@@ -3518,6 +3518,23 @@
         /* else CONTINUE: one poison visit never drops the rest (wf_9 #5) */
       }
     }
+    /* capreceipt-1.0.0: the rows this pass ADDS go through addVisit, which
+       stamps the provenance through the one shared helper before it persists.
+       The upgrade/rehydrate path below writes athena text onto existing rows
+       WITHOUT addVisit, so it owes the same stamp on the same object this
+       upsert saves. It is recorded as an unproven write: this lane's identity
+       acceptance happens in the extension and is only vetoed app-side, so
+       nothing here proves the binding itself. The helper will not let that
+       erase a stronger proof already on the record. */
+    try {
+      if ((upgraded || rehydrated) && !added && typeof window._athenaProvenanceStamp === 'function') {
+        window._athenaProvenanceStamp(p, {
+          lane: 'visits-backfill-upgrade', identityVerified: false,
+          identityBasis: 'ext-accepted-app-vetoed',
+          chartKey: S(p.athenaId || p.mrn || '')
+        });
+      }
+    } catch (eProvB) {}
     try { if ((upgraded || rehydrated) && !added && typeof window.upsertPatient === 'function') window.upsertPatient(p); } catch (eP) {} /* addVisit persists only when it adds */
     return { added: added, skipped: skippedExisting, upgraded: upgraded, rehydrated: rehydrated, reason: errs ? 'ingest-partial(' + errs + '):' + lastErr : '' };
   }

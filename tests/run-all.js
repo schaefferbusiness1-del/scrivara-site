@@ -2589,7 +2589,19 @@ const tests = [
      suite proves an operative-report template can never come through that new
      door, and that the control is absent without a recording, during a pull,
      while recording, and on every screen but the drafted note. */
-  'visit-template-change-on-draft.test.js'
+  'visit-template-change-on-draft.test.js',
+  /* NEW 2026-09-11, capreceipt-1.0.0. Measured on one clinic day of 25
+     patients: 24 records held pulled chart content and only 5 carried anything
+     saying where it came from, so a hand-off that HAD been verified read as
+     unverifiable. Six writers merged athena-derived content onto a record and
+     only one of them wrote a provenance stamp. The suite lifts all six out of
+     the shipping bytes and drives them: the chart sink, both visit writers,
+     the day-pull capture, the visits backfill's upgrade path and the
+     name-guarded facts enrichment. It also pins the honest third state - a
+     record captured before this change reports "captured before this was
+     recorded", never "verified" and never a bare blank - and that nothing
+     back-fills a verified stamp or erases one. */
+  'athena-capture-provenance-receipt.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

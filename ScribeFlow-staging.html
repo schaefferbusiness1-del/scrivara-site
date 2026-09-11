@@ -13794,6 +13794,167 @@ function _patientHistoryCardCoverage(patientOrId){
    nondeterministic across pulls (the chart parse is an AI call) and were
    undiagnosable while every exit looked identical. */
 function _chartSaveRefused(gate,extra){ try{ window.__mlsChartSaveTrace=window.__mlsChartSaveTrace||[]; window.__mlsChartSaveTrace.push(Object.assign({gate:gate,at:new Date().toISOString()},extra||{})); if(window.__mlsChartSaveTrace.length>60)window.__mlsChartSaveTrace.shift(); }catch(_){} return false; }
+/* ===== capreceipt-1.0.0 - EVERY ATHENA CHART WRITE CARRIES ITS OWN PROVENANCE
+   MEASURED 2026-09-11 on one clinic day of 25 patients (structure only, no
+   PHI): 24 of 25 records held real pulled chart content - problems,
+   medications, chart summary, a visits list and a chart number - and only 5
+   carried any capture object at all. The chart-field sink below, the visit
+   sinks and the chart-number adoption all merged athena-derived facts onto a
+   record; only ONE lane (the day pull's raw-capture step) also wrote anything
+   that said where those facts came from. So the app could not afterwards prove
+   which athena chart a stored history was read out of, and a hand-off that HAD
+   been verified read as unverifiable.
+
+   ONE helper, called by every writer that stores athena-derived chart content.
+   It stamps the SAME patient object the caller is about to persist, so the
+   caller's single upsert saves the facts and their provenance together or
+   saves neither. There is deliberately no second implementation: a comparator
+   fixed in one of six copies is this repo's standing defect class.
+
+   IT NEVER FABRICATES. identityVerified is written only from an explicit true
+   the caller passes, and a record that already holds chart data but no stamp
+   is NEVER back-filled - _athenaProvenanceState() answers 'unrecorded' for it,
+   the honest third state.
+
+   AND IT NEVER ERASES A PROOF. A write that proved identity always replaces
+   the stamp; a write that could not prove identity writes the stamp only when
+   there is none or the standing one is itself unproven. Against a proven stamp
+   it is recorded as an unverified write (count, lane, time) instead, because
+   one unproven visit row does not un-verify the chart read that was proven -
+   and it is still written down rather than dropped. */
+var ATHENA_PROVENANCE_V=1;
+function _athenaProvenanceStamp(p,info){
+  try{
+    if(!p||typeof p!=='object') return null;
+    info=(info&&typeof info==='object')?info:{};
+    var s=function(v,n){ var t=String(v==null?'':v),o='',i,c; for(i=0;i<t.length;i++){ c=t.charCodeAt(i); o+=(c<32||c===127)?' ':t.charAt(i); } return o.replace(/\s+/g,' ').trim().slice(0,n||120); };
+    var atMs=Number(info.capturedAtMs||0);
+    if(!(atMs>0)) atMs=Date.now();
+    var proven=info.identityVerified===true;
+    var prior=(p.athenaCaptureReceipt&&typeof p.athenaCaptureReceipt==='object')?p.athenaCaptureReceipt:null;
+    if(!proven&&prior&&prior.identityVerified===true){
+      var seen=Object.assign({},prior);
+      seen.unverifiedWrites=Number(prior.unverifiedWrites||0)+1;
+      seen.lastUnverifiedLane=s(info.lane,60)||'unknown';
+      seen.lastUnverifiedAt=new Date(atMs).toISOString();
+      p.athenaCaptureReceipt=seen;
+      return seen;
+    }
+    var stamp={
+      v:ATHENA_PROVENANCE_V,
+      capturedAt:new Date(atMs).toISOString(),
+      lane:s(info.lane,60)||'unknown',
+      identityVerified:proven,
+      identityBasis:s(info.identityBasis,60),
+      appointmentId:s(info.appointmentId,80),
+      chartKey:s(info.chartKey,80),
+      requestId:s(info.requestId,100),
+      patientId:s(p.id,80)
+    };
+    if(prior&&Number(prior.unverifiedWrites||0)>0){
+      stamp.unverifiedWrites=Number(prior.unverifiedWrites||0);
+      stamp.lastUnverifiedLane=s(prior.lastUnverifiedLane,60);
+      stamp.lastUnverifiedAt=s(prior.lastUnverifiedAt,40);
+    }
+    p.athenaCaptureReceipt=stamp;
+    return stamp;
+  }catch(e){ return null; }
+}
+try{ window._athenaProvenanceStamp=_athenaProvenanceStamp; }catch(e){}
+/* Athena-derived content on this record at all? A missing stamp only matters
+   where content exists; with no content there is nothing to account for. */
+function _athenaProvenanceHasContent(p){
+  try{
+    if(!p||typeof p!=='object') return false;
+    if(String(p.athenaChartImportedAt||'').trim()) return true;
+    if(p.athenaChartSnapshot&&typeof p.athenaChartSnapshot==='object') return true;
+    if(p.athenaRawCapture&&typeof p.athenaRawCapture==='object') return true;
+    if(p.athenaHistoryFactsSnapshot&&typeof p.athenaHistoryFactsSnapshot==='object') return true;
+    if(p.athenaProfileCoverage&&typeof p.athenaProfileCoverage==='object') return true;
+    var vs=Array.isArray(p.visits)?p.visits:[];
+    for(var i=0;i<vs.length;i++){ if(vs[i]&&/athena|legacy|grab|pullrec/i.test(String(vs[i].source||''))) return true; }
+    return false;
+  }catch(e){ return false; }
+}
+/* THE THREE STATES, read-only:
+     verified   - a stamp says identity was proven when the content was read
+     unverified - a stamp exists and says identity was NOT proven then
+     unrecorded - content is here and no stamp was ever written for it
+     none       - no athena-derived content on this record */
+function _athenaProvenanceState(p){
+  var r=null;
+  try{ r=(p&&p.athenaCaptureReceipt&&typeof p.athenaCaptureReceipt==='object')?p.athenaCaptureReceipt:null; }catch(e){ r=null; }
+  if(r) return {state:r.identityVerified===true?'verified':'unverified',
+    capturedAt:String(r.capturedAt||''),lane:String(r.lane||''),identityBasis:String(r.identityBasis||''),
+    appointmentId:String(r.appointmentId||''),chartKey:String(r.chartKey||''),
+    unverifiedWrites:Number(r.unverifiedWrites||0)};
+  return {state:_athenaProvenanceHasContent(p)?'unrecorded':'none',
+    capturedAt:'',lane:'',identityBasis:'',appointmentId:'',chartKey:'',unverifiedWrites:0};
+}
+try{ window._athenaProvenanceState=_athenaProvenanceState; }catch(e){}
+/* THE DOCTOR-FACING SENTENCE for the third state. Plain words only: it says
+   what happened and what it does not mean, so an older chart is never read as
+   a chart nobody ever checked. */
+var ATHENA_PROVENANCE_UNRECORDED_SENTENCE='This history came over from athenaOne before MLS began saving a note of the patient match, so MLS cannot show you here that the match was confirmed. That is not the same as the chart never having been checked.';
+function _athenaProvenanceDay(iso){
+  try{ var d=String(iso||'').slice(0,10); return /^\d{4}-\d{2}-\d{2}$/.test(d)?d:''; }catch(e){ return ''; }
+}
+function _athenaProvenanceSentence(p){
+  try{
+    var st=_athenaProvenanceState(p);
+    if(st.state==='unrecorded') return ATHENA_PROVENANCE_UNRECORDED_SENTENCE;
+    var when=_athenaProvenanceDay(st.capturedAt);
+    if(st.state==='verified') return 'MLS checked that this was the right patient in athenaOne when it read this chart'+(when?' on '+when:'')+'.';
+    if(st.state==='unverified') return 'MLS saved this from athenaOne'+(when?' on '+when:'')+' but could not confirm at the time that it was the right patient, so read it against the chart before relying on it.';
+    return '';
+  }catch(e){ return ''; }
+}
+try{ window._athenaProvenanceSentence=_athenaProvenanceSentence; }catch(e){}
+/* WRITING THE ACCOUNT IS NOT ENOUGH - IT HAS TO SURVIVE THE NEXT WRITE.
+   upsertPatient replaces the stored row WHOLESALE with the caller's object, so
+   a caller that materialized its patient BEFORE a chart save writes an older
+   copy back over the fresh one. That clobber is already documented here for
+   the coverage receipt (2026-07-20: 11-14 of 16 day-pull histories lost
+   athenaProfileCoverage to exactly this path) and it produces the SAME shape
+   the 25-patient measurement found: the chart fields survive, the account of
+   where they came from does not. So the account travels with them.
+
+   It cannot invent anything: it only carries forward an account that was
+   really written, and when the two disagree the arbitration is delegated to
+   _athenaProvenanceStamp above - the one implementation - so a proven read is
+   never un-proven by a later write that could not prove itself, and that
+   weaker write is still counted rather than dropped. */
+function _athenaCarryProvenance(dst,src){
+  try{
+    if(!dst||!src||typeof dst!=='object'||typeof src!=='object') return;
+    var prior=(src.athenaCaptureReceipt&&typeof src.athenaCaptureReceipt==='object')?src.athenaCaptureReceipt:null;
+    if(!prior) return;
+    var mine=(dst.athenaCaptureReceipt&&typeof dst.athenaCaptureReceipt==='object')?dst.athenaCaptureReceipt:null;
+    /* the arriving copy accounts for nothing: it is a caller that never saw
+       the account, never an erasure anybody asked for */
+    if(!mine){ dst.athenaCaptureReceipt=Object.assign({},prior); return; }
+    if(mine.identityVerified===true||prior.identityVerified!==true){
+      /* the arriving account is at least as strong - keep it, but do not lose
+         the tally of writes that could not prove themselves */
+      if(Number(prior.unverifiedWrites||0)>Number(mine.unverifiedWrites||0)){
+        mine.unverifiedWrites=Number(prior.unverifiedWrites||0);
+        mine.lastUnverifiedLane=String(prior.lastUnverifiedLane||mine.lastUnverifiedLane||'');
+        mine.lastUnverifiedAt=String(prior.lastUnverifiedAt||mine.lastUnverifiedAt||'');
+      }
+      return;
+    }
+    /* the standing account proves the chart and the arriving one does not:
+       restore the proof, then replay the weaker write through the ONE helper */
+    dst.athenaCaptureReceipt=Object.assign({},prior);
+    _athenaProvenanceStamp(dst,{
+      lane:String(mine.lane||''),identityVerified:false,identityBasis:String(mine.identityBasis||''),
+      appointmentId:String(mine.appointmentId||''),chartKey:String(mine.chartKey||''),
+      requestId:String(mine.requestId||''),capturedAtMs:Date.parse(String(mine.capturedAt||''))||0
+    });
+  }catch(e){}
+}
+try{ window._athenaCarryProvenance=_athenaCarryProvenance; }catch(e){}
+/* ===== end capreceipt-1.0.0 (the shared stamp and its three states) ===== */
 function _savePatientChart(name, appt, chart){
   if(!chart) return _chartSaveRefused('no-chart');
   var ref=(name&&typeof name==='object')?name:{};
@@ -13924,6 +14085,21 @@ function _savePatientChart(name, appt, chart){
   });
   p.athenaChartSummaryBlock=block;
   p.summary=(manualSummary?manualSummary+'\n\n':'')+block;
+  /* capreceipt-1.0.0: the provenance rides on the SAME object the one upsert
+     below persists, so this record can never hold these chart facts without
+     the account of where they were read from. identityVerified is true here
+     because nothing reaches this line without either _athenaHistoryProofMatches
+     or the verified-create branch above having proven the chart is this
+     patient - both are refusals, not warnings. */
+  _athenaProvenanceStamp(p,{
+    lane:'chart-save',
+    identityVerified:true,
+    identityBasis:creating?'verified-new-patient':'identity-proof-match',
+    appointmentId:String((appt&&(appt.appointmentId||appt.appointment_id||appt.id))||''),
+    chartKey:String(observed.chartMrn||ref.mrn||ref.athenaId||''),
+    requestId:String(ref.requestId||''),
+    capturedAtMs:importedAtMs
+  });
   if(typeof upsertPatient!=='function') return _chartSaveRefused('no-upsert');
   /* A refused chart save must leave a diagnosable trail: this catch used to
      swallow the persist error entirely, which cost hours of live triage. */

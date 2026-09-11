@@ -488,6 +488,23 @@
       var keptSig = _exactIndexSig(v);
       v = p.visits.find(function (x) { return _collapsibleIndexRow(x) && _exactIndexSig(x) === keptSig; }) || v;
     }
+    /* capreceipt-1.0.0: an athena-derived encounter IS stored chart content,
+       so its provenance is stamped on the same patient object the upsert below
+       persists - facts and provenance land together or not at all. The ONE
+       shared helper in the shell does the writing; there is no second copy of
+       this logic here. identityVerified is the row's own proven binding, never
+       an assumption, and the helper refuses to erase a stronger proof. */
+    if (_remoteVisit(v) && isFn(window._athenaProvenanceStamp)) {
+      try {
+        window._athenaProvenanceStamp(p, {
+          lane: 'visit-ingest',
+          identityVerified: v.identityVerified === true && !!trim(v.identityBinding) && trim(v.identityBinding) === trim(p.id),
+          identityBasis: v.identityVerified === true ? 'visit-identity-binding' : 'visit-source-only',
+          appointmentId: S(v.encounterId || v.sourceVisitKey || ''),
+          chartKey: S(v.patientMrn || p.mrn || p.athenaId || '')
+        });
+      } catch (eProv) {}
+    }
     if (opts.persist !== false) _upsert(p);
     return v;
   }
@@ -1424,6 +1441,31 @@
     return new Promise(function(resolve){ setTimeout(resolve,0); });
   }
 
+  /* capreceipt-1.0.0: this pass derives the six clinical cards from athena
+     visit bodies and writes them onto the record, so it is an athena chart
+     writer and owes the same account of itself as the chart sink. It stamps
+     only when athena-derived rows actually fed the pass - a purely manual
+     record stores no athena content and must not claim any. _usableVisits has
+     already refused every athena row whose identity binding is not this exact
+     patient, which is why the proof is recorded as verified here. One shared
+     helper, in the shell; no second implementation. */
+  function _stampOrganizedProvenance(p, usedVisits) {
+    try {
+      if (!isFn(window._athenaProvenanceStamp)) return;
+      var rows = Array.isArray(usedVisits) ? usedVisits : [];
+      var athena = null;
+      for (var i = 0; i < rows.length; i++) { if (_isAthenaVisit(rows[i])) { athena = rows[i]; break; } }
+      if (!athena) return;
+      window._athenaProvenanceStamp(p, {
+        lane: 'history-organize',
+        identityVerified: true,
+        identityBasis: 'visit-identity-binding',
+        appointmentId: S(athena.encounterId || athena.sourceVisitKey || ''),
+        chartKey: S(athena.patientMrn || p.mrn || p.athenaId || '')
+      });
+    } catch (eProv) {}
+  }
+
   function organizePatientHistory(patientId, prepared) {
     var canonical = _findPatient(patientId);
     if (!canonical) return { ok: false, reason: 'no-patient' };
@@ -1461,6 +1503,7 @@
       if(profileReceipt&&profileReceipt.complete===true&&profileReceipt.exactIdentityVerified===true&&trim(profileReceipt.patientId)===trim(p.id)){
         p.athenaProfileCoverage=Object.assign({},profileReceipt,{semanticComplete:false,semanticCoverage:semanticCoverage});
       }
+      _stampOrganizedProvenance(p, visits);
       if (!_upsert(p)) return {
         ok: false, reason: 'commit-refused', complete: false,
         verifiedVisits: visits.length, excludedUnverified: excluded,
@@ -1546,6 +1589,7 @@
       patientId: trim(p.id),
       identityFingerprint: _identityFingerprint(p)
     };
+    _stampOrganizedProvenance(p, visits);
     if (!_upsert(p)) return {
       ok: false, reason: 'commit-refused', complete: false,
       verifiedVisits: visits.length, excludedUnverified: excluded,

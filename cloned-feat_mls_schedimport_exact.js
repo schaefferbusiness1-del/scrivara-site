@@ -4879,6 +4879,17 @@
         summaryPending: true, summaryCode: "", summaryAttempts: 0, summaryAt: 0
       };
       p.athenaRawCapture = capture;
+      /* capreceipt-1.0.0: the same shared stamp every other athena writer
+         uses, written onto the SAME object this upsert persists. The capture
+         object above is this lane's own bookkeeping (it carries the raw text
+         and the re-summarise state); the stamp is the one shape every surface
+         asking "was this chart checked against athena" can read, on every
+         lane. One helper, no second implementation. */
+      safe(function () { if (isFn(window._athenaProvenanceStamp)) window._athenaProvenanceStamp(p, {
+        lane: "day-pull-capture", identityVerified: true, identityBasis: "chart-read-identity-echo",
+        appointmentId: String(capture.appointmentId || ""), chartKey: String(capture.echo && capture.echo.chartMrn || ""),
+        requestId: String(capture.requestId || ""), capturedAtMs: Number(capture.at || 0)
+      }); });
       if (isFn(window.upsertPatient)) window.upsertPatient(p);
       else if (isFn(window.savePatients)) window.savePatients(window.getPatients() || []);
       safe(function () { if (isFn(window._pendingSyncAdd)) window._pendingSyncAdd(pid); });
@@ -4948,6 +4959,16 @@
         var mgRow = patientById(target.patientId);
         if (mgMrn && mgRow && !String(rowMrn(mgRow) || "").trim()) {
           mgRow.athenaId = mgMrn; if (!String(mgRow.mrn || "").trim()) mgRow.mrn = mgMrn;
+          /* capreceipt-1.0.0: the chart number is athena-derived chart content
+             too - it was one of the fields found on records that carried no
+             account of where they came from. saveRef is non-null here, which
+             means the read's identity echo already PROVED this chart is this
+             row, so the stamp records a real proof and rides the same upsert. */
+          safe(function () { if (isFn(window._athenaProvenanceStamp)) window._athenaProvenanceStamp(mgRow, {
+            lane: "chart-number-adoption", identityVerified: true, identityBasis: "chart-read-identity-echo",
+            appointmentId: String((target && target.appointmentId) || (row && row.appointmentId) || ""),
+            chartKey: mgMrn, requestId: String(requestId || "")
+          }); });
           safe(function () { window.upsertPatient(mgRow); });
         }
       } catch (eMg) {}
@@ -5191,6 +5212,19 @@
       }
       if (!String(p.problems || '').trim() && Array.isArray(cap.problems) && cap.problems.length) { p.problems = cap.problems.map(function (x) { return String(x || '').trim(); }).filter(Boolean).join('\n'); changed = true; }
       if (!String(p.allergies || '').trim() && Array.isArray(cap.allergies) && cap.allergies.length) { p.allergies = cap.allergies.map(function (x) { return String(x || '').trim(); }).filter(Boolean).join('\n'); changed = true; }
+      /* capreceipt-1.0.0: this best-effort enrichment writes athena-derived
+         medications, problems and allergies onto the record behind a
+         TWO-TOKEN NAME guard only - no DOB and no chart number are proven
+         here. It gets the same stamp as every other athena writer, on the same
+         object this upsert persists, and records honestly that the identity
+         was not proven. The helper refuses to let that erase a stronger proof
+         an earlier verified chart read already recorded. */
+      if (changed) {
+        try { if (isFn(window._athenaProvenanceStamp)) window._athenaProvenanceStamp(p, {
+          lane: 'facts-capture', identityVerified: false, identityBasis: 'name-tokens-only',
+          chartKey: String(p.athenaId || p.mrn || '')
+        }); } catch (eProvF) {}
+      }
       if (changed) { try { if (isFn(window.upsertPatient)) window.upsertPatient(p); } catch (e3) {} }
       return changed ? 'saved' : 'nothing-new';
     }).catch(function () { return 'error'; });
