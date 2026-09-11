@@ -422,7 +422,7 @@ async function runtime() {
 
     /* ---- dialogs --------------------------------------------------- */
     await page.evaluate(() => {
-      try { openSettings(); } catch (e) { const m = document.getElementById('settingsModal'); if (m) m.classList.add('show'); }
+      try { openSettings({ userInitiated: true }); } catch (e) { const m = document.getElementById('settingsModal'); if (m) m.classList.add('show'); }
     });
     await page.waitForTimeout(1000);
     r = await settle(page);

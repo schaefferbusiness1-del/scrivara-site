@@ -17,6 +17,10 @@ const pages = {
      site — its api() helper — which fans out to eligibility/request/status/
      cancel/ice/signal. */
   'patient-portal.html': { fetches: 7, required: ['query.invite', 'fragment.session', 'fragment.claim', 'fragment.setup'] },
+  /* opnote-svc-1.0.0 (2026-09-11): the client-surgeon op-note page. EXACTLY one
+     wrapped call site on purpose - its own api() helper - so the link
+     credential is attached in one place and nowhere else. */
+  'opnotes.html': { fetches: 1, required: ['fragment.k'] },
   'send-portal-invite.html': { fetches: 3, required: [], scrubAll: true }
 };
 

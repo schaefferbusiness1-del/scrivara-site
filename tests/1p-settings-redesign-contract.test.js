@@ -364,7 +364,7 @@ async function runtime() {
     const page = await browser.newPage({ viewport: { width: 1366, height: 900 } });
     page.on('pageerror', (e) => pageErrors.push(String(e.message).slice(0, 160)));
     await boot(page, port);
-    await page.evaluate(() => { try { openSettings(); } catch (e) {} });
+    await page.evaluate(() => { try { openSettings({ userInitiated: true }); } catch (e) {} });
     await page.waitForTimeout(2500);
 
     /* -- 1: SEVEN TABS, IN WORDS A CLINIC USES --------------------------- */
@@ -464,7 +464,7 @@ async function runtime() {
         }
         inventory.push(Object.assign({ tab: t.label, did }, c, res));
         if (!res.modalOpen) {
-          await page.evaluate(() => { try { openSettings(); } catch (e) {} });
+          await page.evaluate(() => { try { openSettings({ userInitiated: true }); } catch (e) {} });
           await page.waitForTimeout(900);
           await page.evaluate((l) => window.__t2.clickTab(l), t.label);
           await page.waitForTimeout(400);

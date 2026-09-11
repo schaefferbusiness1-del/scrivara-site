@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://scrivara-backend.onrender.com; form-action 'self'; object-src 'none'; base-uri 'self'; upgrade-insecure-requests">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex,nofollow,noarchive,nosnippet">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+<meta http-equiv="Pragma" content="no-cache">
+<script src="sensitive-workflow-bootstrap.js?v=20260718" data-query-keys="k" data-fragment-keys="k" referrerpolicy="no-referrer"></script>
+<script src="vendor/mammoth.browser-1.12.0.min.js?v=5d4c0e7c9165d70b"></script>
+<title>Your op notes · MLS</title>
+<!-- build: opnote-svc-1.0.0 2026-09-11 -->
+<style>
+  /* The same palette the clinical app uses, so a surgeon who sees both does not
+     feel they used two different products. Deliberately large controls: this
+     page is used standing up, often on a phone, between cases. */
+  :root{--ink:#1A211C;--muted:#68736B;--line:#E7E5DD;--brand:#2E6A4B;--brand-dk:#204034;--bg:#FBFAF7;--soft:#EAF1EE}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--ink);line-height:1.5}
+  .wrap{max-width:760px;margin:0 auto;padding:20px 18px 64px}
+  .card{background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:0 10px 40px rgba(20,35,28,.07);padding:22px 20px;margin-top:18px}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:20px;margin-top:14px}
+  .mark{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#3B7C5A,#2E6A4B);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800}
+  h1{font-size:26px;margin:14px 0 4px}
+  h2{font-size:19px;margin:4px 0 6px}
+  p.sub{color:var(--muted);margin:0 0 6px}
+  p.note{font-size:13.5px;color:var(--muted);margin:8px 0 0}
+  label{display:block;font-weight:600;font-size:15px;margin:16px 0 6px}
+  input,textarea{width:100%;padding:15px 16px;border:1px solid #E2E6E2;border-radius:14px;font-size:16px;font-family:inherit;background:#F7F8F7;color:var(--ink);min-height:52px}
+  textarea.note-body{min-height:320px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14.5px;line-height:1.6}
+  textarea.paste{min-height:120px}
+  .btn{display:inline-flex;align-items:center;justify-content:center;width:100%;margin-top:22px;padding:17px 20px;min-height:56px;border:0;border-radius:999px;background:var(--brand);color:#fff;font-weight:700;font-size:17px;cursor:pointer}
+  .btn:hover{background:var(--brand-dk)}
+  .btn2{display:inline-flex;align-items:center;justify-content:center;width:100%;margin-top:12px;padding:15px 20px;min-height:52px;border:1px solid var(--line);border-radius:999px;background:#fff;color:var(--brand-dk);font-weight:700;font-size:16px;cursor:pointer}
+  .btn2:hover{border-color:var(--brand)}
+  .jobrow{display:block;width:100%;text-align:left;margin-top:12px;padding:16px 18px;min-height:64px;border:1px solid var(--line);border-radius:14px;background:#fff;cursor:pointer;font-family:inherit}
+  .jobrow:hover{border-color:var(--brand)}
+  .jobtitle{display:block;font-weight:700;font-size:17px;color:var(--ink)}
+  .jobstate{display:block;margin-top:3px;font-size:14px;color:var(--brand-dk);font-weight:600}
+  .jobstate.done{color:var(--muted)}
+  .pill{display:inline-block;background:var(--soft);color:var(--brand-dk);border-radius:999px;padding:4px 12px;font-size:12.5px;font-weight:700}
+  .said{margin-top:12px;font-weight:700;color:var(--brand-dk)}
+  .stop{margin-top:12px;background:#fff3f3;border:1px solid #f3c6c6;color:#a12c2c;border-radius:12px;padding:12px 14px;font-weight:600}
+  .hide{display:none}
+</style>
+</head>
+<body>
+<div data-mls-synthetic-boundary="1" role="note" aria-label="Synthetic evaluation only" style="box-sizing:border-box;width:calc(100% - 24px);max-width:920px;margin:12px auto 0;padding:10px 12px;background:#F7F3E8;border:1px solid #E8DCC0;border-radius:10px;color:#5E5138;font:600 13px/1.45 system-ui,-apple-system,Segoe UI,Arial,sans-serif;text-align:center"><strong>Synthetic evaluation only.</strong> Use fictional information; do not enter real patient or clinical data.</div>
+<div class="wrap">
+  <div class="brand"><span class="mark">+</span> <span>MLS</span></div>
+
+  <div id="gate" class="card hide"></div>
+
+  <div id="app" class="hide">
+    <h1 id="hdr"></h1>
+    <p class="sub" id="sub"></p>
+
+    <div class="card">
+      <h2>Your op notes</h2>
+      <div id="list"></div>
+    </div>
+
+    <div id="jobCard" class="card hide"></div>
+
+    <div class="card">
+      <h2>Your templates</h2>
+      <p class="sub">These are the templates your op notes are written from.</p>
+      <div id="tplList"></div>
+      <button class="btn2" onclick="opnPickTemplate()">Add or replace a template</button>
+      <p class="note">Word (.docx) or a text file.</p>
+      <input id="tplFile" type="file" accept=".docx,.txt,.md,.rtf,.csv,.htm,.html" class="hide" onchange="opnTemplateChosen(this)">
+      <label for="tplName">Template name</label>
+      <input id="tplName" autocomplete="off">
+      <label for="tplPaste">Or paste the template text</label>
+      <textarea id="tplPaste" class="paste"></textarea>
+      <button class="btn2" onclick="opnSavePastedTemplate()">Save this template</button>
+      <p class="said hide" id="tplMsg"></p>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ==========================================================================
+   OP NOTES FOR A CLIENT SURGEON (lane opnote-svc-1.0.0)
+
+   The whole page: one surgeon, their own drafted op notes, the few things only
+   they can supply, and the templates those notes are written from. Nothing else
+   of the clinical app is reachable from here — no patients, no schedule pull,
+   no visit notes, no settings, no sign-in.
+
+   THE LINK IS THE CREDENTIAL. It arrives in the URL fragment (#k=...), the
+   head bootstrap captures it and strips it from the address bar before this
+   script runs, and it is sent as a bearer credential on every call. There is no
+   second exchange and nothing is stored, so revoking the link at the other end
+   ends this page's access on the next press.
+
+   ONE WRAPPED CALL SITE. Every request goes through opnApi() -> the head's
+   mlsSensitiveFetch wrapper (cache:no-store, referrerPolicy:no-referrer).
+   tests/sensitive-public-workflows-boundary.test.js pins that count at 1, which
+   is deliberate: a second call site is a second place the credential could be
+   handled differently.
+   ========================================================================== */
+var OPN_BASE = 'https://scrivara-backend.onrender.com';
+var K = (function () { var u = window.__mlsSensitiveUrl || {}; return String((u.fragment && u.fragment.k) || (u.query && u.query.k) || '').trim(); })();
+var OPN_SHAPE = /^[a-f0-9]{64}$/;
+var opnJobs = [];
+var opnOpen = null;
+
+function opnEsc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (m) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[m]; }); }
+function opnEl(id) { return document.getElementById(id); }
+function opnShow(id, on) { var e = opnEl(id); if (e) e.className = (e.className || '').replace(/\s*\bhide\b/g, '') + (on ? '' : ' hide'); }
+
+/* The ONE wrapped call site. */
+function opnApi(path, opts) {
+  var o = {};
+  var src = opts || {};
+  for (var key in src) { if (Object.prototype.hasOwnProperty.call(src, key)) o[key] = src[key]; }
+  o.headers = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + K };
+  return window.mlsSensitiveFetch(OPN_BASE + path, o);
+}
+
+function opnGet(path) { return opnApi(path, { method: 'GET' }); }
+function opnPost(path, body) { return opnApi(path, { method: 'POST', body: JSON.stringify(body || {}) }); }
+
+/* The link is gone, or it was never good. One sentence, and the page shows
+   nothing else — no list, no editor, no upload. */
+function opnStopped(sentence) {
+  var g = opnEl('gate');
+  if (g) { g.textContent = sentence; g.className = 'card'; }
+  var a = opnEl('app');
+  if (a) a.className = 'hide';
+}
+function opnDead() { opnStopped('This link is no longer active. Ask for a new one.'); }
+function opnTrouble() { opnStopped('That did not go through. Try again in a moment.'); }
+
+function opnSay(id, sentence, bad) {
+  var e = opnEl(id);
+  if (!e) return;
+  e.textContent = sentence;
+  e.className = bad ? 'stop' : 'said';
+}
+
+/* ---- the list ---------------------------------------------------------- */
+function opnRenderList() {
+  var host = opnEl('list');
+  if (!host) return;
+  if (!opnJobs.length) { host.innerHTML = '<p class="sub">Nothing waiting for you right now.</p>'; return; }
+  var h = '';
+  for (var i = 0; i < opnJobs.length; i++) {
+    var j = opnJobs[i];
+    var left = Math.max(0, Number(j.blankCount || 0) - Number(j.filledCount || 0));
+    var state = (j.status === 'completed') ? 'Done' : ('Needs you: ' + left + ' to fill');
+    h += '<button class="jobrow" onclick="opnOpenJob(\'' + opnEsc(j.id) + '\')">' +
+      '<span class="jobtitle">' + opnEsc(j.title || 'Op note') + '</span>' +
+      '<span class="jobstate' + (j.status === 'completed' ? ' done' : '') + '">' + opnEsc(state) + '</span>' +
+      '</button>';
+  }
+  host.innerHTML = h;
+}
+
+/* ---- one op note ------------------------------------------------------- */
+function opnRenderJob(job) {
+  opnOpen = job;
+  var blanks = job.blanks || [];
+  var h = '<span class="pill">' + opnEsc(job.title || 'Op note') + '</span>';
+  if (blanks.length) {
+    h += '<h2>Fill these in</h2>';
+    for (var i = 0; i < blanks.length; i++) {
+      var b = blanks[i];
+      h += '<label for="opnB_' + opnEsc(b.key) + '">' + opnEsc(b.label || b.key) + '</label>' +
+        '<input id="opnB_' + opnEsc(b.key) + '" value="' + opnEsc(b.value || '') + '" autocomplete="off">';
+    }
+    h += '<p class="note">Type what you used. Anything you leave empty stays as it is in the note.</p>';
+  }
+  h += '<h2>The note</h2>' +
+    '<p class="note">You can change any of this.</p>' +
+    '<textarea id="opnNote" class="note-body">' + opnEsc(job.noteText || '') + '</textarea>' +
+    '<button class="btn" onclick="opnSaveJob()">Save</button>' +
+    '<button class="btn2" onclick="opnCompleteJob()">Mark done</button>' +
+    '<p class="said hide" id="jobMsg"></p>';
+  var card = opnEl('jobCard');
+  if (card) { card.innerHTML = h; card.className = 'card'; }
+}
+
+function opnCollect() {
+  var blanks = [];
+  var open = opnOpen || {};
+  var list = open.blanks || [];
+  for (var i = 0; i < list.length; i++) {
+    var field = opnEl('opnB_' + list[i].key);
+    blanks.push({ key: list[i].key, value: field ? String(field.value || '') : String(list[i].value || '') });
+  }
+  var body = opnEl('opnNote');
+  return { blanks: blanks, noteText: body ? String(body.value || '') : String(open.noteText || '') };
+}
+
+function opnRemember(patch) {
+  for (var i = 0; i < opnJobs.length; i++) {
+    if (opnJobs[i].id === (opnOpen && opnOpen.id)) {
+      for (var key in patch) { if (Object.prototype.hasOwnProperty.call(patch, key)) opnJobs[i][key] = patch[key]; }
+    }
+  }
+  opnRenderList();
+}
+
+async function opnOpenJob(id) {
+  try {
+    var r = await opnGet('/api/client/opnotes/jobs/' + encodeURIComponent(id));
+    if (r.status === 401) { opnDead(); return; }
+    if (!r.ok) { opnSay('jobMsg', 'That did not go through. Try again in a moment.', true); opnShow('jobMsg', true); return; }
+    var d = await r.json();
+    opnRenderJob(d.job || {});
+  } catch (e) { opnTrouble(); }
+}
+
+async function opnSaveJob() {
+  if (!opnOpen) return;
+  var picked = opnCollect();
+  try {
+    var r = await opnPost('/api/client/opnotes/jobs/' + encodeURIComponent(opnOpen.id) + '/save',
+      { noteText: picked.noteText, blanks: picked.blanks, expectedVersion: opnOpen.version });
+    if (r.status === 401) { opnDead(); return; }
+    if (r.status === 409) { opnSay('jobMsg', 'Someone else changed this note. Reload the page to see the newest one.', true); opnShow('jobMsg', true); return; }
+    if (!r.ok) { opnSay('jobMsg', 'That did not go through. Try again in a moment.', true); opnShow('jobMsg', true); return; }
+    var d = await r.json();
+    var saved = d.job || {};
+    opnOpen.version = saved.version;
+    opnOpen.noteText = picked.noteText;
+    opnRemember({ filledCount: saved.filledCount, updatedAt: saved.updatedAt });
+    opnSay('jobMsg', 'Saved.', false);
+    opnShow('jobMsg', true);
+  } catch (e) { opnSay('jobMsg', 'That did not go through. Try again in a moment.', true); opnShow('jobMsg', true); }
+}
+
+async function opnCompleteJob() {
+  if (!opnOpen) return;
+  try {
+    var r = await opnPost('/api/client/opnotes/jobs/' + encodeURIComponent(opnOpen.id) + '/complete', { expectedVersion: opnOpen.version });
+    if (r.status === 401) { opnDead(); return; }
+    if (r.status === 409) { opnSay('jobMsg', 'Someone else changed this note. Reload the page to see the newest one.', true); opnShow('jobMsg', true); return; }
+    if (!r.ok) { opnSay('jobMsg', 'That did not go through. Try again in a moment.', true); opnShow('jobMsg', true); return; }
+    var d = await r.json();
+    opnRemember({ status: (d.job && d.job.status) || 'completed' });
+    opnSay('jobMsg', 'Done. Nothing else to do.', false);
+    opnShow('jobMsg', true);
+  } catch (e) { opnSay('jobMsg', 'That did not go through. Try again in a moment.', true); opnShow('jobMsg', true); }
+}
+
+/* ---- templates --------------------------------------------------------- */
+function opnRenderTemplates(list) {
+  var host = opnEl('tplList');
+  if (!host) return;
+  var rows = list || [];
+  if (!rows.length) { host.innerHTML = '<p class="sub">Nothing here yet.</p>'; return; }
+  var h = '';
+  for (var i = 0; i < rows.length; i++) {
+    h += '<div class="jobrow"><span class="jobtitle">' + opnEsc(rows[i].name || 'Template') + '</span></div>';
+  }
+  host.innerHTML = h;
+}
+
+function opnPickTemplate() { var f = opnEl('tplFile'); if (f && f.click) f.click(); }
+
+/* Cleaning copied from the clinical app's own reader so a template reads the
+   same here as it does there. */
+function opnCleanText(t, lower) {
+  t = String(t || '');
+  if (/\.rtf$/.test(lower)) { t = t.replace(/\\par[d]?\b/g, '\n').replace(/\\'[0-9a-fA-F]{2}/g, '').replace(/\{\\\*[^{}]*\}/g, '').replace(/\\[a-zA-Z]+-?\d*\s?/g, '').replace(/[{}]/g, ''); }
+  return t.replace(/\x00/g, '').replace(/[ \t]{3,}/g, '  ').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function opnTemplateChosen(input) {
+  var f = input && input.files && input.files[0];
+  if (!f) return;
+  return opnReadTemplateFile(f);
+}
+
+async function opnReadTemplateFile(f) {
+  var name = String(f.name || '');
+  var lower = name.toLowerCase();
+  if (/\.(pdf|png|jpe?g|heic|heif|gif|webp|tiff?|bmp)$/.test(lower)) {
+    opnSay('tplMsg', 'Save it as a Word file or paste the text instead.', true);
+    opnShow('tplMsg', true);
+    return;
+  }
+  var text = '';
+  try {
+    if (/\.docx$/.test(lower)) {
+      var buf = await f.arrayBuffer();
+      var out = await window.mammoth.extractRawText({ arrayBuffer: buf });
+      text = opnCleanText((out && out.value) || '', lower);
+    } else {
+      text = opnCleanText(await f.text(), lower);
+    }
+  } catch (e) {
+    opnSay('tplMsg', 'That did not go through. Try again in a moment.', true);
+    opnShow('tplMsg', true);
+    return;
+  }
+  if (!text) {
+    opnSay('tplMsg', 'Save it as a Word file or paste the text instead.', true);
+    opnShow('tplMsg', true);
+    return;
+  }
+  return opnSendTemplate(name.replace(/\.[A-Za-z0-9]+$/, '') || 'Template', text);
+}
+
+function opnSavePastedTemplate() {
+  var nameField = opnEl('tplName');
+  var pasteField = opnEl('tplPaste');
+  var name = nameField ? String(nameField.value || '').trim() : '';
+  var text = pasteField ? String(pasteField.value || '').trim() : '';
+  if (!name || !text) {
+    opnSay('tplMsg', 'Give it a name and paste the text first.', true);
+    opnShow('tplMsg', true);
+    return;
+  }
+  return opnSendTemplate(name, text);
+}
+
+async function opnSendTemplate(name, text) {
+  try {
+    var r = await opnPost('/api/client/opnotes/templates', { name: name, text: text });
+    if (r.status === 401) { opnDead(); return; }
+    if (!r.ok) { opnSay('tplMsg', 'That did not go through. Try again in a moment.', true); opnShow('tplMsg', true); return; }
+    var d = await r.json();
+    opnRenderTemplates(d.templates || []);
+    var nameField = opnEl('tplName'); if (nameField) nameField.value = '';
+    var pasteField = opnEl('tplPaste'); if (pasteField) pasteField.value = '';
+    opnSay('tplMsg', 'Template saved.', false);
+    opnShow('tplMsg', true);
+  } catch (e) { opnSay('tplMsg', 'That did not go through. Try again in a moment.', true); opnShow('tplMsg', true); }
+}
+
+/* ---- opening the page -------------------------------------------------- */
+async function opnBoot() {
+  if (!OPN_SHAPE.test(K)) { opnDead(); return; }
+  var who;
+  try {
+    var r = await opnGet('/api/client/opnotes/session');
+    if (r.status === 401 || r.status === 403 || r.status === 404) { opnDead(); return; }
+    if (!r.ok) { opnTrouble(); return; }
+    who = await r.json();
+  } catch (e) { opnTrouble(); return; }
+
+  var client = (who && who.client) || {};
+  var hdr = opnEl('hdr'); if (hdr) hdr.textContent = 'Op notes for ' + (client.name || 'you');
+  var sub = opnEl('sub'); if (sub) sub.textContent = 'Everything is written for you. Fill in what only you know, then mark it done.';
+  opnShow('gate', false);
+  opnShow('app', true);
+
+  try {
+    var jr = await opnGet('/api/client/opnotes/jobs');
+    if (jr.status === 401) { opnDead(); return; }
+    if (jr.ok) { var jd = await jr.json(); opnJobs = (jd && jd.jobs) || []; }
+  } catch (e) { opnJobs = []; }
+  opnRenderList();
+
+  try {
+    var tr = await opnGet('/api/client/opnotes/templates');
+    if (tr.ok) { var td = await tr.json(); opnRenderTemplates((td && td.templates) || []); }
+  } catch (e) { opnRenderTemplates([]); }
+}
+
+window.opnReady = opnBoot();
+</script>
+</body>
+</html>
