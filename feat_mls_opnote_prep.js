@@ -257,7 +257,10 @@
     var sameAsConfigured = !chosenProvider || !configuredProvider || providerIdentityKey(chosenProvider) === providerIdentityKey(configuredProvider);
     if (chosenProvider) { ctx.provider = chosenProvider; ctx.providerName = chosenProvider; }
     var apptNpi = appt ? trim(appt.providerNpi || appt.provider_npi || '') : '';
-    if (apptNpi) ctx.providerNpi = apptNpi;
+    /* An NPI the SCHEDULE supplied belongs to the schedule's own provider, so
+       it is stamped with its provenance and the downstream identifier scrub
+       leaves it alone. Nothing in the app writes appt.providerNpi today. */
+    if (apptNpi) { ctx.providerNpi = apptNpi; ctx.providerNpiSource = 'appointment'; }
     else if (!sameAsConfigured) { delete ctx.providerNpi; delete ctx.providerLicense; delete ctx.providerDea; delete ctx.providerCredentials; }
     else {
       if (pf.npi && !ctx.providerNpi) ctx.providerNpi = pf.npi;
@@ -284,41 +287,79 @@
   }
 
   /* =========================================================================
-   * (2)(3) PROVIDER + FACILITY ATTESTATION BLOCK — the deterministic guarantee
-   * that the DRAFTED op note actually STATES the operating provider, their
-   * required identifiers, and the facility. The base _genOpNote never puts
-   * these in the prompt, so we append a standard attestation footer after the
-   * AI draft. Any identifier we don't have is emitted as a [[blank]] so the
-   * app's existing guided blank-filler picks it up. Idempotent (sentinel).
+   * (2)(3) PROVIDER + FACILITY PANEL — the deterministic statement of who
+   * operated, their identifiers, and where. This is SCAFFOLDING, and as of
+   * opclean it is no longer part of the note.
+   *
+   * WHY IT LEFT THE NOTE BODY (owner report, a real batch of 25 op notes):
+   * every note ended with this block appended AFTER the surgeon's signature,
+   * so it exported, emailed and pasted into the EMR as if it were clinical
+   * text — carrying the literal "[[facility_name]]" placeholder with it. A
+   * saved note body must contain the note. attestForCtx() now returns the note
+   * unchanged and the block is composed for presentation only, through
+   * providerFacilityPanel(); the readiness strip (readiness() above) is what
+   * tells the doctor which of these facts is still missing.
+   *
+   * AND AN NPI IS NEVER PRINTED BESIDE A NAME IT DOES NOT BELONG TO. The app
+   * holds exactly ONE NPI — the account-level Settings field — and the Athena
+   * provider roster carries none, so when the operating provider is somebody
+   * other than the configured provider there is no second value to reach for.
+   * The line is then omitted entirely. A blank is honest; the account holder's
+   * NPI next to a colleague's name is an identity error in a clinical-legal
+   * document.
    * ======================================================================= */
   var ATTEST_MARK = 'PROVIDER & FACILITY (MLS op-note prep)';
   function attestBlock(pf) {
     var L = [];
     L.push('---- ' + ATTEST_MARK + ' ----');
-    L.push('Operating provider: ' + (pf.provider ? providerDisplay(pf) : '[[provider_name]]'));
+    if (pf.provider) L.push('Operating provider: ' + providerDisplay(pf));
     if (pf.spec) L.push('Specialty: ' + pf.spec);
-    L.push('NPI: ' + (pf.npi || '[[provider_npi]]')
-      + (pf.license ? ('   State license: ' + pf.license) : '')
-      + (pf.dea ? ('   DEA: ' + pf.dea) : ''));
-    L.push('Facility: ' + (pf.facility || '[[facility_name]]'));
+    /* No NPI, no line. The old '[[provider_npi]]' fallback existed so the
+       guided blank-filler would pick it up inside the note; nothing is inside
+       the note any more, so an unfilled placeholder here would just be noise. */
+    if (pf.npi) {
+      L.push('NPI: ' + pf.npi
+        + (pf.license ? ('   State license: ' + pf.license) : '')
+        + (pf.dea ? ('   DEA: ' + pf.dea) : ''));
+    } else if (pf.license || pf.dea) {
+      L.push((pf.license ? ('State license: ' + pf.license) : '')
+        + (pf.license && pf.dea ? '   ' : '')
+        + (pf.dea ? ('DEA: ' + pf.dea) : ''));
+    }
+    if (pf.facility) L.push('Facility: ' + pf.facility);
     if (pf.facilityAddress) L.push('Facility address: ' + pf.facilityAddress);
     if (pf.practice) L.push('Practice: ' + pf.practice);
     if (pf.practiceAddress) L.push('Practice address: ' + pf.practiceAddress);
     L.push('(DRAFT — not submitted to athenaOne. Review, edit, and sign in your EMR.)');
     return '\n\n' + L.join('\n') + '\n';
   }
-  function ensureProviderFacilityBlock(note, pf) {
-    note = S(note);
-    if (note.indexOf(ATTEST_MARK) >= 0) return note; // already present (re-draft) — don't duplicate
-    return note + attestBlock(pf);
-  }
-  /* opnp-1.7.0: ctx-aware attestation entry for the integrity owner (oni). The
-     enriched generation ctx (appointment provider/facility outranking Settings)
-     drives the footer, mirroring the retired _genOpNote wrapper's mapping. */
-  function attestForCtx(note, ctx) {
+  /* ensureProviderFacilityBlock() — the function that concatenated the block
+     onto the note — is DELETED rather than left unused. Nothing in the repo
+     called it once the two callers here stopped, and a function whose whole
+     job is "append this to the note body" is the thing this change exists to
+     remove: leaving it in place is an invitation to wire it back up. The
+     composer above is now reachable only through the presentation entry point
+     below. */
+  /* The provider/facility facts for ONE generation context, with every
+     identifier that cannot be proved to belong to the named provider removed.
+     One rule, one place: attestForCtx and any on-screen presentation read the
+     same answer. */
+  function providerFacilityForCtx(ctx) {
     ctx = ctx || {};
-    var pf = providerFacilityCtx();
-    if (trim(ctx.provider || ctx.providerName)) { pf.provider = trim(ctx.provider || ctx.providerName); pf.cred = ''; }
+    var pf = providerFacilityCtx(), configured = providerDisplay(pf);
+    var chosen = trim(ctx.provider || ctx.providerName);
+    if (chosen) { pf.provider = chosen; pf.cred = ''; }
+    /* THE IDENTIFIER FOLLOWS THE PERSON. enrichCtx already deletes
+       ctx.providerNpi for a different operating provider (see :261); this used
+       to re-read providerFacilityCtx() and hand the account's NPI straight
+       back, so the deletion upstream achieved nothing and every note printed
+       the signed-in account holder's NPI under the operating surgeon's name. */
+    if (chosen && (!configured || providerIdentityKey(chosen) !== providerIdentityKey(configured))) {
+      pf.npi = ''; pf.license = ''; pf.dea = '';
+    }
+    /* An NPI the APPOINTMENT supplied belongs to the appointment's provider,
+       so it survives; nothing in the app writes appt.providerNpi today, which
+       is exactly why "print no NPI" is the only correct answer above. */
     if (trim(ctx.providerNpi)) pf.npi = trim(ctx.providerNpi);
     if (trim(ctx.practice)) pf.practice = trim(ctx.practice);
     if (trim(ctx.practiceAddress)) pf.practiceAddress = trim(ctx.practiceAddress);
@@ -327,8 +368,16 @@
       if (fac !== pf.facility) { pf.facility = fac; pf.facilityAddress = ''; }
       if (trim(ctx.facilityAddress)) pf.facilityAddress = trim(ctx.facilityAddress);
     }
-    return ensureProviderFacilityBlock(note, pf);
+    return pf;
   }
+  /* Presentation only — this is what a header or panel renders. It is NOT
+     appended to the note and must not be. */
+  function providerFacilityPanel(ctx) { return attestBlock(providerFacilityForCtx(ctx)); }
+  /* opnp-1.7.0: ctx-aware attestation entry for the integrity owner (oni).
+     opclean: it now returns the note UNCHANGED. The entry point is kept
+     because the generator calls it on both success paths; keeping the call and
+     emptying it is what guarantees no caller can reintroduce the block. */
+  function attestForCtx(note, ctx) { return S(note); }
 
   /* =========================================================================
    * opnp-1.7.0 — SAFE SAVE-AND-RESUME. Reopening op-prep for a patient who
@@ -534,34 +583,18 @@
       };
     });
 
-    // (2)(3) _genOpNote — after the AI draft, GUARANTEE a provider+facility
-    // attestation block (with [[blanks]] for any missing identifier). The base
-    // _genOpNote ignores provider/facility ctx fields, so this is what actually
-    // makes the drafted note state the correct provider/identifiers/facility.
+    // (2)(3) _genOpNote — hand the base generator the ENRICHED context, so the
+    // appointment's own provider and facility outrank the account defaults.
+    // It no longer appends the provider/facility block to the drafted note:
+    // that block is scaffolding and belongs on screen, not in a note body that
+    // gets exported, emailed or pasted into the EMR.
     wrap('_genOpNote', function (orig) {
       return function (name, dateStr, procedure, tplText, ctx) {
         var enriched = enrichCtx(name, ctx || {}, null);
-        var pf = providerFacilityCtx();
-        // Carry the exact schedule-level facility through to the deterministic
-        // footer, without borrowing the practice clinic's address.
-        if (enriched.provider) { pf.provider = enriched.provider; pf.cred = ''; }
-        if (enriched.providerNpi) pf.npi = enriched.providerNpi;
-        if (enriched.practice) pf.practice = enriched.practice;
-        if (enriched.practiceAddress) pf.practiceAddress = enriched.practiceAddress;
-        if (enriched.facility && enriched.facility !== pf.facility) { pf.facility = enriched.facility; pf.facilityAddress = ''; }
-        else if (enriched.facility) pf.facility = enriched.facility;
         var p;
         try { p = orig.call(this, name, dateStr, procedure, tplText, enriched); } catch (e) { p = null; }
-        if (!p || typeof p.then !== 'function') {
-          var res0 = p || { note: '', missing: [] };
-          try { res0.note = ensureProviderFacilityBlock(res0.note, pf); } catch (e2) {}
-          return res0;
-        }
-        return p.then(function (res) {
-          res = res || { note: '', missing: [] };
-          try { res.note = ensureProviderFacilityBlock(res.note, pf); } catch (e3) {}
-          return res;
-        });
+        if (!p || typeof p.then !== 'function') return p || { note: '', missing: [] };
+        return p.then(function (res) { return res || { note: '', missing: [] }; });
       };
     });
 
@@ -923,7 +956,9 @@
     // pure API (unit-tested)
     resolvePatient: resolvePatient, providerFacilityCtx: providerFacilityCtx,
     readiness: readiness, enrichCtx: enrichCtx,
-    ensureProviderFacilityBlock: ensureProviderFacilityBlock, attestBlock: attestBlock,
+    attestBlock: attestBlock,
+    providerFacilityForCtx: providerFacilityForCtx, providerFacilityPanel: providerFacilityPanel,
+    providerIdentityKey: providerIdentityKey,
     attest: attestForCtx, adoptExistingDraft: adoptExistingDraft,
     nextProcedureDay: nextProcedureDay, nextWeekday: nextWeekday,
     rawApptsForKey: rawApptsForKey,

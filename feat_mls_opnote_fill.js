@@ -399,16 +399,70 @@
   /* onf-2.5.0 (owner report): templates from real past notes carry ANONYMOUS
      blanks — "___" runs and "[not dictated]" markers. The formatted view
      highlights them yellow but they never surfaced as fill fields. Convert
-     each into a labeled [FILL: …] token (label = surrounding words, unique),
-     so the ONE fill box owns every blank a doctor can see. */
+     each into a labeled [FILL: …] token so the ONE fill box owns every blank a
+     doctor can see.
+
+     opclean — A BLANK'S LABEL IS A CLINICAL QUESTION, NOT A MAP REFERENCE.
+     Measured on a real batch of 25 operative notes: 20 of them carried a
+     literal marker of the shape
+         [FILL: after "tolerated the procedure well." before "<Surgeon>,"]
+     in the note text, and 5 more carried a truncated remnant on its own line.
+     Both came from here. The old label was composed from the words on either
+     side of the blank and then cut to 70 characters, which is positional
+     metadata describing WHERE something goes rather than a label telling the
+     clinician WHAT to supply — and the character cut sliced words and quotes
+     in half ('before "administer' with the quote never closed).
+
+     The label is now the line's OWN field label — the text before the colon
+     that the blank sits under ("Type of Anesthesia", "Medication", "Fluoro
+     time"), which is exactly the vocabulary knownValue() can answer from. It
+     must look like a label: one to six words, forty characters or fewer, and
+     it starts with a letter. There is no character cap, because a cap is only
+     needed when the label is prose.
+
+     WHERE THERE IS NO LABEL, NOTHING IS EMITTED. The doctor's own "___" is
+     left exactly as written rather than replaced by a guess at its meaning.
+     Nothing is lost by that: opNoteBlankTokens() — the single canonical
+     parser the save gate, the PDF and the Athena control all read — counts a
+     run of underscores and a [not dictated] marker in its own right, so an
+     unlabelled blank still blocks a complete save and still shows in the
+     count. An honest blank beats an invented label. */
+  var ANON_LABEL_STOP = /^(?:and|or|the|a|an|of|to|for|with|was|were|is|are|at|in|on|by|as|that|this|then|there|it|he|she|they|patient|note|however)$/i;
+  function anonBlankLabel(text, at) {
+    var t = S(text);
+    var lineStart = t.lastIndexOf('\n', at > 0 ? at - 1 : 0) + 1;
+    var head = t.slice(lineStart, at);
+    var raw = '';
+    var colon = head.lastIndexOf(':');
+    if (colon >= 0) raw = head.slice(0, colon);
+    else if (!S(head).trim()) {
+      /* the label may sit on the line above, with the blank on its own line */
+      var prevEnd = lineStart > 0 ? lineStart - 1 : 0, prev = '';
+      while (prevEnd > 0) {
+        var prevStart = t.lastIndexOf('\n', prevEnd - 1) + 1;
+        prev = t.slice(prevStart, prevEnd);
+        if (S(prev).trim()) break;
+        prevEnd = prevStart > 0 ? prevStart - 1 : 0;
+      }
+      var pc = prev.lastIndexOf(':');
+      if (pc >= 0 && !S(prev.slice(pc + 1)).trim()) raw = prev.slice(0, pc);
+    }
+    /* the label is the last segment before the colon, so a line that already
+       carried a finished field ("Fluoro time: 45 s. Contrast: ___") names the
+       field the blank actually belongs to */
+    raw = S(raw).split(/[.;]/).pop();
+    raw = raw.replace(/[\[\]_"]+/g, ' ').replace(/[^A-Za-z0-9 \/&()'-]+/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!raw || !/^[A-Za-z]/.test(raw) || raw.length > 40) return '';
+    var words = raw.split(' ');
+    if (words.length > 6) return '';
+    if (words.length === 1 && ANON_LABEL_STOP.test(words[0])) return '';
+    return raw;
+  }
   function normalizeAnonBlanks(text) {
     var t = S(text), seen = {};
     return t.replace(/_{3,}|\[not dictated[^\]]*\]/gi, function (m0, at) {
-      var before = t.slice(Math.max(0, at - 44), at).replace(/[\[\]_]+/g, ' ').replace(/\s+/g, ' ').trim();
-      var after = t.slice(at + m0.length, at + m0.length + 26).replace(/[\[\]_]+/g, ' ').replace(/\s+/g, ' ').trim();
-      var bw = before.split(' ').slice(-4).join(' ').replace(/^[^A-Za-z0-9]+/, '');
-      var aw = after.split(' ').slice(0, 2).join(' ');
-      var label = ('after "' + bw + '"' + (aw ? (' before "' + aw + '"') : '')).slice(0, 70);
+      var label = anonBlankLabel(t, at);
+      if (!label) return m0;   /* no label to give it — leave the doctor's own blank alone */
       var base = label, n = 2;
       while (seen[label.toLowerCase()]) label = base + ' #' + (n++);
       seen[label.toLowerCase()] = 1;
@@ -999,9 +1053,26 @@
        template vocabulary) and was absent from this list, so it was asked for on
        every note that used it. */
     var isProv = !isOtherRole && /(provider|physician|surgeon|\bdoctor\b|operator|attending|clinician|proceduralist|performed by|performing|dictated by|operating|rendering)/.test(l);
-    /* An NPI field may only receive an actual NPI. Falling through to the
-       generic provider-name rule put "Matthew Schaeffer, MD" in NPI blanks. */
-    if (/\bnpi\b/.test(l)) return S(prof.npi).trim();
+    /* An NPI field may only receive an actual NPI, and only its OWNER's.
+       The app holds exactly one NPI — the account-level Settings field — so it
+       belongs to the configured provider and to nobody else. This rule used to
+       hand it to any blank labelled "NPI" whatever name the note carried, so
+       on a day with a colleague's cases the operative note asserted the
+       signed-in account holder's NPI as the surgeon's. Sameness is decided by
+       the prep module's ONE provider comparator; if that comparator is not
+       available the answer is empty, because a blank is honest and a borrowed
+       NPI is an identity error in a document the surgeon signs. */
+    if (/\bnpi\b/.test(l)) {
+      var ownProvider = canonicalSetting('getProviderName');
+      if (!ownProvider) return '';
+      if (!apptProv) return S(prof.npi).trim();
+      var sameClinician = safe(function () {
+        var api = window.__mlsOpNotePrep;
+        if (!api || !isFn(api.providerIdentityKey)) return false;
+        return api.providerIdentityKey(apptProv) === api.providerIdentityKey(ownProvider);
+      }, false);
+      return sameClinician ? S(prof.npi).trim() : '';
+    }
     if (/(practice name|\bpractice\b|group name|group practice)/.test(l) && S(prof.practice).trim()) return S(prof.practice).trim();
     if (/(facility|clinic|location|site|hospital|center|ambulatory|surgery center|\basc\b)/.test(l)) {
       var fac = apptFacility(appt) || S(prof.facility).trim();
@@ -2340,6 +2411,7 @@
     _renderLayout: renderLayout, _ctxWindow: ctxWindow, _idxOf: idxOf,
     _adoptRenderedEdits: adoptRenderedEdits, _acceptExternalEdit: acceptExternalEdit, _existingFillBox: existingFillBox,
     _knownValue: knownValue, _buildOptions: buildOptions, _resolveInitialField: resolveInitialField, _buildFillBox: buildFillBox, _ensureHeader: ensureHeader,
+    _normalizeAnonBlanks: normalizeAnonBlanks, _anonBlankLabel: anonBlankLabel,
     _chartPatient: chartPatient, _chartValue: chartValue, _patientHistText: patientHistText,
     _verifiedHistoryVisits: verifiedHistoryVisits, _profile: provProfile,
     wireUploadButtons: wireUploadButtons, tick: tick, revert: revert,

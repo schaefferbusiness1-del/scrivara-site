@@ -225,10 +225,31 @@ async function main() {
   assert(prep && prep.installed && prep.version === 'opnp-1.7.0', 'prep module did not install at opnp-1.7.0');
   assert(typeof prep.attest === 'function', 'opnp does not export the ctx-aware attest entry');
 
-  const att = prep.attest('NOTE BODY', { provider: 'Appt Provider', providerNpi: '111', facility: 'Appt ASC' });
-  assert(att.includes('Appt Provider') && att.includes('Appt ASC') && att.includes('NOTE BODY'), 'attest did not honor the enriched ctx: ' + att);
-  assert(att.indexOf('PROVIDER & FACILITY') > 0, 'attest footer missing its sentinel heading');
-  assert.strictEqual(prep.attest(att, {}), att, 'attest footer must be idempotent');
+  /* opclean — THE PROVIDER/FACILITY BLOCK LEFT THE NOTE BODY, DELIBERATELY.
+     This used to assert the opposite: that prep.attest() APPENDED the block to
+     the note and that its sentinel was inside the returned text. Measured on a
+     real batch of 25 operative notes, that block was scaffolding sitting
+     inside a saved note body — it exported, emailed and pasted into the EMR
+     carrying a literal [[facility_name]] placeholder, and it printed the
+     SIGNED-IN ACCOUNT HOLDER's NPI beside the OPERATING PROVIDER's name.
+     The note body is now the note. The same facts are composed for
+     presentation by providerFacilityPanel(), which is where the enriched ctx
+     is honoured and where an NPI is printed only when it belongs to the
+     provider being named. Full contract:
+     tests/opnote-body-is-the-note.test.js. */
+  const enrichedCtx = { provider: 'Appt Provider', providerNpi: '111', facility: 'Appt ASC' };
+  for (const body of ['NOTE BODY', '']) {
+    assert.strictEqual(prep.attest(body, enrichedCtx), body,
+      'the provider/facility block is being appended to the saved note body again');
+  }
+  assert(typeof prep.providerFacilityPanel === 'function', 'opnp does not export the presentation panel');
+  const panel = prep.providerFacilityPanel(enrichedCtx);
+  assert(panel.includes('Appt Provider') && panel.includes('Appt ASC'), 'the panel did not honor the enriched ctx: ' + panel);
+  assert(panel.indexOf('PROVIDER & FACILITY') > 0, 'the panel lost its sentinel heading');
+  assert(panel.includes('NPI: 111'), 'an NPI the context supplied for its own provider was dropped: ' + panel);
+  const foreign = prep.providerFacilityPanel({ provider: 'Some Other Doctor, MD' });
+  assert(foreign.indexOf('1234567893') < 0,
+    'the panel printed the signed-in account holder NPI beside a different operating provider: ' + foreign);
 
   // resume: same patient + same procedure adopts the EXISTING draft (id + text)…
   const rrow = { patientId: 'pid-1', appt: { name: 'Pat One', dob: '1990-01-01', reason: 'Left SI joint injection' }, proc: 'Left SI joint injection', note: '', missing: [], values: {} };

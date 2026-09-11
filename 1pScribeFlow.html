@@ -23738,10 +23738,46 @@ function _opAutoTpl(i){
    one line of amber that names a NUMBER, and buttons that switch a template
    or re-draft. Neither invents a clinical fact, neither hides a draft, and
    both render nothing at all when the generator did not supply the data. */
+/* SAME NAME, DIFFERENT TEMPLATE — SAY WHICH IS WHICH (opclean).
+   Measured on the owner's real library: 199 templates under 102 names, 27 of
+   them duplicated. "Left sacroiliac joint injection" exists five times — four
+   full operative notes of about 2,380 characters and one 433-character header
+   sheet with no description of the procedure in it. Both the row's Template
+   dropdown and the "did you mean" buttons printed nothing but the name, so
+   five identical entries were offered and four of that Monday's patients were
+   drafted from the header sheet.
+   The Templates tab already distinguishes templates by kind and length; this
+   carries the same two facts to the two op-prep surfaces, and only for a name
+   that is actually duplicated, so an ordinary library gains no clutter.
+   "full note" / "header only" is the SAME measurement the matcher uses
+   (feat_mls_opnote_integrity.js templateSubstance); when that module has not
+   loaded the length alone is printed rather than a guess. */
+function _opTplDupNames(list){
+  var out={},seen={};
+  try{ if(!list) list=(typeof getTemplates==='function')?(getTemplates()||[]):[]; }catch(e){ list=[]; }
+  for(var i=0;i<(list||[]).length;i++){
+    var n=String(((list[i]||{}).name)||'Template').trim().toLowerCase();
+    if(seen[n]) out[n]=1; seen[n]=1;
+  }
+  return out;
+}
+function _opTplPickerLabel(t,dupNames){
+  var name=String(((t||{}).name)||'Template');
+  try{
+    var key=name.trim().toLowerCase();
+    if(!dupNames||!dupNames[key]) return name;
+    var text=String(((t||{}).text)||''),s=null;
+    try{ var oni=window.__mlsOpNoteIntegrity;
+         if(oni&&typeof oni.templateSubstance==='function') s=oni.templateSubstance(t); }catch(e){}
+    var what=s?(((s.prose>0)||(s.narrative>0))?'full note, ':'header only, '):'';
+    return name+' — '+what+text.length+' characters';
+  }catch(e2){ return name; }
+}
 function _opAltTplHtml(i,row){
   try{
     if(!row||row.tplManual) return '';
     var alts=row.tplAlternatives||[]; if(!alts.length) return '';
+    var _altDup=_opTplDupNames();
     /* Only where the match was NOT decided. A confident match with a
        second-place candidate is not a question, and turning every row into
        one is how a warning stops being read. */
@@ -23752,7 +23788,9 @@ function _opAltTplHtml(i,row){
     alts.slice(0,3).forEach(function(a){
       var id=String((a&&a.id)||'').replace(/[^A-Za-z0-9_-]/g,'');
       if(!id) return;
-      h+='<button class="btn-ghost" style="font-size:11.5px;padding:4px 9px" title="Use this template for this procedure instead" onclick="opPrepPickTemplate('+i+','+Q+id+Q+')">'+esc(String((a&&a.name)||'Template'))+'</button>';
+      var altTpl=null; try{ altTpl=(typeof getTemplateById==='function')?getTemplateById(id):null; }catch(eT){}
+      var altLabel=altTpl?_opTplPickerLabel(altTpl,_altDup):String((a&&a.name)||'Template');
+      h+='<button class="btn-ghost" style="font-size:11.5px;padding:4px 9px" title="Use this template for this procedure instead" onclick="opPrepPickTemplate('+i+','+Q+id+Q+')">'+esc(altLabel)+'</button>';
     });
     return h+'</div>';
   }catch(e){ return ''; }
@@ -23879,7 +23917,10 @@ function opPrepRender(){
   if(!_tplsNow.length){ box.innerHTML='<div class="mini" style="color:#b4231e">Upload your operative-note templates on the <b>Templates</b> tab first — MLS adapts them into each patient’s report.</div>'; box.__opPrepHtml=''; return; }
   var _optHead='<option value="">— pick a template —</option>';
   var _optParts=_tplsNow.map(function(t){ return { id:String(t.id), html:'<option value="'+t.id+'"' }; });
-  var _optTail=_tplsNow.map(function(t){ return '>'+esc(t.name||'Template')+'</option>'; });
+  /* opclean: a duplicated name is distinguished here (see _opTplPickerLabel);
+     every other option still prints exactly its name. */
+  var _optDup=_opTplDupNames(_tplsNow);
+  var _optTail=_tplsNow.map(function(t){ return '>'+esc(_opTplPickerLabel(t,_optDup))+'</option>'; });
   var tplOpts=function(sel){
     var out=_optHead;
     for(var k=0;k<_optParts.length;k++) out+=_optParts[k].html+(_optParts[k].id===sel?' selected':'')+_optTail[k];

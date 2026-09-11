@@ -334,8 +334,33 @@ function ladder(opts) {
   const prep = fs.readFileSync(path.join(root, 'feat_mls_opnote_prep.js'), 'utf8');
   assert(/add\('facility', 'Facility', !!\(apptFac \|\| pf\.facility\), 'warn'\)/.test(prep),
     'the readiness strip no longer warns on a missing facility');
-  assert(/'Facility: ' \+ \(pf\.facility \|\| '\[\[facility_name\]\]'\)/.test(prep),
-    'the attest block no longer emits an honest blank when the facility is unknown');
+  /* opclean: this used to pin the spelling
+       'Facility: ' + (pf.facility || '[[facility_name]]')
+     because the block was part of the saved note body, where an unfilled
+     [[facility_name]] was a blank the guided filler would pick up. The block
+     is presentation only now (it was exporting and pasting into the EMR as if
+     it were clinical text), so the placeholder would be noise. The PROPERTY
+     this pin exists for is unchanged and is now checked by RUNNING it: an
+     unknown facility produces no facility line at all, and the practice is
+     still never asserted as the site of service. */
+  const bctx = {
+    console, Date, Math, JSON, Object, String, Number, Array, RegExp,
+    setInterval() { return 0; }, clearInterval() {},
+    document: { readyState: 'complete', addEventListener() {}, getElementById() { return null; }, querySelectorAll() { return []; }, createElement() { return { style: {}, setAttribute() {}, appendChild() {} }; }, head: null, documentElement: { appendChild() {} } },
+    getProviderName: () => 'Jane A. Smith', getProviderCred: () => 'MD',
+    getPracticeName: () => 'Chester County Spine Care', getClinicAddress: () => '1 Clinic Way, Malvern PA',
+    toast() {}
+  };
+  bctx.window = bctx;
+  vm.runInNewContext(prep, bctx, { filename: 'feat_mls_opnote_prep.js' });
+  const papi = bctx.__mlsOpNotePrep;
+  const unknownFacility = papi.attestBlock(papi.providerFacilityCtx());
+  assert(!/Facility:/.test(unknownFacility),
+    'an unknown facility is printed as a line rather than omitted: ' + unknownFacility);
+  assert(unknownFacility.indexOf('Practice: Chester County Spine Care') >= 0,
+    'the practice line was lost, so this assertion is no longer measuring anything');
+  assert(!/Facility: Chester County Spine Care/.test(unknownFacility),
+    'the practice was asserted as the site of service');
 }
 
 /* ---- 7b. THE PROVIDER FALLBACK DELEGATES, AND FAILS SAFE EITHER WAY ---- */
