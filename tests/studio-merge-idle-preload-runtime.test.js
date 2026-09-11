@@ -1,0 +1,185 @@
+'use strict';
+
+/* smpreload-1.0.0 (owner 2026-09-11, MEASURED live on b1237 at 13:5x):
+ * window.__mlsStudioMerge was undefined and #analysisView was still outside
+ * #studioView while the doctor was on the Visit view - neither the on-screen
+ * trigger (Studio was not on screen) nor the old idle fallback
+ * (sched(go,{timeout:4000}), routed through the shared __mlsDeferAsset queue)
+ * had landed the module yet.
+ *
+ * Fix, in 1p-mls-connect.js's studiofast-1.0.0 IIFE: a dedicated
+ * requestIdleCallback (real setTimeout fallback), scheduled once right after
+ * boot, independent of __mlsDeferAsset's own priority queue. The existing
+ * on-screen trigger (immediate load + mls:view-changed listener) is
+ * untouched. Until the merge has actually mounted, #studioView shows one
+ * plain line ("Loading the rest of AI Studio...") above the Copilot card
+ * (1pScribeFlow.html); feat_mls_studio_merge.js removes it the moment
+ * reconcile() (or teardown(), for ?ui=classic) actually runs.
+ *
+ * This lifts the REAL loader IIFE out of the production bundle (not a
+ * reimplementation) and proves, in a real browser:
+ *   1. the idle preload schedules exactly one load, even if asked twice;
+ *   2. the on-screen trigger still fires immediately, untouched;
+ *   3. the placeholder is present before the real merge module has mounted,
+ *      and gone afterward - driven by the actual feat_mls_studio_merge.js.
+ */
+
+const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
+const { chromium } = require('playwright');
+
+const root = path.resolve(__dirname, '..');
+const CONNECT_PATH = path.join(root, 'mls-connect.js');
+const SHELL_PATH = path.join(root, 'ScribeFlow.html');
+const MERGE_PATH = path.join(root, 'feat_mls_studio_merge.js');
+
+const connectSource = fs.readFileSync(CONNECT_PATH, 'utf8');
+const shellSource = fs.readFileSync(SHELL_PATH, 'utf8');
+const mergeSource = fs.readFileSync(MERGE_PATH, 'utf8');
+
+/* ---------- lift the real loader IIFE, do not retype it ---------- */
+const startMarker = "var A='feat_mls_studio_merge.js';";
+const start = connectSource.indexOf(startMarker);
+assert.ok(start >= 0, 'the studio-merge loader was rewritten out of mls-connect.js');
+const iifeStart = connectSource.lastIndexOf(';(function(){try{', start);
+assert.ok(iifeStart >= 0, 'could not find the start of the studio-merge loader IIFE');
+const closeMarker = '}catch(e){}})();';
+const closeAt = connectSource.indexOf(closeMarker, start);
+assert.ok(closeAt > start, 'could not find the end of the studio-merge loader IIFE');
+const LOADER_IIFE = connectSource.slice(iifeStart, closeAt + closeMarker.length);
+assert.ok(LOADER_IIFE.includes('function preloadIdle('), 'lifted block is missing the dedicated idle preloader');
+assert.ok(LOADER_IIFE.includes('function studioOnScreen('), 'lifted block is missing the on-screen trigger');
+
+/* ---------- lift the exact placeholder markup, do not retype it ---------- */
+const phStart = shellSource.indexOf('<p id="mlsStudioMergeLoading"');
+assert.ok(phStart >= 0, 'the "Loading the rest of AI Studio..." placeholder is missing from ScribeFlow.html');
+const phEnd = shellSource.indexOf('</p>', phStart) + '</p>'.length;
+const PLACEHOLDER_HTML = shellSource.slice(phStart, phEnd);
+assert.ok(/Loading the rest of AI Studio/.test(PLACEHOLDER_HTML), 'lifted placeholder does not carry the promised sentence');
+
+const SHELL_HTML = `<!doctype html><html><body>
+  <div id="appWrap">
+    <div id="studioView" style="display:none">
+      ${PLACEHOLDER_HTML}
+      <div class="card" id="copilotCard"></div>
+    </div>
+    <div id="analysisView"></div>
+  </div>
+</body></html>`;
+
+(async function run() {
+  const browser = await chromium.launch({ channel: 'chrome', headless: true });
+  try {
+    /* ================= 1: idle preload schedules exactly once ================= */
+    {
+      const page = await browser.newPage();
+      await page.setContent(SHELL_HTML);
+      await page.evaluate(() => {
+        window.__ricCalls = [];
+        window.__scriptsAppended = [];
+        /* deliberately never fires - proves scheduling happened without
+         * depending on the merge module actually loading in this page */
+        window.requestIdleCallback = function (cb, opts) { window.__ricCalls.push(opts); return 1; };
+        const realAppendChild = Node.prototype.appendChild;
+        const origCreateElement = document.createElement.bind(document);
+        document.createElement = function (tag) {
+          const el = origCreateElement(tag);
+          if (String(tag).toLowerCase() === 'script') {
+            const origSetAttribute = el.setAttribute.bind(el);
+            el.setAttribute = function (name, value) {
+              if (name === 'data-mls-asset') window.__scriptsAppended.push(value);
+              return origSetAttribute(name, value);
+            };
+          }
+          return el;
+        };
+      });
+      await page.addScriptTag({ content: LOADER_IIFE });
+
+      const first = await page.evaluate(() => ({
+        scheduled: window.__mlsStudioFastPreload.scheduled(),
+        ricCalls: window.__ricCalls.length
+      }));
+      assert.strictEqual(first.scheduled, true, 'the idle preload never scheduled itself right after boot');
+      assert.strictEqual(first.ricCalls, 1, 'the idle preload must call requestIdleCallback exactly once');
+
+      const second = await page.evaluate(() => window.__mlsStudioFastPreload.preload());
+      const after = await page.evaluate(() => window.__ricCalls.length);
+      assert.strictEqual(second, false, 'a second preload() call must be a no-op, not a fresh schedule');
+      assert.strictEqual(after, 1, 'a second call scheduled a SECOND idle callback - it must stay at exactly one');
+
+      /* studioView is display:none here, so neither trigger has appended the
+       * merge script yet - only the (never-firing, mocked) idle callback was
+       * scheduled. */
+      const scripts = await page.evaluate(() => window.__scriptsAppended.slice());
+      assert.deepStrictEqual(scripts, [], 'the merge module was fetched before its idle callback ever ran');
+
+      await page.close();
+    }
+
+    /* ================= 2: the on-screen trigger still fires immediately ================= */
+    {
+      const page = await browser.newPage();
+      await page.setContent(SHELL_HTML);
+      await page.evaluate(() => {
+        document.getElementById('studioView').style.display = 'block'; // AI Studio is already on screen
+        window.__ricCalls = [];
+        window.requestIdleCallback = function (cb, opts) { window.__ricCalls.push(opts); return 1; };
+      });
+      await page.addScriptTag({ content: LOADER_IIFE });
+      const state = await page.evaluate(() => ({
+        loaderTag: !!document.querySelector('script[data-mls-asset="feat_mls_studio_merge.js"]'),
+        scheduled: window.__mlsStudioFastPreload.scheduled()
+      }));
+      assert.strictEqual(state.loaderTag, true,
+        'the on-screen trigger regressed - the merge module must load immediately when Studio is already on screen');
+      /* KEPT AS-IS means the idle path still runs too, unconditionally - it
+       * hoists #analysisView, which must land for everyone, not only for
+       * people who opened Studio. */
+      assert.strictEqual(state.scheduled, true, 'the idle preload must still be scheduled even when the on-screen trigger already fired');
+      await page.close();
+    }
+
+    /* ================= 3: placeholder present before the real mount, gone after ================= */
+    {
+      const page = await browser.newPage();
+      /* Playwright runs routes in the OPPOSITE order of registration (the
+       * most recently added wins), so the specific script route is added
+       * AFTER the catch-all to make sure it is the one that answers. */
+      await page.route('https://mls-studio-preload.test/**', route =>
+        route.fulfill({ status: 200, contentType: 'text/html', body: SHELL_HTML }));
+      await page.route('https://mls-studio-preload.test/feat_mls_studio_merge.js**', route =>
+        route.fulfill({ status: 200, contentType: 'application/javascript', body: mergeSource }));
+      await page.goto('https://mls-studio-preload.test/visit');
+      await page.evaluate(() => {
+        document.getElementById('studioView').style.display = 'block';
+        /* fire "idle" immediately for a fast, deterministic test - the
+         * scheduling contract itself (exactly once) is proven in part 1 */
+        window.requestIdleCallback = function (cb) { setTimeout(cb, 0); return 1; };
+      });
+
+      assert.strictEqual(await page.locator('#mlsStudioMergeLoading').count(), 1,
+        'the placeholder must be present before the merge module has run');
+
+      await page.addScriptTag({ content: LOADER_IIFE });
+
+      await page.waitForFunction(() => !!window.__mlsStudioMerge, null, { timeout: 5000 });
+      await page.waitForFunction(() => !document.getElementById('mlsStudioMergeLoading'), null, { timeout: 5000 });
+
+      const finalState = await page.evaluate(() => ({
+        analysisInsideStudio: document.getElementById('analysisView').parentElement === document.getElementById('studioView'),
+        placeholderGone: !document.getElementById('mlsStudioMergeLoading')
+      }));
+      assert.strictEqual(finalState.analysisInsideStudio, true, 'the real merge module did not actually hoist #analysisView');
+      assert.strictEqual(finalState.placeholderGone, true, 'the placeholder must be removed once the real merge has mounted');
+
+      await page.close();
+    }
+  } finally {
+    await browser.close();
+  }
+
+  console.log('PASS studio-merge idle preload: schedules exactly one idle load, the on-screen trigger is untouched, ' +
+    'and the real merge module removes the "Loading the rest of AI Studio..." placeholder the moment it actually mounts');
+})().catch(error => { console.error(error && error.stack || error); process.exit(1); });

@@ -25,8 +25,8 @@ const aiHandler = firstRun.slice(firstRun.indexOf('async function onAiClick()'),
 assert(!/markDone\s*\(/.test(aiHandler), 'AI formats CTA must not dismiss or complete setup');
 assert(/__mlsEnsureDraftTuning[\s\S]{0,300}await/.test(aiHandler) || /await[\s\S]{0,300}__mlsEnsureDraftTuning/.test(aiHandler),
   'Configure does not await the canonical draft-tuning loader');
-assert(/function focusAiFormats\([\s\S]{0,1400}mlsDraftTuningSection/.test(firstRun),
-  'AI formats CTA does not target the mounted draft-tuning section');
+assert(/function focusAiFormats\([\s\S]{0,1400}mlsVisitNoteTemplatesSection/.test(firstRun),
+  'AI formats CTA does not target the mounted visit-note-templates section');
 assert(/data-mls-settings-group=\\?['"]notes/.test(firstRun) && /scrollIntoView/.test(firstRun) && /\.focus/.test(firstRun),
   'AI formats CTA does not select Notes & AI and focus the format controls');
 assert(/AI note formats for HPI, ROS, Exam, Assessment and Plan/.test(firstRun),

@@ -9933,6 +9933,16 @@
       /* p1-todaynote-deferred-retry-1.0.0: the lease this pull held is now
          released, so the rows that lost to it get their one retry round. */
       safe(tnScheduleDeferredRound);
+      /* upnext-1.0.0: athenaOne is free again, so the next scheduled days are
+         re-checked a few seconds from now - never inside this settle.
+         Called through a closure, not as a bare reference: several suites
+         lift this wrapper out of the shipped file as a SOURCE SLICE that
+         ends long before this function is declared, and a bare reference
+         throws ReferenceError while evaluating the argument - before safe()
+         is even entered - so the slice dies and the subject under test is
+         never reached. Inside the closure the same miss is caught by safe.
+         Identical in the shipped file, where the declaration is hoisted. */
+      safe(function () { upScheduleAfterPull(); });
       /* dnote-1.0.0 (b1184): and the day's OWN notes are drained HERE, inside
          the pull, before its result is handed to the day sheet or to the
          durable range job. The lease is released and pullRunning is false, so
@@ -9948,6 +9958,9 @@
       if (operationStarted) xtabBusyClear();
       if (operationStarted) releaseManagedAthenaWorkspace();
       safe(tnScheduleDeferredRound);
+      /* upnext-1.0.0: a failed pull still frees athenaOne. Closure, for the
+         lifted-slice reason spelled out on the settle path above. */
+      safe(function () { upScheduleAfterPull(); });
       /* dnote-1.0.0 (b1184): a REJECTED operation still re-arms the catch-up
          (the leftover notes are owed either way) but is never delayed by a
          drain - the caller is handling a failure, not a finished day. */
@@ -12232,6 +12245,10 @@
     safe(function () { window.addEventListener("message", onSchedMsg); });
     installImport();
     loadAuthoritativeNextUpConsumer();
+    /* upnext-1.0.0: arm the quiet upcoming-days lane. It reads nothing here -
+       it only wires its listeners and its low-frequency timer, and the first
+       look is a minute away, behind the same gate every later one is. */
+    safe(upBoot);
     /* a light retry in case a later module re-wraps _importPulledSchedule after us */
     var n = 0, iv = setInterval(function () { installImport(); if (++n > 8) clearInterval(iv); }, 1200);
   }
@@ -12567,8 +12584,14 @@
        batch already reading in this tab and then strip it mid-batch on its
        own settle. Disarm and the end-of-op focus return fire only from the
        call that armed. */
+    /* upnext-1.0.0: the ONE exception. A day pulled by the quiet upcoming-days
+       lane has no doctor watching it, so it must not arm the presence assist
+       (which announces itself and chases OS focus). Everything else about the
+       call - reading, identity, scope resolution, merge - is untouched: this
+       lane changes WHEN a pull runs and for WHICH days, never what it reads. */
     var __armedHere = false;
-    var __armPresence = function () { __armedHere = true; __historyRetryForeground = true; __presenceBatchAnnounced = false; };
+    var __quietCall = !!(opts && opts.__p1Quiet === true);
+    var __armPresence = function () { if (__quietCall) return; __armedHere = true; __historyRetryForeground = true; __presenceBatchAnnounced = false; };
     return Promise.resolve().then(function () { return __dayPullInner(opts, __armPresence); }).then(
       function (v) { if (__armedHere) __historyRetryForeground = false; return v; },
       function (e) { if (__armedHere) __historyRetryForeground = false; throw e; });
@@ -13166,6 +13189,358 @@
     });
   }
   /* ===== end nameslookup-1.0.0 ========================================== */
+
+  /* ==========================================================================
+     upnext-1.0.0  -  THE NEXT DAYS' CHARTS ARE ALREADY HERE
+     --------------------------------------------------------------------------
+     Owner 2026-09-11: "it always has to pull the to-be visits as to make good
+     op notes." An operative note is written from what came BEFORE - earlier
+     visits, imaging, prior procedures, medications - and until now that record
+     only reached MLS when somebody pressed Pull. Press it on the morning of the
+     procedure, or not at all, and the note is drafted against an empty chart.
+
+     So this lane keeps the next scheduled days warm. It owns NO reading,
+     identity or merge logic of its own: it calls dayPull - the same guarded day
+     lane the visible button calls - with two differences. It passes __p1Quiet,
+     so the presence assist never chases the doctor's focus, and it refuses to
+     start unless quietDriveGate() says athenaOne is free. Progress goes to the
+     corner pill and nowhere else (dayPull already drives __mlsDayHistoryPull,
+     which is the pill's only source): no dialog, and at most ONE line per walk,
+     and only when a day finishes with rows that need another look.
+
+     Freshness is per DAY and per PROVIDER SCOPE, in localStorage, so a reload,
+     a second tab, or a second visit to the same day costs nothing. A day is
+     re-read inside its window only when NEW rows have appeared for it, and the
+     walk stops at the first future day whose schedule is empty.
+     ======================================================================== */
+  var UP_VERSION = "upnext-1.0.0";
+  var UP_FRESH_MS = 6 * 60 * 60 * 1000;    /* a pulled day stays warm six hours */
+  var UP_RETRY_MS = 45 * 60 * 1000;        /* a day that refused is retried sooner, not hammered */
+  var UP_FUTURE_DAYS = 2;                  /* today, plus the next two scheduled days */
+  var UP_TICK_MS = 30 * 60 * 1000;         /* the low-frequency re-check, visible tabs only */
+  var UP_BOOT_DELAY_MS = 60000;            /* let sign-in settle before the first look */
+  var UP_AFTER_PULL_MS = 12000;            /* follow a settled pull, never race it */
+  var UP_BUSY_STAMP_MS = 60000;            /* how fresh __mlsPullBusyAt still means "driving" */
+  var UP_GEN_CEILING_MS = 10 * 60 * 1000;  /* a generation that never settles cannot block forever */
+  var UP_MAX_LEDGER_ENTRIES = 24;
+  var UP_LEDGER_SUFFIX = "mlsUpcomingPullV1";
+  var UP_SETTING_SUFFIX = "upcomingAutoPull";
+  var _up = { running: false, runs: 0, lastAt: 0, lastDay: "", lastReason: "", armed: false,
+    afterPullArmed: false, wired: false, timer: null, bootTimer: null, afterPullTimer: null,
+    generatingAt: 0, walk: [] };
+
+  function upStorageKey(suffix) {
+    return safe(function () { return isFn(window.uns) ? String(window.uns(suffix)) : String(suffix); }, String(suffix));
+  }
+  /* Default ON. Only an explicit stored "0" turns the lane off, so an account
+     that has never opened Settings still gets tomorrow's charts. */
+  function upSettingOn() {
+    var v = safe(function () { return window.localStorage.getItem(upStorageKey(UP_SETTING_SUFFIX)); }, null);
+    return String(v) !== "0";
+  }
+  function upLedgerRead() {
+    var raw = safe(function () { return window.localStorage.getItem(upStorageKey(UP_LEDGER_SUFFIX)); }, null);
+    var obj = raw ? safe(function () { return JSON.parse(raw); }, null) : null;
+    return (obj && typeof obj === "object" && !Array.isArray(obj)) ? obj : {};
+  }
+  function upLedgerWrite(led) {
+    /* a rolling window, never a growing log: oldest day keys fall off the end */
+    var keys = Object.keys(led).sort();
+    while (keys.length > UP_MAX_LEDGER_ENTRIES) { delete led[keys.shift()]; }
+    safe(function () { window.localStorage.setItem(upStorageKey(UP_LEDGER_SUFFIX), JSON.stringify(led)); });
+    return led;
+  }
+  /* The scope this lane reads as is the SAME one an unscoped day pull uses.
+     A roster entry is identified by its stableKey; an account whose clinician
+     cannot be resolved is the literal "all", exactly as the pull records it. */
+  function upScopeKey() {
+    var scope = safe(function () { return accountProviderRequest(); }, "all");
+    if (scope && typeof scope === "object" && scope.stableKey) return String(scope.stableKey);
+    return "all";
+  }
+  function upEntryKey(day, scopeKey) { return String(day) + "|" + String(scopeKey); }
+  function upDayAfter(day, n) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(day || ""));
+    if (!m) return "";
+    var t = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) + (Number(n) || 0) * 86400000;
+    var d = new Date(t);
+    if (!isFinite(d.getTime())) return "";
+    return d.getUTCFullYear() + "-" + ("0" + (d.getUTCMonth() + 1)).slice(-2) + "-" + ("0" + d.getUTCDate()).slice(-2);
+  }
+  /* how many appointment rows for that day are already in MLS. A COUNT only -
+     no name, no DOB, nothing that could become PHI in a receipt or a log. */
+  function upRowsInMls(day) {
+    var n = safe(function () {
+      var ds = window.__mlsDaySwitch;
+      return (ds && isFn(ds.rowsFor)) ? (ds.rowsFor(String(day)) || []).length : null;
+    }, null);
+    if (typeof n === "number" && isFinite(n)) return n;
+    return safe(function () {
+      var ap = window._calAppts || [], c = 0, i;
+      for (i = 0; i < ap.length; i++) {
+        var a = ap[i]; if (!a) continue;
+        if (String(a.appt_date || a.day_local || "").slice(0, 10) !== String(day)) continue;
+        if (!String(a.name || "").trim()) continue;
+        c++;
+      }
+      return c;
+    }, 0);
+  }
+  function upGenerating() {
+    if (!Number(_up.generatingAt)) return false;
+    if (Date.now() - Number(_up.generatingAt) > UP_GEN_CEILING_MS) { _up.generatingAt = 0; return false; }
+    return true;
+  }
+  /* --------------------------------------------------------------------------
+     quietDriveGate() - "may MLS drive athenaOne right now, with nobody
+     watching it". It asks the SAME questions the idle catch-up asks in niGate
+     (a running pull, a day switch, a history batch, a deferred round, a visits
+     backfill, a live recording, an op-note draft, the Send-to-athenaOne review
+     sheet, a pull in another tab) plus three that lane does not need: a note
+     being generated, the engine's own busy stamp, and the write flow's
+     athenaOne navigation.
+
+     niGate is deliberately left byte-for-byte alone - several contracts pin its
+     body - so this is its SIBLING, not a wrapper. The runtime suite drives both
+     gates through every shared stamp, so the two cannot silently drift apart.
+     -------------------------------------------------------------------------- */
+  function quietDriveGate() {
+    var choice = safe(function () {
+      var pref = window.__mlsVisitNotesPref;
+      return pref && isFn(pref.read) ? pref.read() : null;
+    }, null);
+    /* no dialog may ever be opened by an automatic pull, so an account that has
+       not made the full-visit-notes choice is simply left alone */
+    if (!(choice && choice.settled === true && (choice.state === "on" || choice.state === "off"))) return { open: false, reason: "visit-notes-unchosen" };
+    if (pullRunning === true || !tnAthenaFree()) return { open: false, reason: "pull-running" };
+    if (monthPullRunning === true) return { open: false, reason: "month-pull-running" };
+    if (safe(function () { return !!p1MonthForeignOwner(); }, false)) return { open: false, reason: "month-pull-running" };
+    if (safe(function () { return !!(window.__mlsDaySwitch && isFn(window.__mlsDaySwitch.isBusy) && window.__mlsDaySwitch.isBusy()); }, false)) return { open: false, reason: "day-switch-busy" };
+    if (safe(function () { return !!(window.__mlsDayHistoryPull && window.__mlsDayHistoryPull.state && window.__mlsDayHistoryPull.state.running); }, false)) return { open: false, reason: "history-pull-running" };
+    if (_tnDefer.running === true || _tnDefer.queue.length > 0) return { open: false, reason: "deferred-round-active" };
+    if (safe(function () { var b = window.__mlsVisitsBackfill; return !!(b && b.state && (b.state.running || b.state.inFlight)); }, false)) return { open: false, reason: "visits-backfill-running" };
+    if (safe(function () { var b = document.getElementById("captureBtn"); return !!(b && b.classList && b.classList.contains("recording")); }, false)) return { open: false, reason: "recording" };
+    if (upGenerating() || safe(function () { return !!document.getElementById("ez3GenBusy"); }, false)) return { open: false, reason: "note-generating" };
+    if (safe(function () { var t = window.__mlsTplPrepFix; return !!(t && isFn(t.isDrafting) && t.isDrafting()); }, false)) return { open: false, reason: "opnote-drafting" };
+    if (safe(function () { return !!document.getElementById("mlsAthenaUnifiedConfirm"); }, false)) return { open: false, reason: "athena-review-open" };
+    if (safe(function () { return resumeBusyElsewhere(); }, false)) return { open: false, reason: "pull-running-other-tab" };
+    if (safe(function () { var at = Number(window.__mlsPullBusyAt || 0); return !!(at && Date.now() - at < UP_BUSY_STAMP_MS); }, false)) return { open: false, reason: "pull-busy-stamp" };
+    if (safe(function () { var w = window.__mlsWriteFlow; return !!(w && w.state && w.state.athenaBusy === true); }, false)) return { open: false, reason: "athena-write-running" };
+    return { open: true, reason: "" };
+  }
+  /* the asynchronous half, asked immediately before a read and never cached:
+     a Web Lock held by ANOTHER TAB is invisible to every synchronous signal. */
+  function upWebLockFree() {
+    return Promise.resolve().then(niWebLockHeld).then(function (held) { return held !== true; }, function () { return true; });
+  }
+  function upFreshMs(entry) { return (entry && entry.ok === false) ? UP_RETRY_MS : UP_FRESH_MS; }
+  function upPlan(today, scopeKey, led) {
+    var plan = [], i, d;
+    for (i = 0; i <= UP_FUTURE_DAYS; i++) {
+      d = upDayAfter(today, i);
+      if (!d) break;
+      plan.push({ day: d, future: i > 0, entry: led[upEntryKey(d, scopeKey)] || null });
+    }
+    return plan;
+  }
+  function upDue(step) {
+    var e = step && step.entry;
+    if (!e || !Number(e.at)) return { due: true, why: "never-pulled" };
+    if (Date.now() - Number(e.at) >= upFreshMs(e)) return { due: true, why: "stale" };
+    if (upRowsInMls(step.day) > Number(e.rows || 0)) return { due: true, why: "new-rows" };
+    return { due: false, why: "fresh" };
+  }
+  function upDayWords(day) {
+    var t = acctTodayKey();
+    if (day === t) return "today";
+    if (t && day === upDayAfter(t, 1)) return "tomorrow";
+    return safe(function () {
+      return new Date(String(day) + "T12:00:00").toLocaleDateString("en-US", { weekday: "long" });
+    }, String(day)) || String(day);
+  }
+  function upAttentionLine(day, n) {
+    return "Charts for " + upDayWords(day) + " are ready - " + n + " patient" + (n === 1 ? "" : "s") +
+      " could not be read, so open that day and press Pull when you have a moment.";
+  }
+  /* the one pull this lane makes, per day. The full-visit-notes answer is
+     frozen HERE, from the settled account choice the gate already verified, so
+     dayPull's admission gate never has to ask - an automatic pull may not open
+     a dialog. Everything else is dayPull's own business. */
+  function upPullDay(day) {
+    var bodies = safe(function () {
+      var pref = window.__mlsVisitNotesPref;
+      var c = pref && isFn(pref.read) ? pref.read() : null;
+      return (c && c.settled === true) ? (c.on === true) : null;
+    }, null);
+    if (typeof bodies !== "boolean") return Promise.resolve({ ok: false, reason: "visit-notes-unchosen" });
+    return Promise.resolve().then(function () {
+      return dayPull({ date: day, includeHistory: true, pullVisitBodies: bodies,
+        __p1Quiet: true, onStatus: function () {} });
+    }).then(function (r) { return r || { ok: false, reason: "no-result" }; },
+      function (e) { return { ok: false, reason: String((e && e.message) || e || "pull-threw").slice(0, 60) }; });
+  }
+  function upRunNow(opts) {
+    opts = opts || {};
+    if (_up.running === true) return Promise.resolve({ ok: false, ran: 0, reason: "already-running" });
+    if (opts.force !== true && !upSettingOn()) { _up.lastReason = "setting-off"; return Promise.resolve({ ok: false, ran: 0, reason: "setting-off" }); }
+    var gate0 = quietDriveGate();
+    if (!gate0.open) { _up.lastReason = gate0.reason; return Promise.resolve({ ok: false, ran: 0, reason: gate0.reason }); }
+    var today = acctTodayKey();
+    if (!today) { _up.lastReason = "no-account-day"; return Promise.resolve({ ok: false, ran: 0, reason: "no-account-day" }); }
+    var scopeKey = upScopeKey();
+    var led = upLedgerRead();
+    var plan = upPlan(today, scopeKey, led);
+    _up.running = true; _up.runs = Number(_up.runs || 0) + 1; _up.walk = [];
+    var ran = 0, notice = "", idx = 0;
+    function finish(reason) {
+      _up.running = false; _up.lastAt = Date.now(); _up.lastReason = String(reason || "");
+      if (notice) safe(function () { toast(notice, "warn"); });
+      return { ok: true, ran: ran, reason: String(reason || ""), days: _up.walk.slice() };
+    }
+    function step() {
+      if (idx >= plan.length) return Promise.resolve(finish("complete"));
+      var s = plan[idx++];
+      var due = upDue(s);
+      if (!due.due) {
+        _up.walk.push({ day: s.day, pulled: false, reason: "fresh", rows: Number((s.entry || {}).rows || 0) });
+        /* an already-warm future day with nothing on it ends the walk too */
+        if (s.future && Number((s.entry || {}).rows || 0) === 0) return Promise.resolve(finish("empty-day"));
+        return step();
+      }
+      /* the gate is asked again before EVERY day: the doctor may have started
+         recording, opened the review sheet, or pressed Pull mid-walk */
+      var gate = quietDriveGate();
+      if (!gate.open) { _up.walk.push({ day: s.day, pulled: false, reason: gate.reason }); return Promise.resolve(finish(gate.reason)); }
+      /* Stop means stop - for THIS walk. The flag is only meaningful once a
+         day pull has run (every __dayPullInner clears it on entry), so a true
+         left standing by a Stop pressed hours ago cannot silently retire the
+         lane for the rest of the session - the class that left the day-note
+         catch-up stopped forever through every later pull. */
+      if (ran > 0 && window.__mlsPullStopRequested === true) { _up.walk.push({ day: s.day, pulled: false, reason: "stopped-by-user" }); return Promise.resolve(finish("stopped-by-user")); }
+      return upWebLockFree().then(function (free) {
+        if (!free) { _up.walk.push({ day: s.day, pulled: false, reason: "athena-lock-held" }); return finish("athena-lock-held"); }
+        return upPullDay(s.day).then(function (res) {
+          var complete = !!(res && (res.ok === true || res.complete === true));
+          /* "did this day actually get read", which is NOT the same question as
+             "was it perfect". One chart athenaOne would not open must not stop
+             the walk - tomorrow's charts are the whole point of the lane - and
+             it must not re-arm a 45-minute retry loop either. A REFUSAL (a
+             closed gate, a failed navigation: nothing read at all) does stop
+             it, and is retried sooner. */
+          var touched = Number((res && res.created) || 0) + Number((res && res.repaired) || 0) +
+            Number((res && res.skipped) || 0);
+          var read = complete || touched > 0;
+          var rows = upRowsInMls(s.day);
+          /* the needs-attention count is the corner pill's own number, so the
+             one line and the pill can never disagree */
+          var attention = safe(function () {
+            var st = window.__mlsDayHistoryPull && window.__mlsDayHistoryPull.state;
+            return st ? Number(st.failed || 0) : 0;
+          }, 0) || 0;
+          led[upEntryKey(s.day, scopeKey)] = { at: Date.now(), rows: rows, ok: read,
+            complete: complete, attention: attention,
+            reason: String((res && res.reason) || "").slice(0, 40) };
+          upLedgerWrite(led);
+          ran++;
+          _up.lastDay = s.day;
+          _up.walk.push({ day: s.day, pulled: true, ok: read, complete: complete, rows: rows,
+            attention: attention, reason: String((res && res.reason) || "").slice(0, 40) });
+          /* the ONE line a whole walk is allowed, and only when rows this lane
+             actually read could not be read - never for a refusal, which read
+             nothing and has nothing to report, and never after a Stop, where
+             the unread rows are the doctor's own decision and not news */
+          var stoppedNow = safe(function () { return window.__mlsPullStopRequested === true; }, false);
+          if (!notice && attention > 0 && !stoppedNow) notice = upAttentionLine(s.day, attention);
+          if (!read) return finish(String((res && res.reason) || "pull-refused"));
+          if (s.future && rows === 0) return finish("empty-day");
+          return step();
+        });
+      });
+    }
+    return Promise.resolve().then(step, function () { return finish("walk-threw"); });
+  }
+  function upVisible() {
+    return safe(function () { return document.hidden !== true && document.visibilityState !== "hidden"; }, true);
+  }
+  function upTick() {
+    if (_up.running === true) return false;
+    if (!upSettingOn()) { _up.lastReason = "setting-off"; return false; }
+    /* a hidden tab's timers are frozen, not throttled, so a tick that lands in
+       one proves nothing - the visibilitychange listener re-asks on return */
+    if (!upVisible()) { _up.lastReason = "tab-hidden"; return false; }
+    safe(function () { upRunNow({}); });
+    return true;
+  }
+  function upArm() {
+    if (_up.timer != null) return false;
+    _up.timer = safe(function () { return setInterval(function () { safe(upTick); }, UP_TICK_MS); }, null);
+    _up.armed = _up.timer != null;
+    return _up.armed === true;
+  }
+  /* the settle hook: whatever pulled (the doctor's own button, a resume, this
+     lane) has just let go of athenaOne, so the next days are re-checked a few
+     seconds later. Nothing runs inside the settle itself. */
+  function upScheduleAfterPull() {
+    if (!upSettingOn() || _up.running === true) return false;
+    if (_up.afterPullTimer != null) return false;
+    _up.afterPullArmed = true;
+    _up.afterPullTimer = safe(function () {
+      return setTimeout(function () {
+        _up.afterPullTimer = null; _up.afterPullArmed = false; safe(upTick);
+      }, UP_AFTER_PULL_MS);
+    }, null);
+    if (_up.afterPullTimer == null) _up.afterPullArmed = false;
+    return _up.afterPullArmed === true;
+  }
+  function upBoot() {
+    if (_up.wired === true) return false;
+    _up.wired = true;
+    safe(function () {
+      document.addEventListener("visibilitychange", function () { if (upVisible()) safe(upTick); }, false);
+      window.addEventListener("mls:calendar-hydrated", function () { safe(upScheduleAfterPull); }, false);
+      window.addEventListener("mls:generation-started", function () { _up.generatingAt = Date.now(); }, false);
+      window.addEventListener("mls:generation-settled", function () { _up.generatingAt = 0; }, false);
+      window.addEventListener("mls:session-boundary", function () { _up.walk = []; _up.lastDay = ""; _up.lastReason = ""; _up.generatingAt = 0; }, false);
+    });
+    _up.bootTimer = safe(function () { return setTimeout(function () { _up.bootTimer = null; safe(upTick); }, UP_BOOT_DELAY_MS); }, null);
+    upArm();
+    return true;
+  }
+  /* "is this day already here?" - the one answer the day strip renders. */
+  function upDayReady(day) {
+    var key = normDate(day) || String(day || "");
+    var e = upLedgerRead()[upEntryKey(key, upScopeKey())] || null;
+    if (!e || !Number(e.at)) return { day: key, ready: false, at: 0, rows: 0 };
+    var fresh = (Date.now() - Number(e.at)) < upFreshMs(e);
+    return { day: key, ready: !!(fresh && e.ok === true), at: Number(e.at), rows: Number(e.rows || 0) };
+  }
+  function upState() {
+    var led = upLedgerRead(), scopeKey = upScopeKey(), today = acctTodayKey();
+    var days = upPlan(today, scopeKey, led).map(function (s) {
+      var e = s.entry, due = upDue(s);
+      return { day: s.day, future: s.future === true, pulledAt: Number((e && e.at) || 0),
+        rows: Number((e && e.rows) || 0), ok: !!(e && e.ok === true),
+        due: due.due === true, why: due.why };
+    });
+    return { version: UP_VERSION, on: upSettingOn(), running: _up.running === true,
+      runs: Number(_up.runs || 0), armed: _up.armed === true, wired: _up.wired === true,
+      afterPullArmed: _up.afterPullArmed === true, lastAt: Number(_up.lastAt || 0),
+      lastDay: String(_up.lastDay || ""), lastReason: String(_up.lastReason || ""),
+      freshMs: UP_FRESH_MS, retryMs: UP_RETRY_MS, tickMs: UP_TICK_MS, futureDays: UP_FUTURE_DAYS,
+      today: String(today || ""), scopeKey: scopeKey, days: days, walk: _up.walk.slice() };
+  }
+  /* the stable public name, so a surface never has to reach into __mlsSI */
+  window.__mlsUpcomingPull = {
+    version: UP_VERSION,
+    state: upState,
+    dayReady: upDayReady,
+    settingOn: upSettingOn,
+    runNow: upRunNow,
+    tick: upTick,
+    gate: quietDriveGate
+  };
+  /* ===== end upnext-1.0.0 ================================================ */
+
   window.__mlsSI = {
     installed: true,
     version: VERSION,
@@ -13281,6 +13656,26 @@
         keepDays: NI_KEEP_DAYS, storeSuffix: NI_STORE_SUFFIX, lockName: NI_PULL_LOCK,
         activityEvents: NI_ACTIVITY_EVENTS.slice(),
         terminalCodes: Object.keys(NI_TERMINAL_CODES) };
+    },
+    /* ===== upnext-1.0.0 (the quiet upcoming-days lane) ====================
+       Read-only receipt plus the verbs a surface or a suite needs. Every one
+       of them goes through quietDriveGate(), so none of them can drive
+       athenaOne while a pull, a recording, a generation, a draft-all, the
+       review sheet or another engine is on it. */
+    upcomingPull: window.__mlsUpcomingPull,
+    _quietDriveGate: quietDriveGate,
+    _upcomingState: upState,
+    _upcomingRunNow: upRunNow,
+    _upcomingTick: upTick,
+    _upcomingBoot: upBoot,
+    _upcomingDayReady: upDayReady,
+    _upcomingDayAfter: upDayAfter,
+    _upcomingScheduleAfterPull: upScheduleAfterPull,
+    _upcomingSettingOn: upSettingOn,
+    _upcomingConfig: function () {
+      return { version: UP_VERSION, freshMs: UP_FRESH_MS, retryMs: UP_RETRY_MS,
+        futureDays: UP_FUTURE_DAYS, tickMs: UP_TICK_MS, bootDelayMs: UP_BOOT_DELAY_MS,
+        afterPullMs: UP_AFTER_PULL_MS, ledgerSuffix: UP_LEDGER_SUFFIX, settingSuffix: UP_SETTING_SUFFIX };
     },
     _accountProviderRequest: accountProviderRequest,
     resumeState: resumeGet,

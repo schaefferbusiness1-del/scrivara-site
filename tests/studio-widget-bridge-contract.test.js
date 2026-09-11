@@ -127,10 +127,20 @@ for (const lane of LANES) {
     'already on screen at boot, so the doctor still waits for idle');
   ok(/addEventListener\('mls:view-changed',[^\n]*studioOnScreen\(\)\)go\(\)/.test(block),
     lane + ': opening AI Studio does not trigger the upgrade - navigating to it still waits for idle');
-  /* the idle path MUST remain: this module also hoists #analysisView */
-  ok(/sched\(go,\{timeout:4000\}\)/.test(block),
-    lane + ': the idle fallback was removed - the module also hoists the analysis view, so it must ' +
-    'still land for people who never open Studio');
+  /* the idle path MUST remain: this module also hoists #analysisView.
+     smpreload-1.0.0 replaced the shared __mlsDeferAsset queue with a
+     dedicated requestIdleCallback (real setTimeout fallback) so the preload
+     answers to nothing but the browser's own idle time - not to whatever
+     else is ahead of it in that queue. */
+  ok(/function preloadIdle\(\)/.test(block),
+    lane + ': the dedicated idle preloader was removed - the module also hoists the analysis view, ' +
+    'so it must still land for people who never open Studio');
+  ok(/window\.requestIdleCallback\(go,\{timeout:4000\}\)/.test(block),
+    lane + ': the idle preload no longer calls requestIdleCallback directly');
+  ok(/else setTimeout\(go,1200\)/.test(block),
+    lane + ': the idle preload lost its setTimeout fallback for browsers without requestIdleCallback');
+  ok(/preloadScheduled/.test(block) && /if\(preloadScheduled\)return false/.test(block),
+    lane + ': the idle preload is no longer guarded against scheduling twice');
   /* and it must stay idempotent, or the two paths double-load the module */
   ok(/data-mls-asset/.test(block),
     lane + ': the injection guard is gone - the immediate and idle paths would double-load');

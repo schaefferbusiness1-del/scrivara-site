@@ -107,7 +107,7 @@ const SENTENCES = between(SHELL, A_SENTENCES, B_SENTENCES, 'the vntpl-1.1.0 rece
 const RECEIPT_FN = extractFn(SHELL, 'function _mlsRenderTplPickReceipt(fallbackTpl){');
 const ALTS_FN = extractFn(SHELL, 'function _mlsRenderTplPickAlts(pick){');
 const RESOLVE_FN = extractFn(SHELL, 'function resolveActiveTemplate(visitText){');
-const GENRESOLVE_FN = extractFn(SHELL, 'function _mlsResolveGenerationTemplate(visitText){');
+const GENRESOLVE_FN = extractFn(SHELL, 'function _mlsResolveGenerationTemplate(visitText,runPick){');
 const CONTRACT_FN = extractFn(SHELL, 'function _mlsGenTemplateContract(tpl){');
 const KINDOF_FN = extractFn(SHELL, 'function _mlsTplKindOf(t){');
 const OPRANK_FN = extractFn(SHELL, 'function _opRankTemplates(procedure){');
@@ -793,7 +793,7 @@ SHELLS.forEach(function (name) {
     name + ': the vntpl-1.1.0 receipt sentences are not byte-identical to 1pScribeFlow.html');
   eq(extractFn(src, 'function resolveActiveTemplate(visitText){'), RESOLVE_FN,
     name + ': resolveActiveTemplate is not byte-identical to 1pScribeFlow.html');
-  eq(extractFn(src, 'function _mlsResolveGenerationTemplate(visitText){'), GENRESOLVE_FN,
+  eq(extractFn(src, 'function _mlsResolveGenerationTemplate(visitText,runPick){'), GENRESOLVE_FN,
     name + ': the generation resolver is not byte-identical to 1pScribeFlow.html');
   eq(extractFn(src, 'function _mlsRenderTplPickReceipt(fallbackTpl){'), RECEIPT_FN,
     name + ': the pick receipt renderer is not byte-identical to 1pScribeFlow.html');

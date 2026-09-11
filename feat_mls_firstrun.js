@@ -545,12 +545,20 @@
     attempt = Number(attempt) || 0;
     return new Promise(function (resolve) {
       function seek(n) {
-        var section = byId('mlsDraftTuningSection');
+        /* vntplcfg-1.0.0 (owner 2026-09-11): Configure must land on the new,
+           simpler "Visit note templates" card (#mlsVisitNoteTemplatesSection,
+           b1237) rather than the older per-output "AI output formats" editor
+           (#mlsDraftTuningSection) it used to target - both live in Notes &
+           AI, mounted together by the same beginSettings(), and the new card
+           is the one this checklist row promises ("Configure AI note
+           formats"). */
+        var section = byId('mlsVisitNoteTemplatesSection');
         var modal = byId('settingsModal');
         if (section && modal && modal.classList.contains('show')) {
-          /* The settings cleanup owner groups AI draft tuning with Notes & AI.
-             Select its real tab so Configure cannot leave the editor hidden
-             behind whichever Settings group happened to be active. */
+          /* The settings cleanup owner groups visit note templates with
+             Notes & AI. Select its real tab so Configure cannot leave the
+             editor hidden behind whichever Settings group happened to be
+             active. */
           var notesTab = qs('#settingsTabBar [data-mls-settings-group="notes"]');
           if (notesTab && isFn(notesTab.click)) safe(function () { notesTab.click(); });
           else {
@@ -558,7 +566,7 @@
             section.style.display = '';
           }
           safe(function () { section.scrollIntoView({ block: 'start', inline: 'nearest' }); });
-          var first = byId('mlsDtFamily') || byId('mlsDtSectionName');
+          var first = byId('mlsVnTplOpen_hpi') || byId('mlsVnTplOpNoteLink');
           if (first && isFn(first.focus)) safe(function () { first.focus({ preventScroll: true }); });
           resolve(true);
           return;
@@ -590,7 +598,10 @@
       if (!isFn(window.__mlsEnsureDraftTuning)) throw new Error('draft-tuning-loader-missing');
       var api = await window.__mlsEnsureDraftTuning();
       if (!api || api.installed !== true) throw new Error('draft-tuning-loader-failed');
-      if (isFn(window.openSettings)) window.openSettings();
+      /* settingsgate-1.0.0: Configure runs AFTER `await __mlsEnsureDraftTuning()`,
+         so the trusted-gesture stamp from the doctor's click can be older than
+         the gate's window by the time we get here. This press IS the doctor's. */
+      if (isFn(window.openSettings)) window.openSettings({ userInitiated: true });
       else {
         var fallback = byId('rectab_settings') || qs('#mlsDock button[data-dest="tools"]');
         if (!fallback || !isFn(fallback.click)) throw new Error('settings-entry-missing');

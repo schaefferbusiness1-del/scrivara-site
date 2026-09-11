@@ -74,7 +74,12 @@
     "import-in-flight": 1,
     "appointment-create-http": 1,
     "appointment-create-network": 1,
-    "appointment-create-dispatch-failed": 1
+    "appointment-create-dispatch-failed": 1,
+    /* dobfill-1.0.1: a mint refused because a one-click identity suggestion is
+       waiting is its own class. Folding it into calendar-row-unverified (which
+       is what the closed pin did until this line) hid the one refusal the
+       doctor can actually clear in a second. */
+    "identity-suggestion-pending": 1
   };
   var EST_TZ = "America/New_York";
   /* si-1.7.7: answering-extension version (from this pull's pong) and the
@@ -1802,6 +1807,10 @@
         census: ledgerCensus
       };
       writeIndex(day, x);
+      /* refusal-durable-1.0.0: the per-patient TERMINAL beside the summary.
+         Written after the history block so a metadata failure on either one
+         cannot take the other down with it. */
+      safe(function () { recordAttentionFromReceipt(day, receipt); });
     });
   }
   function markDone(key, meta) {
@@ -1837,6 +1846,234 @@
     delete x.rows[key]; if (!writeIndex(day, x)) return false; delete inFlight[key]; return true;
   }
 
+  /* ===== refusal-durable-1.0.0 (a refusal that survives a reload) =======
+     MEASURED: all 27 schedImportIndexV1 day keys read 350 entries with a
+     state tally of exactly {done:350} - not one entry in any other state -
+     and no key matching /attention/i existed anywhere in the account. Every
+     refusal lived in window.__mlsPullLastOutcome, which is in-memory and is
+     overwritten by the next pull, so a day could never be PROVEN complete
+     after a reload and "perfect every time" stayed a claim about the last
+     run instead of a checkable fact.
+     The terminal failure is now written into the SAME day key as its own
+     row, under a reserved key prefix so it can never be confused with an
+     appointment-import row (those are claimed/marked done by identity and
+     must keep their meaning exactly). Row shape, PHI-free - local patient
+     id, bounded code, counters:
+       { state:"refused", code, attempts, retrySkipped, patientId, appt_date }
+     A patient that later lands settles its OWN row to state "done" with its
+     attempt count intact, so first-attempt convergence stays readable; a
+     patient that never refused writes no row at all, so the cost of this
+     ledger is proportional to the refusals and not to the roster.
+     The needs-attention queue is a SCAN of these rows across days, which is
+     why it survives the reload the in-memory receipt could not. */
+  var ATT_PREFIX = "att::";
+  var ATT_MAX_ROWS = 200;
+  /* THE EXACT CODE: the leading code token of the reason ("open-failed: Open
+     your signed-in athenaOne..." -> open-failed), and nothing after it.
+     A CLOSED PIN, never an open ban-list. Reading the leading token of a
+     reason lets prose through, and prose is exactly where a patient name
+     travels ("Ada Sample could not be opened" -> "ada"). The ledger is
+     PHI-free by contract, so a head token is accepted only when it is a
+     code this engine actually emits; everything else becomes "other",
+     which is honest and carries nothing. The two closed vocabularies this
+     file already owns are consulted rather than re-typed. */
+  var ATT_BASE_CODES = {
+    "open-failed": 1, "no-results": 1, "no-name-match": 1, "blank-error": 1, "rows-not-rendered": 1,
+    "dob-mismatch": 1, "wrong-chart": 1, "wrong-day": 1, "schedule-incomplete": 1,
+    "schedule-request-unbound": 1, "schedule-surface-changed": 1, "provider-roster-incomplete": 1,
+    "provider-roster-unbound": 1, "provider-not-on-calendar": 1, "unverified-day": 1,
+    "signin": 1, "signin-expired": 1, "no-ext": 1, "no-read": 1, "nav-failed": 1,
+    "pull-in-flight": 1, "athena-tab-sleeping": 1, "athena-busy": 1,
+    "identity-target-unresolved": 1, "identity-proof-mismatch": 1, "identity-changed-before-detail": 1,
+    "retry-proof-missing": 1, "retry-target-unavailable": 1, "retry-identity-changed": 1,
+    "stopped-by-user": 1, "deferred-after-batch-deadline": 1, "requeued-after-success": 1,
+    "never-walked": 1, "no-entry": 1, "history-partial": 1, "incomplete": 1,
+    "ambiguous": 1, "unspecified": 1, "metadata-persist-failed": 1,
+    /* dobfill-1.0.1 / oown-1.0.0 / dsceil-1.0.0: the three terminals this
+       lane added. A refused mint waiting on a one-click answer, a run the
+       app timed out, and a run a session boundary ended are all things the
+       doctor can act on, so each keeps its own name in the ledger. */
+    "identity-suggestion-pending": 1, "engine-no-settle": 1, "aborted-session-boundary": 1
+  };
+  var _attCodeSet = null;
+  function attentionCodeSet() {
+    if (_attCodeSet) return _attCodeSet;
+    var o = {}, k;
+    for (k in ATT_BASE_CODES) if (Object.prototype.hasOwnProperty.call(ATT_BASE_CODES, k)) o[k] = 1;
+    safe(function () { for (var c in P1_CHART_REFUSAL_CODES) if (Object.prototype.hasOwnProperty.call(P1_CHART_REFUSAL_CODES, c)) o[c] = 1; });
+    _attCodeSet = o;
+    return o;
+  }
+  function attentionCode(raw) {
+    var text = String(raw == null ? "" : raw).trim().toLowerCase();
+    if (!text) return "unspecified";
+    var m = /^[a-z][a-z0-9-]{0,39}/.exec(text);
+    var head = m ? m[0].replace(/-+$/, "") : "";
+    if (!head) return "other";
+    if (attentionCodeSet()[head] === 1) return head;
+    /* the importer's own transient vocabulary, consulted at its source */
+    if (safe(function () { return AUTOMATIC_HISTORY_RETRY_REASON.test(head); }, false)) return head;
+    return "other";
+  }
+  /* refusal-durable-1.0.1 (MEASURED live 2026-09-11): a row whose only
+     machine verdict lives on findDiag.findReason (the DOB veto: prose plus
+     findReason:'dob-mismatch') classified to "other", so the durable ledger
+     could not tell a wrong birthday from an unknown failure - the exact
+     distinction the queue exists to make. When the reason TEXT does not
+     resolve to a code this engine emits, the row's own PHI-free find verdict
+     is consulted before the row is filed as "other". Codes only; the prose
+     is never read past its leading token and never stored. */
+  function attentionFindCode(one) {
+    var fd = (one && (one.findDiag || (one.diag && one.diag.find))) || null;
+    return String((one && one.findReason) || (fd && (fd.findReason || fd.code)) || "");
+  }
+  function attentionCodeFor(primary, a, b) {
+    var code = attentionCode(primary);
+    if (code !== "other") return code;
+    var sources = [a, b], i, altCode;
+    for (i = 0; i < sources.length; i++) {
+      var alt = attentionFindCode(sources[i]);
+      if (!alt) continue;
+      altCode = attentionCode(alt);
+      if (altCode !== "other") return altCode;
+    }
+    return code;
+  }
+  function siRoundReasons(list) {
+    var out = {};
+    (Array.isArray(list) ? list : []).forEach(function (e) {
+      var k = attentionCode(e && e.reason);
+      out[k] = Number(out[k] || 0) + 1;
+    });
+    return out;
+  }
+  function attentionKey(patientId) { return ATT_PREFIX + String(patientId || ""); }
+  /* finalizeVerdict settles more than once per pull BY DESIGN (the sweep
+     re-settles, and the stop path settles again), so counting settles would
+     make "attempts" a count of bookkeeping rather than of reads. One run,
+     one attempt: the row remembers which run last wrote it. */
+  function attSameRun(old, runId) { return !!(old && runId && String(old.runId || "") === runId); }
+  function isAttentionKey(key) { return String(key || "").indexOf(ATT_PREFIX) === 0; }
+  /* The day list the ledger already maintains (bounded to 45 by ensureDay). */
+  function ledgerDays() {
+    var k = daysKey(); if (!k) return [];
+    return safe(function () {
+      var d = JSON.parse(localStorage.getItem(k) || "[]");
+      return Array.isArray(d) ? d.slice(-45) : [];
+    }, []);
+  }
+  /* Write one terminal verdict for one patient into one day key. Never
+     touches an appointment-import row, and never invents an attempt: the
+     count carries forward from whatever the day key already held. */
+  function recordAttention(day, patientId, verdict, meta) {
+    day = String(day || ""); patientId = String(patientId || "");
+    if (!day || !patientId) return { ok: false, reason: "no-target" };
+    return safe(function () {
+      var x = readIndex(day);
+      if (x._p1MetadataUnavailable) return { ok: false, reason: "metadata-persist-failed" };
+      var key = attentionKey(patientId), old = x.rows[key] || null;
+      var runId = String((meta && meta.runId) || "");
+      var attempts = Number((old && old.attempts) || 0) + (attSameRun(old, runId) ? 0 : 1);
+      var row = { state: verdict === "done" ? "done" : "refused", patientId: patientId, appt_date: day, attempts: attempts, runId: runId, updated: Date.now() };
+      if (row.state === "refused") {
+        row.code = attentionCodeFor(meta && meta.reason, meta);
+        var skipped = String((meta && meta.retrySkipped) || "");
+        if (skipped) row.retrySkipped = skipped.slice(0, 40);
+      }
+      x.rows[key] = row;
+      return writeIndex(day, x) ? { ok: true, row: row } : { ok: false, reason: "metadata-persist-failed" };
+    }, { ok: false, reason: "metadata-persist-failed" });
+  }
+  /* THE NEEDS-ATTENTION QUEUE: every ledger row across every retained day
+     whose state is not "done". Appointment-import rows are excluded by the
+     key prefix - a transient "pending" import claim is not a refusal, and
+     counting it would put noise in front of the doctor. */
+  function attentionRows(opts) {
+    opts = opts || {};
+    var only = String(opts.day || ""), out = [], days = only ? [only] : ledgerDays();
+    for (var di = days.length - 1; di >= 0 && out.length < ATT_MAX_ROWS; di--) {
+      var day = String(days[di] || ""); if (!day) continue;
+      var x = safe(function () { return readIndex(day); }, null);
+      if (!x || x._p1MetadataUnavailable || !x.rows) continue;
+      for (var key in x.rows) {
+        if (!Object.prototype.hasOwnProperty.call(x.rows, key)) continue;
+        if (!isAttentionKey(key)) continue;
+        var r = x.rows[key] || {};
+        if (String(r.state || "") === "done") continue;
+        if (out.length >= ATT_MAX_ROWS) break;
+        out.push({ day: day, patientId: String(r.patientId || key.slice(ATT_PREFIX.length)), state: String(r.state || "refused"),
+          code: String(r.code || "unspecified"), attempts: Number(r.attempts || 0),
+          retrySkipped: String(r.retrySkipped || ""), updated: Number(r.updated || 0) });
+      }
+    }
+    out.sort(function (a, b) { return a.day === b.day ? (a.patientId < b.patientId ? -1 : 1) : (a.day < b.day ? 1 : -1); });
+    return out;
+  }
+  function attentionQueue(opts) {
+    var rows = attentionRows(opts), codes = {};
+    rows.forEach(function (r) { codes[r.code] = Number(codes[r.code] || 0) + 1; });
+    var days = {};
+    rows.forEach(function (r) { days[r.day] = Number(days[r.day] || 0) + 1; });
+    return { count: rows.length, days: Object.keys(days).sort(), codes: codes, capped: rows.length >= ATT_MAX_ROWS, rows: rows };
+  }
+  /* THE ONE-CLICK RETRY. It re-reads ONLY the attention rows of one day.
+     The ledger is PHI-free by contract, so it holds no frozen DOB/MRN to
+     hand buildRetryRows; the proofs are re-derived from the STORED record
+     now, which is the same identity a fresh pull would carry, and every row
+     still goes through the full identity-verified chart open. A record that
+     has neither factor resolves to retry-proof-missing and stays refused. */
+  function attentionRetryEntries(day) {
+    return attentionRows({ day: String(day || "") }).map(function (r) {
+      var p = patientById(r.patientId);
+      return { patientId: r.patientId, reason: r.code, scheduleDate: r.day,
+        frozenDob: normDob(p && p.dob || ""), frozenMrn: rowMrn(p) };
+    });
+  }
+  function retryAttention(day, onStatus) {
+    day = normDate(String(day || "")) || String(day || "");
+    var entries = attentionRetryEntries(day);
+    if (!entries.length) return Promise.resolve({ requestId: "attention-retry-empty-" + Date.now().toString(36), requested: 0, processed: 0, complete: true, patients: [], retry: [], failures: 0, reason: "nothing-to-retry" });
+    return retryFailedHistory({ requestId: "attention-retry-" + Date.now().toString(36), day: day, retry: entries, patients: [], complete: false, failures: entries.length }, onStatus);
+  }
+  /* Written at the same settle as the day verdict, from the same receipt. */
+  function recordAttentionFromReceipt(day, receipt) {
+    day = String(day || ""); if (!day || !receipt) return 0;
+    return safe(function () {
+      var x = readIndex(day);
+      if (x._p1MetadataUnavailable) return 0;
+      var retryBy = {}, wrote = 0, runId = String(receipt.requestId || "");
+      (receipt.retry || []).forEach(function (r) { var pid = String(r && r.patientId || ""); if (pid && !retryBy[pid]) retryBy[pid] = r; });
+      var seen = {};
+      (receipt.patients || []).forEach(function (p) {
+        var pid = String(p && p.patientId || ""); if (!pid || seen[pid]) return;
+        seen[pid] = 1;
+        var re = retryBy[pid];
+        var key = attentionKey(pid), old = x.rows[key] || null;
+        var attempts = Number((old && old.attempts) || 0) + (attSameRun(old, runId) ? 0 : 1);
+        if (p.complete === true && !re) {
+          if (!old || String(old.state || "") === "done") return; /* never refused: no row to keep */
+          x.rows[key] = { state: "done", patientId: pid, appt_date: day, attempts: attempts, runId: runId, updated: Date.now() }; wrote++; return;
+        }
+        var row = { state: "refused", patientId: pid, appt_date: day, attempts: attempts, runId: runId,
+          code: attentionCodeFor((re && re.reason) || p.reason || "incomplete", re, p), updated: Date.now() };
+        var skipped = String(p.recheckSkipped || (receipt.sweepBudgetExhausted === true ? "out-of-time" : ""));
+        if (skipped) row.retrySkipped = skipped.slice(0, 40);
+        x.rows[key] = row; wrote++;
+      });
+      (receipt.retry || []).forEach(function (r) {
+        var pid = String(r && r.patientId || ""); if (!pid || seen[pid]) return;
+        seen[pid] = 1;
+        var key = attentionKey(pid), old = x.rows[key] || null;
+        var row = { state: "refused", patientId: pid, appt_date: day, runId: runId,
+          attempts: Number((old && old.attempts) || 0) + (attSameRun(old, runId) ? 0 : 1),
+          code: attentionCodeFor(r.reason, r), updated: Date.now() };
+        if (receipt.sweepBudgetExhausted === true) row.retrySkipped = "out-of-time";
+        x.rows[key] = row; wrote++;
+      });
+      if (!wrote) return 0;
+      return writeIndex(day, x) ? wrote : 0;
+    }, 0);
+  }
   /* ---- authoritative Athena day/provider snapshots ------------------------
    * The backend calendar is intentionally append/enrich-only because it can
    * also contain manually entered MLS rows. A verified Athena pull therefore
@@ -3101,6 +3338,14 @@
       }
 
       var created = 0, repaired = 0, enrichedFields = 0, skipped = 0, failed = 0, days = {};
+      /* dobfill-1.0.0: the shell FILLS a keyless record from the row instead
+         of minting a second chart for the same person. Report what this run
+         did with those records beside created, so a fill is as visible as a
+         mint and a blocked mint names its pending suggestion. */
+      var fillBase = safe(function () {
+        var st = window.__mlsIdentityFill || {};
+        return { fills: Number(st.fills || 0), candidates: Number(st.candidates || 0), blockedMints: Number(st.blockedMints || 0) };
+      }, { fills: 0, candidates: 0, blockedMints: 0 });
       /* pa-1.0.0: rows that were ALREADY stored provider-empty and got
          attributed by this re-pull. This is the backfill counter - the only
          honest number for how many of the 400 are fixed now. */
@@ -3234,9 +3479,70 @@
         historyTargets.push(targetRow);
         historyTargetState[patientId] = { status: "exact", target: targetRow };
       }
+      /* ===== dobfill-1.0.1 (the mint the DAY PULL actually performs) =======
+         MEASURED 2026-09-11: dobfill-1.0.0 cured the SHELL's resolver
+         (_athenaHistoryTargetSnapshot), and a day pull never calls it - it
+         mints here, through materializePatient -> findPatient/padoptResolve
+         -> stableId -> upsertPatient. A seven-record roster went to nine on a
+         day whose two rows belonged to records the store already held, the
+         chart facts landed on the fresh duplicates, and the originals kept
+         their empty DOB. identityFills stayed 0 because the pass that would
+         have filled them was on a path with no callers.
+
+         The RULE is the owner's (8/28), not this file's, so this asks the
+         SAME resolver the shell owns rather than deriving a second copy of
+         it: one resolver, one rule. Exactly one keyless name-compatible
+         candidate and no conflicting keyed record -> the shell FILLS dob/mrn
+         and hands the record back. Two candidates, or any conflict -> a
+         one-click suggestion, and this mint is refused. A suggestion still
+         standing for that name refuses the mint too, which is what "never
+         mint a duplicate while a suggestion is pending" has to mean on the
+         path that does the minting. When the shell is not on the page all
+         three helpers are absent and every guard below behaves exactly as it
+         did before. */
+      var siLastMintRefusal = "";
+      function siIdentityFillResolve(a, name) {
+        var fn = safe(function () { return window.__mlsIdentityFillResolve; }, null);
+        if (!isFn(fn)) return { status: "none" };
+        var dob = String((a && a.dob) || "").trim();
+        var mrn = String((a && (a.mrn || a.athenaId || a.athena_id)) || "").trim();
+        if (!dob && !mrn) return { status: "none" };
+        return safe(function () { return fn(pts, String(name || (a && a.name) || ""), dob, mrn, true) || { status: "none" }; }, { status: "none" });
+      }
+      /* Returns true when an unanswered suggestion for this name stands, and
+         counts the refused mint on the shell's own state so the receipt and
+         the queue agree about one number. */
+      function siIdentityBlockMint(name) {
+        var fn = safe(function () { return window.__mlsIdentityFillBlockMint; }, null);
+        if (!isFn(fn)) return false;
+        return safe(function () { return fn(String(name || "")) === true; }, false);
+      }
       function materializePatient(a,name) {
+        siLastMintRefusal = "";
         var found=safe(function(){return findPatient(pts,a);},null);
         if(found&&found.id)return found;
+        /* dobfill-1.0.1: the keyless pass runs BEFORE the mint and only where
+           the mint was already about to happen, so nothing findPatient used
+           to bind can stop binding here. */
+        var fill=siIdentityFillResolve(a,name);
+        if(fill&&fill.status==="filled"&&fill.patient&&fill.patient.id){
+          /* The resolver wrote dob/mrn onto the STORED record and returned the
+             updated row; refresh this walk's roster copy so every later reader
+             in the same pull sees the same identity. */
+          var fillId=String(fill.patient.id),fi,replaced=false;
+          for(fi=0;fi<pts.length;fi++){ if(String(pts[fi]&&pts[fi].id||"")===fillId){ pts[fi]=fill.patient; replaced=true; break; } }
+          if(!replaced) pts.push(fill.patient);
+          adoptionReceipt.identityFilled=Number(adoptionReceipt.identityFilled||0)+1;
+          return fill.patient;
+        }
+        var suggested=!!(fill&&fill.status==="suggested");
+        if(siIdentityBlockMint(String(name||a&&a.name||""))) suggested=true;
+        if(suggested){
+          siLastMintRefusal="identity-suggestion-pending";
+          adoptionReceipt.suggestionRefused=Number(adoptionReceipt.suggestionRefused||0)+1;
+          adoptionReceipt.reasons["identity-suggestion-pending"]=(adoptionReceipt.reasons["identity-suggestion-pending"]||0)+1;
+          return null;
+        }
         /* padopt-1.0.0: the mint is the LAST resort and this is the only gate
            in front of it. Record - PHI-free - WHY no local chart could be
            proven, so the receipt can show the mint was unavoidable. */
@@ -3369,9 +3675,16 @@
           }
           if(!existing||!existing.id){
             if(requirePatientBinding){
-              historyUnresolved.push({patientId:"",reason:patientIdentity(a,false)?"local-patient-materialization-failed":"patient-not-resolved"});
-              noteImportFailure("patient-not-resolved");
-              if(onEach)safe(function(){onEach("error",{name:name,error:"patient-not-resolved"});});
+              /* dobfill-1.0.1: a mint refused because a one-click identity
+                 suggestion is waiting is NOT "patient-not-resolved" - it is a
+                 question addressed to the doctor, and the ledger, the receipt
+                 and the row all have to say so or the answer never gets
+                 asked for. Every other refusal keeps its old code exactly. */
+              var mintRefusal=siLastMintRefusal||(patientIdentity(a,false)?"local-patient-materialization-failed":"patient-not-resolved");
+              var mintFailureCode=siLastMintRefusal||"patient-not-resolved";
+              historyUnresolved.push({patientId:"",reason:mintRefusal});
+              noteImportFailure(mintFailureCode);
+              if(onEach)safe(function(){onEach("error",{name:name,error:mintFailureCode});});
               return;
             }
           }
@@ -3770,7 +4083,14 @@
             }, ms);
           });
           historyUnresolved = historyUnresolved.filter(function (item) { return !(item && item._superseded); });
-          return { created: created, repaired: repaired, enrichedFields: enrichedFields, providerBackfilled: providerBackfilled, skipped: skipped, failed: failed, attempted: appts.length, wrongDay: wrongDay, invalidDate: invalidDate, days: days, target: target, scope: scopeDate || "", historyTargets: historyTargets, historyUnresolved: historyUnresolved, resolvedAppointments: resolvedAppointments, unresolvedMappings: unresolvedMappings, failureReasons: failureReasons, providerReceipt: providerScope.receipt, adoptionReceipt: adoptionReceipt };
+          var fillNow = safe(function () {
+            var st = window.__mlsIdentityFill || {};
+            return { identityFills: Math.max(0, Number(st.fills || 0) - fillBase.fills),
+              identityFillCandidates: Math.max(0, Number(st.candidates || 0) - fillBase.candidates),
+              identityMintsBlocked: Math.max(0, Number(st.blockedMints || 0) - fillBase.blockedMints),
+              identitySuggestions: Number((st.suggestions || []).length || 0) };
+          }, { identityFills: 0, identityFillCandidates: 0, identityMintsBlocked: 0, identitySuggestions: 0 });
+          return { created: created, identityFills: fillNow.identityFills, identityFillCandidates: fillNow.identityFillCandidates, identityMintsBlocked: fillNow.identityMintsBlocked, identitySuggestions: fillNow.identitySuggestions, repaired: repaired, enrichedFields: enrichedFields, providerBackfilled: providerBackfilled, skipped: skipped, failed: failed, attempted: appts.length, wrongDay: wrongDay, invalidDate: invalidDate, days: days, target: target, scope: scopeDate || "", historyTargets: historyTargets, historyUnresolved: historyUnresolved, resolvedAppointments: resolvedAppointments, unresolvedMappings: unresolvedMappings, failureReasons: failureReasons, providerReceipt: providerScope.receipt, adoptionReceipt: adoptionReceipt };
         });
       });
     });
@@ -4389,6 +4709,26 @@
        no-athena-tab. */
     var fdCode = String(fd.code || fd.reason || "");
     if (/^[a-z][a-z0-9]*(-[a-z0-9]+)+$/.test(fdCode)) return fdCode.slice(0, 60);
+    /* fdx-1.2.0 (MEASURED live 2026-09-11, and DELIBERATELY NOT CURED HERE):
+       the extension's DOB veto answers { ok:false, opened:false,
+       candidates:1, error:<English prose>, findReason:'dob-mismatch' } - no
+       code field and no reason field at all - so this returns "" and the row
+       falls back to the extension's SENTENCE. That is what made every durable
+       ledger code for a wrong birthday read "other".
+
+       Promoting fd.findReason here is the obvious one-line fix and it is the
+       WRONG one: one.reason is not only a label, it is the routing key for
+       SWEEPABLE_REASON and for nrh-1.0.0's NRH_CODE streak. Measured on this
+       tree: with findReason promoted, four consecutive no-results rows halt
+       the whole batch as 'athena-search-surface-unresponsive' and a
+       twenty-row day stops after four charts. (Which also means nrh-1.0.0 has
+       never once fired in production - a separate, real defect, filed rather
+       than switched on inside a pull-receipt lane.)
+
+       The ledger gets the code it needs WITHOUT touching the pull: fdxStampRoute
+       already stamps one.findReason from the same verdict, and
+       attentionCodeFor reads it when the reason text will not classify. One
+       new number in a ledger, zero new behaviour in the engine. */
     return "";
   }
   function fdxStampRoute(one) {
@@ -5146,10 +5486,13 @@
       if (pid) { if (!byPidRetry[pid]) byPidRetry[pid] = retry[i]; }
       else blankRetry.push(retry[i]);
     }
-    var out = { requested: 0, succeeded: 0, failed: 0, omitted: 0, notAttempted: 0, unaccounted: 0, conflicts: 0, closed: false, perPatient: [] };
+    var out = { requested: 0, succeeded: 0, failed: 0, omitted: 0, notAttempted: 0, unaccounted: 0, conflicts: 0, duplicates: 0, distinct: 0, closed: false, perPatient: [] };
     var blankPatientAt = 0, blankRetryAt = 0;
+    /* vpp-1.0.0: ONE reader for the row identity, so the census and the
+       de-duplication below can never disagree about who a row is. */
+    function rowPidOf(sourceRow) { return String((sourceRow && (sourceRow._mlsTargetPatientId || sourceRow.patient_external_id || sourceRow.patientId)) || ""); }
     function judge(sourceRow, ordinal) {
-      var rowPid = String((sourceRow && (sourceRow._mlsTargetPatientId || sourceRow.patient_external_id || sourceRow.patientId)) || "");
+      var rowPid = rowPidOf(sourceRow);
       var pe = null, re = null;
       if (rowPid) { pe = byPidPatient[rowPid] || null; re = byPidRetry[rowPid] || null; }
       else {
@@ -5177,9 +5520,34 @@
       else out.unaccounted++;
       out.perPatient.push({ patientId: rowPid || ("row#" + ordinal), verdict: verdict, reason: String(reason).slice(0, 60) });
     }
-    for (i = 0; i < rows.length; i++) judge(rows[i], i);
-    for (i = 0; i < unresolved.length; i++) judge(unresolved[i], rows.length + i);
-    out.closed = out.requested === out.succeeded + out.failed + out.omitted + out.notAttempted + out.unaccounted;
+    /* vpp-1.0.0 (MEASURED, run rmtwzx6cr): requested counted per ENTRY and
+       this walk runs over rows AND unresolved - and the two lists carry the
+       SAME patient ids whenever the census rebuilds targets for rows the
+       import left unresolved. A 20-patient day reported requested 40,
+       succeeded 20, failed 20, closed:true - the arithmetic closed on an
+       inflated denominator and certified it, so the doctor was told 20
+       charts failed on a day that ended 18/20.
+       The verdict is PER DISTINCT PATIENT: a pid is judged exactly once,
+       and the second sighting is counted as a duplicate ROW, never as a
+       second patient. Entries with no pid cannot be de-duplicated (they
+       consume the pid-less evidence in walk order by construction), so each
+       still gets its own verdict and is counted in distinct. closed now
+       asserts the denominator as well as the sum, which is what makes the
+       flag a proof instead of a restatement. */
+    var judged = {}, distinctSeen = {}, blanksSeen = 0;
+    function consider(sourceRow, ordinal) {
+      var pid = rowPidOf(sourceRow);
+      if (!pid) { blanksSeen++; judge(sourceRow, ordinal); return; }
+      distinctSeen[pid] = 1;
+      if (judged[pid]) { out.duplicates++; return; }
+      judged[pid] = 1;
+      judge(sourceRow, ordinal);
+    }
+    for (i = 0; i < rows.length; i++) consider(rows[i], i);
+    for (i = 0; i < unresolved.length; i++) consider(unresolved[i], rows.length + i);
+    out.distinct = Object.keys(distinctSeen).length + blanksSeen;
+    out.closed = out.requested === out.succeeded + out.failed + out.omitted + out.notAttempted + out.unaccounted &&
+      out.requested === out.distinct && out.requested === out.perPatient.length;
     return out;
   }
   /* tax-1.0.0 (Codex reply 27 p3): reconcile the refresh/day taxonomy ONLY
@@ -7676,6 +8044,10 @@
     });
     if (!sweepDepth && !__stpStopped) try {   /* stp-2.0.0 */
       receipt.sweepPasses = 0;
+      /* vpp-1.0.0: the per-ROUND tallies, kept beside the verdict instead of
+         masquerading as it. Round 0 is the main pass as it stood when the
+         automatic sweep opened; each sweep appends its own. Codes only. */
+      safe(function () { receipt.roundReasons = [{ round: 0, attempted: rows.length + unresolved.length, recovered: 0, reasons: siRoundReasons(receipt.retry) }]; });
       for (var sweepPass = 1; sweepPass <= 3 && !receipt.complete; sweepPass++) {
         var sweepable = receipt.retry.filter(function (entry) { return SWEEPABLE_REASON.test(String(entry && entry.reason || "")); });
         if (!sweepable.length) break;
@@ -7741,6 +8113,11 @@
           freshRetry.push(entry);
         });
         receipt.retry = freshRetry;
+        safe(function () {
+          if (!Array.isArray(receipt.roundReasons)) receipt.roundReasons = [];
+          receipt.roundReasons.push({ round: sweepPass, attempted: swept.rows.length + swept.unresolved.length, recovered: Object.keys(recoveredIds).length, reasons: siRoundReasons(sub && sub.retry) });
+          if (receipt.roundReasons.length > 6) receipt.roundReasons.splice(1, 1);
+        });
         finalizeVerdict(true);
       }
     } finally {
@@ -7965,8 +8342,24 @@
     if (value.historyReceipt && value.historyReceipt.verdicts) {
       try {
         var vd = value.historyReceipt.verdicts;
-        out.historyVerdicts = { requested: Number(vd.requested || 0), succeeded: Number(vd.succeeded || 0), failed: Number(vd.failed || 0), omitted: Number(vd.omitted || 0), notAttempted: Number(vd.notAttempted || 0), unaccounted: Number(vd.unaccounted || 0), conflicts: Number(vd.conflicts || 0), closed: vd.closed === true };
+        /* vpp-1.0.0: the corrected denominator travels with the counts -
+           distinct is what requested must equal, and the duplicate ROWS that
+           used to inflate it are reported as what they are, so the correction
+           is auditable at rest instead of vanishing once the numbers agree. */
+        out.historyVerdicts = { requested: Number(vd.requested || 0), succeeded: Number(vd.succeeded || 0), failed: Number(vd.failed || 0), omitted: Number(vd.omitted || 0), notAttempted: Number(vd.notAttempted || 0), unaccounted: Number(vd.unaccounted || 0), conflicts: Number(vd.conflicts || 0), duplicates: Number(vd.duplicates || 0), distinct: Number(vd.distinct || 0), closed: vd.closed === true };
       } catch (eVd) {}
+    }
+    /* vpp-1.0.0: the per-ROUND retry tallies ride the outcome as bounded
+       code counts, so retry history stays visible without ever standing in
+       for the verdict. */
+    if (value.historyReceipt && Array.isArray(value.historyReceipt.roundReasons)) {
+      try {
+        out.roundReasons = value.historyReceipt.roundReasons.slice(0, 6).map(function (r) {
+          var reasons = {}, k;
+          for (k in (r && r.reasons) || {}) if (Object.prototype.hasOwnProperty.call(r.reasons, k)) reasons[String(k).slice(0, 40)] = Number(r.reasons[k] || 0);
+          return { round: Number((r && r.round) || 0), attempted: Number((r && r.attempted) || 0), recovered: Number((r && r.recovered) || 0), reasons: reasons };
+        });
+      } catch (eRr) {}
     }
     /* spd-1.0.0 (reply 24: speed LAST, measurement first): the settle's
        per-stage cost breakdown rides the machine outcome in BOTH verdict
@@ -9392,13 +9785,77 @@
   /* ===== end residue-1.0.0 (b1189) ===== */
   /* ===== end dnote-1.1.0 (b1184) ===== */
   /* ===== end dnote-1.0.0 (b1184) ===== */
-  function runManagedAthenaOperation(task, busyFactory) {
+  /* ===== oown-1.0.0 (the outcome the doctor was shown is the outcome) =====
+     TWO measured ways the machine surface lost the day's own verdict, both on
+     2026-09-11, both through this wrapper's settle:
+
+     (a) A CONVERGENCE ROUND overwrote it. The automatic second read settles
+         through this same wrapper, and its receipt covers only the retried
+         SUBSET - two rows, two failures - so window.__mlsPullLastOutcome
+         ended as { reason:'history-partial', counts:{requested:2} } with the
+         day's historyVerdicts (the corrected per-patient census) simply
+         absent, 3.6 seconds after the day strip had stamped them.
+     (b) A LATE ANSWER overwrote it. When the day strip has already written
+         this attempt's terminal - its no-settle ceiling expired, or a session
+         boundary ended the run - the settle arriving afterwards re-owned the
+         receipt the doctor was already looking at.
+
+     ONE rule covers both: a SUBSET round reports itself, it never replaces
+     the day; and a settle landing after the app has fenced this attempt is
+     recorded as the late answer it is. PHI-free - counts and codes only. */
+  function pullOutcomeFence(startedAt) {
+    var f = safe(function () { return window.__mlsPullOutcomeFenceV1; }, null);
+    if (!f || typeof f !== "object") return null;
+    var at = Number(f.at || 0);
+    /* A fence raised BEFORE this operation started belongs to an earlier
+       attempt and may not silence this one - which is also what retires it,
+       so nothing has to remember to clear it. */
+    if (!(at > 0) || at < Number(startedAt || 0)) return null;
+    return f;
+  }
+  function stampManagedOutcome(value, opKind, startedAt) {
+    var next = honestPullOutcome(value);
+    var fence = pullOutcomeFence(startedAt);
+    if (fence) {
+      safe(function () {
+        window.__mlsPullLateSettleV1 = { version: "oown-1.0.0", at: Date.now(),
+          fencedBy: String(fence.reason || "").slice(0, 40), target: String(fence.target || "").slice(0, 10),
+          lane: String(opKind || "day-pull").slice(0, 32), ok: next.ok === true,
+          reason: String(next.reason || "").slice(0, 80) };
+      });
+      return false;
+    }
+    if (String(opKind || "day-pull") !== "day-pull") {
+      var prior = safe(function () { return window.__mlsPullLastOutcome; }, null);
+      if (prior && typeof prior === "object" && prior.interim !== true && prior.historyVerdicts) {
+        var merged = safe(function () { return JSON.parse(JSON.stringify(prior)); }, null);
+        if (merged) {
+          merged.at = Date.now();
+          merged.lastRound = { lane: String(opKind || "").slice(0, 32), ok: next.ok === true,
+            reason: String(next.reason || "").slice(0, 80), counts: next.counts || null };
+          safe(function () { window.__mlsPullLastOutcome = merged; });
+          return true;
+        }
+      }
+    }
+    safe(function () { window.__mlsPullLastOutcome = next; });
+    return true;
+  }
+  function runManagedAthenaOperation(task, busyFactory, opScope) {
+    var opKind = String(opScope || "day-pull"), opStartedAt = Date.now();
     function busy(scope) {
       return isFn(busyFactory) ? busyFactory(scope || "same-tab") : { ok: false, complete: false, reason: "pull-in-flight", error: "Another explicit pull is already running." };
     }
     if (pullRunning) return Promise.resolve(busy("same-tab"));
     if (foreignPullLease()) return Promise.resolve(busy("same-tab"));
     pullRunning = true;
+    /* oown-1.0.0: a fence can only exist for an operation that has already
+       settled - pullRunning is what stops a second one from starting, and it
+       is cleared in the settle itself. So reaching here retires any standing
+       fence outright, which is stronger than comparing timestamps: two runs
+       starting in the same millisecond as an abort can no longer silence the
+       second one. The timestamp guard below stays as a second line. */
+    safe(function () { window.__mlsPullOutcomeFenceV1 = null; });
     var operationStarted = false, leaseTouch = null, athenaMgr = safe(function(){return window.__mlsP1AthenaReadLease;}, null), athenaToken = "", athenaTouch = null;
     function releaseAthenaOwner(){
       if(athenaTouch!=null){safe(function(){clearInterval(athenaTouch);});athenaTouch=null;}
@@ -9469,13 +9926,23 @@
          record the real outcome BEFORE zeroing the stamp (finding #5) */
       /* hs-1.0: stamp the settled value's OWN verdict - a resolved terminal
          failure (ok:false receipt) must never be recorded as a success. */
-      safe(function () { window.__mlsPullLastOutcome = honestPullOutcome(value); });
+      safe(function () { stampManagedOutcome(value, opKind, opStartedAt); }); /* oown-1.0.0 */
       safe(function () { window.__mlsPullBusyAt = 0; });
       if (operationStarted) xtabBusyClear();
       if (operationStarted) releaseManagedAthenaWorkspace();
       /* p1-todaynote-deferred-retry-1.0.0: the lease this pull held is now
          released, so the rows that lost to it get their one retry round. */
       safe(tnScheduleDeferredRound);
+      /* upnext-1.0.0: athenaOne is free again, so the next scheduled days are
+         re-checked a few seconds from now - never inside this settle.
+         Called through a closure, not as a bare reference: several suites
+         lift this wrapper out of the shipped file as a SOURCE SLICE that
+         ends long before this function is declared, and a bare reference
+         throws ReferenceError while evaluating the argument - before safe()
+         is even entered - so the slice dies and the subject under test is
+         never reached. Inside the closure the same miss is caught by safe.
+         Identical in the shipped file, where the declaration is hoisted. */
+      safe(function () { upScheduleAfterPull(); });
       /* dnote-1.0.0 (b1184): and the day's OWN notes are drained HERE, inside
          the pull, before its result is handed to the day sheet or to the
          durable range job. The lease is released and pullRunning is false, so
@@ -9486,11 +9953,14 @@
       if (leaseTouch != null) { safe(function () { clearInterval(leaseTouch); }); leaseTouch = null; }
       releaseSiLease();
       releaseAthenaOwner();
-      safe(function () { window.__mlsPullLastOutcome = { ok: false, at: Date.now(), error: String(error && error.message || error || 'pull failed').slice(0, 200) }; });
+      safe(function () { stampManagedOutcome({ ok: false, error: String(error && error.message || error || 'pull failed').slice(0, 200) }, opKind, opStartedAt); }); /* oown-1.0.0 */
       safe(function () { window.__mlsPullBusyAt = 0; });
       if (operationStarted) xtabBusyClear();
       if (operationStarted) releaseManagedAthenaWorkspace();
       safe(tnScheduleDeferredRound);
+      /* upnext-1.0.0: a failed pull still frees athenaOne. Closure, for the
+         lifted-slice reason spelled out on the settle path above. */
+      safe(function () { upScheduleAfterPull(); });
       /* dnote-1.0.0 (b1184): a REJECTED operation still re-arms the catch-up
          (the leftover notes are owed either way) but is never delayed by a
          drain - the caller is handling a failure, not a finished day. */
@@ -9635,7 +10105,7 @@
           function (v) { __historyRetryForeground = false; restoreBodiesOverride(); return v; },
           function (e) { __historyRetryForeground = false; restoreBodiesOverride(); throw e; });
       });
-    }, retryBusy).then(function (receipt) {
+    }, retryBusy, "history-retry").then(function (receipt) { /* oown-1.0.0: a SUBSET round, never the day */
       receipt.retryOf = String(history.requestId || "");
       receipt.manualRetry = true;
       return receipt;
@@ -11775,6 +12245,10 @@
     safe(function () { window.addEventListener("message", onSchedMsg); });
     installImport();
     loadAuthoritativeNextUpConsumer();
+    /* upnext-1.0.0: arm the quiet upcoming-days lane. It reads nothing here -
+       it only wires its listeners and its low-frequency timer, and the first
+       look is a minute away, behind the same gate every later one is. */
+    safe(upBoot);
     /* a light retry in case a later module re-wraps _importPulledSchedule after us */
     var n = 0, iv = setInterval(function () { installImport(); if (++n > 8) clearInterval(iv); }, 1200);
   }
@@ -12110,8 +12584,14 @@
        batch already reading in this tab and then strip it mid-batch on its
        own settle. Disarm and the end-of-op focus return fire only from the
        call that armed. */
+    /* upnext-1.0.0: the ONE exception. A day pulled by the quiet upcoming-days
+       lane has no doctor watching it, so it must not arm the presence assist
+       (which announces itself and chases OS focus). Everything else about the
+       call - reading, identity, scope resolution, merge - is untouched: this
+       lane changes WHEN a pull runs and for WHICH days, never what it reads. */
     var __armedHere = false;
-    var __armPresence = function () { __armedHere = true; __historyRetryForeground = true; __presenceBatchAnnounced = false; };
+    var __quietCall = !!(opts && opts.__p1Quiet === true);
+    var __armPresence = function () { if (__quietCall) return; __armedHere = true; __historyRetryForeground = true; __presenceBatchAnnounced = false; };
     return Promise.resolve().then(function () { return __dayPullInner(opts, __armPresence); }).then(
       function (v) { if (__armedHere) __historyRetryForeground = false; return v; },
       function (e) { if (__armedHere) __historyRetryForeground = false; throw e; });
@@ -12702,13 +13182,365 @@
             };
           });
         });
-      }, nlBusy).then(function (value) {
+      }, nlBusy, "names-lookup").then(function (value) { /* oown-1.0.0: a SUBSET round, never the day */
         if (value && typeof value === "object" && !value.receipts) { value.plan = plan; value.receipts = plan.rows; }
         return value;
       });
     });
   }
   /* ===== end nameslookup-1.0.0 ========================================== */
+
+  /* ==========================================================================
+     upnext-1.0.0  -  THE NEXT DAYS' CHARTS ARE ALREADY HERE
+     --------------------------------------------------------------------------
+     Owner 2026-09-11: "it always has to pull the to-be visits as to make good
+     op notes." An operative note is written from what came BEFORE - earlier
+     visits, imaging, prior procedures, medications - and until now that record
+     only reached MLS when somebody pressed Pull. Press it on the morning of the
+     procedure, or not at all, and the note is drafted against an empty chart.
+
+     So this lane keeps the next scheduled days warm. It owns NO reading,
+     identity or merge logic of its own: it calls dayPull - the same guarded day
+     lane the visible button calls - with two differences. It passes __p1Quiet,
+     so the presence assist never chases the doctor's focus, and it refuses to
+     start unless quietDriveGate() says athenaOne is free. Progress goes to the
+     corner pill and nowhere else (dayPull already drives __mlsDayHistoryPull,
+     which is the pill's only source): no dialog, and at most ONE line per walk,
+     and only when a day finishes with rows that need another look.
+
+     Freshness is per DAY and per PROVIDER SCOPE, in localStorage, so a reload,
+     a second tab, or a second visit to the same day costs nothing. A day is
+     re-read inside its window only when NEW rows have appeared for it, and the
+     walk stops at the first future day whose schedule is empty.
+     ======================================================================== */
+  var UP_VERSION = "upnext-1.0.0";
+  var UP_FRESH_MS = 6 * 60 * 60 * 1000;    /* a pulled day stays warm six hours */
+  var UP_RETRY_MS = 45 * 60 * 1000;        /* a day that refused is retried sooner, not hammered */
+  var UP_FUTURE_DAYS = 2;                  /* today, plus the next two scheduled days */
+  var UP_TICK_MS = 30 * 60 * 1000;         /* the low-frequency re-check, visible tabs only */
+  var UP_BOOT_DELAY_MS = 60000;            /* let sign-in settle before the first look */
+  var UP_AFTER_PULL_MS = 12000;            /* follow a settled pull, never race it */
+  var UP_BUSY_STAMP_MS = 60000;            /* how fresh __mlsPullBusyAt still means "driving" */
+  var UP_GEN_CEILING_MS = 10 * 60 * 1000;  /* a generation that never settles cannot block forever */
+  var UP_MAX_LEDGER_ENTRIES = 24;
+  var UP_LEDGER_SUFFIX = "mlsUpcomingPullV1";
+  var UP_SETTING_SUFFIX = "upcomingAutoPull";
+  var _up = { running: false, runs: 0, lastAt: 0, lastDay: "", lastReason: "", armed: false,
+    afterPullArmed: false, wired: false, timer: null, bootTimer: null, afterPullTimer: null,
+    generatingAt: 0, walk: [] };
+
+  function upStorageKey(suffix) {
+    return safe(function () { return isFn(window.uns) ? String(window.uns(suffix)) : String(suffix); }, String(suffix));
+  }
+  /* Default ON. Only an explicit stored "0" turns the lane off, so an account
+     that has never opened Settings still gets tomorrow's charts. */
+  function upSettingOn() {
+    var v = safe(function () { return window.localStorage.getItem(upStorageKey(UP_SETTING_SUFFIX)); }, null);
+    return String(v) !== "0";
+  }
+  function upLedgerRead() {
+    var raw = safe(function () { return window.localStorage.getItem(upStorageKey(UP_LEDGER_SUFFIX)); }, null);
+    var obj = raw ? safe(function () { return JSON.parse(raw); }, null) : null;
+    return (obj && typeof obj === "object" && !Array.isArray(obj)) ? obj : {};
+  }
+  function upLedgerWrite(led) {
+    /* a rolling window, never a growing log: oldest day keys fall off the end */
+    var keys = Object.keys(led).sort();
+    while (keys.length > UP_MAX_LEDGER_ENTRIES) { delete led[keys.shift()]; }
+    safe(function () { window.localStorage.setItem(upStorageKey(UP_LEDGER_SUFFIX), JSON.stringify(led)); });
+    return led;
+  }
+  /* The scope this lane reads as is the SAME one an unscoped day pull uses.
+     A roster entry is identified by its stableKey; an account whose clinician
+     cannot be resolved is the literal "all", exactly as the pull records it. */
+  function upScopeKey() {
+    var scope = safe(function () { return accountProviderRequest(); }, "all");
+    if (scope && typeof scope === "object" && scope.stableKey) return String(scope.stableKey);
+    return "all";
+  }
+  function upEntryKey(day, scopeKey) { return String(day) + "|" + String(scopeKey); }
+  function upDayAfter(day, n) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(day || ""));
+    if (!m) return "";
+    var t = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) + (Number(n) || 0) * 86400000;
+    var d = new Date(t);
+    if (!isFinite(d.getTime())) return "";
+    return d.getUTCFullYear() + "-" + ("0" + (d.getUTCMonth() + 1)).slice(-2) + "-" + ("0" + d.getUTCDate()).slice(-2);
+  }
+  /* how many appointment rows for that day are already in MLS. A COUNT only -
+     no name, no DOB, nothing that could become PHI in a receipt or a log. */
+  function upRowsInMls(day) {
+    var n = safe(function () {
+      var ds = window.__mlsDaySwitch;
+      return (ds && isFn(ds.rowsFor)) ? (ds.rowsFor(String(day)) || []).length : null;
+    }, null);
+    if (typeof n === "number" && isFinite(n)) return n;
+    return safe(function () {
+      var ap = window._calAppts || [], c = 0, i;
+      for (i = 0; i < ap.length; i++) {
+        var a = ap[i]; if (!a) continue;
+        if (String(a.appt_date || a.day_local || "").slice(0, 10) !== String(day)) continue;
+        if (!String(a.name || "").trim()) continue;
+        c++;
+      }
+      return c;
+    }, 0);
+  }
+  function upGenerating() {
+    if (!Number(_up.generatingAt)) return false;
+    if (Date.now() - Number(_up.generatingAt) > UP_GEN_CEILING_MS) { _up.generatingAt = 0; return false; }
+    return true;
+  }
+  /* --------------------------------------------------------------------------
+     quietDriveGate() - "may MLS drive athenaOne right now, with nobody
+     watching it". It asks the SAME questions the idle catch-up asks in niGate
+     (a running pull, a day switch, a history batch, a deferred round, a visits
+     backfill, a live recording, an op-note draft, the Send-to-athenaOne review
+     sheet, a pull in another tab) plus three that lane does not need: a note
+     being generated, the engine's own busy stamp, and the write flow's
+     athenaOne navigation.
+
+     niGate is deliberately left byte-for-byte alone - several contracts pin its
+     body - so this is its SIBLING, not a wrapper. The runtime suite drives both
+     gates through every shared stamp, so the two cannot silently drift apart.
+     -------------------------------------------------------------------------- */
+  function quietDriveGate() {
+    var choice = safe(function () {
+      var pref = window.__mlsVisitNotesPref;
+      return pref && isFn(pref.read) ? pref.read() : null;
+    }, null);
+    /* no dialog may ever be opened by an automatic pull, so an account that has
+       not made the full-visit-notes choice is simply left alone */
+    if (!(choice && choice.settled === true && (choice.state === "on" || choice.state === "off"))) return { open: false, reason: "visit-notes-unchosen" };
+    if (pullRunning === true || !tnAthenaFree()) return { open: false, reason: "pull-running" };
+    if (monthPullRunning === true) return { open: false, reason: "month-pull-running" };
+    if (safe(function () { return !!p1MonthForeignOwner(); }, false)) return { open: false, reason: "month-pull-running" };
+    if (safe(function () { return !!(window.__mlsDaySwitch && isFn(window.__mlsDaySwitch.isBusy) && window.__mlsDaySwitch.isBusy()); }, false)) return { open: false, reason: "day-switch-busy" };
+    if (safe(function () { return !!(window.__mlsDayHistoryPull && window.__mlsDayHistoryPull.state && window.__mlsDayHistoryPull.state.running); }, false)) return { open: false, reason: "history-pull-running" };
+    if (_tnDefer.running === true || _tnDefer.queue.length > 0) return { open: false, reason: "deferred-round-active" };
+    if (safe(function () { var b = window.__mlsVisitsBackfill; return !!(b && b.state && (b.state.running || b.state.inFlight)); }, false)) return { open: false, reason: "visits-backfill-running" };
+    if (safe(function () { var b = document.getElementById("captureBtn"); return !!(b && b.classList && b.classList.contains("recording")); }, false)) return { open: false, reason: "recording" };
+    if (upGenerating() || safe(function () { return !!document.getElementById("ez3GenBusy"); }, false)) return { open: false, reason: "note-generating" };
+    if (safe(function () { var t = window.__mlsTplPrepFix; return !!(t && isFn(t.isDrafting) && t.isDrafting()); }, false)) return { open: false, reason: "opnote-drafting" };
+    if (safe(function () { return !!document.getElementById("mlsAthenaUnifiedConfirm"); }, false)) return { open: false, reason: "athena-review-open" };
+    if (safe(function () { return resumeBusyElsewhere(); }, false)) return { open: false, reason: "pull-running-other-tab" };
+    if (safe(function () { var at = Number(window.__mlsPullBusyAt || 0); return !!(at && Date.now() - at < UP_BUSY_STAMP_MS); }, false)) return { open: false, reason: "pull-busy-stamp" };
+    if (safe(function () { var w = window.__mlsWriteFlow; return !!(w && w.state && w.state.athenaBusy === true); }, false)) return { open: false, reason: "athena-write-running" };
+    return { open: true, reason: "" };
+  }
+  /* the asynchronous half, asked immediately before a read and never cached:
+     a Web Lock held by ANOTHER TAB is invisible to every synchronous signal. */
+  function upWebLockFree() {
+    return Promise.resolve().then(niWebLockHeld).then(function (held) { return held !== true; }, function () { return true; });
+  }
+  function upFreshMs(entry) { return (entry && entry.ok === false) ? UP_RETRY_MS : UP_FRESH_MS; }
+  function upPlan(today, scopeKey, led) {
+    var plan = [], i, d;
+    for (i = 0; i <= UP_FUTURE_DAYS; i++) {
+      d = upDayAfter(today, i);
+      if (!d) break;
+      plan.push({ day: d, future: i > 0, entry: led[upEntryKey(d, scopeKey)] || null });
+    }
+    return plan;
+  }
+  function upDue(step) {
+    var e = step && step.entry;
+    if (!e || !Number(e.at)) return { due: true, why: "never-pulled" };
+    if (Date.now() - Number(e.at) >= upFreshMs(e)) return { due: true, why: "stale" };
+    if (upRowsInMls(step.day) > Number(e.rows || 0)) return { due: true, why: "new-rows" };
+    return { due: false, why: "fresh" };
+  }
+  function upDayWords(day) {
+    var t = acctTodayKey();
+    if (day === t) return "today";
+    if (t && day === upDayAfter(t, 1)) return "tomorrow";
+    return safe(function () {
+      return new Date(String(day) + "T12:00:00").toLocaleDateString("en-US", { weekday: "long" });
+    }, String(day)) || String(day);
+  }
+  function upAttentionLine(day, n) {
+    return "Charts for " + upDayWords(day) + " are ready - " + n + " patient" + (n === 1 ? "" : "s") +
+      " could not be read, so open that day and press Pull when you have a moment.";
+  }
+  /* the one pull this lane makes, per day. The full-visit-notes answer is
+     frozen HERE, from the settled account choice the gate already verified, so
+     dayPull's admission gate never has to ask - an automatic pull may not open
+     a dialog. Everything else is dayPull's own business. */
+  function upPullDay(day) {
+    var bodies = safe(function () {
+      var pref = window.__mlsVisitNotesPref;
+      var c = pref && isFn(pref.read) ? pref.read() : null;
+      return (c && c.settled === true) ? (c.on === true) : null;
+    }, null);
+    if (typeof bodies !== "boolean") return Promise.resolve({ ok: false, reason: "visit-notes-unchosen" });
+    return Promise.resolve().then(function () {
+      return dayPull({ date: day, includeHistory: true, pullVisitBodies: bodies,
+        __p1Quiet: true, onStatus: function () {} });
+    }).then(function (r) { return r || { ok: false, reason: "no-result" }; },
+      function (e) { return { ok: false, reason: String((e && e.message) || e || "pull-threw").slice(0, 60) }; });
+  }
+  function upRunNow(opts) {
+    opts = opts || {};
+    if (_up.running === true) return Promise.resolve({ ok: false, ran: 0, reason: "already-running" });
+    if (opts.force !== true && !upSettingOn()) { _up.lastReason = "setting-off"; return Promise.resolve({ ok: false, ran: 0, reason: "setting-off" }); }
+    var gate0 = quietDriveGate();
+    if (!gate0.open) { _up.lastReason = gate0.reason; return Promise.resolve({ ok: false, ran: 0, reason: gate0.reason }); }
+    var today = acctTodayKey();
+    if (!today) { _up.lastReason = "no-account-day"; return Promise.resolve({ ok: false, ran: 0, reason: "no-account-day" }); }
+    var scopeKey = upScopeKey();
+    var led = upLedgerRead();
+    var plan = upPlan(today, scopeKey, led);
+    _up.running = true; _up.runs = Number(_up.runs || 0) + 1; _up.walk = [];
+    var ran = 0, notice = "", idx = 0;
+    function finish(reason) {
+      _up.running = false; _up.lastAt = Date.now(); _up.lastReason = String(reason || "");
+      if (notice) safe(function () { toast(notice, "warn"); });
+      return { ok: true, ran: ran, reason: String(reason || ""), days: _up.walk.slice() };
+    }
+    function step() {
+      if (idx >= plan.length) return Promise.resolve(finish("complete"));
+      var s = plan[idx++];
+      var due = upDue(s);
+      if (!due.due) {
+        _up.walk.push({ day: s.day, pulled: false, reason: "fresh", rows: Number((s.entry || {}).rows || 0) });
+        /* an already-warm future day with nothing on it ends the walk too */
+        if (s.future && Number((s.entry || {}).rows || 0) === 0) return Promise.resolve(finish("empty-day"));
+        return step();
+      }
+      /* the gate is asked again before EVERY day: the doctor may have started
+         recording, opened the review sheet, or pressed Pull mid-walk */
+      var gate = quietDriveGate();
+      if (!gate.open) { _up.walk.push({ day: s.day, pulled: false, reason: gate.reason }); return Promise.resolve(finish(gate.reason)); }
+      /* Stop means stop - for THIS walk. The flag is only meaningful once a
+         day pull has run (every __dayPullInner clears it on entry), so a true
+         left standing by a Stop pressed hours ago cannot silently retire the
+         lane for the rest of the session - the class that left the day-note
+         catch-up stopped forever through every later pull. */
+      if (ran > 0 && window.__mlsPullStopRequested === true) { _up.walk.push({ day: s.day, pulled: false, reason: "stopped-by-user" }); return Promise.resolve(finish("stopped-by-user")); }
+      return upWebLockFree().then(function (free) {
+        if (!free) { _up.walk.push({ day: s.day, pulled: false, reason: "athena-lock-held" }); return finish("athena-lock-held"); }
+        return upPullDay(s.day).then(function (res) {
+          var complete = !!(res && (res.ok === true || res.complete === true));
+          /* "did this day actually get read", which is NOT the same question as
+             "was it perfect". One chart athenaOne would not open must not stop
+             the walk - tomorrow's charts are the whole point of the lane - and
+             it must not re-arm a 45-minute retry loop either. A REFUSAL (a
+             closed gate, a failed navigation: nothing read at all) does stop
+             it, and is retried sooner. */
+          var touched = Number((res && res.created) || 0) + Number((res && res.repaired) || 0) +
+            Number((res && res.skipped) || 0);
+          var read = complete || touched > 0;
+          var rows = upRowsInMls(s.day);
+          /* the needs-attention count is the corner pill's own number, so the
+             one line and the pill can never disagree */
+          var attention = safe(function () {
+            var st = window.__mlsDayHistoryPull && window.__mlsDayHistoryPull.state;
+            return st ? Number(st.failed || 0) : 0;
+          }, 0) || 0;
+          led[upEntryKey(s.day, scopeKey)] = { at: Date.now(), rows: rows, ok: read,
+            complete: complete, attention: attention,
+            reason: String((res && res.reason) || "").slice(0, 40) };
+          upLedgerWrite(led);
+          ran++;
+          _up.lastDay = s.day;
+          _up.walk.push({ day: s.day, pulled: true, ok: read, complete: complete, rows: rows,
+            attention: attention, reason: String((res && res.reason) || "").slice(0, 40) });
+          /* the ONE line a whole walk is allowed, and only when rows this lane
+             actually read could not be read - never for a refusal, which read
+             nothing and has nothing to report, and never after a Stop, where
+             the unread rows are the doctor's own decision and not news */
+          var stoppedNow = safe(function () { return window.__mlsPullStopRequested === true; }, false);
+          if (!notice && attention > 0 && !stoppedNow) notice = upAttentionLine(s.day, attention);
+          if (!read) return finish(String((res && res.reason) || "pull-refused"));
+          if (s.future && rows === 0) return finish("empty-day");
+          return step();
+        });
+      });
+    }
+    return Promise.resolve().then(step, function () { return finish("walk-threw"); });
+  }
+  function upVisible() {
+    return safe(function () { return document.hidden !== true && document.visibilityState !== "hidden"; }, true);
+  }
+  function upTick() {
+    if (_up.running === true) return false;
+    if (!upSettingOn()) { _up.lastReason = "setting-off"; return false; }
+    /* a hidden tab's timers are frozen, not throttled, so a tick that lands in
+       one proves nothing - the visibilitychange listener re-asks on return */
+    if (!upVisible()) { _up.lastReason = "tab-hidden"; return false; }
+    safe(function () { upRunNow({}); });
+    return true;
+  }
+  function upArm() {
+    if (_up.timer != null) return false;
+    _up.timer = safe(function () { return setInterval(function () { safe(upTick); }, UP_TICK_MS); }, null);
+    _up.armed = _up.timer != null;
+    return _up.armed === true;
+  }
+  /* the settle hook: whatever pulled (the doctor's own button, a resume, this
+     lane) has just let go of athenaOne, so the next days are re-checked a few
+     seconds later. Nothing runs inside the settle itself. */
+  function upScheduleAfterPull() {
+    if (!upSettingOn() || _up.running === true) return false;
+    if (_up.afterPullTimer != null) return false;
+    _up.afterPullArmed = true;
+    _up.afterPullTimer = safe(function () {
+      return setTimeout(function () {
+        _up.afterPullTimer = null; _up.afterPullArmed = false; safe(upTick);
+      }, UP_AFTER_PULL_MS);
+    }, null);
+    if (_up.afterPullTimer == null) _up.afterPullArmed = false;
+    return _up.afterPullArmed === true;
+  }
+  function upBoot() {
+    if (_up.wired === true) return false;
+    _up.wired = true;
+    safe(function () {
+      document.addEventListener("visibilitychange", function () { if (upVisible()) safe(upTick); }, false);
+      window.addEventListener("mls:calendar-hydrated", function () { safe(upScheduleAfterPull); }, false);
+      window.addEventListener("mls:generation-started", function () { _up.generatingAt = Date.now(); }, false);
+      window.addEventListener("mls:generation-settled", function () { _up.generatingAt = 0; }, false);
+      window.addEventListener("mls:session-boundary", function () { _up.walk = []; _up.lastDay = ""; _up.lastReason = ""; _up.generatingAt = 0; }, false);
+    });
+    _up.bootTimer = safe(function () { return setTimeout(function () { _up.bootTimer = null; safe(upTick); }, UP_BOOT_DELAY_MS); }, null);
+    upArm();
+    return true;
+  }
+  /* "is this day already here?" - the one answer the day strip renders. */
+  function upDayReady(day) {
+    var key = normDate(day) || String(day || "");
+    var e = upLedgerRead()[upEntryKey(key, upScopeKey())] || null;
+    if (!e || !Number(e.at)) return { day: key, ready: false, at: 0, rows: 0 };
+    var fresh = (Date.now() - Number(e.at)) < upFreshMs(e);
+    return { day: key, ready: !!(fresh && e.ok === true), at: Number(e.at), rows: Number(e.rows || 0) };
+  }
+  function upState() {
+    var led = upLedgerRead(), scopeKey = upScopeKey(), today = acctTodayKey();
+    var days = upPlan(today, scopeKey, led).map(function (s) {
+      var e = s.entry, due = upDue(s);
+      return { day: s.day, future: s.future === true, pulledAt: Number((e && e.at) || 0),
+        rows: Number((e && e.rows) || 0), ok: !!(e && e.ok === true),
+        due: due.due === true, why: due.why };
+    });
+    return { version: UP_VERSION, on: upSettingOn(), running: _up.running === true,
+      runs: Number(_up.runs || 0), armed: _up.armed === true, wired: _up.wired === true,
+      afterPullArmed: _up.afterPullArmed === true, lastAt: Number(_up.lastAt || 0),
+      lastDay: String(_up.lastDay || ""), lastReason: String(_up.lastReason || ""),
+      freshMs: UP_FRESH_MS, retryMs: UP_RETRY_MS, tickMs: UP_TICK_MS, futureDays: UP_FUTURE_DAYS,
+      today: String(today || ""), scopeKey: scopeKey, days: days, walk: _up.walk.slice() };
+  }
+  /* the stable public name, so a surface never has to reach into __mlsSI */
+  window.__mlsUpcomingPull = {
+    version: UP_VERSION,
+    state: upState,
+    dayReady: upDayReady,
+    settingOn: upSettingOn,
+    runNow: upRunNow,
+    tick: upTick,
+    gate: quietDriveGate
+  };
+  /* ===== end upnext-1.0.0 ================================================ */
+
   window.__mlsSI = {
     installed: true,
     version: VERSION,
@@ -12825,6 +13657,26 @@
         activityEvents: NI_ACTIVITY_EVENTS.slice(),
         terminalCodes: Object.keys(NI_TERMINAL_CODES) };
     },
+    /* ===== upnext-1.0.0 (the quiet upcoming-days lane) ====================
+       Read-only receipt plus the verbs a surface or a suite needs. Every one
+       of them goes through quietDriveGate(), so none of them can drive
+       athenaOne while a pull, a recording, a generation, a draft-all, the
+       review sheet or another engine is on it. */
+    upcomingPull: window.__mlsUpcomingPull,
+    _quietDriveGate: quietDriveGate,
+    _upcomingState: upState,
+    _upcomingRunNow: upRunNow,
+    _upcomingTick: upTick,
+    _upcomingBoot: upBoot,
+    _upcomingDayReady: upDayReady,
+    _upcomingDayAfter: upDayAfter,
+    _upcomingScheduleAfterPull: upScheduleAfterPull,
+    _upcomingSettingOn: upSettingOn,
+    _upcomingConfig: function () {
+      return { version: UP_VERSION, freshMs: UP_FRESH_MS, retryMs: UP_RETRY_MS,
+        futureDays: UP_FUTURE_DAYS, tickMs: UP_TICK_MS, bootDelayMs: UP_BOOT_DELAY_MS,
+        afterPullMs: UP_AFTER_PULL_MS, ledgerSuffix: UP_LEDGER_SUFFIX, settingSuffix: UP_SETTING_SUFFIX };
+    },
     _accountProviderRequest: accountProviderRequest,
     resumeState: resumeGet,
     resumeDismiss: function () { resumeDismiss(true); return "resume intent cleared"; },
@@ -12889,6 +13741,21 @@
     _classifyCalendarFailure: classifyCalendarFailure,
     _phiFreeReasonCounts: phiFreeReasonCounts,
     _clearLedgerDone: clearDone,
+    /* refusal-durable-1.0.0: the queue, its rows, the one-click retry, and
+       the pure helpers so a suite can execute them without a live pull. */
+    attentionQueue: attentionQueue,
+    retryAttention: retryAttention,
+    _attentionRows: attentionRows,
+    _attentionCode: attentionCode,
+    _recordAttention: recordAttention,
+    _recordAttentionFromReceipt: recordAttentionFromReceipt,
+    _attentionRetryEntries: attentionRetryEntries,
+    _attentionCodeFor: attentionCodeFor, /* refusal-durable-1.0.1 */
+    _fdxRowReason: fdxRowReason, /* fdx-1.2.0: pure, extraction-executable */
+    /* oown-1.0.0: the outcome-ownership rule, executable without a live pull.
+       Neither writes anything that a settle would not already have written. */
+    _stampManagedOutcome: stampManagedOutcome,
+    _pullOutcomeFence: pullOutcomeFence,
     _verifiedChartCoverage: verifiedChartCoverage,
     _runHistoryBatch: runHistoryBatch,
     _historyVerdictCensus: historyVerdictCensus, /* pvd-1.0.0: pure, extraction-executable */

@@ -5036,6 +5036,32 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var startedAt = 0, hidden = true, stopped = false;
   var doneDismissed = false; /* dn-1.0: set only by the DONE card's Done button; re-armed when a new run starts */
   var stopRequested = false; /* clunky2-pull-1.0.0 (CLUNKY 128): survives Hide → show, cleared when the run ends */
+  /* ===== pillfirst-1.0.0 =================================================
+     OWNER 2026-09-11, verbatim: "when I'm pulling why does this big thing pop
+     up, no need for that".
+     EVERY automatic caller - pull start, a phase flip, a needs-attention
+     settle, the day-note catch-up, a month job's next day - reaches this
+     module through exactly ONE door: render(), off the engine's own state.
+     There is no second opener to delete. What made that one door pop open by
+     itself is that `hidden` is RUN-SCOPED state that OUTLIVED its run: it is
+     cleared by the pill's click and re-armed only where render() tears the
+     surface down (the run ended AND the DONE card was dismissed). A doctor who
+     opened the card once and did not press Done left hidden === false behind,
+     so the NEXT run - the catch-up, the next day of a month job, a second Pull
+     - found the door open and painted the full-screen card over the app with
+     nobody having asked for it.
+     So the door is gated on an explicit gesture instead of on leftover state:
+     the card may be shown only while `userOpened` is set, ONLY the pill's own
+     click handler sets it, and a new run (running false -> true) clears it.
+     Automatic callers therefore paint the PILL and nothing else, in every
+     phase and at every run boundary.
+     THE b940 GUARANTEES ARE KEPT: Hide still means "keep pulling" (the engine
+     is never touched here), the hidden state still survives sweep boundaries
+     (a sweep never flips state.running, so the run-boundary reset cannot fire
+     inside one pull), and "Stop pull" stays one click away - pill -> dialog ->
+     Stop pull - because the pill is always mounted while a pull runs. */
+  var userOpened = false; /* set ONLY by the pill's click handler */
+  var wasRunning = false; /* the previous tick's engine running flag */
 
   var wkUrl = null;
   try { wkUrl = URL.createObjectURL(new Blob(['onmessage=function(e){setTimeout(function(){postMessage(1)},e.data)}'], { type: 'application/javascript' })); } catch (e) {}
@@ -5117,7 +5143,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (f) return;
     f = document.createElement('button'); f.id = FAB; f.type = 'button';
     f.textContent = 'Pull running \u2014 show details';
-    f.onclick = function () { hidden = false; render(); };
+    /* pillfirst-1.0.0: THE ONLY place the dialog is ever allowed to open. */
+    f.onclick = function () { userOpened = true; hidden = false; render(); };
     document.body.appendChild(f);
   }
   /* b940 #36: the pill carries live progress instead of a frozen label. */
@@ -5352,7 +5379,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       '</div>';
     p.__ppBuilt = 1;
     var hb = document.getElementById('mlsPullProgHide');
-    if (hb) hb.onclick = function () { hidden = true; render(); };
+    /* pillfirst-1.0.0: Hide gives the gesture back, so the pull's remaining
+       phases stay in the corner pill instead of re-opening the card. */
+    if (hb) hb.onclick = function () { userOpened = false; hidden = true; render(); };
     /* stp-1.0.0 (owner: 'there should be a stop pull button'): cooperative
        abort - the engine checks the flag between charts and days, finishes the
        chart in flight cleanly, keeps every receipt, releases the lease, and
@@ -5411,6 +5440,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function render() {
     var S = state();
     var running = !!(S && S.running);
+    /* ===== pillfirst-1.0.0 (the door, gated) ==============================
+       A NEW run always starts in the corner pill, whoever started it and
+       whatever the last run left behind. A sweep/sub-batch never flips
+       state.running (ppStart keeps it true on base>0), so this cannot fire
+       inside one pull - the b940 "hidden survives sweep boundaries" guarantee
+       is untouched. The second line is the belt: `hidden` is now DERIVED from
+       the gesture, so no leftover false can paint the dialog by itself. */
+    if (running && !wasRunning && userOpened) { userOpened = false; hidden = true; }
+    wasRunning = running;
+    if (!userOpened && !hidden) hidden = true;
+    /* ===== end pillfirst-1.0.0 (the door, gated) ===== */
     if (running) watchedMaxTotal = Math.max(watchedMaxTotal, Number(S.total) || 0);
     if (!running) {
       /* dn-1.0 (owner 2026-08-11: "when its done it should stop and say
@@ -5426,6 +5466,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var p0 = document.getElementById(PANEL); if (p0) p0.remove();
       ensureFab(false);
       startedAt = 0; hidden = true; /* b940: reset to the pill DEFAULT, never to the modal */
+      userOpened = false; /* pillfirst-1.0.0: the gesture dies with the run it was made for */
       watchedMaxTotal = 0; /* pullzero-1.0.0: the next run measures itself */
       doneDismissed = false;
       stopRequested = false; /* clunky2-pull-1.0.0: the request dies with the run it stopped */
@@ -5552,15 +5593,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     /* pullzero-1.0.0: this run had no chart to read at all \u2014 say that, rather
        than reporting "\u2713 0 histories saved" as if zero were a result. */
     var zeroDay = (total === 0 && !(S.rows || []).length);
-    if (hidden) {
-      ensureFab(true);
-      var fD = document.getElementById(FAB);
-      if (fD) { var tD = zeroDay ? 'No charts to read \u2014 see why' : ('Pull done \u2014 \u2713 ' + ok + (failed ? ' \u00B7 \u26A0 ' + failed : '') + ' \u2014 see results'); if (fD.textContent !== tD) fD.textContent = tD; }
-      var phD = document.getElementById(PANEL); if (phD) phD.remove();
-      return;
-    }
-    ensureFab(false);
-    var p = buildPanel();
+    /* pillfirst-1.0.0: the day-note truth is computed BEFORE the pill
+       branch, because the corner pill now has to name what still needs the
+       doctor. ONE COUNT, TWO SURFACES: the pill reports the exact number the
+       card computes below, so a finished pull can never publish two.
+       Pure reads of S - no DOM, no engine state - so hoisting them costs a
+       closed card nothing it was not already paying. */
     var dv = S.dayVerdict || null;
     /* ===== lcd-1.0.0 (the open result card is LIVE) =========================
        OWNER 2026-08-19, verbatim: "as the things in orange get pulled in the
@@ -5624,6 +5662,21 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        rows AND by the engine's own stamp, whichever is less optimistic. */
     var dnNotesDone = dnPendingDone === 0 && (!dv || dv.tnNotesComplete !== false);
     /* ===== end dnote-1.0.0 (b1184) ===== */
+    if (hidden) {
+      ensureFab(true);
+      var fD = document.getElementById(FAB);
+      /* pillfirst-1.0.0: a run that ends owing the doctor something says so
+         IN THE PILL, and still does not open the card. attnP is the identical
+         expression the card paints as "N need attention" (failed plus the
+         day-note debt lcd-1.0.0/dnote-1.0.0 already reduced by what the rows
+         themselves prove), so the two surfaces cannot disagree. */
+      var attnP = failed + dvTnFailed;
+      if (fD) { var tD = zeroDay ? 'No charts to read \u2014 see why' : ('Pull done \u2014 \u2713 ' + ok + ' saved' + (attnP ? ' \u00B7 \u26A0 ' + attnP + (attnP === 1 ? ' needs' : ' need') + ' attention' : '') + ' \u2014 show details'); if (fD.textContent !== tD) fD.textContent = tD; }
+      var phD = document.getElementById(PANEL); if (phD) phD.remove();
+      return;
+    }
+    ensureFab(false);
+    var p = buildPanel();
     if (!p.__ppDoneApplied) {
       p.__ppDoneApplied = 1;
       api.doneShown = (api.doneShown || 0) + 1;
@@ -7691,6 +7744,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     '#mlsEz3 .ez3-sm:not(.pri),#mlsEz3 .ez3-exbtn:not(.rec):not(.send),#mlsEz3 .ez3-qchip:not(.on),#mlsEz3 .ez3-chip:not(.on),#mlsEz3 .ez3-more{color:#1A211C !important;}',
     '#mlsEz3 .ez3-warnbar{color:#6F4300 !important;background:#FFF6DF !important;border-color:#D99A26 !important;font-weight:650 !important;}',
     '#mlsEz3 .ez3-infobar{color:#3E4B44 !important;background:#F4F6F3 !important;border-color:#D9DFD9 !important;font-weight:500 !important;}',
+    /* noteadv-1.0.0 / vntplpick-1.0.0 on the light card: the same amber the
+       warn bar already wears, and ink-on-light for the template door. */
+    '#mlsEz3 .ez3-flagline{color:#6F4300 !important;background:#FFF6DF !important;border-color:#D99A26 !important;font-weight:650 !important;}',
+    '#mlsEz3 .ez3-tplnow,#mlsEz3 .ez3-tplfoot{color:#55605A !important;}',
+    '#mlsEz3 .ez3-tpllbl{color:#1A211C !important;}',
+    '#mlsEz3 .ez3-tplmenu{border-color:#E4E1D8 !important;background:#FCFBF8 !important;}',
+    '#mlsEz3 .ez3-tplopt:not(.on){color:#1A211C !important;border-color:#E4E1D8 !important;}',
+    '#mlsEz3 .ez3-tplopt.on{color:#fff !important;background:#204034 !important;border-color:#204034 !important;}',
     '#mlsEz3 .ez3-qchip.on,#mlsEz3 .ez3-chip.on{color:#fff !important;background:#204034 !important;border-color:#204034 !important;font-weight:800 !important;box-shadow:0 0 0 2px rgba(32,64,52,.24) !important;}',
     '#mlsEz3 .ez3-qchip.on.seen{opacity:1 !important;}',
     /* 1d) Easy step-flow sub-states on the light card */
@@ -21703,6 +21764,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     phase: 'idle', recStart: 0, genClickedAt: 0,
     signedAt: 0,                         /* our sign-step marker (reset on regen / new patient) */
     expanded: null, editing: false, lastWarn: '',
+    /* noteadv-1.0.0: the flagged lines the doctor has already read and kept,
+       and the receipt they belong to; both reset when a new note arrives.
+       vntplpick-1.0.0: whether the template list on the drafted note is open. */
+    flagKept: {}, flagKeptKey: '', tplPickOpen: false,
     showCount: 5,
     providerFilter: '',                  /* 1p preview default = current athenaOne view; internal '' remains canonical all/account scope */
     providerRef: '',                     /* canonical stableKey; never a fuzzy display-name key */
@@ -22587,6 +22652,26 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       'border-radius:12px;padding:10px 13px;font-size:13px;margin:0 0 12px;}',
     '.ez3-infobar{background:rgba(201,220,210,.10);border:1px solid rgba(201,220,210,.32);color:#DDE7E1;',
       'border-radius:12px;padding:10px 13px;font-size:13px;line-height:1.45;margin:0 0 12px;}',
+    /* noteadv-1.0.0: the lines the dictation did not clearly say. Same amber
+       tokens as .ez3-warnbar above - no new colour enters the room. */
+    '.ez3-flaglist{display:flex;flex-direction:column;gap:6px;margin:0 0 12px;}',
+    '.ez3-flagline{background:rgba(234,179,8,.14);border:1px solid rgba(234,179,8,.5);color:#fbe7a2;',
+      'border-radius:10px;padding:8px 11px;font-size:13px;line-height:1.5;display:flex;gap:10px;align-items:flex-start;}',
+    '.ez3-flagtext{flex:1;min-width:0;overflow-wrap:anywhere;}',
+    '.ez3-flaglost{display:block;margin:4px 0 0;font-size:12px;font-weight:600;opacity:.92;}',
+    '.ez3-flagline .ez3-sm{flex:0 0 auto;}',
+    /* vntplpick-1.0.0: the template door on a drafted note, in its own wrapper
+       so the visit-focus fold cannot reach it. */
+    '.ez3-tplpick{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:10px 0 0;}',
+    '.ez3-tplnow{font-size:12.5px;color:#C9DCD2;flex:1;min-width:0;overflow-wrap:anywhere;}',
+    '.ez3-tplmenu{flex:1 0 100%;display:flex;flex-direction:column;gap:6px;margin:4px 0 0;',
+      'border:1px solid rgba(255,255,255,.18);border-radius:12px;padding:10px;}',
+    '.ez3-tpllbl{margin:0 0 2px;font-size:12.5px;font-weight:800;color:#EAF1EE;}',
+    '.ez3-tplopt{text-align:left;border:1px solid rgba(255,255,255,.22);background:transparent;color:#EAF1EE;',
+      'border-radius:10px;padding:9px 11px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;}',
+    '.ez3-tplopt:hover{background:rgba(255,255,255,.08);}',
+    '.ez3-tplopt.on{background:#2E6A4B;border-color:#2E6A4B;color:#fff;}',
+    '.ez3-tplfoot{margin:2px 0 0;font-size:12px;color:#C9DCD2;line-height:1.5;}',
     '.ez3-back{background:none;border:0;color:#C9DCD2;font-size:14px;font-weight:700;cursor:pointer;padding:6px 2px;margin-bottom:2px;}',
     '.ez3-more{width:100%;border:1px dashed rgba(255,255,255,.28);background:transparent;color:#EAF1EE;',
       'border-radius:12px;padding:11px;font-size:13.5px;font-weight:700;cursor:pointer;margin-top:10px;}',
@@ -24996,6 +25081,194 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     });
   }
 
+  /* ===== noteadv-1.0.0 (owner 2026-09-11) - THE LINES THE DICTATION DID NOT
+   * CLEARLY SAY, ON THE SCREEN THE DOCTOR ACTUALLY READS.
+   *
+   * The note here is a TEXTAREA inside a surface this module rewrites as one
+   * whole innerHTML string (see w.innerHTML = h above). A textarea cannot
+   * carry a coloured span, and an overlay positioned on top of it would be
+   * torn out by the next rewrite whose string changed - the same class of
+   * defect recmore-1.1.0 already paid for. So the flagged lines are built INTO
+   * that string as a short amber list above the note: stable, pressable, and
+   * rebuilt from the receipt on every tick.
+   *
+   * A flagged line stops being shown the moment it is no longer in the note -
+   * so editing the sentence away clears it with no listener at all - or the
+   * moment the doctor presses Keep. The sentences are his own note text: they
+   * are escaped and rendered, and never written anywhere else. ===== */
+  function advisoryReceipt() {
+    return safe(function () {
+      var a = window.__mlsVisitNoteAdvisory;
+      return (a && a.status === 'review' && a.flagged && a.flagged.length) ? a : null;
+    }, null);
+  }
+  function flatText(s) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim(); }
+  /* noteadv-1.0.1: the server sends at most this many doubted sentences, and
+     the shell keeps all of them, so the screen shows all of them too. At 12
+     the amber line said "check the highlighted lines" over half a list. */
+  var ADV_MAX_ROWS = 24;
+  function advisoryRows() {
+    var a = advisoryReceipt();
+    if (!a) return [];
+    var key = String(a.key || '');
+    if (S.flagKeptKey !== key) { S.flagKeptKey = key; S.flagKept = {}; }
+    var note = flatText(noteText()), out = [];
+    if (!note) return out;
+    for (var i = 0; i < a.flagged.length && out.length < ADV_MAX_ROWS; i++) {
+      var row = a.flagged[i];
+      var s = flatText(row && row.sentence);
+      if (!s) continue;
+      if (S.flagKept[s]) continue;
+      /* A line the re-format could not find again is KEPT on the list and
+         says so. Dropping it would hide a doubt the saved note still holds. */
+      var lost = !!(row && row.lost === true);
+      if (!lost && note.indexOf(s) < 0) continue;
+      out.push({ text: s, lost: lost });
+    }
+    return out;
+  }
+  /* The rows only. The wrapper below puts this inside the host the note
+     editor patches in place, so a line edited away goes as it is typed. */
+  function advisoryInnerHtml() {
+    var rows = advisoryRows();
+    if (!rows.length) return '';
+    var h = '<div class="ez3-warnbar" role="status">⚠️ Check the highlighted lines: the dictation did not clearly say them.</div>' +
+            '<div class="ez3-flaglist">';
+    for (var i = 0; i < rows.length; i++) {
+      h += '<div class="ez3-flagline"><span class="ez3-flagtext">' + esc(rows[i].text) +
+           (rows[i].lost ? '<span class="ez3-flaglost">MLS could not find this line after the note was re-formatted. Read the whole note before you sign it.</span>' : '') +
+           '</span><button type="button" class="ez3-sm" data-flag="' + esc(rows[i].text) +
+           '" id="ez3FlagKeep_' + i + '">Keep</button></div>';
+    }
+    return h + '</div>';
+  }
+  /* The host is always painted, even with nothing to say, so the note editor
+     below has somewhere to write when the last line is edited away. */
+  function advisoryHtml() { return '<div class="ez3-advisory" id="ez3Advisory">' + advisoryInnerHtml() + '</div>'; }
+  /* PATCH, NEVER REPLACE (walkfix-1.0.0's rule): rebuilding the whole surface
+     from a keystroke would tear the note textarea out from under the caret. */
+  function advisoryRepaint() {
+    var host = $('ez3Advisory');
+    if (!host) return false;
+    var want = advisoryInnerHtml();
+    if (host.innerHTML === want) return false;
+    host.innerHTML = want;
+    return true;
+  }
+  /* Keep means "I read that line and it is right". It is resolved by the
+     SENTENCE written on the button, not by the button's position: a line the
+     doctor edited away renumbers the list, and by index Keep then cleared a
+     different line than the one he pressed. */
+  function advisoryKeep(btn, n) {
+    var s = flatText(safe(function () { return btn && btn.getAttribute ? btn.getAttribute('data-flag') : ''; }, ''));
+    if (!s) { var rows = advisoryRows(); s = (rows[n] && rows[n].text) || ''; }
+    if (!s) return false;
+    if (!S.flagKept) S.flagKept = {};
+    S.flagKept[s] = 1;
+    return true;
+  }
+
+  /* ===== vntplpick-1.0.0 (owner 2026-09-11) - CHANGE THE TEMPLATE ON A NOTE
+   * THAT IS ALREADY DRAFTED.
+   *
+   * One small control beside the drafted note. It lists only templates that
+   * may shape a visit note - the shell's own scope gate answers that question,
+   * so an operative report can never appear here - plus a plain note. Picking
+   * one writes the note again from the same recording through the ordinary
+   * Generate path, with the choice handed to the one template seam that runs.
+   *
+   * It lives in its OWN wrapper inside the note card. A control placed in a
+   * .ez3-row2 or in #ez3StyleChips is folded away behind "Visit shortcuts" by
+   * feat_mls_visit_focus.js, which is exactly how recmore-1.0.0's chip never
+   * reached the doctor. ===== */
+  var TPL_PICK_MAX = 40;
+  function tplPickBusy() {
+    if (S.autoPull === 'running') return true;
+    if (pullLease()) return true;
+    return safe(function () { return Date.now() - Number(window.__mlsPullBusyAt || 0) < 180000; }, false);
+  }
+  function tplChangeAllowed() {
+    if (S.phase !== 'note') return false;
+    if (captureBusy()) return false;
+    if (tplPickBusy()) return false;
+    /* vntplpick-1.0.1: NOT WHILE MLS IS WRITING THIS NOTE. A regeneration
+       leaves the previous note on screen, so the drafted-note screen stays up
+       while the new note is being written - and with it a line naming the
+       template of the note that is being replaced. The press was already
+       refused underneath; now the control goes away instead of lying. */
+    if (safe(function () { var r = genRunOverlay(); return !!(r && r.active); }, false)) return false;
+    var t = $('transcript');
+    return !!(t && String(t.value || '').trim());
+  }
+  function visitTemplateList() {
+    return safe(function () {
+      var scope = window._mlsGenTemplateScopeSkip;
+      if (!isFn(scope)) return [];
+      var all = isFn(window.getTemplates) ? (window.getTemplates() || []) : [];
+      var out = [];
+      for (var i = 0; i < all.length && out.length < TPL_PICK_MAX; i++) {
+        var t = all[i];
+        if (!t || !String(t.id || '') || !String(t.text || '').trim()) continue;
+        if (scope(t) !== '') continue;
+        out.push({ id: String(t.id), name: String(t.name || 'Untitled template').replace(/[\r\n]+/g, ' ').slice(0, 90) });
+      }
+      return out;
+    }, []);
+  }
+  function currentTplChoice() {
+    return safe(function () {
+      var a = window.__mlsVisitNoteAdvisory;
+      if (a && a.template && String(a.template.id || '')) {
+        return { id: String(a.template.id), name: String(a.template.name || 'Your template') };
+      }
+      if (a && a.template && a.template.chosen === true) return { id: '', name: 'Plain note (no template)' };
+      var c = window.__mlsLastGenTemplateContract;
+      if (c && c.id) return { id: String(c.id), name: String(c.name || 'Your template') };
+      return { id: '', name: 'Plain note (no template)' };
+    }, { id: '', name: 'Plain note (no template)' });
+  }
+  function tplPickHtml() {
+    if (!tplChangeAllowed()) return '';
+    var cur = currentTplChoice();
+    var h = '<div class="ez3-tplpick">' +
+            '<button type="button" class="ez3-sm" id="ez3TplChange">' +
+            (S.tplPickOpen ? 'Close the template list' : 'Change template') + '</button>' +
+            '<span class="ez3-tplnow">This note was written with: ' + esc(cur.name) + '</span>';
+    if (S.tplPickOpen) {
+      var list = visitTemplateList();
+      h += '<div class="ez3-tplmenu"><p class="ez3-tpllbl">Template for this note</p>' +
+           '<button type="button" class="ez3-tplopt' + (cur.id ? '' : ' on') + '" id="ez3TplPlain">Plain note (no template)</button>';
+      for (var i = 0; i < list.length; i++) {
+        h += '<button type="button" class="ez3-tplopt' + (cur.id === list[i].id ? ' on' : '') + '" id="ez3TplOpt_' + i + '">' +
+             esc(list[i].name) + '</button>';
+      }
+      if (!list.length) {
+        h += '<p class="ez3-tplfoot">You have no visit note templates saved. Procedure templates stay in the op note room, so they are not offered for a visit note.</p>';
+      }
+      h += '<p class="ez3-tplfoot">Picking one writes this visit note again from the same recording.</p></div>';
+    }
+    return h + '</div>';
+  }
+  function applyTplPick(pick) {
+    if (!tplChangeAllowed()) { toast('The template list is not available right now. Finish what is running and try again.'); return; }
+    if (!requireExactScheduledBinding(S.appt, 'note regeneration')) return;
+    var g = genBtnResolve();
+    if (!g) { toast('MLS is still writing this note. Wait for it to finish, then choose a template.'); return; }
+    var armed = safe(function () {
+      /* vntplpick-1.0.1: the choice carries the chart it was made on, so a
+         choice that somehow outlives a patient switch can be dropped rather
+         than shape somebody else's note. */
+      var pt = safe(function () { return isFn(window.getActivePtId) ? String(window.getActivePtId() || '') : ''; }, '');
+      window.__mlsVisitTplPick = { id: String((pick && pick.id) || ''), plain: !(pick && pick.id), at: Date.now(), pt: pt };
+      return true;
+    }, false);
+    if (!armed) { toast('MLS could not change the template. Try again.'); return; }
+    S.tplPickOpen = false;
+    if (typeof ez3StampGenClick === 'function') ez3StampGenClick();
+    g.click();
+    render();
+  }
+
   /* ---- doctor room (one clear action at a time) ---------------------------
    * Ladder: Record → Stop/resume → Generate → Review → Sign → Send. */
   function renderDoctor() {
@@ -25086,8 +25359,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          Nothing else in this branch carries it - the record, Sign and Send
          controls below stay on screen in both states. */
       h += '<div class="ez3-card ez3-notecard">' +
+             advisoryHtml() +
              '<textarea class="ez3-note" id="ez3Note" ' + (S.editing ? '' : 'readonly') + '></textarea>' +
              '<div class="ez3-chips" id="ez3StyleChips"></div>' +
+             tplPickHtml() +
              '<div class="ez3-row2" style="margin:10px 0 0">' +
                '<button type="button" class="ez3-sm" id="ez3Edit">' + (S.editing ? '✅ Done editing' : '✏️ Edit note') + '</button>' +
                '<button type="button" class="ez3-sm" id="ez3Regen">🔄 Regenerate</button>' +
@@ -25239,6 +25514,40 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if (typeof ez3StampGenClick === 'function') ez3StampGenClick(); g.click(); render();
     });
     on('ez3Regen', function () { if (!requireExactScheduledBinding(S.appt, 'note regeneration')) return; var g = genBtnResolve(); if (!g) { toast('Generate button not found.'); return; } if (typeof ez3StampGenClick === 'function') ez3StampGenClick(); g.click(); render(); });
+    /* noteadv-1.0.0: Keep means "I read that line and it is right." It only
+       ever removes the amber line; it never touches a word of the note. The
+       kept sentences live in S, because the surface is replaced wholesale on
+       every changed render and a DOM attribute would not survive it.
+       noteadv-1.0.1: the sentence comes off the button that was pressed, and
+       only the amber list is repainted - a full render would rebuild the note
+       box and throw away the caret of a doctor who is part-way through an
+       edit. */
+    (function () {
+      for (var fi = 0; fi < ADV_MAX_ROWS; fi++) {
+        (function (n) {
+          on('ez3FlagKeep_' + n, function (btn) {
+            if (advisoryKeep(btn, n)) advisoryRepaint();
+          });
+        })(fi);
+      }
+    })();
+    /* vntplpick-1.0.0: the template door on a drafted note. */
+    on('ez3TplChange', function () {
+      if (!tplChangeAllowed()) { toast('The template list is not available right now. Finish what is running and try again.'); return; }
+      S.tplPickOpen = !S.tplPickOpen; render();
+    });
+    on('ez3TplPlain', function () { applyTplPick({ id: '' }); });
+    (function () {
+      for (var ti = 0; ti < TPL_PICK_MAX; ti++) {
+        (function (n) {
+          on('ez3TplOpt_' + n, function () {
+            var list = visitTemplateList();
+            if (!list[n]) { toast('That template is no longer saved. Pick another one.'); return; }
+            applyTplPick(list[n]);
+          });
+        })(ti);
+      }
+    })();
     /* noteact-1.0.0 (owner P0 2026-08-27): DO NOT CLAIM "Copied" WITHOUT A
        RECEIPT. This clicked #copyEmrBtn and painted "Copied" in the same
        breath - true even when the control was still gated (no note yet, so
@@ -25397,6 +25706,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       ta.addEventListener('input', function () {
         var n = $('noteBox');
         if (n) { n.value = ta.value; try { n.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {} }
+        /* noteadv-1.0.1: a line the doctor has just edited away stops being
+           flagged as he types. Nothing else repaints from typing - render() is
+           driven by clicks - so before this the amber row for a sentence he had
+           already deleted sat there until some unrelated press. PATCH the list
+           only: a full render would rebuild this very textarea and throw away
+           the caret mid-edit. */
+        safe(function () { return advisoryRepaint(); });
       });
     }
     var txTop = $('ez3Transcript'), txReal = $('transcript');
@@ -54600,20 +54916,40 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
    for everyone, not only for people who open Studio. What is added is an
    immediate load when AI Studio is actually on screen - if the doctor is looking
    at it, there is nothing to defer for. Injection stays idempotent through the
-   same data-mls-asset guard, so the two paths cannot double-load. */
+   same data-mls-asset guard, so the two paths cannot double-load.
+   smpreload-1.0.0 (owner 2026-09-11, MEASURED live on b1237 at 13:5x:
+   window.__mlsStudioMerge undefined, #analysisView still outside #studioView,
+   doctor on the Visit view - i.e. neither trigger below had fired yet).
+   window.__mlsDeferAsset runs its own priority queue for a large and growing
+   list of boot-time assets, and this module's place in that queue is not this
+   module's to control - a busy boot can leave it waiting well past the
+   moment the doctor opens AI Studio. The KEPT on-screen trigger below still
+   covers that visit, but the whole point of a PRELOAD is to have already
+   finished before that happens. This is now a dedicated, direct
+   requestIdleCallback (a real setTimeout fallback where it does not exist)
+   that answers to nothing but the browser's own idle time, scheduled once,
+   right here, independent of __mlsDeferAsset's queue. */
 ;(function(){try{
-  /* sched is declared FIRST so the deferred path is the visible default and the
-     boot-script budget's lookbehind classifies this module as DEFERRED, which it
-     still is: the immediate call below only fires when AI Studio is already the
-     screen on show, which at boot it almost never is. */
-  var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,1200);};
   var A='feat_mls_studio_merge.js';
   function go(){try{if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset',A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}}
   function studioOnScreen(){try{var v=document.getElementById('studioView');return !!v&&getComputedStyle(v).display!=='none';}catch(e){return false;}}
+  var preloadScheduled=false;
+  /* Guarded so a second call is a no-op: nothing here re-arms once the idle
+     callback (or its fallback timer) has been handed to the browser, so a
+     stray extra call from elsewhere can never stack a second one. */
+  function preloadIdle(){
+    if(preloadScheduled)return false;
+    preloadScheduled=true;
+    if(window.requestIdleCallback) window.requestIdleCallback(go,{timeout:4000});
+    else setTimeout(go,1200);
+    return true;
+  }
   if(studioOnScreen())go();
   try{window.addEventListener('mls:view-changed',function(){if(studioOnScreen())go();},true);}catch(eV){}
-  sched(go,{timeout:4000});
-}catch(e){}})(); /* Studio merge (owner 2026-07-26 "add the analysis tab to the ai studio tab smartly"): AI Studio becomes Ask / Practice / Build, #analysisView is hoisted into it, and showView('analysis') redirects there. Deferred on requestIdleCallback - AI Studio is not a first-paint surface (window.__mlsStudioMerge sm-1.0.0; revert()) */
+  preloadIdle();
+  /* read-only handle for the regression suite; not part of the app's public API */
+  window.__mlsStudioFastPreload={preload:preloadIdle,scheduled:function(){return preloadScheduled;},studioOnScreen:studioOnScreen};
+}catch(e){}})(); /* Studio merge (owner 2026-07-26 "add the analysis tab to the ai studio tab smartly"): AI Studio becomes Ask / Practice / Build, #analysisView is hoisted into it, and showView('analysis') redirects there. Preloaded on requestIdleCallback right after boot, independent of any other asset queue - AI Studio is not a first-paint surface (window.__mlsStudioMerge sm-1.0.0; revert()) */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_motion.js"]'))return;var s=document.createElement('script');s.src='feat_mls_motion.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_motion.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:4000,priority:0,owner:'__mlsMotion',requiresFoundation:true});}catch(e){}})(); /* Motion system (owner 2026-07-28 "awesome animations aple like" + the Siri ring on Copilot): one stylesheet, one body class, zero handlers rebound. The moving multi-colour ring is reserved for the Copilot/AI surfaces; everything else reuses the MOTION_TOKENS.md vocabulary. No timers and no observers. Deferred on requestIdleCallback - it is pure polish and must never be on the boot path (window.__mlsMotion mo-1.0.0; revert()) */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_visit_focus.js"]'))return;var s=document.createElement('script');s.src='feat_mls_visit_focus.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_visit_focus.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:1500,priority:0,owner:'__mlsVisitFocus',retireVersion:'vf-1.2.0',requiresFoundation:true});}catch(e){}})(); /* Visit & Patients focus: one primary per screen state; every secondary answers to a disclosure that already exists. Deferred on requestIdleCallback (timeout 1500) - it costs nothing at first paint and the loading screen owns the surface until well after it lands (window.__mlsVisitFocus vf-1.0.0; revert()). */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{var A="feat_mls_note_click_to_edit.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v="+(window.__MLS_AV||Date.now());s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:4000});}catch(e){}})(); /* nce-1.0.0: clicking the formatted note preview reveals the editor and places the caret where the doctor clicked (b779 folded away the only Edit control). Revert: window.__mlsNoteClickToEdit.revert() */
@@ -55381,10 +55717,19 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        progress or a newer in-memory result. */
     try {
       var statusNode = $('mlsDsStatus');
-      if (statusNode && hydratedTerminal && !DS.pulling && !DS.retrying && DS.__autoRetrying !== true && !DS.preferenceGatePending) {
+      var quiet = dsQuietPulledState(DS.day);
+      var paintable = statusNode && !DS.pulling && !DS.retrying && DS.__autoRetrying !== true && !DS.preferenceGatePending;
+      if (paintable && hydratedTerminal) {
         statusNode.style.display = 'block';
         statusNode.textContent = dsTerminalReceiptLine(hydratedTerminal);
         dsSyncDiagBtn(hydratedTerminal.status === 'failed');
+      } else if (paintable && quiet) {
+        /* upnext-1.0.0: a day MLS has already read on its own says so, in the
+           same words Today has always used ("your patients are ready"), on the
+           same line an explicit pull's receipt uses. A day with a receipt of
+           its own keeps that receipt - this only fills the silence. */
+        statusNode.style.display = 'block';
+        if (statusNode.textContent !== quiet) statusNode.textContent = quiet;
       }
     } catch (eReceiptPaint) {}
     /* attq-1.0.0 / idq-1.0.0: the two queues ride the same tick as the rest
@@ -55392,6 +55737,35 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        still on screen when the doctor comes back to the tab. */
     try { syncAttentionControl(); } catch (eAttSync) {}
     try { syncIdentityControl(); } catch (eIdSync) {}
+  }
+  /* upnext-1.0.0: the doctor-facing sentence for a day the quiet upcoming-days
+     lane has already brought in. Returns '' for every other day, so nothing
+     else on the strip changes. No new vocabulary: "ready" is the word Today's
+     own finished pull has always used. */
+  function dsQuietPulledState(day) {
+    var k = String(day || DS.day || '').slice(0, 10);
+    if (!k) return '';
+    var st = null;
+    try {
+      var up = window.__mlsUpcomingPull;
+      st = (up && typeof up.dayReady === 'function') ? up.dayReady(k) : null;
+    } catch (eQp) { st = null; }
+    if (!st || st.ready !== true) return '';
+    var n = 0;
+    try { n = rowsFor(k).length; } catch (eQr) { n = Number(st.rows || 0); }
+    if (!n) return '';
+    /* the SAME day words the pull button uses ("today" / "Tuesday the 12th"),
+       so the strip never grows a second vocabulary for the same date */
+    var label = 'today';
+    if (k !== todayKey()) {
+      label = '';
+      try {
+        var d = new Date(k + 'T12:00:00');
+        label = d.toLocaleDateString('en-US', { weekday: 'long' }) + ' the ' + dsOrdinal(d.getDate());
+      } catch (eQl) { label = ''; }
+      if (!label) label = k;
+    }
+    return 'Your patients for ' + label + ' are ready — ' + n + ' chart' + (n === 1 ? '' : 's') + ' already brought in.';
   }
   function setDay(k) {
     k = String(k || '').slice(0, 10);
@@ -57969,6 +58343,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      status line use, so a live probe and a proof read ONE function. */
   api.resumeState = function (day) { return dsResumeState(day); };
   api.pullVerb = function (day) { return dsPullVerb(day); };
+  /* upnext-1.0.0: '' unless MLS has already brought that day in on its own. */
+  api.pulledLine = function (day) { return dsQuietPulledState(day); };
   api.renderList = renderList;
   api.isBusy = function () { return !!(DS.pulling || DS.retrying || DS.__autoRetrying); };
   /* dslease-1.0.0 / dsceil-1.0.0 / dsbt-1.0.0 read-only seams. busyLane() is
@@ -63385,7 +63761,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var m = NAV.exec(q); if (!m) return null;
     var raw = String(m[1] || '').trim().toLowerCase();
     if (raw === 'templates' || raw === 'template') { try { if (typeof window.openTemplates === 'function') { window.openTemplates(); api.navigated++; return { reply: 'Opened Templates.' }; } } catch (e) {} return null; }
-    if (raw === 'settings' || raw === 'setting') { try { if (typeof window.openSettings === 'function') { window.openSettings(); api.navigated++; return { reply: 'Opened Settings.' }; } } catch (e) {} return null; }
+    if (raw === 'settings' || raw === 'setting') { try { if (typeof window.openSettings === 'function') { window.openSettings({ userInitiated: true }); api.navigated++; return { reply: 'Opened Settings.' }; } } catch (e) {} return null; }
     var v = VIEWS[raw]; if (!v) return null;
     try { if (typeof window.showView === 'function') { window.showView(v); api.navigated++; return { reply: 'Opened ' + raw.charAt(0).toUpperCase() + raw.slice(1) + '.' }; } } catch (e) {}
     return null;

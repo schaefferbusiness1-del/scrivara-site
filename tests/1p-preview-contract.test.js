@@ -527,6 +527,21 @@ const wyzantConfigBlock = [
   '  # a bare "wyzant" basename would reopen unrelated files.',
   '  - "wyzant/index.html"'
 ].join('\n');
+/* The client-surgeon op-note page (2026-09-11, lane opnote-svc-1.0.0) is a
+   FOURTH authorized block in this shared file, allowed by the same rule as the
+   three above: one reviewed, literal set of lines, so every other byte of
+   _config.yml is still byte-compared against the frozen baseline. It is a
+   standalone public page - it loads no app bundle, registers no service worker
+   and reaches no clinical route - so it cannot affect the 1p or production
+   runtimes this contract exists to freeze. */
+const opnotesConfigBlock = [
+  '  # 2026-09-11 - /opnotes.html, the client-surgeon op-note page. It shows one',
+  '  # outside surgeon their own drafted op notes and nothing else of the app,',
+  '  # and it is reachable only with a scoped link. Published on purpose, like',
+  '  # every page above it. It registers NO service worker of its own.',
+  '  - "opnotes.html"',
+  ''
+].join('\n');
 const currentConfig = read('_config.yml').replace(/\r\n/g, '\n');
 assert.strictEqual((currentConfig.match(/  - "wyzant\/index\.html"/g) || []).length, 1, 'exact /wyzant product-page include must appear once');
 assert.strictEqual((currentConfig.match(/  - "1p\/legal\/index\.html"/g) || []).length, 1, 'exact FREE Legal showcase include must appear once');
@@ -551,8 +566,9 @@ const internalDocsExcludeBlock = [
 const baseConfigTextAdjusted = baseConfigText
   .replace('  - "feat_mls_legalpack.js"' + String.fromCharCode(10), '')
   .replace('  - "scripts/"' + String.fromCharCode(10), '  - "scripts/"' + String.fromCharCode(10) + internalDocsExcludeBlock);
-assert.strictEqual(currentConfig.replace(p1ConfigBlock, '').replace(clonedConfigBlock, '').replace(wyzantConfigBlock, ''), baseConfigTextAdjusted,
-  '_config.yml changed beyond the exact reviewed 1p showcase, /cloned and /wyzant traversal blocks, internal docs exclusion and release-truth substitutions');
+assert.strictEqual((currentConfig.match(/  - "opnotes\.html"/g) || []).length, 1, 'exact client-surgeon op-note page include must appear once');
+assert.strictEqual(currentConfig.replace(p1ConfigBlock, '').replace(clonedConfigBlock, '').replace(wyzantConfigBlock, '').replace(opnotesConfigBlock, ''), baseConfigTextAdjusted,
+  '_config.yml changed beyond the exact reviewed 1p showcase, /cloned, /wyzant and /opnotes blocks, internal docs exclusion and release-truth substitutions');
 
 const productionShell = read('ScribeFlow.html');
 const productionConnect = read('mls-connect.js');

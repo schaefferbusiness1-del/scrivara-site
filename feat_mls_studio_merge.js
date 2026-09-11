@@ -532,6 +532,12 @@
     hoistAnalysis();
     mountTabs();
     mountStarters();
+    /* smpreload-1.0.0: the shell paints "Loading the rest of AI Studio..."
+       above the Copilot card until this reconcile has actually mounted the
+       merged surface. Removing it here, once the real mount is done, is
+       simpler and more honest than a timer - it disappears the moment the
+       thing it was waiting for is true, never before and never long after. */
+    safe(function () { var ph = byId('mlsStudioMergeLoading'); if (ph) ph.remove(); });
     /* THE SAME INVARIANT THE CALM VIEWS EARNED: a fold whose route back cannot
        be SEEN is a deleted feature. If the switcher is not rendering, show
        everything rather than leave two of three sections unreachable.
@@ -611,6 +617,12 @@
     var bar = byId(TABS_ID); if (bar) bar.remove();
     var st = byId('mlsSmStarters'); if (st) st.remove();
     var css = byId(STYLE_ID); if (css) css.remove();
+    /* smpreload-1.0.0: ?ui=classic never merges, so the shell's "Loading the
+       rest of AI Studio..." line would otherwise wait forever for a
+       reconcile() that this branch deliberately skips. teardown() runs on
+       every classic() reconcile() call, so this is reached exactly as
+       promptly as the merged case removes the same line. */
+    safe(function () { var ph = byId('mlsStudioMergeLoading'); if (ph) ph.remove(); });
     /* Put Analysis back where the shell expects it, so ?ui=classic is a real
        escape hatch and not a half-migrated page. */
     var analysis = byId('analysisView'), wrap = byId('appWrap');

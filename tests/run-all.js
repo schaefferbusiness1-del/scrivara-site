@@ -363,6 +363,10 @@ const tests = [
   'first-run-ai-tuning-entry-contract.test.js',
   'first-run-ai-tuning-loader-runtime.test.js',
   'draft-tuning-account-boundary-runtime.test.js',
+  /* vntpl-1.0.0: the plain "Visit note templates" screen is a second door onto
+     the same five-section contract, so it must keep writing that contract and
+     must keep its hands off the operative-note template library. */
+  'visit-note-templates-runtime.test.js',
   /* Recent production regressions must be part of the full release gate, not
      only ad-hoc focused runs: every draft family keeps its own format, the
      first full Athena pull safely seeds local starter structures, mixed
@@ -1123,6 +1127,16 @@ const tests = [
      only a bounded structured preferences object. This executes the shipped
      collector, proves its caps, and refuses any raw browser system prompt. */
   'note-defaults-transport-split.test.js',
+  /* NEW 2026-09-11. The practice billing code table, measured against the
+     shipped parser and editor. Reopening the Settings card and pressing Save
+     re-parsed an UNQUOTED prefill, so "Spondylosis without myelopathy, lumbar"
+     came back coded "LUMBAR"; a superbill's "Billing notes" column outranked
+     its "CPT" column; semicolon/pipe sheets, Excel's text-forcing apostrophe
+     and CPT Category II/III never parsed; and every ICD-10 and HCPCS row
+     reached /api/generate untyped because the store writes 'icd'/'hcpcs' while
+     the server allowlists 'icd10'/'cpt'. Every claim carries a control that
+     fails on the pre-fix bytes (45 of them). */
+  'billing-code-table-truth.test.js',
   'settings-scheduling-api-contract.test.js',
   'studio-tabs-show-one-panel.test.js',
   'visit-stage-rail-fills.test.js',
@@ -1229,6 +1243,16 @@ const tests = [
      procedure it names. The Send-to-Athena suite also pins the derived pages,
      so it is expected red between a 1p shell edit and the derive step. */
   'opnote-send-to-athena-control-runtime.test.js',
+  /* opnote-svc-1.0.0 (owner 2026-09-11): an op note drafted here can be handed
+     to an outside surgeon, who fills only what the draft could not and marks it
+     done on a page of its own. The owner-side suite byte-compares opPrepSave and
+     opPrepSendToAthena against HEAD - this lane is additive - and pins that the
+     fields the surgeon is asked to fill are EXACTLY opNoteBlankTokens(note), the
+     parser the save gate already uses. It reads all four shells, so like the
+     Send-to-Athena suite above it is expected red between a 1p shell edit and
+     the derive step. The client-page suite boots opnotes.html itself. */
+  'opnote-prepare-for-surgeon-runtime.test.js',
+  'opnotes-client-page-runtime.test.js',
   'opnote-template-binding-gate-runtime.test.js',
   'opnote-procedure-title-junk-strip.test.js',
   'opnote-pdf-reconciles-not-concatenates.test.js',
@@ -2507,7 +2531,65 @@ const tests = [
      code, the run-scoped attempt count and the retry-skipped reason; the
      needs-attention queue is a scan of those rows, and the one-click Retry
      re-reads only them. */
-  'schedimport-verdict-census-and-durable-refusals.test.js'
+  'schedimport-verdict-census-and-durable-refusals.test.js',
+  /* NEW 2026-09-11 - upnext-1.0.0, owner: "it always has to pull the to-be
+     visits as to make good op notes". The quiet upcoming-days lane keeps the
+     next scheduled days' charts in MLS ahead of time, so an operative note is
+     drafted against a chart that is already here.
+     -runtime drives the REAL importer over the shared fake-extension harness:
+     today then tomorrow, once each, stopping at the first empty future day; a
+     second walk inside the six-hour window reads nothing; every busy stamp
+     (recording, generating, the Send-to-athenaOne sheet, a running pull, a
+     write, another tab) defers it BY NAME; the setting OFF stops it; and the
+     two quiet gates are driven side by side so they cannot drift apart.
+     -surface-contract EXECUTES the Settings option and the day-strip line out
+     of the shipping files, in both shells.
+     opnote-background-only proves the pulled chart now reaches the op-note
+     prompt under the visit note's own BACKGROUND_ONLY rule rather than the
+     permissive sentence it shipped with - on an operative report that gap was
+     the fabrication class. */
+  'upcoming-autopull-runtime.test.js',
+  'upcoming-autopull-surface-contract.test.js',
+  'opnote-background-only.test.js',
+  /* NEW 2026-09-11, vanishbox-1.0.0. The Doctor visit room's transcript block
+     vanished ~0.7-8s after opening a patient: the calm pass folds
+     .ez3fl-transcript.mls-empty, and once the flow lane owns the top the
+     engine's own .ez3-transcript-card is already CSS-hidden, so BOTH boxes
+     went and "Paste a transcript" had nothing to reveal. The suite walks five
+     seeded schedule rows (one unlinked to any chart) and carries a
+     deterministic arm - one synchronous __mlsCalmShell.render(), the exact
+     call the calm dock's reconcile() makes - which fails on the pre-fix
+     bytes. */
+  'visit-transcript-survives-the-calm-pass-runtime.test.js',
+  /* tpldef-1.0.0 (owner 2026-09-11): the two Templates-modal checkboxes
+     default ON for a fresh account/device; any explicit stored choice wins. */
+  'template-defaults-on-for-fresh-account.test.js',
+  /* tl-1.7.0 / vntplcfg-1.0.0 / vlibgate-1.0.0 (owner 2026-09-11): the
+     first-run checklist's Dismiss and Configure controls, and Configure's
+     retarget onto #mlsVisitNoteTemplatesSection plus the inline-style trap
+     that made it permanently unable to show. */
+  'firstrun-dismiss-and-configure-target-runtime.test.js',
+  /* smpreload-1.0.0 (owner 2026-09-11): the dedicated idle preload for
+     feat_mls_studio_merge.js, independent of the shared __mlsDeferAsset
+     queue, plus the "Loading the rest of AI Studio..." placeholder. */
+  'studio-merge-idle-preload-runtime.test.js',
+  /* tpldisc-1.0.0 (owner 2026-09-11): the multi-upload "Review and add" list
+     gets a plain Discard control, sharing its reset with a successful Add. */
+  'template-multi-upload-discard-runtime.test.js',
+  /* NEW 2026-09-11, noteadv-1.0.0. The backend now serves a visit note it used
+     to refuse and names the sentences the recording did not clearly say. The
+     suite proves they are caught where the answer arrives, kept with the note,
+     cleared by the next run, painted as one amber line inside the room's own
+     surface string, cleared by an edit or by Keep, and silent on an ok answer
+     or an older server that sends nothing. */
+  'note-advisory-flagged-lines.test.js',
+  /* NEW 2026-09-11, vntplpick-1.0.0. One press changes the template on a note
+     that is already drafted and writes it again from the same recording,
+     through the one template seam the connect bundle does not replace. The
+     suite proves an operative-report template can never come through that new
+     door, and that the control is absent without a recording, during a pull,
+     while recording, and on every screen but the drafted note. */
+  'visit-template-change-on-draft.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
