@@ -438,7 +438,7 @@ async function addPatient(page, name, dob) {
   });
 
   await step('settings: cs-2.0.0 workspace — clean skin owns the modal, search filters, tabs switch, both themes readable', async () => {
-    await page.evaluate(() => openSettings());
+    await page.evaluate(() => openSettings({ userInitiated: true }));
     /* the organizer boots with the post-auth module train — wait for it */
     let clean = false;
     for (let i = 0; i < 30; i++) {

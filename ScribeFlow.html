@@ -3547,6 +3547,10 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         <div class="genopt-row">
           <span class="genopt-lbl">Format</span>
           <div id="genStyleSeg" class="mini" aria-label="Note format">HPI / ROS / Exam / Assessment / Plan</div>
+          <!-- vntpl-1.0.0 - one line from the room where the note is written to the
+               screen that shapes it. VISIT note templates only; operative note
+               templates stay where they are, on the Templates screen. -->
+          <button type="button" class="genopt-extra" id="genVisitTemplatesLink" onclick="openVisitNoteTemplates()" title="Paste or upload the template MLS follows for HPI, ROS, Exam, Assessment and Plan">Visit note templates</button>
         </div>
         <div class="genopt-row">
           <span class="genopt-lbl">Length</span>
@@ -9384,13 +9388,21 @@ function hostedNotePreferences(){
     const api=window.__mlsCodeTable;
     const loaded=api&&typeof api.load==='function'?api.load():null;
     const entries=loaded&&Array.isArray(loaded.entries)?loaded.entries:[];
+    /* /api/generate keeps only the first NOTE_PREF_MAX_BILLING_COUNT rows, so
+       collecting more than that was a silent truncation the Settings card then
+       described as "all N codes". Stop where the server stops and say so. */
+    const HOSTED_BILLING_MAX=24;
     let used=0;
-    for(let i=0;i<entries.length&&out.billingCodes.length<100;i++){
+    for(let i=0;i<entries.length&&out.billingCodes.length<HOSTED_BILLING_MAX;i++){
       const row=entries[i]||{};
       const desc=String(row.desc||'').trim().slice(0,180);
       const code=String(row.code||'').trim().slice(0,40);
       const rawKind=String(row.kind||'').trim().toLowerCase();
-      const kind=(rawKind==='icd10'||rawKind==='cpt')?rawKind:'';
+      /* The store writes 'icd' | 'cpt' | 'hcpcs'. The server's allowlist is
+         '' | 'icd10' | 'cpt' and it DISCARDS a whole row whose kind it does not
+         know, so translate what it knows and send the rest untyped -- an
+         untyped row still reaches the model, a rejected one does not. */
+      const kind=(rawKind==='icd'||rawKind==='icd10')?'icd10':(rawKind==='cpt'?'cpt':'');
       if(!desc||!code) continue;
       const cost=desc.length+code.length+kind.length;
       if(used+cost>6000) break;
@@ -10281,7 +10293,87 @@ function mlsBuildSettingsTabs(){
   });
   mlsSelectSettingsTab(0);
 }
-function openSettings(){
+/* vntpl-1.0.0 - the visit room and Settings both reach ONE screen. It is owned
+   by feat_mls_draft_tuning.js (the module that already owns the visit-note
+   section templates), and that module is lazily loaded, so ensure it before
+   asking it to open. Never touches the operative-note template library. */
+async function openVisitNoteTemplates(){
+  try{ if(typeof window.__mlsEnsureDraftTuning==='function') await window.__mlsEnsureDraftTuning(); }catch(eVnLoad){}
+  try{
+    var dt=window.__mlsDraftTuning;
+    if(dt&&typeof dt.openVisitTemplates==='function'){ dt.openVisitTemplates(); return true; }
+  }catch(eVnOpen){}
+  try{ if(typeof openSettings==='function'){ openSettings({userInitiated:true}); return true; } }catch(eVnSettings){}
+  try{ if(typeof toast==='function') toast('Visit note templates could not be opened. Reload MLS and try again.','err'); }catch(eVnToast){}
+  return false;
+}
+/* settingsgate-1.0.0 (owner P0 2026-09-11): THE FULL SETTINGS DIALOG OPENED BY
+   ITSELF DURING A DAY PULL. #settingsModal.show has exactly one writer -
+   openSettings() below - and openSettings() was being called from four
+   GENERATION REFUSAL branches (ai-unavailable in generateNote, the coding
+   review, recommendations, and an unresolved signer). generateNote() is
+   invoked PROGRAMMATICALLY by the kiosk avatar timer, the recording-segment
+   lane, the voice-intent router and the command palette, so a transient
+   hasAI() false while a pull saturated the network threw the whole Settings
+   dialog over work nobody had asked to interrupt.
+   The modal now opens only behind a real gesture: every TRUSTED pointerdown
+   or keydown stamps __mlsLastTrustedGesture, and openSettings returns false
+   without adding 'show' unless that stamp is younger than
+   __MLS_SETTINGS_GESTURE_MS or the caller passes {userInitiated:true}.
+   A refusal is silent by design - nothing is written to the doctor log,
+   because a refusal here is not a fault the doctor can act on. Callers that
+   legitimately run more than a second after the click - anything behind an
+   await - pass {userInitiated:true} explicitly. */
+var __mlsLastTrustedGesture=0;
+var __MLS_SETTINGS_GESTURE_MS=1000;
+(function(){
+  function __mlsStampTrustedGesture(ev){ if(ev&&ev.isTrusted===true) __mlsLastTrustedGesture=Date.now(); }
+  try{
+    document.addEventListener('pointerdown',__mlsStampTrustedGesture,true);
+    document.addEventListener('keydown',__mlsStampTrustedGesture,true);
+  }catch(eGestureListen){}
+})();
+function __mlsSettingsGestureFresh(){
+  return (Date.now()-__mlsLastTrustedGesture)<__MLS_SETTINGS_GESTURE_MS;
+}
+/* One inline offer for every refusal that used to yank Settings open. The
+   sentence is the refusal's own sentence; the button is the doctor's OWN
+   click, so it satisfies the gesture gate on its own event and does not need
+   the flag. Returns false and touches nothing when the anchor is absent - the
+   refusal toast has already carried the sentence either way. */
+function _mlsOfferSettingsAction(message,anchorIds){
+  try{
+    var ids=anchorIds||[],anchor=null;
+    for(var i=0;i<ids.length;i++){ var candidate=document.getElementById(ids[i]); if(candidate&&candidate.parentNode){ anchor=candidate; break; } }
+    if(!anchor) return false;
+    var prior=document.getElementById('mlsSettingsOfferRow');
+    if(prior&&prior.parentNode) prior.parentNode.removeChild(prior);
+    var row=document.createElement('div');
+    row.id='mlsSettingsOfferRow';
+    row.setAttribute('role','status');
+    row.style.cssText='display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;font-size:13px';
+    var say=document.createElement('span');
+    say.textContent=String(message||'');
+    row.appendChild(say);
+    var go=document.createElement('button');
+    go.type='button';
+    go.className='btn-ghost';
+    go.id='mlsSettingsOfferBtn';
+    go.style.cssText='font-size:12px;padding:4px 10px';
+    go.textContent='Open Settings';
+    go.addEventListener('click',function(){
+      try{ if(row.parentNode) row.parentNode.removeChild(row); }catch(eRowGone){}
+      try{ openSettings({userInitiated:true}); }catch(eOpenSettings){}
+    });
+    row.appendChild(go);
+    anchor.parentNode.insertBefore(row,anchor.nextSibling);
+    return true;
+  }catch(eOffer){ return false; }
+}
+function openSettings(opts){
+  /* settingsgate-1.0.0: the gate. See the note above - nothing below this line
+     runs for a caller nobody pressed. */
+  if(!(opts&&opts.userInitiated===true)&&!__mlsSettingsGestureFresh()) return false;
   try{ window.__mlsEnsureDraftTuning(); }catch(eDtLoad){}
   snapshotQolCommits();   /* what Close must put back if Save is never pressed */
   applyBackendModeUI();
@@ -10368,6 +10460,7 @@ function openSettings(){
      mls-connect.js), so force one render right after the modal opens
      instead of waiting up to 4s for the next tick. */
   try{ if(window.__mlsExtVerLive&&typeof window.__mlsExtVerLive.render==='function') window.__mlsExtVerLive.render(); }catch(eExtVer){}
+  return true;
 }
 /* Theme, text size and compact are PREVIEW-only: applyThemePreview and friends
    toggle body classes and nothing else, and only Save writes them to storage.
@@ -23767,7 +23860,7 @@ function opPrepRender(){
       var _opAthTitle=_opAthBlanks
         ? ('Fill the '+_opAthBlanks+' unresolved field'+(_opAthBlanks===1?'':'s')+' above first. An op note with a blank in it is never offered to Athena.')
         : ('Opens the Athena review - nothing is sent until you confirm it there. If this note is not in '+a.name+'’s chart yet, it is saved there first.');
-      h+='<div class="row" style="margin-top:6px;gap:8px"><button class="btn-green" style="font-size:12.5px;padding:7px 13px" onclick="opPrepSave('+i+')">💾 Save to '+esc(a.name)+'’s chart</button><button class="btn-ghost" style="font-size:12.5px;padding:7px 13px"'+(_opAthBlanks?' disabled':'')+' title="'+esc(_opAthTitle)+'" onclick="opPrepSendToAthena('+i+')">🚀 Send to Athena</button><span id="opPrepMsg_'+i+'" class="mini" style="color:var(--muted);align-self:center"></span></div>';
+      h+='<div class="row" style="margin-top:6px;gap:8px"><button class="btn-green" style="font-size:12.5px;padding:7px 13px" onclick="opPrepSave('+i+')">💾 Save to '+esc(a.name)+'’s chart</button><button class="btn-ghost" style="font-size:12.5px;padding:7px 13px"'+(_opAthBlanks?' disabled':'')+' title="'+esc(_opAthTitle)+'" onclick="opPrepSendToAthena('+i+')">🚀 Send to Athena</button><button class="btn-ghost" style="font-size:12.5px;padding:7px 13px" onclick="opPrepForSurgeon('+i+')">👤 Prepare for a surgeon</button><span id="opPrepMsg_'+i+'" class="mini" style="color:var(--muted);align-self:center"></span></div>';
     }
     h+='</div>';
     return h;
@@ -24673,6 +24766,110 @@ function _opSendRefused(i){
 }
 try{ window._opSendRefused=_opSendRefused; }catch(_eSR){}
 try{ window.opPrepSendToAthena=opPrepSendToAthena; }catch(_eSA){}
+/* ===== opnote-svc-1.0.0 - PREPARE THIS OP NOTE FOR A CLIENT SURGEON =======
+   Owner, 2026-09-11: "make a link where I can draft op notes for someone with
+   templates then send them a link that brings them to a simple op notes page,
+   op notes only ... the goal is that everything else is done."
+
+   THE BLANKS ARE NOT RE-DERIVED. What the surgeon is asked to fill is EXACTLY
+   window.opNoteBlankTokens(note) - the one canonical parser opPrepSave and the
+   Athena push already gate on. A second, looser placeholder parser has shipped
+   a disagreement in this repo before (a placeholder-bearing note filed as
+   complete); the whole value of this control is that the two lists cannot
+   drift apart, so it never grows a regex of its own.
+
+   THE LINK IS SHOWN ONCE. The server returns its raw value only at mint. It is
+   held in a read-only field with a Copy button, the dialog says so, and
+   closing the dialog removes it from the document. Nothing here stores it: the
+   clinician's own credential never leaves this page, and the surgeon's link
+   never enters this app's storage.
+
+   NOTHING ELSE ON THIS CARD MOVES. opPrepSave and opPrepSendToAthena are
+   untouched - this is an additional destination for a finished draft, not a
+   change to either existing one. */
+var _opSurgeonRow=null, _opSurgeonClients=[];
+async function _opSurgeonApi(path,opts){
+  opts=opts||{};
+  opts.headers=Object.assign({'Authorization':'Bearer '+bkToken()},opts.headers||{});
+  if(opts.body&&!opts.headers['Content-Type']) opts.headers['Content-Type']='application/json';
+  var r=await fetch(bkBase()+path,opts);
+  var d={}; try{ d=await r.json(); }catch(e){}
+  if(!r.ok){ var err=new Error((d&&d.error&&d.error.message)||('Request failed ('+r.status+').')); err.status=r.status; throw err; }
+  return d;
+}
+function _opSurgeonDialog(inner){
+  var old=document.getElementById('opSurgeonModal'); if(old&&old.parentNode) old.parentNode.removeChild(old);
+  var d=document.createElement('div');
+  d.id='opSurgeonModal';
+  d.setAttribute('role','dialog'); d.setAttribute('aria-modal','true'); d.setAttribute('aria-label','Prepare for a surgeon');
+  d.style.cssText='position:fixed;left:0;top:0;right:0;bottom:0;z-index:12000;background:rgba(16,24,20,.55);display:flex;align-items:center;justify-content:center;padding:18px';
+  d.innerHTML='<div style="background:var(--card,#fff);color:var(--ink,#17211c);border:1px solid var(--line,#e7e5dd);border-radius:16px;width:100%;max-width:560px;max-height:86vh;overflow:auto;padding:18px 20px">'+inner+'</div>';
+  document.body.appendChild(d);
+  return d;
+}
+function opSurgeonClose(){ var d=document.getElementById('opSurgeonModal'); if(d&&d.parentNode) d.parentNode.removeChild(d); _opSurgeonRow=null; }
+function _opSurgeonBlanks(){ try{ return window.opNoteBlankTokens((((window._opPrep||[])[_opSurgeonRow])||{}).note||'')||[]; }catch(e){ return []; } }
+function _opSurgeonPick(){
+  var blanks=_opSurgeonBlanks();
+  var opts='';
+  for(var j=0;j<_opSurgeonClients.length;j++){ var c=_opSurgeonClients[j]||{}; opts+='<option value="'+esc(c.id)+'">'+esc(c.name||c.label||c.id)+'</option>'; }
+  var h='<div style="font-weight:800;font-size:17px">Prepare for a surgeon</div>';
+  h+='<div class="mini" style="color:var(--muted);margin-top:6px">'+blanks.length+' field'+(blanks.length===1?'':'s')+' will be left for them to fill in. Everything else is already written.</div>';
+  if(opts) h+='<label class="mini" for="opSurgeonPick" style="display:block;margin:12px 0 3px;color:var(--muted)">Surgeon</label><select id="opSurgeonPick" style="width:100%;min-height:40px;padding:6px 9px;border:1px solid var(--line);border-radius:10px">'+opts+'</select><div class="mini" style="color:var(--muted);margin-top:10px">Or add a new one:</div>';
+  h+='<div class="row" style="gap:8px;margin-top:6px;flex-wrap:wrap"><input id="opSurgeonName" placeholder="Name" style="flex:1;min-width:150px;min-height:40px;padding:6px 9px;border:1px solid var(--line);border-radius:10px"><input id="opSurgeonPractice" placeholder="Practice" style="flex:1;min-width:150px;min-height:40px;padding:6px 9px;border:1px solid var(--line);border-radius:10px"></div>';
+  h+='<input id="opSurgeonEmail" placeholder="Email" style="width:100%;margin-top:8px;min-height:40px;padding:6px 9px;border:1px solid var(--line);border-radius:10px">';
+  h+='<div id="opSurgeonMsg" class="mini" style="color:#8b2525;font-weight:700;margin-top:8px"></div>';
+  h+='<div class="row" style="gap:8px;margin-top:14px"><button class="btn-primary" onclick="opSurgeonSend()">Send this op note</button><button class="btn-ghost" onclick="opSurgeonClose()">Cancel</button></div>';
+  _opSurgeonDialog(h);
+}
+function _opSurgeonSay(t){ var m=document.getElementById('opSurgeonMsg'); if(m) m.textContent=t; }
+function _opSurgeonField(id){ var e=document.getElementById(id); return e?String(e.value||'').trim():''; }
+function _opSurgeonShowLink(url,n){
+  var h='<div style="font-weight:800;font-size:17px">Ready for them</div>';
+  h+='<div class="mini" style="color:var(--muted);margin-top:6px">The op note is waiting on their page with '+n+' field'+(n===1?'':'s')+' to fill in.</div>';
+  h+='<input id="opSurgeonLink" readonly value="'+esc(url)+'" style="width:100%;margin-top:12px;min-height:40px;padding:6px 9px;border:1px solid var(--line);border-radius:10px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px">';
+  h+='<div class="mini" style="color:#8b2525;font-weight:700;margin-top:6px">Copy this now - it is not shown again.</div>';
+  h+='<div class="row" style="gap:8px;margin-top:14px"><button class="btn-primary" onclick="opSurgeonCopy()">Copy link</button><button class="btn-ghost" onclick="opSurgeonClose()">Done</button></div>';
+  _opSurgeonDialog(h);
+}
+function opSurgeonCopy(){
+  var f=document.getElementById('opSurgeonLink'); if(!f) return;
+  try{ if(f.select) f.select(); }catch(e){}
+  try{ if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(f.value); else if(document.execCommand) document.execCommand('copy'); }catch(e){}
+  try{ toast('Link copied. It is not shown again.','ok'); }catch(e){}
+}
+async function opPrepForSurgeon(i){
+  var row=(window._opPrep||[])[i];
+  if(!row||!String(row.note||'').trim()){ try{ toast('Draft the op note first - there is nothing to hand over yet.','err'); }catch(e){} return; }
+  _opSurgeonRow=i;
+  _opSurgeonDialog('<div style="font-weight:800;font-size:17px">Prepare for a surgeon</div><div class="mini" style="color:var(--muted);margin-top:10px">One moment.</div>');
+  try{ var d=await _opSurgeonApi('/api/opnote-clients'); _opSurgeonClients=(d&&d.clients)||[]; }
+  catch(e){ _opSurgeonClients=[]; }
+  _opSurgeonPick();
+}
+async function opSurgeonSend(){
+  var i=_opSurgeonRow; var row=(window._opPrep||[])[i]; if(!row) return;
+  var pick=document.getElementById('opSurgeonPick');
+  var clientId=pick?String(pick.value||''):'';
+  var newName=_opSurgeonField('opSurgeonName');
+  if(newName){
+    try{
+      var made=await _opSurgeonApi('/api/opnote-clients',{method:'POST',body:JSON.stringify({name:newName,practice:_opSurgeonField('opSurgeonPractice'),email:_opSurgeonField('opSurgeonEmail')})});
+      clientId=(made&&made.client&&made.client.id)||'';
+    }catch(e){ _opSurgeonSay('That surgeon could not be added. Try again in a moment.'); return; }
+  }
+  if(!clientId){ _opSurgeonSay('Pick a surgeon, or type a name to add one.'); return; }
+  var blanks=_opSurgeonBlanks();
+  var title=String(row.proc||'').trim()||'Op note';
+  try{
+    await _opSurgeonApi('/api/opnote-jobs',{method:'POST',body:JSON.stringify({clientId:clientId,templateId:row.tplId||null,title:title,noteText:String(row.note||''),blanks:blanks})});
+  }catch(e){ _opSurgeonSay('That did not go through. Try again in a moment.'); return; }
+  try{
+    var minted=await _opSurgeonApi('/api/opnote-clients/'+encodeURIComponent(clientId)+'/link',{method:'POST'});
+    _opSurgeonShowLink((minted&&minted.link&&minted.link.url)||'',blanks.length);
+  }catch(e){ _opSurgeonSay('The op note is waiting for them, but the link did not come back. Open this again to get one.'); }
+}
+try{ window.opPrepForSurgeon=opPrepForSurgeon; window.opSurgeonSend=opSurgeonSend; window.opSurgeonCopy=opSurgeonCopy; window.opSurgeonClose=opSurgeonClose; }catch(_eOS){}
 function opPrepSave(i){
   var row=(window._opPrep||[])[i]; if(!row) return;
   var note=row.note||''; if(!note.trim()){ try{ toast('Nothing to save yet.','err'); }catch(e){} return; }
@@ -31954,8 +32151,16 @@ async function generateNote(){
   if(!_athenaGuardBoundEditor('note generation'))return _mlsRefuseGeneration('visit-binding-blocked','MLS could not bind this draft to the active patient. Re-open the intended visit and try again.',false);
   const hasAiNow=hasAI();
   if(!hasAiNow&&transcript.trim()!==EXAMPLE.trim()){
-    openSettings();
-    return _mlsRefuseGeneration('ai-unavailable','Add your OpenAI API key in Settings to generate notes.');
+    /* settingsgate-1.0.0: this branch used to call openSettings(), and this
+       function runs programmatically (kiosk avatar timer, recording segments,
+       voice intent, command palette) - a transient hasAI() false during a day
+       pull is what opened the full dialog over the doctor's work. The refusal
+       code, sentence and return value are unchanged; only the door changed
+       from forced to offered. */
+    var _mlsAiKeyMessage='Add your OpenAI API key in Settings to generate notes.';
+    var _mlsAiKeyRefusal=_mlsRefuseGeneration('ai-unavailable',_mlsAiKeyMessage);
+    _mlsOfferSettingsAction(_mlsAiKeyMessage,['noteGenError','genError','genBtn']);
+    return _mlsAiKeyRefusal;
   }
   const gb=document.getElementById('genBtn');
   const run=_mlsStartGeneration(transcriptEl,evidence);
@@ -34444,7 +34649,8 @@ async function reviewCodingDocumentation(){
       document.getElementById('optCard').scrollIntoView({behavior:'smooth'});
     } else {
       toast('Add your OpenAI API key in Settings to optimize coding.','err');
-      openSettings();
+      /* settingsgate-1.0.0: offer the door, never force it open. */
+      _mlsOfferSettingsAction('Add your OpenAI API key in Settings to optimize coding.',['optBtn']);
     }
     return;
   }
@@ -34910,7 +35116,8 @@ async function generateRecommendations(){
       toast('Offline example recommendations shown. Add your OpenAI key for any visit.','');
     } else {
       toast('Add your OpenAI API key in Settings to generate recommendations.','err');
-      openSettings();
+      /* settingsgate-1.0.0: offer the door, never force it open. */
+      _mlsOfferSettingsAction('Add your OpenAI API key in Settings to generate recommendations.',['genRecsBtn']);
     }
     return;
   }
@@ -35135,7 +35342,8 @@ function signNote(){
   if(!resolvedSigner){
     setBadge(false);
     toast('MLS cannot confirm who is signing this note. Set your provider name in Settings, then sign.','err');
-    try{ if(typeof openSettings==='function') openSettings(); }catch(eSign){}
+    /* settingsgate-1.0.0: offer the door, never force it open. */
+    try{ _mlsOfferSettingsAction('MLS cannot confirm who is signing this note. Set your provider name in Settings, then sign.',['signBtn','signLine']); }catch(eSign){}
     return;
   }
   const name=resolvedSigner;
@@ -46311,7 +46519,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1234';
+  window.__MLS_AV='b1238';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
@@ -56164,6 +56372,12 @@ html body.mls-recording .ez3fl-transcript.mls-empty .ez3fl-txhead::after{
   flex-basis:100%; order:9;
   font:600 11.5px/1.35 var(--sans, system-ui, sans-serif);
   color:#2E6A4B;
+}
+
+/* vanishbox-1.0.0 - measured b1233: with the flow lane owning the top the engine's
+   .ez3-transcript-card is hidden, so folding the empty flow box leaves NO box at all. */
+html body.mls-calm #mlsEz3Body.ez3fl-top-owns .ez3fl-transcript.mls-empty{
+  display:block !important;
 }
 
 /* ---- (2) ONE RECORD CONTROL -------------------------------------------

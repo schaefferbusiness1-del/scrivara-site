@@ -56,7 +56,11 @@ if (/\bsystem\s*:|\bsys\b/.test(generateBody.split('signal')[0].replace('hostedN
 }
 
 /* ---- 2. main note generation really uses this structured lane ---- */
-const gen = sf.indexOf("return await postChat(sys,'TODAY_TRANSCRIPT_BEGIN");
+/* The system argument gained a bounded template line (sys+tplSysLine), which
+ * silently stranded a literal anchor: this whole section reported three
+ * failures on live main while the lane itself was intact. Anchor on the shape
+ * that actually matters - postChat, the sys argument, the transcript body. */
+const gen = sf.search(/return await postChat\(sys[^,]*,'TODAY_TRANSCRIPT_BEGIN/);
 if (gen < 0) fail('main note generation no longer uses the non-freeform /api/generate lane');
 const sysStart = sf.lastIndexOf('const sys=', gen);
 const mainPrompt = sf.slice(sysStart, gen);
@@ -73,10 +77,14 @@ if (prefStart < 0 || prefEnd < 0) {
   fail('could not isolate hostedNotePreferences');
 } else {
   const providerInputs = Array.from({length: 40}, (_, n) => n === 0 ? '  Keep plans focused.  ' : 'p'.repeat(300));
+  /* The store (feat_mls_code_table.js) writes exactly these three kinds. The
+     fixture used to invent 'ICD10'/'not-allowed', so the collector looked
+     correct while every real ICD-10 and HCPCS row travelled untyped. */
+  const STORE_KINDS = ['icd', 'cpt', 'hcpcs'];
   const codeInputs = Array.from({length: 140}, (_, n) => ({
     desc: 'Description ' + n + ' ' + 'd'.repeat(210),
     code: 'CODE-' + n + 'x'.repeat(50),
-    kind: n % 3 === 0 ? 'ICD10' : (n % 3 === 1 ? 'cpt' : 'not-allowed'),
+    kind: STORE_KINDS[n % 3],
     ignored: 'must not travel',
   }));
   const sandbox = {
@@ -94,8 +102,15 @@ if (prefStart < 0 || prefEnd < 0) {
     if (!p || p.patientSummary !== true) fail('patient-summary choice did not reach the structured object as a boolean');
     if (!p || p.followUp.length > 160 || !/^four weeks/.test(p.followUp)) fail('follow-up was not trimmed/capped');
     if (!p || p.providerPreferences.length > 20 || p.providerPreferences.reduce((n, v) => n + v.length, 0) > 3000) fail('provider preference caps failed');
-    if (!p || p.billingCodes.length > 100 || p.billingCodes.reduce((n, v) => n + v.desc.length + v.code.length + v.kind.length, 0) > 6000) fail('billing-code caps failed');
+    /* 24 = the backend's NOTE_PREF_MAX_BILLING_COUNT. Collecting past it was a
+       silent truncation: the server threw the extra rows away anyway. */
+    if (!p || p.billingCodes.length > 24 || p.billingCodes.reduce((n, v) => n + v.desc.length + v.code.length + v.kind.length, 0) > 6000) fail('billing-code caps failed');
     if (p && p.billingCodes.some(v => !['', 'icd10', 'cpt'].includes(v.kind) || 'ignored' in v)) fail('billing-code allowlisted shape failed');
+    /* The store's 'icd' must become the server's 'icd10'; 'hcpcs' has no server
+       kind, so the row travels untyped rather than being dropped whole. */
+    if (!p || p.billingCodes[0].kind !== 'icd10') fail("a stored 'icd' row did not reach /api/generate as 'icd10'");
+    if (!p || p.billingCodes[1].kind !== 'cpt') fail("a stored 'cpt' row lost its kind");
+    if (!p || p.billingCodes[2].kind !== '' || !/^Description 2 /.test(p.billingCodes[2].desc)) fail("a stored 'hcpcs' row was dropped instead of travelling untyped");
     if (p && Object.prototype.hasOwnProperty.call(p, 'system')) fail('arbitrary system field leaked into the structured object');
   } catch (e) { fail('hostedNotePreferences did not execute: ' + e.message); }
 }

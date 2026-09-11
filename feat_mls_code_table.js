@@ -43,18 +43,42 @@
 
   function norm(s) { return S(s).toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim(); }
 
+  /* Excel writes a numeric-looking code as text by prefixing an apostrophe
+     ('64493) and some exporters wrap the cell in quotes. Neither belongs to the
+     code, and leaving them on made every such row fail the shape test.
+     ASCII-only class on purpose: a latin1 splice writer mangles smart quotes. */
+  var CODE_JUNK_LEAD = new RegExp('^[\'`"]+');
+  var CODE_JUNK_TAIL = new RegExp('["]+$');
+  function cleanCode(code) {
+    return S(code).replace(/\s+/g, '')
+      .replace(CODE_JUNK_LEAD, '')
+      .replace(CODE_JUNK_TAIL, '')
+      .toUpperCase();
+  }
+
+  /* A CPT/HCPCS modifier rides on the same cell (64493-50, J1030-JW). It must
+     not hide the base code's kind, so split it off before any shape test and
+     keep it beside the entry instead of throwing it away. */
+  function splitModifier(c) {
+    var m = /^([A-Z0-9][A-Z0-9.]*)-([0-9A-Z]{2})$/.exec(S(c));
+    return m ? { base: m[1], modifier: m[2] } : { base: S(c), modifier: '' };
+  }
+
   /* ICD-10-CM = letter + digit then optional more (e.g. M47.816, J20.9, S83.511A).
-     CPT = 5 digits (e.g. 64493, 20610). HCPCS = letter + 4 digits (e.g. J1030). */
+     CPT Category I = 5 digits (e.g. 64493, 20610); Category II/III and the
+     MAAA/PLA families are 4 digits + F/T/M/U (3074F, 0232T, 0002M, 0016U).
+     HCPCS = letter + 4 digits (e.g. J1030). */
   function inferKind(code) {
-    var c = S(code).toUpperCase().replace(/\s+/g, '');
+    var c = splitModifier(cleanCode(code)).base;
     if (/^[A-TV-Z][0-9][0-9A-Z]?(\.[0-9A-Z]{1,4})?$/.test(c)) return 'icd';
     if (/^[0-9]{5}$/.test(c)) return 'cpt';
+    if (/^[0-9]{4}[FTMU]$/.test(c)) return 'cpt';
     if (/^[A-Z][0-9]{4}$/.test(c)) return 'hcpcs';
     if (/[A-Z]/.test(c) && /[0-9]/.test(c) && c.indexOf('.') >= 0) return 'icd';
     if (/^[0-9]+$/.test(c)) return 'cpt';
     return '';
   }
-  function looksLikeCode(s) { return !!inferKind(s) || /^[A-Z0-9][A-Z0-9.\-]{2,7}$/i.test(S(s).replace(/\s+/g, '')); }
+  function looksLikeCode(s) { return !!inferKind(s) || /^[A-Z0-9][A-Z0-9.\-]{2,7}$/i.test(cleanCode(s)); }
 
   /* -------- parse pasted / uploaded table (CSV, TSV, or loose 2-column) -------- */
   function splitLine(line, delim) {
@@ -68,28 +92,111 @@
     }
     out.push(cur); return out;
   }
+  /* splitLine already consumed the quoting for a comma sheet, so stripping a
+     quote there truncated a description that legitimately ends in one. Only the
+     non-comma delimiters still arrive quoted. */
+  function unquote(cell, delim) {
+    if (delim === ',') return cell;
+    if (cell.length >= 2 && cell.charAt(0) === '"' && cell.charAt(cell.length - 1) === '"') {
+      return cell.slice(1, -1).replace(/""/g, '"');
+    }
+    return cell;
+  }
+  /* The editor's textarea is re-parsed on Save, so what it shows must be valid
+     CSV: a description holding a comma or a quote has to travel quoted or the
+     comma splitter cuts the description in half and promotes its tail to a
+     "code" (this destroyed a saved table on every reopen+Save). */
+  function csvCell(v) {
+    var s = S(v);
+    return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+  function toCsv(entries) {
+    return (entries || []).map(function (e) {
+      return csvCell(e && e.desc) + ', ' + csvCell(e && e.code);
+    }).join('\n');
+  }
+
+  /* A superbill arrives as a tab, semicolon, pipe or comma sheet. Sniff by the
+     count on the first line instead of assuming comma the moment a tab is
+     missing -- a semicolon export used to parse as ONE giant cell.
+     Count OUTSIDE quotes, or "Injection, epidural, caudal";62323 looks like a
+     two-comma sheet. Ties go to the order below: a tab is never part of a
+     description, a comma sheet is the common case, and a pipe or semicolon
+     really can appear inside prose. */
+  var DELIMS = ['\t', ',', ';', '|'];
+  function countOutsideQuotes(line, d) {
+    var n = 0, q = false, s = S(line);
+    for (var i = 0; i < s.length; i++) {
+      var ch = s.charAt(i);
+      if (ch === '"') { q = !q; continue; }
+      if (!q && ch === d) n++;
+    }
+    return n;
+  }
+  function sniffDelim(line) {
+    var best = ',', bestN = 0;
+    for (var i = 0; i < DELIMS.length; i++) {
+      var n = countOutsideQuotes(line, DELIMS[i]);
+      if (n > bestN) { bestN = n; best = DELIMS[i]; }   /* strict: earlier wins a tie */
+    }
+    return best;
+  }
+
+  /* Header-cell scoring. A superbill routinely carries BOTH a real code column
+     and a chatty one ("Billing notes"); last-write-wins read the chatty one and
+     every code in the sheet came out wrong. An exact name beats a substring. */
+  var HDR_CODE_EXACT = /^(icd|icd-?10(-?cm)?|cpt|hcpcs|code|codes|dx code|icd code|icd-?10 code|cpt code|proc code|procedure code|billing code|service code)$/;
+  var HDR_CODE_LOOSE = /code|icd|cpt|hcpcs|billing/;
+  var HDR_DESC_EXACT = /^(desc|descr|description|diagnosis|diagnoses|dx|dx description|procedure|procedures|procedure description|condition|name|indication|service)$/;
+  var HDR_DESC_LOOSE = /desc|diagnos|procedure|condition|name|indication/;
+  var HDR_NOISE = /note|comment|remark|memo|detail|label|text/;
+  function scoreCodeHeader(c) {
+    if (HDR_CODE_EXACT.test(c)) return 3;
+    if (!HDR_CODE_LOOSE.test(c)) return 0;
+    return (HDR_NOISE.test(c) || HDR_DESC_LOOSE.test(c)) ? 1 : 2;
+  }
+  function scoreDescHeader(c) {
+    if (HDR_DESC_EXACT.test(c)) return 3;
+    if (!HDR_DESC_LOOSE.test(c)) return 0;
+    return HDR_CODE_LOOSE.test(c) ? 1 : 2;
+  }
+  function pickCol(cells, scorer, exclude) {
+    var best = -1, bestScore = 0;
+    for (var i = 0; i < cells.length; i++) {
+      if (i === exclude) continue;
+      var s = scorer(cells[i]);
+      if (s > bestScore) { bestScore = s; best = i; }   /* strict: first cell wins a tie */
+    }
+    return best;
+  }
+
   function parse(text) {
     text = S(text).replace(/\r\n?/g, '\n').trim();
     if (!text) return [];
     var lines = text.split('\n').filter(function (l) { return l.trim(); });
     if (!lines.length) return [];
-    var delim = (lines[0].indexOf('\t') >= 0) ? '\t' : ',';
-    /* header detection: a first row whose cells are words like desc/code and no code-shaped cell */
+    var delim = sniffDelim(lines[0]);
+    /* header detection: a first row of words like desc/code, OR a desc-worded
+       first row in which NO cell is code-shaped -- "Diagnosis,Value" used to be
+       eaten as a data row because looksLikeCode('VALUE') is true. */
     var first = splitLine(lines[0], delim).map(function (c) { return c.trim(); });
     var headerLc = first.map(function (c) { return c.toLowerCase(); });
-    var hasHeader = headerLc.some(function (c) { return /desc|diagnos|procedure|condition|name|indication/.test(c); })
-      && headerLc.some(function (c) { return /code|icd|cpt|hcpcs|billing/.test(c); });
+    var rowCarriesACode = first.some(function (c) { return !!inferKind(c); });
+    var hasHeader = headerLc.some(function (c) { return HDR_DESC_LOOSE.test(c); })
+      && (headerLc.some(function (c) { return HDR_CODE_LOOSE.test(c); }) || !rowCarriesACode);
     var descCol = 0, codeCol = 1, kindCol = -1;
     if (hasHeader) {
-      headerLc.forEach(function (c, i) {
-        if (/desc|diagnos|procedure|condition|name|indication/.test(c) && descCol === 0 && !/code/.test(c)) descCol = i;
-        if (/code|icd|cpt|hcpcs|billing/.test(c)) codeCol = i;
-        if (/type|kind|category/.test(c)) kindCol = i;
-      });
+      var cCol = pickCol(headerLc, scoreCodeHeader, -1);
+      if (cCol >= 0) codeCol = cCol;
+      var dCol = pickCol(headerLc, scoreDescHeader, codeCol);
+      if (dCol >= 0) descCol = dCol;
+      else if (descCol === codeCol) descCol = (codeCol === 0) ? 1 : 0;
+      var kCol = pickCol(headerLc, function (c) { return /type|kind|category/.test(c) ? 1 : 0; }, -1);
+      if (kCol >= 0 && kCol !== codeCol && kCol !== descCol) kindCol = kCol;
     }
     var out = [], seen = {}, start = hasHeader ? 1 : 0;
     for (var r = start; r < lines.length; r++) {
-      var cells = splitLine(lines[r], delim).map(function (c) { return c.trim().replace(/^"|"$/g, ''); });
+      var cells = splitLine(lines[r], delim).map(function (c) { return unquote(c.trim(), delim); });
       if (!cells.length) continue;
       var desc = S(cells[descCol]), code = S(cells[codeCol]);
       /* if the 2 default columns are swapped (code first), auto-correct by shape */
@@ -98,13 +205,16 @@
         var m = cells[0].match(/^(.*\S)\s*[|=:>\-]{1,2}\s*([A-Z0-9][A-Z0-9.\-]{2,7})$/i);
         if (m) { desc = m[1]; code = m[2]; } else continue;
       }
-      code = code.toUpperCase().replace(/\s+/g, '');
+      code = cleanCode(code);
       if (!desc || !code || !looksLikeCode(code)) continue;
       var kind = (kindCol >= 0 && cells[kindCol]) ? cells[kindCol].toLowerCase().replace(/[^a-z]/g, '') : inferKind(code);
       if (kind !== 'icd' && kind !== 'cpt' && kind !== 'hcpcs') kind = inferKind(code) || 'icd';
       var k = norm(desc) + '|' + code;
       if (seen[k]) continue; seen[k] = 1;
-      out.push({ desc: desc.slice(0, 160), code: code.slice(0, 12), kind: kind });
+      var row = { desc: desc.slice(0, 160), code: code.slice(0, 12), kind: kind };
+      var mod = splitModifier(row.code).modifier;
+      if (mod) row.modifier = mod;
+      out.push(row);
       if (out.length >= MAX_ENTRIES) break;
     }
     return out;
@@ -212,7 +322,7 @@
           'Currently loaded: <b id="mlsCtCount">' + cur.entries.length + '</b> codes.</p>' +
         '<input type="file" id="mlsCtFile" accept=".csv,.tsv,.txt" style="margin-bottom:8px">' +
         '<textarea id="mlsCtText" placeholder="Lumbar facet arthropathy, M47.816&#10;Lumbar medial branch block, 64493&#10;Caudal epidural steroid injection, 62323">' +
-          esc(cur.entries.map(function (e) { return e.desc + ', ' + e.code; }).join('\n')) + '</textarea>' +
+          esc(toCsv(cur.entries)) + '</textarea>' +
         '<div class="ctrow">' +
           '<button class="pri" id="mlsCtParse">Preview</button>' +
           '<button class="pri" id="mlsCtSave">Save table</button>' +
@@ -231,11 +341,13 @@
       var rd = new FileReader(); rd.onload = function () { ta.value = S(rd.result); doPreview(); }; rd.readAsText(f);
     };
     m.querySelector('#mlsCtSave').onclick = function () {
-      var entries = _pending || parse(ta.value); save(entries);
+      /* Save what the box says NOW. Trusting the last Preview silently dropped
+         anything typed after it and re-saved a cleared table. */
+      var entries = parse(ta.value); _pending = entries; save(entries);
       safe(function () { if (isFn(window.toast)) window.toast(entries.length + ' billing codes saved for this practice.', 'ok'); });
       m.remove();
     };
-    m.querySelector('#mlsCtClear').onclick = function () { save([]); ta.value = ''; prev.innerHTML = ''; m.querySelector('#mlsCtCount').textContent = '0'; safe(function () { if (isFn(window.toast)) window.toast('Billing code table cleared — AI will fill best codes.', 'ok'); }); };
+    m.querySelector('#mlsCtClear').onclick = function () { _pending = []; save([]); ta.value = ''; prev.innerHTML = ''; m.querySelector('#mlsCtCount').textContent = '0'; safe(function () { if (isFn(window.toast)) window.toast('Billing code table cleared — AI will fill best codes.', 'ok'); }); };
     m.querySelector('#mlsCtClose').onclick = function () { m.remove(); };
     m.onclick = function (e) { if (e.target === m) m.remove(); };
     doPreview();
@@ -270,7 +382,10 @@
   var api = {
     installed: true, version: VERSION, asset: 'feat_mls_code_table.js',
     load: load, save: save, parse: parse, lookup: lookup, promptBlock: promptBlock,
-    count: count, openEditor: openEditor, inferKind: inferKind, _norm: norm, revert: revert
+    count: count, openEditor: openEditor, inferKind: inferKind, _norm: norm, revert: revert,
+    /* exposed so a regression suite can drive the real round trip the editor
+       performs (toCsv -> textarea -> parse) instead of re-implementing it */
+    toCsv: toCsv, splitLine: splitLine, sniffDelim: sniffDelim
   };
   window.__mlsCodeTable = api;
 

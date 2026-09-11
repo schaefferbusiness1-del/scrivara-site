@@ -1532,7 +1532,7 @@ async function runtime() {
 
     /* the Settings field is INJECTED by the block, and it is the live one */
     const field = await page.evaluate(() => {
-      try { openSettings(); } catch (e) {}
+      try { openSettings({ userInitiated: true }); } catch (e) {}
       const s = document.getElementById('settingsModal'); if (s) s.classList.add('show');
       const el = document.getElementById('qolMslMode');
       const own = el && el.closest('[data-msl-own="settings-field"]');
@@ -1550,7 +1550,7 @@ async function runtime() {
      * ============================================================== */
     {
       const nm = await page.evaluate(() => {
-        try { openSettings(); } catch (e) {}
+        try { openSettings({ userInitiated: true }); } catch (e) {}
         const s = document.getElementById('settingsModal'); if (s) s.classList.add('show');
         if (window.__mlsNoteModel) window.__mlsNoteModel.refresh();
         return null;
@@ -1930,7 +1930,7 @@ async function runtime() {
         if (NAV[screen]) {
           await page.evaluate((id) => { const e = document.getElementById(id); if (e) e.click(); }, NAV[screen]);
         } else if (screen === 'settings') {
-          await page.evaluate(() => { try { openSettings(); } catch (e) {} const s = document.getElementById('settingsModal'); if (s) s.classList.add('show'); });
+          await page.evaluate(() => { try { openSettings({ userInitiated: true }); } catch (e) {} const s = document.getElementById('settingsModal'); if (s) s.classList.add('show'); });
         } else {
           await page.evaluate(() => window.__uiContract.openRoom());
         }

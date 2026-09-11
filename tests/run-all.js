@@ -363,6 +363,10 @@ const tests = [
   'first-run-ai-tuning-entry-contract.test.js',
   'first-run-ai-tuning-loader-runtime.test.js',
   'draft-tuning-account-boundary-runtime.test.js',
+  /* vntpl-1.0.0: the plain "Visit note templates" screen is a second door onto
+     the same five-section contract, so it must keep writing that contract and
+     must keep its hands off the operative-note template library. */
+  'visit-note-templates-runtime.test.js',
   /* Recent production regressions must be part of the full release gate, not
      only ad-hoc focused runs: every draft family keeps its own format, the
      first full Athena pull safely seeds local starter structures, mixed
@@ -1123,6 +1127,16 @@ const tests = [
      only a bounded structured preferences object. This executes the shipped
      collector, proves its caps, and refuses any raw browser system prompt. */
   'note-defaults-transport-split.test.js',
+  /* NEW 2026-09-11. The practice billing code table, measured against the
+     shipped parser and editor. Reopening the Settings card and pressing Save
+     re-parsed an UNQUOTED prefill, so "Spondylosis without myelopathy, lumbar"
+     came back coded "LUMBAR"; a superbill's "Billing notes" column outranked
+     its "CPT" column; semicolon/pipe sheets, Excel's text-forcing apostrophe
+     and CPT Category II/III never parsed; and every ICD-10 and HCPCS row
+     reached /api/generate untyped because the store writes 'icd'/'hcpcs' while
+     the server allowlists 'icd10'/'cpt'. Every claim carries a control that
+     fails on the pre-fix bytes (45 of them). */
+  'billing-code-table-truth.test.js',
   'settings-scheduling-api-contract.test.js',
   'studio-tabs-show-one-panel.test.js',
   'visit-stage-rail-fills.test.js',
@@ -1229,6 +1243,16 @@ const tests = [
      procedure it names. The Send-to-Athena suite also pins the derived pages,
      so it is expected red between a 1p shell edit and the derive step. */
   'opnote-send-to-athena-control-runtime.test.js',
+  /* opnote-svc-1.0.0 (owner 2026-09-11): an op note drafted here can be handed
+     to an outside surgeon, who fills only what the draft could not and marks it
+     done on a page of its own. The owner-side suite byte-compares opPrepSave and
+     opPrepSendToAthena against HEAD - this lane is additive - and pins that the
+     fields the surgeon is asked to fill are EXACTLY opNoteBlankTokens(note), the
+     parser the save gate already uses. It reads all four shells, so like the
+     Send-to-Athena suite above it is expected red between a 1p shell edit and
+     the derive step. The client-page suite boots opnotes.html itself. */
+  'opnote-prepare-for-surgeon-runtime.test.js',
+  'opnotes-client-page-runtime.test.js',
   'opnote-template-binding-gate-runtime.test.js',
   'opnote-procedure-title-junk-strip.test.js',
   'opnote-pdf-reconciles-not-concatenates.test.js',
@@ -2488,7 +2512,17 @@ const tests = [
      the fabrication class. */
   'upcoming-autopull-runtime.test.js',
   'upcoming-autopull-surface-contract.test.js',
-  'opnote-background-only.test.js'
+  'opnote-background-only.test.js',
+  /* NEW 2026-09-11, vanishbox-1.0.0. The Doctor visit room's transcript block
+     vanished ~0.7-8s after opening a patient: the calm pass folds
+     .ez3fl-transcript.mls-empty, and once the flow lane owns the top the
+     engine's own .ez3-transcript-card is already CSS-hidden, so BOTH boxes
+     went and "Paste a transcript" had nothing to reveal. The suite walks five
+     seeded schedule rows (one unlinked to any chart) and carries a
+     deterministic arm - one synchronous __mlsCalmShell.render(), the exact
+     call the calm dock's reconcile() makes - which fails on the pre-fix
+     bytes. */
+  'visit-transcript-survives-the-calm-pass-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

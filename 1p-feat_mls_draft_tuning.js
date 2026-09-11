@@ -9,7 +9,7 @@
   'use strict';
   if (window.__mlsDraftTuning && window.__mlsDraftTuning.installed) return;
 
-  var VERSION = '1.3.3';
+  var VERSION = '1.4.0';
   var STORE_KEY = 'draftTuningV1';
   var MAX_INSTRUCTIONS = 600;
 
@@ -1360,7 +1360,7 @@
     try { (document.head || document.documentElement).appendChild(style); } catch (e) {}
     sec.innerHTML =
       '<p class="set-head">🤖 AI output formats</p>' +
-      '<p class="set-desc">Choose an output, then review the saved format and template that will shape it. Uploading an example creates an editable preview; nothing is kept until you apply it and save Settings.</p>' +
+      '<p class="set-desc">Choose an output, then review the saved format and template that will shape it. Uploading an example creates an editable preview; nothing is kept until you apply it and save Settings. Visit note templates have their own simpler screen above.</p>' +
       '<div class="field"><label for="mlsDtFamily">Output type</label><select class="sf-select" id="mlsDtFamily"></select></div>' +
       '<div id="mlsDtEffectiveSummary" role="status" style="margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--soft,#f8fafc);font-size:13px;line-height:1.45"></div>' +
       '<button type="button" class="btn-ghost" id="mlsDtProcedureTemplatesLink" style="display:none;margin:-4px 0 12px">Open procedure template library</button>' +
@@ -1750,6 +1750,7 @@
     templateModeExplicit = Object.create(null);
     activeFamily = 'soap';
     mountSettings();
+    mountVisitTemplates();
     loadUi(activeFamily);
     try { renderTestProfileLine(); } catch (eTpl) {} /* fmt-1.0.0 */
     return true;
@@ -1845,8 +1846,386 @@
     pass();
     try { new MutationObserver(pass).observe(modal, { attributes: true, attributeFilter: ['class'] }); } catch (e) {}
   }
+  /* ===================================================================
+     vntpl-1.0.0 (2026-09-11) - VISIT NOTE TEMPLATES, THE PLAIN SCREEN.
+     The owner asked what happened to a template upload / new UI for the
+     VISIT note templates, and said plainly: do not get it confused with
+     the op-note templates, they are totally different.
+
+     Everything below is a SECOND FRONT DOOR onto the contract this module
+     already owns. It stores nothing of its own: one press writes the very
+     same families.<section> profiles, active selection and template mode
+     that "AI output formats" writes, through the very same profileEditor()
+     persistence - so the server prefs blob (draftTuningV1 already rides
+     PREF_SYNC_KEYS) and the frozen generation tuning see it with no new
+     reader anywhere. The op-note library ('templates', 'useTemplates',
+     'templateActive', 'opNoteTemplateMode' and the Templates screen) is
+     NOT touched by any path in here - the only thing shared with it is
+     the file reader, reused on purpose rather than copied so the app has
+     one Word/PDF parser instead of two.
+     =================================================================== */
+  var VISIT_TEMPLATE_PROFILE_ID = 'my_template';
+  var VISIT_TEMPLATE_PROFILE_LABEL = 'My template';
+  var VISIT_TEMPLATE_SECTIONS = [
+    ['hpi', 'HPI', 'The story of what brought the patient in today.'],
+    ['ros', 'ROS', 'The symptoms you asked about.'],
+    ['exam', 'Exam', 'What you found when you examined the patient.'],
+    ['assessment', 'Assessment', 'What you think is going on.'],
+    ['plan', 'Plan', 'What happens next.']
+  ];
+  var VISIT_TEMPLATE_MODES = [
+    ['strict', 'Follow it exactly', 'MLS keeps your headings, their order, and your usual wording.'],
+    ['adapt', 'Follow it, skip what was not said', 'MLS keeps your headings and leaves out anything this visit did not cover. This is the usual choice.'],
+    ['guide', 'Just a guide', 'MLS writes the section in its own words and only borrows the shape of yours.']
+  ];
+  var VISIT_TEMPLATE_EMPTY = 'No template - MLS writes this section from what was said.';
+  var VISIT_TEMPLATE_FILE_ACCEPT = '.txt,.text,.md,.markdown,.rtf,.csv,.tsv,.json,.html,.htm,.doc,.docx,.odt,.pdf,.png,.jpg,.jpeg,.webp,.gif,text/plain,text/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg,image/webp,image/gif';
+  var visitUploadFamily = '';
+
+  function visitTemplateFamily(id) {
+    var clean = String(id || '');
+    return SECTION_FAMILIES.indexOf(clean) >= 0 ? clean : '';
+  }
+  /* THE SHARED READER. The op-note uploader's own per-file dispatcher
+     (_tplReadAnyFile in the shell: PDF text layer, .docx through the pinned
+     mammoth build, legacy .doc, image OCR, then plain text) is CALLED here
+     rather than reimplemented, so exactly one place in the app knows how to
+     turn a doctor's file into template text. A synthetic shell without it
+     still reads plain text rather than failing closed. */
+  function visitTemplateFileText(file) {
+    return Promise.resolve().then(function () {
+      if (!file) return '';
+      if (typeof window._tplReadAnyFile === 'function') return window._tplReadAnyFile(file);
+      if (typeof file.text === 'function') return file.text();
+      return '';
+    }).then(function (text) { return String(text == null ? '' : text); })
+      .catch(function () { return ''; });
+  }
+  function visitActiveTemplate(family) {
+    family = visitTemplateFamily(family);
+    if (!family) return { id: '', templateText: '', templateMode: SECTION_TEMPLATE_DEFAULT };
+    var state = read().families[family] || familyDefaults(family);
+    var rows = visibleSectionProfiles(family, state.profiles);
+    var active = activeSectionProfile(family, rows, state.activeProfile) || {};
+    return {
+      id: String(active.id || ''),
+      templateText: String(active.templateText || ''),
+      templateMode: has(['strict', 'adapt', 'guide'], active.templateMode) ? String(active.templateMode) : SECTION_TEMPLATE_DEFAULT
+    };
+  }
+  function visitTemplatePreviewText(text) {
+    var lines = String(text || '').split('\n').map(function (line) { return line.trim(); })
+      .filter(function (line) { return !!line; }).slice(0, 2);
+    if (!lines.length) return VISIT_TEMPLATE_EMPTY;
+    return lines.map(function (line) { return line.length > 78 ? line.slice(0, 75) + '...' : line; }).join('\n');
+  }
+  function visitTemplateStatus(message, bad) {
+    var el = q('mlsVnTplStatus');
+    if (!el) return;
+    el.textContent = String(message || '');
+    el.style.color = bad ? '#b4231e' : 'var(--muted)';
+  }
+  /* The ONE hazard this screen has to close. saveFromUi() writes the `working`
+     snapshot taken when Settings opened; a direct profileEditor write made
+     while that panel is mounted would be silently overwritten by the next
+     press of "Save settings". Re-taking the snapshot after every write is what
+     keeps the two doors from fighting over one stored value. */
+  function visitTemplateResync() {
+    try {
+      var modal = q('settingsModal');
+      if (modal && modal.classList && modal.classList.contains('show')) beginSettings();
+    } catch (e) {}
+    try { if (typeof window.syncPrefsToServer === 'function') window.syncPrefsToServer({ notify: false }); } catch (eSync) {}
+    paintVisitTemplates();
+  }
+  function visitTemplateSave(family, text, mode) {
+    family = visitTemplateFamily(family);
+    if (!family) return false;
+    var editor = profileEditor(family);
+    if (!editor) return false;
+    var clean = cleanTemplate(text, MAX_SECTION_TEMPLATE);
+    if (!clean) return false;
+    var wanted = has(['strict', 'adapt', 'guide'], mode) ? String(mode) : SECTION_TEMPLATE_DEFAULT;
+    var mine = editor.list().filter(function (row) { return row.id === VISIT_TEMPLATE_PROFILE_ID; })[0];
+    var saved;
+    if (mine) {
+      saved = editor.update(VISIT_TEMPLATE_PROFILE_ID, {
+        label: VISIT_TEMPLATE_PROFILE_LABEL, templateText: clean, templateMode: wanted
+      });
+      if (saved) saved = editor.select(VISIT_TEMPLATE_PROFILE_ID);
+    } else {
+      saved = editor.add({
+        id: VISIT_TEMPLATE_PROFILE_ID, label: VISIT_TEMPLATE_PROFILE_LABEL, when: '',
+        templateText: clean, templateMode: wanted, instructions: ''
+      });
+    }
+    return saved ? true : false;
+  }
+  function visitTemplateRemove(family) {
+    family = visitTemplateFamily(family);
+    if (!family) return false;
+    var editor = profileEditor(family);
+    if (!editor) return false;
+    var rows = editor.list();
+    var mine = rows.filter(function (row) { return row.id === VISIT_TEMPLATE_PROFILE_ID; })[0];
+    var shipped = sectionProfiles(family);
+    var fallback = String((shipped[0] || {}).id || '');
+    if (mine && rows.length > 1) {
+      if (!editor.remove(VISIT_TEMPLATE_PROFILE_ID)) return false;
+      if (fallback && editor.list().some(function (row) { return row.id === fallback; })) editor.select(fallback);
+      return true;
+    }
+    var target = mine ? VISIT_TEMPLATE_PROFILE_ID : String((editor.active() || {}).id || '');
+    if (!target) return false;
+    return editor.update(target, { templateText: '', templateMode: 'guide' }) ? true : false;
+  }
+  function visitTemplateEditorClose(family) {
+    var host = q('mlsVnTplEditor_' + family);
+    if (!host) return;
+    host.setAttribute('data-open', '0');
+    host.hidden = true; host.style.display = 'none';
+    var toggle = q('mlsVnTplOpen_' + family);
+    if (toggle) toggle.setAttribute('aria-expanded', 'false');
+  }
+  function visitTemplateEditorOpen(family) {
+    var host = q('mlsVnTplEditor_' + family);
+    if (!host) return;
+    var wasOpen = host.getAttribute('data-open') === '1';
+    VISIT_TEMPLATE_SECTIONS.forEach(function (row) { visitTemplateEditorClose(row[0]); });
+    if (wasOpen) { visitTemplateStatus(''); return; }
+    var current = visitActiveTemplate(family);
+    var box = q('mlsVnTplText_' + family);
+    if (box) box.value = current.templateText;
+    var picked = current.templateText ? current.templateMode : SECTION_TEMPLATE_DEFAULT;
+    VISIT_TEMPLATE_MODES.forEach(function (row) {
+      var radio = q('mlsVnTplMode_' + family + '_' + row[0]);
+      if (radio) radio.checked = row[0] === picked;
+    });
+    var named = q('mlsVnTplFileName_' + family);
+    if (named) named.textContent = '';
+    host.setAttribute('data-open', '1');
+    host.hidden = false; host.style.display = '';
+    var toggle = q('mlsVnTplOpen_' + family);
+    if (toggle) toggle.setAttribute('aria-expanded', 'true');
+    visitTemplateStatus('');
+    if (box && typeof box.focus === 'function') { try { box.focus({ preventScroll: true }); } catch (eFocus) {} }
+  }
+  function visitTemplatePickedMode(family) {
+    var picked = SECTION_TEMPLATE_DEFAULT;
+    VISIT_TEMPLATE_MODES.forEach(function (row) {
+      var radio = q('mlsVnTplMode_' + family + '_' + row[0]);
+      if (radio && radio.checked) picked = row[0];
+    });
+    return picked;
+  }
+  function paintVisitTemplates() {
+    VISIT_TEMPLATE_SECTIONS.forEach(function (row) {
+      var preview = q('mlsVnTplPreview_' + row[0]);
+      if (!preview) return;
+      var current = visitActiveTemplate(row[0]);
+      preview.textContent = visitTemplatePreviewText(current.templateText);
+      var note = q('mlsVnTplNow_' + row[0]);
+      if (!note) return;
+      var label = '';
+      if (current.templateText) {
+        VISIT_TEMPLATE_MODES.forEach(function (mode) { if (mode[0] === current.templateMode) label = mode[1]; });
+      }
+      note.textContent = label ? ('Now set to: ' + label) : '';
+      note.style.display = label ? '' : 'none';
+    });
+  }
+  function buildVisitTemplateRow(family, title, hint) {
+    var row = document.createElement('div');
+    row.className = 'field';
+    row.id = 'mlsVnTplRow_' + family;
+    row.setAttribute('style', 'border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px');
+    row.innerHTML =
+      '<div class="row" style="align-items:flex-start;gap:10px;flex-wrap:wrap">' +
+        '<div style="flex:1 1 240px;min-width:0">' +
+          '<p style="margin:0 0 2px;font-weight:700">' + title + '</p>' +
+          '<p class="mini" style="margin:0 0 6px;color:var(--muted)">' + hint + '</p>' +
+          '<p class="mini" id="mlsVnTplPreview_' + family + '" style="margin:0;white-space:pre-wrap;font:12px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace"></p>' +
+          '<p class="mini" id="mlsVnTplNow_' + family + '" style="margin:4px 0 0;display:none;color:#8A5A00"></p>' +
+        '</div>' +
+        '<button type="button" class="btn-ghost" id="mlsVnTplOpen_' + family + '" aria-expanded="false" aria-controls="mlsVnTplEditor_' + family + '">Paste or upload a template</button>' +
+      '</div>' +
+      '<div id="mlsVnTplEditor_' + family + '" data-open="0" hidden style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">' +
+        '<label for="mlsVnTplText_' + family + '">Paste your template here, or upload the file you already use.</label>' +
+        '<textarea class="note-box" id="mlsVnTplText_' + family + '" maxlength="' + MAX_SECTION_TEMPLATE + '" placeholder="Type or paste the headings and wording you want MLS to use for this section." style="min-height:140px;box-sizing:border-box"></textarea>' +
+        '<div class="row" style="margin-top:8px;gap:8px;align-items:center;flex-wrap:wrap">' +
+          '<button type="button" class="btn-ghost" id="mlsVnTplUpload_' + family + '">Upload a file</button>' +
+          '<span class="mini" id="mlsVnTplFileName_' + family + '" style="color:var(--muted)"></span>' +
+        '</div>' +
+        '<p class="mini" style="margin:6px 0 0;color:var(--muted)">Word, PDF or plain text. Keep patient facts out of it - this is only the shape of the section.</p>' +
+        '<p style="margin:12px 0 4px;font-weight:700">How closely should MLS follow it?</p>' +
+        '<div id="mlsVnTplModes_' + family + '"></div>' +
+        '<div class="row" style="margin-top:12px;gap:8px;flex-wrap:wrap">' +
+          '<button type="button" class="btn-green" id="mlsVnTplSave_' + family + '">Save</button>' +
+          '<button type="button" class="btn-ghost" id="mlsVnTplRemove_' + family + '">Remove</button>' +
+          '<button type="button" class="btn-ghost" id="mlsVnTplCancel_' + family + '">Cancel</button>' +
+        '</div>' +
+      '</div>';
+    var modes = row.querySelector('#mlsVnTplModes_' + family);
+    VISIT_TEMPLATE_MODES.forEach(function (mode) {
+      var wrap = document.createElement('div');
+      wrap.setAttribute('style', 'margin-bottom:8px');
+      var label = document.createElement('label');
+      label.setAttribute('for', 'mlsVnTplMode_' + family + '_' + mode[0]);
+      label.setAttribute('style', 'display:flex;gap:8px;align-items:flex-start;font-weight:600');
+      var input = document.createElement('input');
+      input.type = 'radio';
+      input.name = 'mlsVnTplModeGroup_' + family;
+      input.id = 'mlsVnTplMode_' + family + '_' + mode[0];
+      input.value = mode[0];
+      if (mode[0] === SECTION_TEMPLATE_DEFAULT) input.checked = true;
+      label.appendChild(input);
+      label.appendChild(document.createTextNode(mode[1]));
+      var why = document.createElement('p');
+      why.className = 'mini';
+      why.setAttribute('style', 'margin:2px 0 0 24px;color:var(--muted)');
+      why.textContent = mode[2];
+      wrap.appendChild(label);
+      wrap.appendChild(why);
+      modes.appendChild(wrap);
+    });
+    row.querySelector('#mlsVnTplOpen_' + family).addEventListener('click', function () { visitTemplateEditorOpen(family); });
+    row.querySelector('#mlsVnTplCancel_' + family).addEventListener('click', function () { visitTemplateEditorClose(family); visitTemplateStatus(''); });
+    row.querySelector('#mlsVnTplUpload_' + family).addEventListener('click', function () {
+      var input = q('mlsVnTplFile');
+      if (!input) return;
+      visitUploadFamily = family;
+      try { input.value = ''; } catch (eClear) {}
+      input.click();
+    });
+    row.querySelector('#mlsVnTplSave_' + family).addEventListener('click', function () {
+      var box = q('mlsVnTplText_' + family);
+      var text = box ? box.value : '';
+      if (!cleanTemplate(text, MAX_SECTION_TEMPLATE)) {
+        visitTemplateStatus('Nothing to save yet - paste or upload a template first.', true);
+        return;
+      }
+      if (!visitTemplateSave(family, text, visitTemplatePickedMode(family))) {
+        visitTemplateStatus('That template could not be saved on this device. Try again.', true);
+        return;
+      }
+      visitTemplateEditorClose(family);
+      visitTemplateResync();
+      visitTemplateStatus('Saved. MLS will use this for your ' + title + ' section.');
+      try { if (typeof window.toast === 'function') window.toast('Visit note template saved for ' + title + '.', 'ok'); } catch (eToast) {}
+    });
+    row.querySelector('#mlsVnTplRemove_' + family).addEventListener('click', function () {
+      if (!visitTemplateRemove(family)) {
+        visitTemplateStatus('That template could not be removed on this device. Try again.', true);
+        return;
+      }
+      var box = q('mlsVnTplText_' + family);
+      if (box) box.value = '';
+      visitTemplateEditorClose(family);
+      visitTemplateResync();
+      visitTemplateStatus('Removed. MLS writes your ' + title + ' section from what was said.');
+      try { if (typeof window.toast === 'function') window.toast('Visit note template removed for ' + title + '.', 'ok'); } catch (eToast2) {}
+    });
+    return row;
+  }
+  function mountVisitTemplates() {
+    if (q('mlsVisitNoteTemplatesSection')) { paintVisitTemplates(); return true; }
+    var modal = q('settingsModal');
+    var box = modal && modal.querySelector('.modal');
+    if (!box) return false;
+    var sec = document.createElement('div');
+    sec.className = 'set-section';
+    sec.id = 'mlsVisitNoteTemplatesSection';
+    sec.innerHTML =
+      '<p class="set-head">📋 Visit note templates</p>' +
+      '<p class="set-desc">These shape your visit notes: HPI, ROS, Exam, Assessment, Plan. Operative note templates are separate - find them under Templates.</p>' +
+      '<button type="button" class="btn-ghost" id="mlsVnTplOpNoteLink" style="margin:-4px 0 12px">Open operative note templates</button>' +
+      '<div id="mlsVnTplRows"></div>' +
+      '<p class="mini" id="mlsVnTplStatus" role="status" style="margin:6px 0 0;color:var(--muted)"></p>' +
+      '<input type="file" id="mlsVnTplFile" aria-hidden="true" tabindex="-1" accept="' + VISIT_TEMPLATE_FILE_ACCEPT + '" style="display:none">';
+    var rows = sec.querySelector('#mlsVnTplRows');
+    VISIT_TEMPLATE_SECTIONS.forEach(function (row) { rows.appendChild(buildVisitTemplateRow(row[0], row[1], row[2])); });
+    var link = sec.querySelector('#mlsVnTplOpNoteLink');
+    if (link) link.addEventListener('click', function () {
+      try { if (typeof window.openTemplates === 'function') window.openTemplates(); }
+      catch (e) { try { if (typeof window.toast === 'function') window.toast('The operative note templates could not be opened.', 'err'); } catch (e2) {} }
+    });
+    var file = sec.querySelector('#mlsVnTplFile');
+    if (file) file.addEventListener('change', function (ev) {
+      var picked = ev && ev.target && ev.target.files ? ev.target.files[0] : null;
+      var family = visitTemplateFamily(visitUploadFamily);
+      try { ev.target.value = ''; } catch (eReset) {}
+      if (!picked || !family) return;
+      visitTemplateStatus('Reading ' + (picked.name || 'that file') + '...');
+      visitTemplateFileText(picked).then(function (text) {
+        var clean = cleanTemplate(text, MAX_SECTION_TEMPLATE);
+        var target = q('mlsVnTplText_' + family);
+        var named = q('mlsVnTplFileName_' + family);
+        if (!clean) {
+          if (named) named.textContent = '';
+          visitTemplateStatus('That file could not be read. Save it as a Word file or a PDF, or paste the text instead.', true);
+          return;
+        }
+        if (target) target.value = clean;
+        if (named) named.textContent = String(picked.name || '');
+        visitTemplateStatus('Loaded from ' + (picked.name || 'that file') + '. Check it, choose how closely to follow it, then press Save.');
+      });
+    });
+    /* FIRST card in Notes & AI, above "AI output formats" - anchored on the
+       Note-defaults section by the stable id INSIDE it rather than by its
+       heading copy, so a copy change cannot silently move this screen. */
+    var anchor = null;
+    var noteFormat = q('noteFormatSel');
+    if (noteFormat && noteFormat.closest) anchor = noteFormat.closest('.set-section');
+    if (!anchor || anchor.parentNode !== box) anchor = q('mlsDraftTuningSection');
+    if (!anchor || anchor.parentNode !== box) {
+      anchor = null;
+      for (var i = 0; i < box.children.length; i++) {
+        var child = box.children[i];
+        if (child.classList && child.classList.contains('row') && /saveSettings/.test(String(child.innerHTML || ''))) { anchor = child; break; }
+      }
+    }
+    box.insertBefore(sec, anchor || null);
+    /* The Settings organizer files every card into a tab with a LIVE classifier,
+       but it only re-runs that pass on a tab press or a Settings open. A card
+       mounted after the rail was already built would otherwise sit visible under
+       whatever tab happens to be showing. Match the selected tab now; the next
+       organizer pass owns it from there. */
+    try {
+      var bar = q('settingsTabBar');
+      var current = bar && bar.querySelector('[data-mls-settings-group].on');
+      if (current && current.getAttribute('data-mls-settings-group') !== 'notes') {
+        sec.classList.add('set-tab-hidden');
+        sec.style.display = 'none';
+      }
+    } catch (eRail) {}
+    paintVisitTemplates();
+    return true;
+  }
+  /* The route the visit room's one-line link takes. */
+  function openVisitTemplates() {
+    try { if (typeof window.openSettings === 'function') window.openSettings(); } catch (e) {}
+    mountVisitTemplates();
+    function focus(n) {
+      var sec = q('mlsVisitNoteTemplatesSection');
+      var modal = q('settingsModal');
+      if (sec && modal && modal.classList.contains('show')) {
+        var tab = document.querySelector('#settingsTabBar [data-mls-settings-group="notes"]');
+        if (tab && typeof tab.click === 'function') { try { tab.click(); } catch (eTab) {} }
+        sec.classList.remove('set-tab-hidden');
+        sec.style.display = '';
+        try { sec.scrollIntoView({ block: 'start', inline: 'nearest' }); } catch (eScroll) {}
+        paintVisitTemplates();
+        return true;
+      }
+      if (n >= 30) return false;
+      setTimeout(function () { mountVisitTemplates(); focus(n + 1); }, 100);
+      return false;
+    }
+    return focus(0);
+  }
   function boot() {
     mountSettings();
+    mountVisitTemplates();
     watchModal();
     try { document.addEventListener('click', onClick, true); } catch (e) {}
     try { window.addEventListener('mls:session-boundary', onSessionBoundary, true); } catch (eBoundary) {}
@@ -1882,6 +2261,9 @@
     promptBlock: promptBlock,
     selectProfile: function (id, selectionSource) { var family = familyId(id), state = read().families[family], routed = isProfileFamily(family) ? routedSectionProfile(family, state.profiles, state.activeProfile, selectionSource) : null; return routed ? { profileId: routed.profile.id, selection: routed.selection } : null; },
     mountSettings: mountSettings,
+    mountVisitTemplates: mountVisitTemplates,
+    openVisitTemplates: openVisitTemplates,
+    visitTemplateSections: VISIT_TEMPLATE_SECTIONS.map(function (row) { return row[0]; }),
     beginSettings: beginSettings,
     saveFromUi: saveFromUi,
     _extra: clone(EXTRA),
