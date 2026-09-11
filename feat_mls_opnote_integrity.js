@@ -1044,6 +1044,75 @@
     if (r.candidate && narrowsWithinFamily(text, r.candidate)) return null;
     return r.candidate || null;
   }
+  /* opidfix-1.0.0: does the CANDIDATE template's own stated side/levels
+     contradict what the doctor actually requested? Same rule as
+     templateCompatibility's fields, made explicit: the default compatibility
+     fields never compare side or levels at all (only tpl.validatedFacts===true
+     turns that on), so a same-class template naming the OPPOSITE side or a
+     disjoint level range was sailing through as "compatible" and landing in
+     the alternatives. Silent on a side/level the candidate never states -
+     that is a genuinely compatible generic template, not a contradiction. */
+  function altContradictsRequest(reqFacts, tpl){
+    if (!reqFacts) return false;
+    var actual = procedureFacts(S(tpl && tpl.name) + ' ' + ((tpl && tpl.keywords) || []).join(' ') + ' ' + S(tpl && tpl.text).slice(0, 2400));
+    if (reqFacts.side && actual.side && reqFacts.side !== actual.side) return true;
+    if (reqFacts.levels && reqFacts.levels.length && actual.levels && actual.levels.length &&
+        !reqFacts.levels.some(function (lv) { return actual.levels.indexOf(lv) >= 0; })) return true;
+    return false;
+  }
+  /* opidfix-1.0.0 (measured live 2026-09-14): a right sacroiliac joint
+     injection row offered "Bilateral S1 Epidural" and "Cluneal Neuropathy
+     Injection" as its alternatives — a different procedure class entirely.
+     alternativesFrom took every ranked candidate that passed the general
+     `compatible` gate, but that gate's DEFAULT fields never check side (see
+     altContradictsRequest above) and a template whose own text does not
+     classify at all (tplClass:'') pays only a mild -25 scoring penalty and no
+     compatibility penalty, so it can still out-rank an excluded same-class
+     sibling once the true match is spent as the chosen id. An alternative is
+     only a real alternative when it is the SAME procedure class (the same
+     generic/specific tolerance rank() already grants ESI and RFA families)
+     and does not contradict the requested side or level. */
+  function altClassOk(reqPc, tplClass){
+    if (!reqPc) return true;
+    /* An UNCLASSIFIED template (tplClass:'') is not verifiably the same
+       procedure class as a request that DID classify - that silence is
+       exactly how "Cluneal Neuropathy Injection" and "Bilateral S1 Epidural"
+       reached a sacroiliac joint request's alternatives: rank()'s -25
+       (rather than the -120 cross-class penalty) and templateCompatibility's
+       procedureType check (which only fires when the template's OWN type is
+       truthy) both treat "no signal" as harmless. It is not harmless in a
+       list the doctor is told to trust as alternatives. */
+    if (!tplClass) return false;
+    if (reqPc === tplClass) return true;
+    if (ESI_FAMILY[reqPc] && ESI_FAMILY[tplClass] && (reqPc === 'generic_esi' || tplClass === 'generic_esi')) return true;
+    if (RFA_FAMILY[reqPc] && RFA_FAMILY[tplClass] && (reqPc === 'generic_rfa' || tplClass === 'generic_rfa')) return true;
+    return false;
+  }
+  /* opidfix-1.0.0: a row elsewhere on the SAME day that already committed to a
+     template (manually or by a confident/history match — never a guess or a
+     refusal) for the identical procedure text is the strongest possible
+     alternative there is: a human or this same matcher already decided it for
+     the same words. Offered first, never auto-applied — the doctor still
+     chooses. */
+  function sameDayMatchedTemplate(reason, excludeId){
+    try{
+      var rows = window._opPrep || []; if (!rows.length) return null;
+      var key = tokenKey(expandShorthand(reason));
+      if (!key) return null;
+      for (var i = 0; i < rows.length; i++) {
+        var row = rows[i]; if (!row || !row.tplId) continue;
+        if (S(row.tplId) === S(excludeId)) continue;
+        var src = S(row.tplMatchSource);
+        if (!src || src === 'unmatched' || src === 'closest') continue;
+        var rowReason = S(row.proc || (row.appt && row.appt.reason) || '');
+        if (!rowReason || tokenKey(expandShorthand(rowReason)) !== key) continue;
+        var tpl = null; try { tpl = isFn(window.getTemplateById) ? window.getTemplateById(row.tplId) : null; } catch (eT) {}
+        if (!tpl) continue;
+        return { id:S(row.tplId), name:S(tpl.name || ''), score:0, sameDayMatch:true, tpl:tpl };
+      }
+    }catch(e){}
+    return null;
+  }
   /* ── AN AMBIGUOUS PICK MUST SHOW ITS ALTERNATIVES ──────────────────────────
      Owner, 2026-08-31: "its not choosing the correct temmplates."
      When this module is NOT confident it still applies the closest template
@@ -1053,14 +1122,30 @@
      `ranked` is already computed; carry the next few compatible, positively
      scored candidates so the room can put them one click away. This CHANGES NO
      DECISION — it only stops the runner-up being discarded. */
-  function alternativesFrom(direct, chosenId){
+  function alternativesFrom(direct, chosenId, reason){
     var r = (direct && direct.ranked) || [], out = [];
+    var reqPc = r.length ? r[0].procClass : '';
+    var reqFacts = reason != null ? procedureFacts(expandShorthand(reason)) : null;
+    var sameDay = reason != null ? sameDayMatchedTemplate(reason, chosenId) : null;
+    /* opidfix-1.0.0: a same-day match is offered FIRST, but it is not exempt
+       from the same class/side/level check every other candidate passes -
+       a clinician's manual pick on another row can still be for the wrong
+       side of THIS row's request (the "identical procedure text" test only
+       proves the WORDS matched, not that a human never fat-fingered the
+       template). An unsafe same-day match is simply dropped, never promoted,
+       and never leaks in through the loop below either since it fails the
+       identical checks there. */
+    if (sameDay && (!altClassOk(reqPc, templateClass(sameDay.tpl)) || altContradictsRequest(reqFacts, sameDay.tpl))) sameDay = null;
+    if (sameDay) out.push({ id:sameDay.id, name:sameDay.name, score:sameDay.score, sameDayMatch:true });
     for (var i = 0; i < r.length && out.length < 3; i++) {
       var e = r[i];
       if (!e || !e.tpl) continue;
       if (S(e.tpl.id) === S(chosenId)) continue;
+      if (sameDay && S(e.tpl.id) === S(sameDay.id)) continue;
       if (e.compatible === false) continue;
       if (!(e.score > 0)) continue;
+      if (!altClassOk(reqPc, e.tplClass)) continue;
+      if (altContradictsRequest(reqFacts, e.tpl)) continue;
       out.push({ id:S(e.tpl.id), name:S(e.tpl.name), score:e.score });
     }
     return out;
@@ -1070,7 +1155,7 @@
     if (direct.noProcedure) return { tplId:'', source:'no-procedure', score:0, reason:'The visit text states no procedure was performed', alternatives:[] };
     if (direct.confident) return { tplId:direct.tpl.id, source:direct.exactName?'exact-name':'reason', score:direct.score, reason:direct.reason, alternatives:[] };
     var p = exactPatient(name, dob, patientId), hs = historySignal(p), fromHistory = best(hs);
-    if (fromHistory.confident) return { tplId:fromHistory.tpl.id, source:'history', score:fromHistory.score, reason:fromHistory.reason, alternatives:alternativesFrom(direct, fromHistory.tpl.id) };
+    if (fromHistory.confident) return { tplId:fromHistory.tpl.id, source:'history', score:fromHistory.score, reason:fromHistory.reason, alternatives:alternativesFrom(direct, fromHistory.tpl.id, reason) };
     /* GUESS FROM THE PROCEDURE TEXT ONLY, NEVER FROM HISTORY.
        Caught by the 4e guard on the first attempt at this, which fell back to
        the history branch when the direct one produced nothing: for a row naming
@@ -1087,7 +1172,7 @@
     if (guess) {
       return { tplId:guess.id, source:'closest', guess:true, score:direct.score || 0,
         reason:'closest match only (' + S(direct.reason || 'ambiguous') + ') — check it, or add a keyword to that template',
-        alternatives:alternativesFrom(direct, guess.id) };
+        alternatives:alternativesFrom(direct, guess.id, reason) };
     }
     /* KEEP THE REFUSAL'S REASON INSTEAD OF FLATTENING IT.
        Four quite different refusals used to collapse into one 'unmatched'
@@ -1101,18 +1186,18 @@
        the doctor looking for a second procedure that was never there. */
     if (direct.multi) {
       return { tplId:'', source:'multi-procedure', score:0,
-        reason:S(direct.reason) || 'names more than one procedure', alternatives:alternativesFrom(direct, '') };
+        reason:S(direct.reason) || 'names more than one procedure', alternatives:alternativesFrom(direct, '', reason) };
     }
     if (direct.conflicts) {
       return { tplId:'', source:'conflicting-template', score:direct.score || 0,
-        reason:S(direct.reason) || 'the closest template conflicts with the requested procedure', alternatives:alternativesFrom(direct, '') };
+        reason:S(direct.reason) || 'the closest template conflicts with the requested procedure', alternatives:alternativesFrom(direct, '', reason) };
     }
     if (narrowsWithinFamily(reason, direct.candidate)) {
       return { tplId:'', source:'needs-approach', score:direct.score || 0,
-        reason:S(direct.reason) || 'the approach is not stated', alternatives:alternativesFrom(direct, '') };
+        reason:S(direct.reason) || 'the approach is not stated', alternatives:alternativesFrom(direct, '', reason) };
     }
     return { tplId:'', source:'unmatched', score:0,
-      reason:S(direct.reason) || 'No unambiguous procedure signal', alternatives:alternativesFrom(direct, '') };
+      reason:S(direct.reason) || 'No unambiguous procedure signal', alternatives:alternativesFrom(direct, '', reason) };
   }
   /* ONE matcher for every surface: preview, prep, note formatting, and safety
      checks all resolve through this canonical entry (negation-aware,

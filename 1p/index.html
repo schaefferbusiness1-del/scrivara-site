@@ -23392,20 +23392,42 @@ function _opDobKey(v){
   m=s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})/); if(m) return m[3]+'-'+('0'+m[1]).slice(-2)+'-'+('0'+m[2]).slice(-2);
   return s.toLowerCase();
 }
+/* opidfix-1.0.0: the module's synchronous "why didn't that resolve" channel.
+   _opResolvePatient keeps returning a patient-or-null (every caller already
+   destructures it that way), so the REASON a null came back rides here
+   instead of widening the return shape. Safe because every call site reads
+   this in the SAME tick it calls the resolver, with no other resolver call or
+   await in between - there is no interleaving that could hand one caller
+   another caller's reason. */
+var _opLastIdentityReason='';
 function _opResolvePatient(name,dob,patientId){
   try{
     var pts=(typeof getPatients==='function'?getPatients():[])||[];
     var pid=String(patientId||'').trim(), nm=String(name||'').trim().toLowerCase().replace(/\s+/g,' '), dk=_opDobKey(dob);
+    _opLastIdentityReason='';
     if(pid){
       var byId=pts.find(function(x){ return String(x&&x.id||'')===pid; })||null;
-      if(!byId) return null;
-      if(nm && String(byId.name||'').trim().toLowerCase().replace(/\s+/g,' ')!==nm) return null;
-      if(dk && _opDobKey(byId.dob)!==dk) return null;
-      return byId;
+      if(byId){
+        if(nm && String(byId.name||'').trim().toLowerCase().replace(/\s+/g,' ')!==nm) return null;
+        if(dk && _opDobKey(byId.dob)!==dk) return null;
+        _opLastIdentityReason='id';
+        return byId;
+      }
+      /* MEASURED 2026-09-14: the schedule import mints a placeholder id
+         (p_sched_<base36>) for every row, and that id exists in no patient
+         record. Falling straight to null here (the old behavior) refused 17
+         of 26 op notes even though 16 of the 17 charts were already in MLS
+         under an exact name+DOB match. A placeholder/unknown id is not proof
+         the chart is missing - it only means THIS id cannot be trusted, so
+         fall through to the same one-unique-match-or-refuse rule the no-id
+         path already uses below. Still never a name-only match, still never
+         an ambiguous one. */
     }
-    if(!nm||!dk) return null;
+    if(!nm||!dk){ _opLastIdentityReason='no-dob'; return null; }
     var exact=pts.filter(function(x){ return String(x&&x.name||'').trim().toLowerCase().replace(/\s+/g,' ')===nm && _opDobKey(x&&x.dob)===dk; });
-    return exact.length===1?exact[0]:null;
+    if(exact.length===1){ _opLastIdentityReason='name-dob'; return exact[0]; }
+    _opLastIdentityReason=exact.length>1?'ambiguous':'not-found';
+    return null;
   }catch(e){ return null; }
 }
 /* px-3.1: p.vitals and p.history are OBJECTS on athena-imported records;
@@ -23429,7 +23451,10 @@ function _opFmtKv(v){
 function _opPatientCtx(name,dob,patientId){
   try{
     var p=_opResolvePatient(name,dob,patientId);
-    if(!p) return {};
+    /* opidfix-1.0.0: an unresolved identity still tells the room WHY, so
+       opPrepGenerateOne's refusal can name the real cause (chart never
+       pulled vs. two charts tie) instead of one catch-all sentence. */
+    if(!p) return {identityReason:_opLastIdentityReason||''};
     var history='';
     try{ if(typeof compilePatientRecord==='function') history=compilePatientRecord(p)||''; }catch(e){}
     if(!history){ history=['Problems: '+_opFmtKv(p.problems),'Medications: '+_opFmtKv(p.meds||p.medications),'Allergies: '+_opFmtKv(p.allergies),'Chart summary: '+_opFmtKv(p.summary),'Vitals: '+_opFmtKv(p.vitals),'History & background: '+_opFmtKv(p.background||p.history)].filter(function(x){return !/:\s*$/.test(x);}).join('\n'); }
@@ -23445,7 +23470,12 @@ function _opPatientCtx(name,dob,patientId){
        honest answer - the Fields box then asks, and the readiness strip warns. */
     var provider=(typeof getProviderName==='function'?getProviderName():'');
     var facility=(typeof getFacilityName==='function'?getFacilityName():'');
-    return { patientId:String(p.id||''), name:String(p.name||''), dob:String(p.dob||''), sex:String(p.sex||p.gender||''), age:_ptAge(p.dob), bmi:_ptBmi(p), mrn:String(p.mrn||''), history:String(history||'').slice(0,14000), provider:String(provider||''), providerName:String(provider||''), providerNpi:String(typeof getNpi==='function'?getNpi():''), providerCredentials:String(typeof getProviderCred==='function'?getProviderCred():''), practice:String(typeof getPracticeName==='function'?getPracticeName():''), facility:String(facility||''), facilityName:String(facility||'') };
+    /* opidfix-1.0.0: identityMatchSource is 'id' when the supplied patientId
+       owned the chart, or 'name-dob' when a placeholder/unresolved id fell
+       back to the one unique name+date-of-birth match - so a surface can say
+       out loud that the chart was matched on name and date of birth instead
+       of implying the id it was handed actually worked. */
+    return { patientId:String(p.id||''), name:String(p.name||''), dob:String(p.dob||''), sex:String(p.sex||p.gender||''), age:_ptAge(p.dob), bmi:_ptBmi(p), mrn:String(p.mrn||''), history:String(history||'').slice(0,14000), provider:String(provider||''), providerName:String(provider||''), providerNpi:String(typeof getNpi==='function'?getNpi():''), providerCredentials:String(typeof getProviderCred==='function'?getProviderCred():''), practice:String(typeof getPracticeName==='function'?getPracticeName():''), facility:String(facility||''), facilityName:String(facility||''), identityMatchSource:String(_opLastIdentityReason||'id') };
   }catch(e){ return {}; }
 }
 function _opStableRowKey(scope,name,dob,patientId,dateKey,ordinal){
@@ -24015,7 +24045,30 @@ async function opPrepGenerateOne(i){
     if(appt.facilityId)ctx.facilityId=String(appt.facilityId);
     if(appt.facilityName){ctx.facility=String(appt.facilityName);ctx.facilityName=String(appt.facilityName);}
     row._ctx=ctx;
-    if(!ctx.patientId){ if(st) st.textContent='Couldn’t verify the exact patient for this op note. Re-open it from that patient’s chart.'; try{ toast('Op note stopped: exact patient identity could not be verified.','err'); }catch(e){} _opRowVerdict(row,false,'the exact patient could not be verified — open this one from the patient’s chart','MLS_OPNOTE_IDENTITY'); return; }
+    if(!ctx.patientId){
+      /* opidfix-1.0.0: the old one-size sentence ("Re-open it from that
+         patient's chart") told a doctor to do something impossible when the
+         real cause was that the chart was never pulled into MLS at all, or
+         that two charts tie on name and date of birth. Name the real reason
+         and the one step - plain language, no id/token/record/API/null. */
+      var _idReason=String(ctx.identityReason||'');
+      var _idMsg = _idReason==='ambiguous'
+        ? 'There are two charts here with this patient’s name and date of birth. Open the Patients list, pick the correct one, and draft this note from there.'
+        : (_idReason==='not-found'
+          ? 'This patient’s chart hasn’t come across into MLS yet. Pull it in from Athena, then this note can be drafted.'
+          : 'Couldn’t verify the exact patient for this op note. Re-open it from that patient’s chart.');
+      var _idToast = _idReason==='ambiguous'
+        ? 'Op note stopped: two charts match this patient’s name and date of birth.'
+        : (_idReason==='not-found'
+          ? 'Op note stopped: this patient’s chart hasn’t come across into MLS yet.'
+          : 'Op note stopped: exact patient identity could not be verified.');
+      var _idWhy = _idReason==='ambiguous'
+        ? 'two charts match this name and date of birth — open the correct one from the patients list'
+        : (_idReason==='not-found'
+          ? 'this patient’s chart hasn’t come across into MLS yet — pull it in first'
+          : 'the exact patient could not be verified — open this one from the patient’s chart');
+      if(st) st.textContent=_idMsg; try{ toast(_idToast,'err'); }catch(e){} _opRowVerdict(row,false,_idWhy,'MLS_OPNOTE_IDENTITY'); return;
+    }
     var out;
     if(window.__MLS_PUBLIC_PREVIEW && window.__MLS_PUBLIC_PREVIEW.enabled===true){
       /* pv-7.1.2: the sample workspace drafts LOCALLY — the template verbatim,
