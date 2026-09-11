@@ -435,8 +435,8 @@ testSessionBoundary('ScribeFlow.html');
 testSessionBoundary('ScribeFlow-staging.html');
 testMenuReconciliation();
 testLexicalBkUserBridge();
-assert(read('ScribeFlow.html').includes("window.__MLS_AV='b1238'"), 'web asset stamp changed from b1238');
-assert(read('sw.js').includes("const CACHE = 'mls-v253'"), 'service-worker cache stamp changed from v253');
+assert(read('ScribeFlow.html').includes("window.__MLS_AV='b1239'"), 'web asset stamp changed from b1239');
+assert(read('sw.js').includes("const CACHE = 'mls-v254'"), 'service-worker cache stamp changed from v254');
 console.log('PASS same-tab UI account isolation: A -> logout -> B clears PHI/modals/intake/prompts, restores role markup, and reconciles account-gated menu rows');
 
 
