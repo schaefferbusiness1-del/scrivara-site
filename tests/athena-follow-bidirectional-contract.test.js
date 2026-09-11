@@ -17,6 +17,23 @@
  *  - guards: pull-busy and recording block both legs; ambiguity resolves to
  *    silence; revert unhooks everything.
  *
+ * legboffer-1.0.0 (2026-09-11) adds the defect measured live on b1231: the note
+ * step's "Next: Review & send to Athena" opens the unified Send sheet, whose
+ * read-only probe DRIVES athenaOne onto a scheduled chart, and Leg B then
+ * followed our own navigation - aborting the generation, resetting the outputs
+ * and dropping the engine to Home under another patient's name. Pinned below:
+ *  - with a chart up and a transcript on screen, Leg B OFFERS (the schedule
+ *    anchor's own painter, window.__mlsPtAnchor.offer) and switches NOTHING -
+ *    getActivePtId() is unchanged and mls:active-patient-changed never fires;
+ *  - an arrival MLS itself caused (capsel-1.0.0's predicate, or the write
+ *    lane's own wfnav-1.0.0 stamp) is ignored outright - not even an offer;
+ *  - the CONTROL: no chart active and the editors empty, and Leg B still
+ *    follows athenaOne exactly as it always did.
+ * The cross-file wiring is pinned too, because a flag nothing reads is dead
+ * (the v1.52 lesson this file already carries for the bridge verb):
+ * 1p-feat_mls_writeflow.js must SET state.athenaBusy and
+ * 1p-feat_mls_schedimport_exact.js's dnote-1.1.0 write-lane claim must READ it.
+ *
  * Bridge verb inventory pinned at the bottom: content.js must gate + handle
  * mlsAppChartIdentity (the v1.52 lesson - a handler without its allowlist key
  * is dead). The manifest/feed pins below track the CURRENT release and move
@@ -35,6 +52,8 @@ const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'u
 const feed = JSON.parse(fs.readFileSync(path.join(root, 'extension-version.json'), 'utf8'));
 const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
 const app = fs.readFileSync(path.join(root, 'ScribeFlow.html'), 'utf8');
+const writeflow = fs.readFileSync(path.join(root, '1p-feat_mls_writeflow.js'), 'utf8');
+const importer = fs.readFileSync(path.join(root, '1p-feat_mls_schedimport_exact.js'), 'utf8');
 
 /* ---- extension + wiring pins ------------------------------------------- */
 assert(/MLS_BRIDGE_TYPES = \{[^}]*mlsAppChartIdentity: 1/.test(content),
@@ -60,6 +79,27 @@ assert(connect.includes('data-mls-asset="feat_mls_athena_follow.js"'), 'the foll
 assert(app.includes('id="athenaFollowToggle"'), 'the off-switch is missing from Settings -> Integrations');
 assert(mod.includes("var MIN_EXT = '3.0.23';"), 'the module must gate on the verb-carrying extension version');
 
+/* ---- legboffer-1.0.0: the write lane's stamp and its ONE reader ---------- */
+/* A flag nothing reads is dead, and a reader with no writer is worse - it is
+   what shipped: dnoteAthenaDriver has claimed "write-lane" off
+   state.running/.busy/.athenaBusy since b1184, and the write flow's STATE
+   carried none of those three names, so the claim never fired once and the
+   whole shipped follow guard was never consulted for this lane. Pin BOTH ends
+   of the wire, in the canonical 1p sources. */
+assert(/claim\("write-lane",[^\n]*s\.athenaBusy === true/.test(importer),
+  "dnote-1.1.0's write-lane claim must read state.athenaBusy - without it the follow guard is blind to the Send sheet");
+assert(/STATE\.athenaBusy = true;/.test(writeflow) && /STATE\.athenaBusy = false;/.test(writeflow),
+  'the write flow must hold state.athenaBusy while it drives athenaOne (wfnav-1.0.0)');
+assert(writeflow.includes('function searchOpenTarget(patient, expectedContext) {') &&
+  /wfNavBegin\(\);\s*\n\s*function fin\(v\)/.test(writeflow) && /function fin\(v\) \{ if \(done\) return; done = true; wfNavEnd\(\);/.test(writeflow),
+  'the one chart-opening door in the write flow must declare and release the hop');
+assert(/var WF_NAV_VERBS = \{ mlsAppGotoDate: 1, mlsAppAthenaActionV2: 1 \};/.test(writeflow),
+  'the day-strip drive and every action-v2 hop are the verbs that move athenaOne');
+assert(mod.includes("window._mlsCaptureKeepsSelection('athena-follow-legb', false)"),
+  'Leg B must consult capsel-1.0.0 so the sheet\'s own auto-open is not mistaken for the doctor navigating Athena');
+assert(mod.includes('window.__mlsPtAnchor') && !/createElement\('button'\)/.test(mod),
+  'the offer must be the schedule anchor\'s own painter - this module may not grow a second copy of that markup');
+
 /* ---- vm harness -------------------------------------------------------- */
 function bus() {
   const map = {};
@@ -76,6 +116,12 @@ const posted = [];
 const toasts = [];
 let activeId = 'pb';
 let responder = null;   /* function(body) -> reply object or null */
+/* legboffer-1.0.0: a page the module can actually read - the doctor's own
+   surfaces (#transcript, #noteBox, the Send sheet, the body step classes) and
+   the schedule anchor's offer painter, recorded rather than rendered. */
+const els = {};
+const bodyClasses = {};
+const offers = [];
 
 const ctx = {
   console: console, Date: Date, Math: Math, Promise: Promise,
@@ -89,9 +135,14 @@ const ctx = {
   uns: function (k) { return 't::' + k; },
   document: {
     visibilityState: 'hidden',
-    getElementById: function () { return null; },
+    getElementById: function (id) { return Object.prototype.hasOwnProperty.call(els, id) ? els[id] : null; },
+    body: { classList: { contains: function (c) { return bodyClasses[c] === true; } } },
     addEventListener: function (t, fn) { dbus.add(t, fn); },
     removeEventListener: function (t, fn) { dbus.remove(t, fn); }
+  },
+  __mlsPtAnchor: {
+    installed: true,
+    offer: function (name, id) { offers.push({ name: String(name), id: String(id) }); return true; }
   },
   toast: function (m) { toasts.push(String(m)); },
   getPatients: function () {
@@ -122,7 +173,8 @@ ctx.postMessage = function (body) {
 vm.createContext(ctx);
 vm.runInContext(mod, ctx, { filename: 'feat_mls_athena_follow.js' });
 const api = ctx.__mlsAthenaFollow;
-assert(api && api.installed && api.version === 'af-1.0.0', 'follow module did not install');
+assert(api && api.installed && api.version === 'af-1.1.0', 'follow module did not install');
+assert(api.offerVersion === 'legboffer-1.0.0', 'the offer-never-switch rule must be stamped on the module');
 
 /* ---- pure identity math ------------------------------------------------- */
 assert(api._samePerson('Adam J Schaeffer', '01/02/1980', 'SCHAEFFER, Adam J', '1980-01-02'),
@@ -197,10 +249,107 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   assert.strictEqual(activeId, 'pa', 'a running pull must block follow');
   delete ctx.__mlsPullBusyAt;
 
-  /* 6 - revert unhooks */
+  /* ===================================================================== */
+  /* legboffer-1.0.0 - THE b1231 DEFECT, and the two sides of its cure.     */
+  /* ===================================================================== */
+  const beeOpen = function (body) {
+    if (body.type === 'mlsPing') return { source: 'mls-ext', type: 'mlsPong', requestId: body.requestId, version: '3.0.23' };
+    if (body.type === 'mlsAppChartIdentity') return { source: 'mls-ext', type: 'mlsAppChartIdentityResult', requestId: body.requestId, resp: { ok: true, identity: { name: 'Bee Person', dob: '02/03/1970' } } };
+    return null;
+  };
+  let switches = 0;
+  const countSwitch = function () { switches++; };
+  wbus.add('mls:active-patient-changed', countSwitch);
+
+  /* 6 - MEASURED DEFECT: the Send sheet's probe parked athenaOne on somebody
+     else while the doctor had a transcript open. Leg B must OFFER, not take
+     him off the chart he is writing about. */
+  posted.length = 0; toasts.length = 0; offers.length = 0;
+  activeId = 'pa';
+  switches = 0;
+  els.transcript = { value: 'synthetic test transcript - three lines of dictation' };
+  responder = beeOpen;
+  await sleep(900);                                              /* clear the arrival dedupe */
+  dbus.fire('visibilitychange');
+  await sleep(400);
+  wbus.fire('focus');                                            /* the other arrival trigger */
+  await sleep(900);
+  assert.strictEqual(activeId, 'pa', 'Leg B must NOT switch the doctor off the chart he is working in');
+  assert.strictEqual(switches, 0, 'no mls:active-patient-changed may be dispatched by an automatic follow');
+  assert(offers.length >= 1 && offers[0].id === 'pb' && offers[0].name === 'Bee Person',
+    "the schedule anchor's own offer must be rendered instead of a switch");
+  assert(toasts.some(function (t) { return /Nothing was switched/.test(t); }),
+    'the doctor must be told in plain words that nothing moved');
+  assert.strictEqual(api.receipt().follows, 1, 'the only follow so far is section 4\'s');
+
+  /* 7 - AN ARRIVAL MLS ITSELF CAUSED: not even an offer. Both shipped
+     predicates, one at a time. */
+  offers.length = 0; toasts.length = 0;
+  delete els.transcript;                                         /* the editors are empty now */
+  activeId = 'pa';
+  ctx.__mlsWriteFlow = { state: { athenaBusy: true } };           /* wfnav-1.0.0, mid-hop */
+  await sleep(900);
+  dbus.fire('visibilitychange');
+  await sleep(400);
+  assert.strictEqual(activeId, 'pa', "the write lane's own navigation is not the doctor navigating Athena");
+  assert.strictEqual(offers.length, 0, 'MLS must not offer to switch to a chart MLS itself opened');
+  ctx.__mlsWriteFlow = { state: { athenaBusy: false, athenaBusyAt: Date.now() } };  /* the grace seconds after */
+  await sleep(900);
+  dbus.fire('visibilitychange');
+  await sleep(400);
+  assert.strictEqual(activeId, 'pa', 'the seconds AFTER the hop are the seconds the doctor spends arriving back');
+  delete ctx.__mlsWriteFlow;
+  ctx._mlsCaptureKeepsSelection = function (lane, scopedOnly) { return lane === 'athena-follow-legb' && scopedOnly === false; };
+  await sleep(900);
+  dbus.fire('visibilitychange');
+  await sleep(400);
+  assert.strictEqual(activeId, 'pa', "capsel-1.0.0's predicate must block the follow on its own");
+  assert.strictEqual(offers.length, 0, 'still nothing offered');
+  delete ctx._mlsCaptureKeepsSelection;
+  assert(api.receipt().drivenIgnored >= 3, 'each ignored arrival is counted, PHI-free');
+
+  /* 8 - THE CONTROL. Nothing driving, no chart active, the editors empty:
+     Leg B still does exactly what it was built to do. */
+  offers.length = 0; toasts.length = 0;
+  activeId = '';
+  bodyClasses['mls-review-step'] = false; bodyClasses.ez3adv = false;
+  await sleep(900);
+  dbus.fire('visibilitychange');
+  await sleep(400);
+  assert.strictEqual(activeId, 'pb', 'with no work open and nothing driving, Leg B must still follow athenaOne');
+  assert.strictEqual(offers.length, 0, 'a plain follow renders no offer');
+  assert.strictEqual(api.receipt().follows, 2, 'the follow was counted');
+  wbus.remove('mls:active-patient-changed', countSwitch);
+
+  /* 9 - the review step alone is enough: no transcript, no note, but the
+     doctor is standing on Review & send with a chart up. And the standing
+     offer is not RE-SPOKEN at a doctor who flips tabs - it is already there. */
+  offers.length = 0; toasts.length = 0;
+  activeId = 'pa';
+  bodyClasses['mls-review-step'] = true;
+  await sleep(900);
+  dbus.fire('visibilitychange');
+  await sleep(400);
+  assert.strictEqual(activeId, 'pa', 'the review step is visit work in flight');
+  assert(offers.length === 1 && offers[0].id === 'pb', 'and it gets the offer');
+  assert.strictEqual(toasts.length, 0, 'the same offer inside a minute must not be spoken twice');
+  bodyClasses['mls-review-step'] = false;
+
+  /* 10 - the open Send sheet alone is enough, by its own element id */
+  offers.length = 0;
+  activeId = 'pa';
+  els.mlsAthenaUnifiedConfirm = { id: 'mlsAthenaUnifiedConfirm' };
+  await sleep(900);
+  dbus.fire('visibilitychange');
+  await sleep(400);
+  assert.strictEqual(activeId, 'pa', 'an open Send sheet is visit work in flight');
+  assert(offers.length === 1, 'and it gets the offer');
+  delete els.mlsAthenaUnifiedConfirm;
+
+  /* 11 - revert unhooks */
   const before = wbus.count('mls:active-patient-changed');
   api.revert();
   assert(wbus.count('mls:active-patient-changed') === before - 1, 'revert must remove the Leg A listener');
 
-  console.log('PASS athena follow bidirectional: fail-closed without pong, missed ping retries, Leg A debounced nav + skip-if-open, Leg B exact follow + loop suppression, pull guard, clean revert - all in vm; bridge verb gated + handled, 3.0.23 stamped and fed');
+  console.log('PASS athena follow bidirectional: fail-closed without pong, missed ping retries, Leg A debounced nav + skip-if-open, Leg B exact follow + loop suppression, pull guard, clean revert - all in vm; bridge verb gated + handled, 3.0.23 stamped and fed; legboffer-1.0.0: with a chart up and visit work on screen Leg B renders the schedule anchor offer and switches NOTHING (no active-patient event), an arrival MLS itself caused is ignored outright by both shipped predicates, and the empty-editor control still follows');
 })().catch(function (e) { console.error(e); process.exit(1); });

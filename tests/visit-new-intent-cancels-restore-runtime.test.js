@@ -3,7 +3,19 @@
 /* A patient switch may restore that patient's in-tab draft, but an explicit
  * New visit made after the switch is a newer intent and must keep the editor
  * empty. Execute the shipped OpenSwitchFix and visitowner source together so
- * the test covers their real timer ordering and option handoff. */
+ * the test covers their real timer ordering and option handoff.
+ *
+ * REPINNED 2026-09-11 (adhocid-1.0.0). This suite used to assert that a
+ * switch-back restored currentNoteId from the stash ("noteId: 'note-B'"), and
+ * that is the defect the owner measured: an ad-hoc visit - a patient opened by
+ * search, no appointment - auto-saved itself onto a record created in July,
+ * because the stashed noteId was written the last time he left that patient
+ * with a History record loaded and restoreFor put it straight back. A restored
+ * in-tab draft is UNSAVED WORK, not an open History record. Every clinical byte
+ * still comes back exactly as before; what does not come back is the claim to
+ * overwrite a stored row. The id is not discarded either - it arrives as
+ * PROVENANCE (_mlsSetContinuedFromId -> rec.continuedFrom), which is what the
+ * continuedFrom column of each expectation below pins. */
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
@@ -109,8 +121,14 @@ sandbox.newVisit = function (opts) {
   sandbox.currentSoap = '';
   sandbox.currentInsurance = '';
   sandbox.currentNoteId = null;
+  /* the shipped newVisit() clears this on the line after currentNoteId */
+  sandbox._mlsSetContinuedFromId('');
   sandbox.currentVisitAthenaBinding = null;
 };
+/* adhocid-1.0.0: the shell's provenance carrier, so a dropped id would show up
+   here as an empty continuedFrom rather than passing unnoticed. */
+sandbox.__continuedFrom = '';
+sandbox._mlsSetContinuedFromId = function (id) { sandbox.__continuedFrom = String(id || ''); };
 sandbox.prefillContextFromProfile = function () {};
 sandbox.saveDraft = () => true;
 sandbox.toast = function () {};
@@ -135,12 +153,14 @@ function putDraft(label) {
   element('noteBox').value = label + ' note';
   sandbox.currentSoap = label + ' note';
   sandbox.currentNoteId = 'note-' + label;
+  sandbox.__continuedFrom = '';
   sandbox.currentVisitAthenaBinding = { patient: { patientId: sandbox.getActivePtId(), name: patients[sandbox.getActivePtId()].name }, source: 'saved-record', visitContext: { visitDate: '2026-09-10' } };
 }
 function state() {
   return {
     active: sandbox.getActivePtId(), transcript: element('transcript').value,
     note: element('noteBox').value, noteId: sandbox.currentNoteId,
+    continuedFrom: sandbox.__continuedFrom,
     binding: sandbox.currentVisitAthenaBinding
   };
 }
@@ -154,9 +174,9 @@ sandbox.setActivePtId('B'); flush();
 assert.strictEqual(newVisitOptions[newVisitOptions.length - 1].patientSwitchReset, true,
   'ordinary patient switch did not identify its internal editor reset');
 assert.strictEqual(JSON.stringify(state()), JSON.stringify({
-  active: 'B', transcript: 'B source', note: 'B note', noteId: 'note-B',
+  active: 'B', transcript: 'B source', note: 'B note', noteId: null, continuedFrom: 'note-B',
   binding: { patient: { patientId: 'B', name: 'Synthetic Bravo' }, visitContext: { visitDate: '2026-09-10' } }
-}), 'ordinary switch-back no longer restores the exact patient draft');
+}), 'ordinary switch-back no longer restores the exact patient draft as UNSAVED work (every byte back, no claim on the stored History row, the old id kept as provenance)');
 
 /* Live reproducer: switch to B queues restore; immediate explicit New visit is
  * newer intent and must keep every restored field null/empty. */
@@ -165,7 +185,7 @@ sandbox.setActivePtId('B');
 sandbox.localStorage.setItem(sandbox.uns('notes'), JSON.stringify([{ id: 'saved-history-B', patientId: 'B' }]));
 sandbox.newVisit();
 flush();
-assert.strictEqual(JSON.stringify(state()), JSON.stringify({ active: 'B', transcript: '', note: '', noteId: null, binding: null }),
+assert.strictEqual(JSON.stringify(state()), JSON.stringify({ active: 'B', transcript: '', note: '', noteId: null, continuedFrom: '', binding: null }),
   'queued same-patient restore overrode explicit New visit');
 assert.strictEqual(sandbox.__mlsVisitOwner.stash().B, undefined,
   'explicit New visit left the active patient\'s ephemeral restore stash armed');
@@ -181,8 +201,8 @@ sandbox.setActivePtId('B');
 sandbox.setActivePtId('C');
 flush();
 assert.strictEqual(JSON.stringify(state()), JSON.stringify({
-  active: 'C', transcript: 'C source', note: 'C note', noteId: 'note-C',
+  active: 'C', transcript: 'C source', note: 'C note', noteId: null, continuedFrom: 'note-C',
   binding: { patient: { patientId: 'C', name: 'Synthetic Charlie' }, visitContext: { visitDate: '2026-09-10' } }
 }), 'rapid switch allowed an older patient restore to win');
 
-console.log('PASS explicit New visit cancels queued same-patient restore; ordinary and rapid switch restoration remain owned');
+console.log('PASS explicit New visit cancels queued same-patient restore; ordinary and rapid switch restoration remain owned, and a restored draft comes back as unsaved work - every clinical byte, no currentNoteId, the stashed id kept only as continuedFrom provenance');

@@ -110,6 +110,53 @@
   }
   var PROBE_ONLY_BANNER = 'PROBE ONLY — nothing will be written to Athena. Every request leaves this page as a read-only check.';
 
+  /* ===== wfnav-1.0.0 (2026-09-11) THE WRITE LANE IS A DRIVER, AND NOW SAYS SO
+     -------------------------------------------------------------------------
+     MEASURED live on b1231 (owner's tab, synthetic test patient): the note
+     step's "Next: Review & send to Athena" opens the unified Send sheet, whose
+     READ-ONLY probe drives athenaOne itself (mlsAppGotoDate then
+     mlsAppSearchOpenPatient, the 'auto-open' / 'auto-open-encounter' stages)
+     and leaves athenaOne parked on a SCHEDULED chart. The doctor comes back to
+     the MLS tab, Athena Follow's Leg B (feat_mls_athena_follow.js) asks which
+     chart is open, hears that other person and adopts them - the generation is
+     aborted, the outputs are reset and Home paints "Start Recording - <other
+     patient>". The draft is gone.
+
+     dnote-1.1.0 exists to stop exactly this. Its one authoritative predicate
+     window.__mlsAthenaDrivenByMls() claims a "write-lane" driver off
+       window.__mlsWriteFlow.state.running / .busy / .athenaBusy
+     (1p-feat_mls_schedimport_exact.js, dnoteAthenaDriver). STATE here carries
+     NONE of those three names, so that claim has never once fired and the
+     shipped follow guard + residue rule were never consulted for this lane.
+
+     THE CURE IS TO ANSWER THE EXISTING QUESTION TRUTHFULLY, not to mint a
+     second rail: every athenaOne navigation this file performs now runs inside
+     wfNavBegin()/wfNavEnd(), which hold STATE.athenaBusy true while a hop is in
+     flight and stamp STATE.athenaBusyAt when the last one lets go. Follow reads
+     both (the stamp covers the seconds AFTER the hop, while the doctor is still
+     arriving back on the MLS tab).
+
+     IT STAMPS NOTHING ELSE. In particular never window.__mlsPullBusyAt: this
+     file's own pullshield (wfbindPullBusy) reads that stamp, and a lane that
+     stamped it would settle every row of its OWN queue as NOT ATTEMPTED.
+     Read-only, PHI-free (a boolean, a depth and a timestamp), and it can only
+     ever refuse a follow - never cause one. ===================== */
+  var WF_NAV_GRACE_MS = 12000;
+  var WF_NAV_VERBS = { mlsAppGotoDate: 1, mlsAppAthenaActionV2: 1 };
+  var wfNavDepth = 0;
+  function wfNavBegin() {
+    wfNavDepth++;
+    try { STATE.athenaBusy = true; STATE.athenaBusyAt = Date.now(); } catch (e) {}
+  }
+  function wfNavEnd() {
+    if (wfNavDepth > 0) wfNavDepth--;
+    try { STATE.athenaBusyAt = Date.now(); if (wfNavDepth === 0) STATE.athenaBusy = false; } catch (e) {}
+  }
+  function wfNavDriving() {
+    if (wfNavDepth > 0) return true;
+    try { return (Date.now() - Number(STATE.athenaBusyAt || 0)) < WF_NAV_GRACE_MS; } catch (e) { return false; }
+  }
+
   /* ---------------------- bridge (same pattern as b111) -------------------- */
   /* wfdx-1.0.0: mlsAppGotoDate and mlsExtHealth both echo the request id at the
      top level of their reply, so correlate them too — two diagnostics in flight
@@ -125,7 +172,13 @@
     if (syntheticLocalRuntime() && /^mlsAppAthenaAction/.test(S(type))) {
       return Promise.resolve({ ok: false, blocked: true, reason: 'synthetic-local-only', error: 'The local synthetic demo never connects to live Athena data or actions.' });
     }
-    return new Promise(function (resolve) {
+    /* wfnav-1.0.0: the two verbs that MOVE athenaOne (the day/week strip and
+       every action-v2 probe or write, which fronts the athena tab and opens the
+       section's stage tab) are declared as MLS driving for as long as the hop
+       is in flight. mlsExtHealth is a pure read and is deliberately not here. */
+    var wfNavHop = WF_NAV_VERBS[S(type)] === 1;
+    if (wfNavHop) wfNavBegin();
+    var wfNavPromise = new Promise(function (resolve) {
       var done = false;
       var correlated = BRIDGE_CORRELATED[S(type)] === 1;
       var requestId = correlated ? ((type === 'mlsAppAthenaActionV2' ? 'wf2-' : 'wfdx-') + Date.now() + '-' + Math.random().toString(36).slice(2)) : '';
@@ -143,6 +196,10 @@
       } catch (e) {}
       setTimeout(function () { if (done) return; done = true; try { window.removeEventListener('message', h); } catch (e) {} resolve({ __timeout: true }); }, timeout || 150000);
     });
+    /* every path out of that promise - reply, timeout, post failure - lets the
+       hop go. The grace stamp, not the depth, covers the moments after. */
+    if (wfNavHop) { var wfNavRelax = function (v) { wfNavEnd(); return v; }; wfNavPromise = wfNavPromise.then(wfNavRelax, function (e) { wfNavEnd(); throw e; }); }
+    return wfNavPromise;
   }
   function esc(s) { return S(s).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
   function activePt() { try { return (typeof window.activePatient === 'function') ? window.activePatient() : null; } catch (e) { return null; } }
@@ -804,7 +861,11 @@
     return new Promise(function (resolve) {
       var requestId = 'wf-open-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
       var done = false;
-      function fin(v) { if (done) return; done = true; try { window.removeEventListener('message', onMsg); } catch (e) {} resolve(v || {}); }
+      /* wfnav-1.0.0: this is the ONE place in this file that opens a chart in
+         athenaOne. It does not go through bridge(), so it declares the hop
+         itself - and fin() is its single exit (reply, post failure, timeout). */
+      wfNavBegin();
+      function fin(v) { if (done) return; done = true; wfNavEnd(); try { window.removeEventListener('message', onMsg); } catch (e) {} resolve(v || {}); }
       function onMsg(ev) {
         var d = ev && ev.data;
         if (!d || d.source !== 'mls-ext' || d.type !== 'mlsAppSearchOpenResult') return;
@@ -10609,6 +10670,11 @@
 
   window.__mlsWriteFlow = {
     installed: true, version: VERSION, state: STATE,
+    /* wfnav-1.0.0 read-only seam: "is this file moving athenaOne right now, or
+       did it just finish moving it". The same two facts dnote-1.1.0's
+       write-lane claim reads off state.athenaBusy. Nothing here can send. */
+    athenaNav: { v: 'wfnav-1.0.0', graceMs: WF_NAV_GRACE_MS, verbs: WF_NAV_VERBS,
+      driving: wfNavDriving, depth: function () { return wfNavDepth; } },
     suggestOrders: suggestOrders, oneClick: oneClick, runV2: runV2,
     startAthenaAction: startAthenaAction, writeReceiptDrafts: writeReceiptDrafts,
     buildUnifiedManifest: buildUnifiedManifest, openUnifiedConfirmation: openUnifiedConfirmation, closeUnifiedConfirmation: closeUnifiedConfirmation,

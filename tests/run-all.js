@@ -870,6 +870,16 @@ const tests = [
      causal control against origin/main's shell bytes. */
   '1p-visit-owner-isolation-runtime.test.js',
   'visit-new-intent-cancels-restore-runtime.test.js',
+  /* adhocid-1.0.0 (owner-measured 2026-09-11): an ad-hoc visit - a patient
+     opened by search, no appointment - auto-saved itself ON TOP OF a History
+     record created in July, because the per-patient switch-back stash carried
+     the noteId of the record he last had open and restoreFor put it back.
+     Boots the real shell, arms that stash, and proves the restore hands back
+     work without a claim on a stored row, the save mints its own record dated
+     today, the July record keeps its own bytes, and History lists the new one
+     first - with a control that puts the id back by hand and shows the
+     overwrite really is reachable. */
+  '1p-visitowner-adhoc-record-identity-runtime.test.js',
   '1p-provider-unknown-census-runtime.test.js',
   '1p-provider-day-calendar-runtime.test.js',
   /* b1026's pdr-1.0.0 provider Day render fix was never ported to the fork, so
