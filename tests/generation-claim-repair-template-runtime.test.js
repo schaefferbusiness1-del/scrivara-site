@@ -32,6 +32,17 @@ const vm = require('vm');
   assert.strictEqual(context._mlsUnsupportedClinicalClaimFailure(error), true, 'claim-only rejection was not recognized');
   assert.strictEqual(context._mlsUnsupportedClinicalClaimFailure({ mlsAi: { code: 'draft_quality_failed', issues: ['empty_note'] } }), false, 'unrelated quality failure was incorrectly bypassed');
 
+  /* This refusal now fails closed, so it is a sentence a doctor reads. Render
+     it and check it is English: the code itself, with or without underscores,
+     must not reach the screen. */
+  const claimMessage = context.mlsDraftFailureMessage(error);
+  assert(!/unsupported[_ ]clinical[_ ]claim/i.test(claimMessage),
+    'the doctor is shown the refusal code instead of what went wrong. Message: ' + claimMessage);
+  assert(/transcript does not support/.test(claimMessage),
+    'the claim refusal does not say what was wrong with the draft. Message: ' + claimMessage);
+  assert(/output safety check/.test(context.mlsDraftFailureMessage({ mlsAi: { code: 'draft_quality_failed', issues: ['synthetic_unlabelled_code'] } })),
+    'POSITIVE CONTROL: an unlabelled code no longer falls through to the generic line, so the pin above proves nothing');
+
   const tuning = { families: { hpi: { templateText: 'SYNTHETIC HPI ORDER', instructions: 'SYNTHETIC COMMENT' } } };
   context._mlsValidateStructuredNoteResult(JSON.parse(repairedPayload), tuning);
   const repaired = await context._mlsRepairUnsupportedClinicalClaim('BASE SYSTEM', 'TODAY_TRANSCRIPT_BEGIN\nsynthetic visit\nTODAY_TRANSCRIPT_END', tuning);
@@ -47,7 +58,14 @@ const vm = require('vm');
   const generation = source.slice(genStart, genEnd);
   assert(generation.includes('let result=await _mlsAwaitGeneration('), 'normal generation no longer awaits its one hosted generation/repair result directly');
   assert(!generation.includes('_mlsUnsupportedClinicalClaimFailure(initialGenerationError)'), 'normal generation still catches a failed hosted repair as a generated note');
-  assert(generation.indexOf('_mlsValidateStructuredNoteResult(result,generationDraftTuning);') < generation.indexOf('currentSoap=_reorderNoteForStyle(result.note'),
+  /* Both halves must be PRESENT before their order means anything: indexOf
+     returns -1 for a deleted call, and -1 is less than every real index, so a
+     build that dropped the validation entirely would have passed this pin. */
+  const validateAt = generation.indexOf('_mlsValidateStructuredNoteResult(result,generationDraftTuning);');
+  const canonicalAt = generation.indexOf('currentSoap=_reorderNoteForStyle(result.note');
+  assert(validateAt >= 0, 'generation no longer validates its structured result at all');
+  assert(canonicalAt >= 0, 'generation no longer assigns the canonical note - the ordering pin below would be vacuous');
+  assert(validateAt < canonicalAt,
     'a failed generation can mutate the prior canonical note before validation');
   assert(generation.includes("var outcome='failed'"), 'generation no longer begins in a failed lifecycle state');
   assert(/finally\{[\s\S]*?_mlsSettleGeneration\(run,outcome,outcomeCode,outcomeMessage\);/.test(generation), 'failed generation no longer settles its lifecycle');

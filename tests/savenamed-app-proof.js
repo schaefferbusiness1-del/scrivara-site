@@ -74,10 +74,23 @@ function eq(a, b, msg) { assert.strictEqual(a, b, msg + ' (got ' + JSON.stringif
  * The pre-fix bytes, verbatim: the dead manual row this lane replaced. Every
  * runtime section below runs against BOTH sources and asserts that the pre-fix
  * one cannot answer - so this suite can never pass by measuring nothing. */
+/* savetruth-1.0.0 (2026-09-10): re-aimed at the same two lines. The row copy
+   for the native-capable branch no longer promises the read-only outcome on
+   the capability flag alone - that flag says this MLS Assist CAN let Athena
+   persist named fields, never that this encounter DID, and the legacy leg of
+   MLS Assist 3.0.115 really does press the encounter's Save. The row now
+   states BOTH outcomes; everything this suite measures below is unchanged.
+   savetruth-1.2.0 (2026-09-10): re-aimed once more, at the same two lines, for
+   the other half of the same rule. MLS Assist can only let athenaOne save a
+   field it names in its own four-key set (hpi / ros / exam / ap), so on a
+   review with none of them - an operative note - the press is ALWAYS the Save
+   click, and offering that doctor a read-only alternative is offering him an
+   outcome his review cannot take. The row asks for the capability AND for a
+   section that could use it. */
 const SHIPPED_ROW =
-  "      var nativeNamedSave = nativeNamedSectionPersistenceReady();\n" +
-  "      addRow({ id: SAVENAMED_ROW_ID, action: 'save_draft', kind: 'save', label: nativeNamedSave ? 'Verify the saved unsigned note' : SAVENAMED_ROW_LABEL, destination: nativeNamedSave ? 'Athena encounter > persisted named note sections' : SAVENAMED_ROW_DESTINATION,\n" +
-  "        capability: commonBlock ? 'blocked' : 'ready', reason: commonBlock, consequence: nativeNamedSave ? 'MLS reconciles the five reviewed sections with Athena\\'s four persisted destinations. This final check is read-only: it does not press Save and never signs or bills.' : SAVENAMED_ROW_CONSEQUENCE, payload: notePayload, order: UNIFIED_ORDER.save_draft });";
+  "      var nativeNamedSave = nativeNamedSectionPersistenceReady() && nativePersistShapeRows(rows);\n" +
+  "      addRow({ id: SAVENAMED_ROW_ID, action: 'save_draft', kind: 'save', label: nativeNamedSave ? SAVENAMED_BOTH_LABEL : SAVENAMED_ROW_LABEL, destination: nativeNamedSave ? SAVENAMED_BOTH_DESTINATION : SAVENAMED_ROW_DESTINATION,\n" +
+  "        capability: commonBlock ? 'blocked' : 'ready', reason: commonBlock, consequence: nativeNamedSave ? SAVENAMED_BOTH_CONSEQUENCE : SAVENAMED_ROW_CONSEQUENCE, payload: notePayload, order: UNIFIED_ORDER.save_draft });";
 const PREFIX_ROW =
   "      addRow({ id: 'save-named-sections-manual', action: '', kind: 'save', label: 'Save named sections in Athena', destination: 'Athena encounter > section-specific Save controls',\n" +
   "        capability: 'manual', reason: namedFinalReason, consequence: 'Nothing is saved automatically from this row.', payload: notePayload, order: UNIFIED_ORDER.save_draft });";

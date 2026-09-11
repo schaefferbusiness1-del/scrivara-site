@@ -68,14 +68,14 @@ assert(!/installAutoAdvance|__ez3AutoGenWrap|ez3AutoGenerate|window\.stopCapture
   const S = { appt: visit, locked: { id: visit.id, name: patient.name, dob: patient.dob, mrn: patient.mrn }, phase: 'note', recStart: 0, genClickedAt: 0 };
   const fields = { transcript: { value: 'Exact retained synthetic source.' }, noteBox: { value: 'Exact retained synthetic note.' },
     ez3ActiveGo: { getAttribute: key => key === 'data-continue' ? '1' : '' } };
-  let active = patient, modeCalls = 0, recordCalls = 0, renderCalls = 0;
+  let active = patient, modeCalls = 0, recordCalls = 0, renderCalls = 0, capturing = false;
   const originalVisit = JSON.stringify(visit), originalSource = fields.transcript.value, originalNote = fields.noteBox.value;
   const ctx = {
     S, String, $: id => fields[id] || null, canonicalActivePatient: () => active,
     visitBindingOwnsPatient: id => String(id) === String(patient.id) && String(S.appt._patientId) === String(id),
     nameMatch: (a, b) => String(a) === String(b), dobConflicts: (a, b) => !!a && !!b && a !== b,
     mrnConflicts: (a, b) => !!a.mrn && !!b.mrn && a.mrn !== b.mrn,
-    captureBusy: () => false, esc: value => String(value), bannerPatient: () => active,
+    captureBusy: () => capturing, esc: value => String(value), bannerPatient: () => active,
     on(id, fn) { if (id === 'ez3ActiveGo') ctx.click = fn; },
     setEasyMode(mode, screen, reason) { assert.deepStrictEqual([mode, screen, reason], ['doctor', 'doctor', 'home-continue-visit']); modeCalls++; },
     render() { renderCalls++; }, bannerRowToday: () => { throw new Error('continuation resolved a new appointment'); },
@@ -87,6 +87,11 @@ assert(!/installAutoAdvance|__ez3AutoGenWrap|ez3AutoGenerate|window\.stopCapture
   const html = ctx.action(patient, 'new visit detail', '');
   assert(/>➡ Continue visit</.test(html), 'owned draft still rendered Start recording');
   assert(/aria-label="Continue visit"/.test(html) && !/aria-label="[^"]*Synthetic Patient/.test(html), 'Continue visit accessible name includes a patient name');
+  assert(/<small>Return to this visit’s note and transcript<\/small>/.test(html),
+    'the Continue sub-label does not name what is actually there to return to. Markup: ' + html);
+  assert(/ data-rec="0"/.test(html),
+    'the Continue press is stamped as a recording press. The verdict lane watches #ez3ActiveGo, so it arms on this ' +
+    'press and paints "Recording did not start and MLS was not told why" over a visit nobody asked to record. Markup: ' + html);
   vm.runInContext(clickWire, ctx);
   ctx.click();
   assert.strictEqual(modeCalls, 1, 'Continue visit did not navigate to the existing Doctor room');
@@ -102,6 +107,77 @@ assert(!/installAutoAdvance|__ez3AutoGenWrap|ez3AutoGenerate|window\.stopCapture
   fields.transcript.value = 'Stale bytes from the prior patient.';
   active = { id: 'fixture-patient-two', name: 'Other Patient', dob: '2001-03-04', mrn: 'MRN-2' };
   assert.strictEqual(ctx.owns(active), false, 'stale other-patient source promoted Continue visit');
+
+  /* A PARKED PHASE IS NOT A LIVE VISIT.
+     stopRecordingOnly parks S.phase at 'stopped' and clears nothing else, and
+     a patient switch through lockAndStartPatient resets editing/genClickedAt
+     but NOT phase/recStart. Both therefore outlive the visit that set them, so
+     reading them as "live" offered "Continue visit" on an ENTIRELY EMPTY new
+     visit - and Home was then left with no Start Recording door at all. */
+  active = patient;
+  fields.transcript.value = ''; fields.noteBox.value = '';
+  S.phase = 'stopped'; S.recStart = 1757000000000; S.genClickedAt = 0;
+  assert.strictEqual(ctx.owns(patient), false,
+    'a parked stopped phase with empty editors was offered as a visit to continue - there is nothing there to return to');
+  const startMarkup = ctx.action(patient, 'no appointment today', '');
+  assert(/🎙 Start Recording/.test(startMarkup),
+    'an empty visit on a parked phase lost its Start Recording door. Markup: ' + startMarkup);
+  assert(/ data-rec="1"/.test(startMarkup),
+    'the Start Recording form must still be stamped as a recording press. Markup: ' + startMarkup);
+
+  /* and the sub-label names what actually exists, in each shape */
+  fields.transcript.value = 'A synthetic spoken line from this visit.';
+  assert.strictEqual(ctx.owns(patient), true, 'a stopped visit that already holds a transcript lost its Continue offer');
+  const sourceOnly = ctx.action(patient, 'no appointment today', '');
+  assert(/<small>Return to this visit’s transcript<\/small>/.test(sourceOnly),
+    'a transcript-only visit was described as having a note. Markup: ' + sourceOnly);
+  fields.transcript.value = ''; fields.noteBox.value = 'A synthetic drafted note.';
+  assert.strictEqual(ctx.owns(patient), true, 'a stopped visit that already holds a note lost its Continue offer');
+  assert(/<small>Return to this visit’s note<\/small>/.test(ctx.action(patient, 'no appointment today', '')),
+    'a note-only visit was described as having a transcript');
+  fields.noteBox.value = '';
+  capturing = true;
+  assert.strictEqual(ctx.owns(patient), true, 'a running capture with empty editors is a live visit and must stay continuable');
+  assert(/<small>Return to this visit<\/small>/.test(ctx.action(patient, 'no appointment today', '')),
+    'a live but still-empty visit claimed content it does not have');
+  capturing = false;
+
+  /* THE RECORDING-VERDICT LANE MUST NOT ARM ON A CONTINUE PRESS.
+     #ez3ActiveGo is in REC_START_SEL, and recPressWanted arms on anything not
+     stamped data-rec="0", so before this stamp every Continue press armed
+     _recArmed and the sheet painted the red "Recording did not start and MLS
+     was not told why" refusal 1.2 s later. Executed, not grepped: the lane's
+     own listener is run against the markup the renderer actually emits. */
+  const lane = between('  var _recFail = null;      /* { why, kind, at }', '  /* ===== recvis-1.0.0 end');
+  const laneCtx = { document: { querySelectorAll: () => [] }, window: {}, console,
+    recordingNow: () => false, verifiedActivePatient: () => patient, scheduleLaneSync() {} };
+  vm.createContext(laneCtx);
+  vm.runInContext(lane + '\nthis.press=laneRecordPress;this.wanted=recPressWanted;this.sel=REC_START_SEL;', laneCtx);
+  function pressEventFor(markup) {
+    const tag = (markup.match(/^<button[^>]*>/) || [''])[0];
+    const attrs = {};
+    const re = /([a-zA-Z-]+)="([^"]*)"/g;
+    let m;
+    while ((m = re.exec(tag))) attrs[m[1]] = m[2];
+    const el = { getAttribute: key => (Object.prototype.hasOwnProperty.call(attrs, key) ? attrs[key] : null) };
+    return { target: { closest: sel => (String(sel).split(',').indexOf('#' + attrs.id) >= 0 ? el : null) } };
+  }
+  fields.transcript.value = 'A synthetic spoken line from this visit.';
+  const continueMarkup = ctx.action(patient, 'no appointment today', '');
+  assert(/➡ Continue visit/.test(continueMarkup), 'the Continue markup under test is not a Continue offer');
+  laneCtx._recArmed = null;
+  laneCtx.press(pressEventFor(continueMarkup));
+  assert.strictEqual(laneCtx._recArmed, null,
+    'pressing Continue visit armed the recording-verdict lane. Nothing on the Continue path ever disarms it, so the ' +
+    'sheet paints "Recording did not start and MLS was not told why" over a visit nobody asked to record.');
+  laneCtx.press(pressEventFor(startMarkup));
+  assert(laneCtx._recArmed && laneCtx._recArmed.at > 0,
+    'POSITIVE CONTROL: a real Start Recording press no longer arms the lane, so the assertion above proves nothing - ' +
+    'either #ez3ActiveGo left REC_START_SEL or the press listener stopped reading these buttons');
+  assert.strictEqual(laneCtx.wanted(pressEventFor(continueMarkup).target.closest(laneCtx.sel)), false,
+    'recPressWanted does not honour the data-rec="0" stamp the Continue form emits');
+  assert.strictEqual(laneCtx.wanted(pressEventFor(startMarkup).target.closest(laneCtx.sel)), true,
+    'recPressWanted stopped treating the Start Recording form as a recording press');
 }
 {
   const warningHelper = between('  function generationWarningDuplicatesLane(message)', '  /* =======================================================================\n   *  renderers');

@@ -68,15 +68,64 @@ const HEAD_REGIONS = [
   ['identity-lock (validatedUnifiedProbe: token + name/DOB/MRN + exact encounter)',
     '  function validatedUnifiedProbe(patient, probe) {', '  function renderUnifiedContext(state, lock) {',
     '5132fb2c3047b18f75647b0dea7df7ce21c2d5a89325cfaa77e82e193d3533a1'],
+  /* MOVED DELIBERATELY, savetruth-1.1.0 (2026-09-10), by ONE ARGUMENT. MLS
+     Assist mints a save_draft authorization only from a trusted click whose
+     composed label matches its own pattern (content.js _mlsActionLabelMatches:
+     "confirm save draft [in athena]", and in 3.0.115 also "verify saved
+     unsigned note in athena"). The both-outcomes row wording matched NEITHER,
+     so the moment it reached the button's aria the LONE save press stopped
+     arming and the extension answered fresh-trusted-click-required while the
+     sheet promised "one press is left". unifiedAriaFor now takes the sheet
+     state so it can tell the reconciliation press from the plain Save press,
+     and this region's single change is passing it: `unifiedAriaFor(row.action)`
+     became `unifiedAriaFor(row.action, state)` on the line that paints the
+     aria-label and title. No refusal, gate, auto-open, day check, token,
+     payload or receipt path moved. Proven in tests/save-press-truth-proof.js,
+     which runs the composed label through BOTH shipped extensions' own
+     matchers read off disk. */
   ['probe ladder (probeUnifiedRow: every refusal, auto-open, day-mismatch gate)',
     '  function probeUnifiedRow(state, rowId) {', '  /* wfsum-1.0.0 (owner 2026-08-26, watching his own writes land while the sheet',
-    '0435a7355d23ecc1e262a7ddca9c8ec3f010e3eb4bcb808995e03ad8b4883a95'],
+    '9f9cf42a359b1eb30c5aac95f3c168a87c7f3799bbc2e12b230bf17da7f8a572'],
+  /* MOVED DELIBERATELY, savetruth-1.0.0 (2026-09-10). The five plain-English
+     entries 999ba30f added for the section-persistence codes could never
+     render: nativePersistenceFailureMessage's regex covers exactly those
+     codes and it was consulted FIRST, so a pre-read refusal like
+     section-persistence-frame-changed (attempted false) told the doctor "MLS
+     could not prove..." instead of its own cure. ONE expression changed: the
+     WFCLAR table now wins for a code it has a sentence for, and the generic
+     sentence stays the fallback for every code it does not. The pre-existing
+     rule is untouched - an ATTEMPTED outcome still keeps the extension's exact
+     words and its uncertain status - and no gate, token, payload or receipt
+     STATUS changed; this region decides only which sentence is shown. Proven
+     in tests/native-persistence-clarity-proof.js. */
   ['receipt mint (resultToUnifiedReceipt: verified / uncertain / halt)',
     '  function resultToUnifiedReceipt(state, row, resp, probe) {', '  /* ===== wfprog-1.0.0 (owner 2026-08-27:',
-    '3c920a362765d5b9f30fdb0c546d70dae2d002db6921ac03a1c483ab3b8c7f9a'],
+    '9e6ec832e5e50201c1186f22912fa6017792358add914c93f6ee82c69210dfe3'],
+  /* MOVED DELIBERATELY, savetruth-1.0.0 (2026-09-10). The pill had no painter
+     for the running=true transition: sheetclarStateBase has always DERIVED
+     SENDING / WRITING DRAFT from state.running, but nothing repainted it here,
+     so during a batch the pill still read CHECKING with "Nothing new is being
+     sent during this check." while the button read "Writing 1 of 3..." and the
+     write was already on the wire. ONE line was added, immediately after
+     state.running = true and before the bridge post: a guarded
+     paintSheetclarState(state, ''). It paints a surface that already exists -
+     it derives nothing new, enables no control, and cannot send. Every gate,
+     latch, bound, token, payload and receipt path is byte-identical. Proven in
+     tests/write-ui-proof.js (the restored positive SENDING pin).
+     MOVED A SECOND TIME, savetruth-1.1.0 (2026-09-10), by one more line. A
+     refusal that arrives from the EXECUTE path carries a cure sentence ending
+     "press Check Athena again" - and until this line existed the only thing
+     that ever put that button on screen was the read-only PROBE path, so the
+     sentence named a control the doctor did not have. One guarded call to
+     unifiedRecheckControl, on a BLOCKED receipt only (the extension refused
+     without touching Athena) and never inside a batch, which owns its own
+     terminal. It appends one read-only button whose click runs the same
+     probeUnifiedRow the canonical control runs; it latches nothing, records no
+     attempt, touches no token and cannot send. An UNCERTAIN outcome is never
+     offered it. Proven in tests/native-persistence-clarity-proof.js section 6. */
   ['execute (executeUnifiedSelection: the only code that writes)',
     '  function executeUnifiedSelection(state) {', '  /* bx-1.0.0 - batch send (owner 2026-08-26:',
-    '9899793443dc4bb5f9d97f141fd435c3b747854ff5de4b072bbb7b5c2ccc44a0'],
+    '9c7b9629f4c917d475a2c6797068461b373c51f2c89c79bda6a28378cc25c60a'],
   /* MOVED DELIBERATELY, wfnext-1.0.0 (2026-09-01) - owner ruling 23:05,
      verbatim: "nothing here should be blocked or manual or not attempted once
      its run". MEASURED 22:50-22:56 on his own tab: one trusted press, six
@@ -117,10 +166,19 @@ const HEAD_REGIONS = [
      tests/sheet-rows-and-reopen-proof.js was green at 231 checks. Regions 1-4,
      6 and 7 did not move for this lane either - which is the check that this
      was a sequencing change and not a write-path change. Proven in
-     tests/paintwait-queue-proof.js. */
+     tests/paintwait-queue-proof.js.
+     MOVED AGAIN, savetruth-1.1.0 (2026-09-10), for the same reason the execute
+     region moved and in the same shape: one guarded call to
+     unifiedRecheckControl, inside finish(), AFTER the summary repaint that
+     would otherwise wipe it, for the first row this press refused without
+     touching Athena (status 'blocked') and never on a halted sheet. It is the
+     DOM half of the button whose absence made twelve cure sentences name a
+     control that was not there. The sequencing itself is untouched: same rows,
+     same per-row probe/execute pair, same bounds, same halt-on-uncertain, same
+     receipts. Proven in tests/native-persistence-clarity-proof.js section 6. */
   ['batch queue (runUnifiedBatchSend: per-row probe/execute/receipt sequencing)',
     '  function runUnifiedBatchSend(state, btn) {', '  function reopenOptions(opts, manifest) {',
-    'bdd788bbeb2e715512453301ef660c9cc692b4a406dfb8a32d0e0f7cbc72ca92'],
+    '2ef699c2125f1056f571000de8766a21b029372940518ad2967aa546a526ac58'],
   ['closed allowlist ATHENA_EXECUTABLE_ACTIONS', '  var ATHENA_EXECUTABLE_ACTIONS = ', '\n',
     '27406852d9632ee5db6a143ac989eafa0308ac6e4a84326c731076941f2538a5'],
   ['closed allowlist OPBATCH_ACTIONS', '  var OPBATCH_ACTIONS = ', '\n',
@@ -253,13 +311,83 @@ const KEEP_REGIONS = [
      may only DISABLE the batch primary while its current probe is in flight,
      refused, or stale; it removes every action/batch binding. The real runtime
      cases, including a current passing probe enabling normally, are pinned in
-     tests/write-next-press-proof.js. */
+     tests/write-next-press-proof.js.
+     RE-AIMED DELIBERATELY, savetruth-1.1.0 (2026-09-10). Again not a
+     presentation pass: MEASURED, a batch wrote every section, its final
+     saved-note step was refused, and this plan kept routing the still-selected
+     save row down the 'single' lane - which goes STRAIGHT to execute with no
+     read-only check. So the sheet offered a live green button over a receipt
+     reading "press Check Athena again", and pressing it answered "The selected
+     action is not bound to a fresh exact Athena check" and did nothing, for
+     good. TWO things changed, and the block below asserts both: (a) that
+     shortcut now also requires the row to still be BOUND to this review's
+     fresh probe, so an unbound row falls through to the 'batch' lane, which
+     runs the same probe/execute pair with the read-only check the receipt
+     names - a NARROWING, never a widening, and a row with no fresh probe still
+     cannot execute; (b) the batch button's TITLE names the final step when the
+     queue that press will run is the encounter save alone. No new row can join
+     any plan and none of the seven SHA-pinned write-path regions moved for it.
+     RE-AIMED DELIBERATELY, savetruth-1.3.0 (2026-09-10). TWO changes, and both
+     are the DISABLED button's SENTENCE or the same narrowing read through one
+     more helper - no mode moved: (a) the "an Athena outcome is uncertain"
+     refusal now asks unifiedBlockingUncertainReceipt instead of
+     unifiedUncertainReceipt, which differs on exactly one receipt - a save
+     whose response PROVES it pressed nothing (readOnly / section-persistence-*
+     / native-reconciled, and never with saved, persisted or partialMutation).
+     Such an outcome changed nothing in Athena, so it may not kill the sheet
+     and strand the doctor under a cure sentence naming a Confirm he can never
+     press again (owner decisions D2 + D3). It grants no new mode: that press
+     still routes through the batch lane's own read-only probe before anything
+     can be sent, which sections 6 and 7 of
+     tests/native-persistence-clarity-proof.js drive end to end. (b) the wfdone
+     'none' branch's REASON - "There is nothing left to send" - is replaced by
+     one naming the Save draft press when a generic review's own save row is
+     the selected, unsent row. The mode is still 'none'; only the sentence on
+     the dead button changed. */
   ['the primary button plan and its sync (unifiedPrimaryPlan + unifiedSyncPrimaryButton)',
     '  function unifiedPrimaryPlan(state) {', "  /* rwfix-1.0.0 (b1169): the include checkboxes' ONE handler",
-    'ea0bfa73d4ad0a6e02ca02e025bb4c4fab256aab134d469cc99099cdb7322b92'],
+    'eb248a3ae8d0c07e973f7d40e06362e35462eacfb3aac2f3535e25a18a9c4aa4'],
+  /* RE-AIMED DELIBERATELY, savetruth-1.0.0 (2026-09-10). Not a presentation
+     pass: the READY sentence promised "MLS verifies the saved unsigned note
+     ... without pressing Save" on the extension's CAPABILITY FLAG alone, but
+     on a legacy (non-Slate) encounter that same press really does press the
+     encounter's Save control. ONE branch's string changed - the literal became
+     the shared SAVENAMED_BOTH_SHORT, which is true for BOTH outcomes - and the
+     read-only wording stays byte-for-byte wherever it is already gated on
+     savenamedNativeSectionsPersisted / savenamedNativeVerified, i.e. on proven
+     per-row receipts rather than on capability. No branch was added or removed
+     and nothing about WHICH state is derived changed.
+     RE-AIMED DELIBERATELY, savetruth-1.1.0 / 1.2.0 (2026-09-10). This region
+     is where the sheet's one-word verdict and its one sentence are derived,
+     and five sentences in it were saying things the receipts contradicted on
+     the same screen. Each change is a WORDING gate, never a new state, never a
+     new control - the label set is unchanged and no branch here can enable,
+     probe or send: (1) an UNCERTAIN save no longer claims "Athena Save was
+     attempted" unless the receipt PROVES the Save click ran, because the
+     read-only saved-note leg refuses with attempted:true having clicked only
+     nav beads; (2) EVERY save_draft row, not just the named one, is narrated
+     as a save - a generic review's Save draft row was being described by the
+     note-WRITE branch as "MLS is writing... it never saves"; (3) the mid-write
+     sentence claims Athena persisted a field only for a key athenaOne can
+     persist AND only once a native-section receipt is in hand; (4) a settled
+     refusal on screen outranks the "one press is left" promise painted over
+     it; (5) a READY pill for a selected SAVE row no longer ends "no save". The
+     runtime half is tests/native-persistence-clarity-proof.js sections 7-9.
+     RE-AIMED DELIBERATELY, savetruth-1.3.0 (2026-09-10). Two more WORDING
+     gates in the same region; again no new state, no new label, no control:
+     (6) the UNCERTAIN save now has THREE sentences, not two, because there are
+     three things that can be known - the Save click is proven, the read-only
+     leg is proven, or neither is. A save step that TIMED OUT proves neither, so
+     it is no longer told "It did not press Save", which nobody could know; and
+     the read-only family's sentence is the one owner decision D2 pins verbatim.
+     (7) the DONE branch no longer says "MLS never saves and never signs" over a
+     GENERIC review whose own Save draft row is selected and unsent - measured
+     beside a LIVE armed save button labelled "Nothing left to send". Section 10
+     of tests/native-persistence-clarity-proof.js drives both, and section 12
+     pins the timeout case in the doctor's own words. */
   ['the state derivation (sheetclarStateBase)',
     '  function sheetclarStateBase(state, kind) {', '  function paintSheetclarState(state, kind) {',
-    '8bb15a1ffe27ef3f0911575d38fc1acab4b908a59e16788160ea92ac702bf38b']
+    '38cb665b9e69f605e9f01c5722469638ac01f31cfd959f9d695f369155af4b77']
 ];
 KEEP_REGIONS.forEach(function (r) {
   const i = FLOW.indexOf(r[1]);
@@ -328,8 +456,14 @@ KEEP_REGIONS.forEach(function (r) {
   /* savenamed-app-1.0.0: the finished-sheet branch is intact and still returns
      the dead plan with its own reason - it now yields ONLY to the review's own
      armed save row, which is the one press a finished sheet can still owe. */
-  ok(PLAN.indexOf("if (!wfdoneOwed.length) return saveOwed ? { mode: 'batch', rows: [saveOwed], reason: '' } : { mode: 'none', rows: [], reason: WFDONE_NOTHING_LEFT_REASON };") > 0,
+  /* savetruth-1.3.0: the REASON on that dead plan now names the generic
+     review's own selected Save draft press instead of "nothing left to send",
+     which was false with one armed. The MODE is pinned unchanged: still
+     'none', still no rows, still yielding only to the named save row. */
+  ok(PLAN.indexOf("if (!wfdoneOwed.length) return saveOwed ? { mode: 'batch', rows: [saveOwed], reason: '' }") > 0,
     'the finished-sheet branch no longer returns a dead plan carrying its own reason');
+  ok(PLAN.indexOf(": { mode: 'none', rows: [], reason: unifiedGenericSaveOwed(state) ? GENERICSAVE_PLAN_PENDING : WFDONE_NOTHING_LEFT_REASON };") > 0,
+    'the finished-sheet branch stopped carrying a reason, or gained rows it may not have');
   eq((PLAN.match(/mode: 'none'/g) || []).length, 5, 'the plan gained or lost a refusal branch beyond the shipped refusal set');
   /* savenamed-app-1.0.0: the two new 'batch' returns are the SAME row, reached
      the SAME way - `saveOwed`, and nothing else, may join a plan. */
@@ -338,13 +472,27 @@ KEEP_REGIONS.forEach(function (r) {
     'a new batch return carries something other than the review\'s own armed save row');
   eq((PLAN.match(/var saveOwed = savenamedOwedRow\(state\);/g) || []).length, 1,
     'the save row reaches the plan through something other than its one readiness rule');
-  ok(PLAN.indexOf("      if (!(selRec && selRec.status === 'verified')) return { mode: 'single', rows: [sel], reason: '' };") > 0,
-    'the legacy Save/Sign/order shortcut no longer stands aside for a row that already landed - a verified row would hold the button live with nothing to send');
+  /* savetruth-1.1.0 (2026-09-10): re-aimed, and NARROWED. The shortcut still
+     stands aside for a row that already landed; it now ALSO stands aside for a
+     row whose read-only check is no longer bound to it, because that lane goes
+     straight to execute and a press on an unbound row dead-ended forever. Both
+     halves are pinned, so neither can be dropped. */
+  ok(PLAN.indexOf("      if (!(selRec && selRec.status === 'verified') && selBound) return { mode: 'single', rows: [sel], reason: '' };") > 0,
+    'the legacy Save/Sign/order shortcut no longer stands aside for a row that already landed, or for one with no fresh read-only check bound to it');
+  ok(PLAN.indexOf("      var selBound = !!(state.probe && state.probe.rowId === sel.id && state.probe.rowHash === sel.rowHash && state.probe.manifestHash === state.manifest.manifestHash);") > 0,
+    'the legacy shortcut stopped proving the selected row is bound to THIS review\'s fresh probe - a press on an unbound row would dead-end again');
   ok(PLAN.indexOf('if (rows.length === 1 && !saveOwed && selectable') > 0,
     'the legacy single-row shortcut no longer stands aside when the save is riding this press - one press would then run two rows through the one-row path');
   eq((PLAN.match(/mode: 'single'/g) || []).length, 3, 'the plan gained a new legacy-single path - wfdone may only ever refuse');
+  /* savetruth-1.1.0 (2026-09-10): re-aimed once, for a TITLE. When the queue
+     this press will run is the encounter save alone - every section already
+     landed - "Sends every checked note section, one at a time" described work
+     that is finished, so the title now names the final step instead. It is one
+     string on one attribute: the enable/disable decisions, the action
+     attributes, the preview hash and the batch list are byte-identical, which
+     is what the property assertions above and below this digest read. */
   eq(crypto.createHash('sha256').update(SYNC, 'utf8').digest('hex'),
-    '2ea0699e945d046ebf7740aeb4a4c067e6cac9c4a11f4eb4e90a080c9772cc9b',
+    '4ce803a572f5f20d95056c8df31f01779087db4a0f710c8475b6e85bac827ce1',
     'THE BUTTON SYNC CHANGED OUTSIDE livecheck-1.0.0 - it may add only the current-probe disable branch proven by the runtime regression');
   ok(FLOW.indexOf("var WFDONE_NOTHING_LEFT_LABEL = 'Nothing left to send';") > 0,
     'the finished-sheet label stopped being the SAME shared constant renderUnifiedReceipts already writes - one state, two sentences');
@@ -995,6 +1143,16 @@ function primaryFollowsPlan(h, where) {
     const prog = String(h.el('mlsAthenaUnifiedProgress').innerHTML || '');
     ok(prog.indexOf('data-mls-prog-headline') > 0, 'the loading bar never painted a headline');
     ok(/data-mls-prog-pct="100"/.test(prog), 'a finished batch never filled the bar');
+    /* RESTORED 2026-09-10. 510d1e4b replaced this positive pin with a negative
+       one (h.seen never contains DONE) that no reachable state could fail, and
+       the thing it stopped measuring was a real, shipped defect: the pill was
+       still reading CHECKING - "Nothing new is being sent during this check." -
+       while the button beside it read "Writing 1 of 3..." and the write was on
+       the wire. sheetclarStateBase always derived SENDING from state.running;
+       nothing repainted the pill at that transition. This asserts the word the
+       doctor can actually see at the moment the section goes out. */
+    ok(h.seen.some(s => s.mode === 'execute' && s.stateWord === 'SENDING'),
+      'the sheet never said SENDING while it was writing');
     ok(!h.seen.some(s => s.stateWord === 'DONE'), 'the sheet advertised DONE before the extension returned its receipts');
     pill(h, 'DONE', 'after a fully verified batch');
 

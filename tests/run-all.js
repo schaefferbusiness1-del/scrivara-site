@@ -737,11 +737,12 @@ const tests = [
   '1p-athena-all-actions-ready-3062.test.js',
   '1p-avatar-loader-runtime.test.js',
   '1p-calm-dock-owner-runtime.test.js',
-<<<<<<< HEAD
+  /* 2026-09-10: an UNRESOLVED merge conflict stood on these two lines at
+     999ba30f, so tests/run-all.js could not be parsed at all and the release
+     gate ran NOTHING. Both suites exist on disk and each was listed exactly
+     once - inside the conflict - so the resolution is to keep both. */
   'calm-tools-menu-lifecycle-runtime.test.js',
-=======
   'keepalive-never-navigates-athena-runtime.test.js',
->>>>>>> a3361c8f (Stop keepalive from navigating Athena)
   '1p-avatar-face-loader-runtime.test.js',
   '1p-avatar-face-studio-runtime.test.js',
   '1p-avatar-face-likeness-runtime.test.js',
@@ -2309,6 +2310,19 @@ const tests = [
      shell dead-ends in silence. */
   '1p-writeflow-opnote-clarity-progress.test.js',
   '1p-native-reconciled-save-contract.test.js',
+  /* savetruth-1.0.0: the twelve saved-note refusal codes answer in the
+     doctor's own words with a tail that is true for them; each of the five
+     added by 999ba30f renders its own cure through the shipped receipt path
+     instead of being swallowed by the generic sentence (proved against the
+     pre-fix bytes); an ATTEMPTED outcome is still never paraphrased; and none
+     of them can start an automatic re-check. */
+  'native-persistence-clarity-proof.js',
+  /* savetruth-1.1.0/1.2.0: MLS Assist arms a save_draft press ONLY from a
+     trusted click whose composed label matches its own pattern, so the save
+     press's aria-label is load-bearing, not prose. This runs the composed
+     label through BOTH shipped extensions' own matchers - read off disk where
+     a copy is present - in all four review shapes. */
+  'save-press-truth-proof.js',
   /* cap-mrn-1.0.0: the open-patient capture reply's MRN is digits-only. */
   'capture-mrn-normalize-pins.test.js',
   /* Codex 00:2x: capture-shaped legacy-grid attribution fixtures - the

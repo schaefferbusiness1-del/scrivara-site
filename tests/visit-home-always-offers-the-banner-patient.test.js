@@ -119,9 +119,21 @@ function callBlock(input, at) {
    identity. Stubbing it would have made the suite agree with itself instead of
    with the app. All four helpers live inside the same canonical Easy owner
    region this harness already bounds. */
+/* contharness-1.0.0 (2026-09-10): renderHome stopped emitting the banner
+   patient's button inline and now calls activePatientHomeAction /
+   homeOwnsContinuableVisit, and this lift list did not follow, so every run
+   died with "ReferenceError: activePatientHomeAction is not defined" inside
+   the FIRST render - a dead suite sitting in the release gate. Both are lifted
+   REAL: the control this whole file reasons about is the one they render.
+   homeOwnsContinuableVisit reads workspace state that this harness does not
+   model ($/noteText/captureBusy/S.appt), and it is written defensively for
+   exactly that reason - its try/catch resolves to false here, so every offer
+   below renders in its Start Recording form. That is this suite's subject:
+   WHICH patient is offered. Whether an owned draft turns the same control into
+   "Continue visit" is executed in visit-navigation-intent-runtime. */
 const REAL = ['normTokens', 'nameMatch', 'rowKey', 'apptDay', 'bannerPatient',
   'safe', 'dobOf', 'dobKey', 'mrnKey', 'dobConflicts', 'mrnConflicts', 'positiveIdentityEvidence',
-  'dayRowForPatient', 'bannerLeads', 'renderHome'];
+  'dayRowForPatient', 'bannerLeads', 'homeOwnsContinuableVisit', 'activePatientHomeAction', 'renderHome'];
 
 const DULIN = { id: 'appt-dulin', name: 'John F Dulin', dob: '05/06/1945', provider: 'Dr Example', appt_date: '2026-07-30', start_local: '7:30 AM', reason: 'Follow-up' };
 const SALIMI = { id: 'appt-salimi', name: 'Atoussa Salimi', dob: '11/05/1968', provider: 'Dr Example', appt_date: '2026-07-30', start_local: '9:00 AM', reason: 'Injection' };

@@ -1223,14 +1223,88 @@
   var SAVENAMED_PILL_SHORT = 'Every checked section is in athenaOne. One press is left: MLS presses Save in this encounter for you and reads the save back. It never signs.';
   var SAVENAMED_DONE_SHORT = 'Every checked section is in athenaOne and MLS saved this encounter there and read the save back. Only Sign is left, and Sign stays your own click in athenaOne.';
   var SAVENAMED_NATIVE_PRESS_LABEL = 'Verify saved unsigned note in Athena';
-  var SAVENAMED_NATIVE_WAITING_MSG = 'Every checked section was persisted and read back. This final read-only step reconciles the five reviewed sections with Athena\'s four saved destinations; it does not press Save and never signs.';
+  var SAVENAMED_NATIVE_WAITING_MSG = 'Every checked section was persisted and read back. This final read-only step reads every reviewed section back from the saved Athena note; it does not press Save and never signs.';
   var SAVENAMED_NATIVE_VERIFIED_MSG = 'All reviewed sections match the saved Athena note. The unsigned note is saved and verified; MLS did not press Save and did not sign or bill.';
-  var SAVENAMED_NATIVE_DONE_SHORT = 'Every checked section is saved in athenaOne and read back. MLS verified the five reviewed sections across Athena\'s four persisted destinations without pressing Save. Only Sign is left.';
+  var SAVENAMED_NATIVE_DONE_SHORT = 'Every checked section is saved in athenaOne and read back. MLS read every reviewed section back from the saved Athena note without pressing Save. Only Sign is left.';
+  /* savetruth-1.0.0 (2026-09-10) - THE CAPABILITY FLAG IS NOT THE OUTCOME.
+     nativeNamedSectionPersistenceReady() says this MLS Assist CAN let Athena
+     persist named fields as they are written. It does not say this encounter
+     DID. On a legacy (non-Slate) encounter the SAME press still clicks this
+     encounter's own Save control once - MLS Assist 3.0.115 answers it with
+     exact-note-editor-verified-unsaved receipts - so a sentence that promises
+     "read-only, it does not press Save" on the capability alone is false for
+     every encounter that takes the legacy leg, and it contradicts the pill for
+     the same press (SAVENAMED_PILL_SHORT), which is gated on the receipts.
+     Until the receipts name the outcome, every sentence about that press says
+     BOTH things. The read-only wording is kept ONLY where
+     savenamedNativeSectionsPersisted(state) has already proven that Athena
+     persisted each reviewed section itself. */
+  var SAVENAMED_BOTH_LABEL = 'Verify or save the note in Athena';
+  var SAVENAMED_BOTH_DESTINATION = 'Athena encounter > saved note sections';
+  var SAVENAMED_BOTH_CONSEQUENCE = 'If Athena already saved each reviewed section itself, this final step only reads the saved note back. Otherwise MLS presses this encounter\'s Save control once and reads the save back. It never signs and never bills.';
+  var SAVENAMED_BOTH_TAIL = ', then verify or save the note in Athena';
+  var SAVENAMED_BOTH_CLAUSE = ' The same press then reads the saved note back, pressing this encounter\'s Save once first if Athena has not already saved it. Sign stays your own click.';
+  var SAVENAMED_BOTH_SHORT = ', then MLS reads the saved note back, pressing this encounter\'s Save once first if Athena has not already saved it.';
+  /* savetruth-1.1.0 (2026-09-10) - THE ARMING PHRASE IS NOT A PLACE FOR PROSE.
+     MLS Assist mints a save_draft authorization ONLY from a trusted click whose
+     textContent + aria-label + title matches content.js _mlsActionLabelMatches:
+     the extension in this repo (3.0.112) accepts ONLY "confirm save draft [in
+     athena]", and 3.0.115 additionally accepts "verify saved unsigned note in
+     athena". SAVENAMED_BOTH_LABEL matches NEITHER, so the moment it became the
+     button's arming phrase the LONE save press stopped arming at all and MLS
+     Assist answered fresh-trusted-click-required while the pill promised "one
+     press is left". (An in-batch save still arms off the batch hash list, which
+     is why only the lone press was affected - and why nothing caught it.)
+     So the arming phrase leads the aria-label again, it carries the phrase both
+     extensions accept, and it still states BOTH outcomes of that one press.
+     tests/save-press-truth-proof.js runs the composed label through the REPO'S
+     OWN content.js matcher, so this can never drift again. */
+  var SAVENAMED_BOTH_ARIA = 'Confirm save draft in Athena if Athena has not saved it yet, then verify saved unsigned note in Athena';
+  /* savetruth-1.1.0: the SAME capability-is-not-the-outcome rule, said while a
+     WRITE is still in flight. MLS Assist persists a field as it is written only
+     where athenaOne renders that exact named field in its modern editor; on a
+     legacy encounter, and on every procedure / operative note, it answers
+     exact-note-editor-verified-unsaved and nothing is saved until a Save step
+     runs. The receipt for each section names which of the two happened; this
+     sentence is painted before any receipt exists, so it states both. */
+  var WRITEFLIGHT_PERSIST_SAY = 'Athena saves some of these fields itself as they are written; where it does not, nothing is saved until a Save step runs. MLS never signs.';
+  /* savetruth-1.2.0: ...and the sentence for BEFORE any of that is measured.
+     It claims nothing about saving in either direction - it says what MLS is
+     doing, and points at the per-section receipt, which is the only thing that
+     knows whether athenaOne saved that field itself. */
+  var WRITEFLIGHT_NEUTRAL_SAY = 'MLS is writing the reviewed text into the Athena editor for that field. It does not press Save on this step and never signs; each section receipt says whether Athena saved that field itself.';
   var SAVENAMED_BANNER_TAIL = ' MLS also saved this encounter in athenaOne and read the save back; only Sign is left, and Sign stays your own click.';
   var SAVENAMED_SUMMARY_SAVED = ' MLS saved the encounter in athenaOne and read the save back. Nothing was signed - Sign stays your own click in athenaOne.';
   var SAVENAMED_SUMMARY_UNSAVED = ' Nothing was signed. Sign stays your own click in athenaOne.';
   var SAVENAMED_SUMMARY_OWED = ' The encounter save is still owed: one more press and MLS saves it in athenaOne for you.';
   var SAVENAMED_ALL_DONE = ', and MLS saved the encounter in athenaOne. Only Sign is left, and Sign stays your own click in athenaOne.';
+  /* ===== savetruth-1.3.0 (2026-09-10) =====================================
+     (a) THREE THINGS A SAVE RECEIPT CAN SAY, NOT TWO. The uncertain wording was
+     chosen by a single negative test - "the receipt did not prove a Save click"
+     - so a TIMEOUT, which proves nothing at all, was told "it did not press
+     Save". That is a claim, and on a timeout it is a claim nobody can make. The
+     three branches now match the three things that can actually be known: the
+     Save click ran (proven), the read-only saved-note leg ran (proven), or
+     neither is proven. (owner decision D2, 2026-09-10: the read-only family's
+     own sentence is pinned below, byte for byte.)
+     (b) THE GENERIC REVIEW'S OWN SAVE PRESS IS STILL A PRESS. A GENERIC review
+     - one 'note' section, no named Athena destinations - mints no
+     reconciliation row, so every sentence keyed off savenamedRow / savenamedOwedRow
+     read it as a review with no save at all. MEASURED: with the note written
+     and Save draft selected, the sheet painted "DONE - Now do the last step
+     yourself in athenaOne: Save, then Sign. MLS never saves and never signs."
+     over a LIVE green button armed data-mls-athena-action=save_draft whose own
+     label read "Nothing left to send", beside "One click on Confirm & Send runs
+     only Save draft in Athena". Four sentences, three of them false. */
+  var SAVENAMED_READONLY_UNCERTAIN = 'MLS could not verify the saved note. Nothing was pressed. Inspect this encounter, then press Confirm again.';
+  var SAVENAMED_SAVE_UNKNOWN = 'MLS could not verify the result of this save step. Inspect this exact encounter before any retry; MLS will not retry automatically.';
+  var SAVENAMED_SAVE_UNKNOWN_LABEL = 'Save outcome unverified — inspect Athena';
+  var GENERICSAVE_PRESS_LABEL = 'Confirm & save this draft in athenaOne';
+  var GENERICSAVE_PILL_SHORT = 'The reviewed note is in athenaOne. One press is left and it is the save: MLS presses this encounter\'s Save control once and reads the save back. It never signs.';
+  var GENERICSAVE_UPFRONT_TAIL = '. One press is left and it is the save: MLS presses this encounter\'s Save control once and reads the save back. Sign stays your own click.';
+  var GENERICSAVE_FOOTER_OWED = ' The draft save is still owed: one press and MLS saves it in athenaOne for you and reads the save back. It never signs.';
+  var GENERICSAVE_BANNER_TAIL = ' MLS saved this draft in athenaOne and read the save back. Nothing was signed; finish Sign in Athena yourself.';
+  var GENERICSAVE_PLAN_PENDING = 'Every checked note section is already in Athena and verified. The Save draft you selected is the next press; it unlocks when its own read-only Athena check passes.';
   var UNIFIED_MANUAL = {
     dx: { label: 'Diagnoses (ICD-10)', destination: 'Athena encounter > Assessment & Plan > Diagnoses', consequence: 'MLS has no typed, exact-result ICD-10 adapter in this workflow. These diagnoses remain visible for manual entry and are not sent.' },
     orders: { label: 'Orders', destination: 'Athena encounter > Orders', consequence: 'Only one complete reviewed imaging, PT, referral, or DME payload can use the typed exact-catalog adapter after a fresh clinician confirmation. Prose, incomplete drafts, Rx, and injections remain manual or blocked.' },
@@ -1255,8 +1329,15 @@
        _mlsActionLabelMatches) - keep this phrase exact. */
     place_order: 'Confirm and place one reviewed order in Athena'
   };
-  function unifiedAriaFor(action) {
-    return action === 'save_draft' && nativeNamedSectionPersistenceReady() ? 'Verify saved unsigned note in Athena' : (UNIFIED_ARIA[action] || '');
+  /* savetruth-1.1.0: the capability is not the shape either. A GENERIC review
+     mints the plain 'save-draft' row, whose press really is nothing but a Save
+     click - there is no verify leg on it - so it keeps UNIFIED_ARIA's own
+     phrase. Only the named-section reconciliation row, which is the press that
+     can go either way, gets the both-outcomes phrase. Callers that have the
+     sheet's state pass it; a caller without one falls back to the phrase that
+     is true of every extension. */
+  function unifiedAriaFor(action, state) {
+    return action === 'save_draft' && savenamedNativeFinishShape(state) ? SAVENAMED_BOTH_ARIA : (UNIFIED_ARIA[action] || '');
   }
 
   function deepFreeze(value) {
@@ -1686,9 +1767,19 @@
          landed" - is the ROW'S OWN rule (savenamedArmed below), not a new
          control: this row carries no include checkbox, so bx-1.0.0 law is
          intact and write_note rows are still the only rows that get one. */
-      var nativeNamedSave = nativeNamedSectionPersistenceReady();
-      addRow({ id: SAVENAMED_ROW_ID, action: 'save_draft', kind: 'save', label: nativeNamedSave ? 'Verify the saved unsigned note' : SAVENAMED_ROW_LABEL, destination: nativeNamedSave ? 'Athena encounter > persisted named note sections' : SAVENAMED_ROW_DESTINATION,
-        capability: commonBlock ? 'blocked' : 'ready', reason: commonBlock, consequence: nativeNamedSave ? 'MLS reconciles the five reviewed sections with Athena\'s four persisted destinations. This final check is read-only: it does not press Save and never signs or bills.' : SAVENAMED_ROW_CONSEQUENCE, payload: notePayload, order: UNIFIED_ORDER.save_draft });
+      /* savetruth-1.0.0 (2026-09-10): this row is built ONCE, at manifest time,
+         and the manifest is frozen - so its three sentences cannot wait for the
+         receipts that decide whether this press reads the note back or presses
+         Save. On the capability alone they promised read-only, which the pill
+         for the same press (gated on savenamedNativeSectionsPersisted) already
+         contradicted and which a legacy encounter makes false outright. The row
+         now states BOTH outcomes, which is true before either one is known. */
+      /* savetruth-1.2.0: ...and only where this review's own keys let Athena
+         persist anything at all. An op note has no such field, so its press is
+         always the Save click and its row says so. */
+      var nativeNamedSave = nativeNamedSectionPersistenceReady() && nativePersistShapeRows(rows);
+      addRow({ id: SAVENAMED_ROW_ID, action: 'save_draft', kind: 'save', label: nativeNamedSave ? SAVENAMED_BOTH_LABEL : SAVENAMED_ROW_LABEL, destination: nativeNamedSave ? SAVENAMED_BOTH_DESTINATION : SAVENAMED_ROW_DESTINATION,
+        capability: commonBlock ? 'blocked' : 'ready', reason: commonBlock, consequence: nativeNamedSave ? SAVENAMED_BOTH_CONSEQUENCE : SAVENAMED_ROW_CONSEQUENCE, payload: notePayload, order: UNIFIED_ORDER.save_draft });
       addRow({ id: 'sign-named-sections-manual', action: '', kind: 'sign', label: 'Sign & Save named sections in Athena', destination: 'Athena encounter > Sign & Save control',
         capability: 'manual', reason: namedFinalReason, consequence: 'Nothing is signed automatically from this row.', payload: notePayload, order: UNIFIED_ORDER.sign_encounter });
     }
@@ -2206,10 +2297,26 @@
       if (!boxes.length) return '';
       var queue = wfnextQueueRows(state), n = wfnextNoteRows(queue).length;
       if (!n) return '';
+      /* savetruth-1.2.0 (2026-09-10): ...AND ONLY WHEN THAT IS THE PRESS.
+         MEASURED on a GENERIC review with the Save draft row selected: the
+         plan for the next press is 'single' - it runs that one row and nothing
+         else - and this sentence still said "One press writes all 1 checked
+         section, one at a time... No save, no signature, no billing", on the
+         pill AND in the button's own aria-label, over a press that writes no
+         section and does nothing but Save. This sentence counts SECTIONS, so
+         it is said only while the next press actually carries one. The pill
+         and the button then keep the sentence that names the selected row,
+         which sheetclarStateBase has always derived for exactly this case.
+         unifiedPrimaryPlan is a pure read of the same state; it decides
+         nothing here and cannot make a row sendable. The one-checked-section
+         lane it routes to 'single' still carries a write_note row, so that
+         press keeps this sentence byte for byte. */
+      var lane = null; try { lane = unifiedPrimaryPlan(state); } catch (eLane) { lane = null; }
+      if (lane && !(lane.rows || []).some(function (r) { return r && r.action === 'write_note'; })) return '';
       var saving = queue.some(savenamedIsRow);
-      var nativeFinish = saving && nativeNamedSectionPersistenceReady();
+      var nativeFinish = saving && savenamedNativeFinishShape(state);
       return 'One press writes all ' + n + ' checked section' + (n === 1 ? '' : 's') +
-        ', one at a time, each read back before the next' + (saving ? (nativeFinish ? ', then verifies the saved unsigned note without pressing Save.' : ', then saves the encounter.') : '.') +
+        ', one at a time, each read back before the next' + (saving ? (nativeFinish ? SAVENAMED_BOTH_SHORT : ', then saves the encounter.') : '.') +
         (saving ? READYSAY_SAVE_TAIL : READYSAY_TAIL);
     } catch (e) { return ''; }
   }
@@ -2225,7 +2332,7 @@
         try { nextRow = wfnextRemainingRows(state)[0] || null; } catch (eR) { nextRow = null; }
         action = nextRow ? S(nextRow.action).trim() : '';
       }
-      var arm = unifiedAriaFor(action);
+      var arm = unifiedAriaFor(action, state);
       var full = (arm ? arm + '. ' : '') + readysayButtonText(label, say);
       go.setAttribute('aria-label', full);
       go.title = full;
@@ -2263,10 +2370,35 @@
     var uncertain = unifiedUncertainReceipt(state);
     if (uncertain) {
       var uncertainSave = uncertain.action === 'save_draft';
+      /* savetruth-1.1.0 (2026-09-10): "ATTEMPTED" IS NOT "PRESSED SAVE". MLS
+         Assist answers the read-only saved-note reconciliation with
+         attempted:true whenever it got as far as walking the encounter's own
+         section tabs - that leg clicks nav beads and NEVER a Save control - and
+         every one of its refusals is a section-persistence-* code. So on those
+         codes this pill was telling the doctor "Athena Save was attempted"
+         directly beside the receipt for the SAME press saying "this
+         verification step was read-only and did not press Save".
+         savetruth-1.2.0: and the burden is the right way round. The receipt has
+         to PROVE the Save click ran (saveReceiptPressedSave) before this pill
+         may say Save was attempted; an outcome MLS cannot place says nothing
+         was pressed, which is the claim that cannot mislead him into hunting a
+         save that never happened.
+         savetruth-1.3.0: and the third case is not the complement of the
+         second. A save step that TIMED OUT proves neither leg - so it is told
+         neither story: not "Save was attempted", which would send him hunting
+         a save that may never have been pressed, and not "nothing was pressed",
+         which nobody can know. (owner decision D2, 2026-09-10: the read-only
+         family's sentence is SAVENAMED_READONLY_UNCERTAIN, and the press it
+         names is real - see unifiedBlockingUncertainReceipt.) */
+      var uncertainReadOnly = saveReceiptReadOnlyLeg(uncertain);
       return { label: 'UNCERTAIN', color: '#8b2525',
-        short: uncertainSave
-          ? 'Athena Save was attempted, but MLS could not verify the saved result. Inspect this exact encounter before any retry; MLS will not retry automatically.'
-          : 'Athena may already have changed, but MLS could not verify the exact result. Inspect the named destination before any retry; MLS will not retry automatically.' };
+        short: uncertainReadOnly
+          ? SAVENAMED_READONLY_UNCERTAIN
+          : (uncertainSave
+            ? (saveReceiptPressedSave(uncertain)
+              ? 'Athena Save was attempted, but MLS could not verify the saved result. Inspect this exact encounter before any retry; MLS will not retry automatically.'
+              : SAVENAMED_SAVE_UNKNOWN)
+            : 'Athena may already have changed, but MLS could not verify the exact result. Inspect the named destination before any retry; MLS will not retry automatically.') };
     }
     if (state.batchRunning) {
       var batchRow = unifiedRow(state.manifest, state.selectedRowId);
@@ -2276,29 +2408,47 @@
         return { label: 'CHECKING', color: '#6d5010',
           short: 'MLS is checking Athena read-only for ' + (batchRow ? batchRow.label : 'the next destination') + batchWhere + '. Nothing new is being sent during this check.' };
       }
-      if (savenamedIsRow(batchRow)) {
-        return savenamedNativeSectionsPersisted(state)
+      /* savetruth-1.1.0: EVERY save press, not only the named-section one. A
+         GENERIC review's 'save-draft' row clicks that encounter's own Save
+         control in every extension - and the branch below, which is about a
+         note WRITE, was narrating it as "MLS is writing... it never saves". */
+      if (batchRow && batchRow.action === 'save_draft') {
+        return savenamedIsRow(batchRow) && savenamedNativeSectionsPersisted(state)
           ? { label: 'VERIFYING SAVED NOTE', color: '#204034', short: 'MLS is reconciling the persisted section receipts for this exact encounter' + batchWhere + '. This is read-only; it does not press Save and never signs.' }
           : { label: 'SAVING DRAFT', color: '#204034', short: 'MLS is pressing Save for this exact encounter' + batchWhere + ' and waiting for Athena to verify it. It never signs.' };
       }
       return nativeNamedSectionPersistenceReady()
-        ? { label: 'WRITING DRAFT', color: '#204034', short: 'MLS is writing and verifying ' + (batchRow ? batchRow.label : 'the reviewed text') + ' in its exact Athena field' + batchWhere + '. Athena persists this unsigned field as it is written; MLS never signs.' }
+        ? { label: 'WRITING DRAFT', color: '#204034', short: 'MLS is writing and verifying ' + (batchRow ? batchRow.label : 'the reviewed text') + ' in its exact Athena field' + batchWhere + '. ' + (writeflightNativeProven(state, batchRow) ? WRITEFLIGHT_PERSIST_SAY : WRITEFLIGHT_NEUTRAL_SAY) }
         : { label: 'SENDING', color: '#204034', short: 'MLS is writing ' + (batchRow ? batchRow.label : 'the reviewed text') + ' into its exact Athena field' + batchWhere + '. It has not saved or signed the encounter.' };
     }
     if (state.running) {
-      if (savenamedIsRow(unifiedRow(state.manifest, state.selectedRowId))) {
-        return savenamedNativeSectionsPersisted(state)
+      var runRow = unifiedRow(state.manifest, state.selectedRowId);
+      if (runRow && runRow.action === 'save_draft') {
+        return savenamedIsRow(runRow) && savenamedNativeSectionsPersisted(state)
           ? { label: 'VERIFYING SAVED NOTE', color: '#204034', short: 'MLS is reconciling the persisted section receipts for this exact encounter. This is read-only; it does not press Save and never signs.' }
           : { label: 'SAVING DRAFT', color: '#204034', short: 'MLS is saving this exact encounter and waiting for Athena to verify the result. It never signs.' };
       }
       return nativeNamedSectionPersistenceReady()
-        ? { label: 'WRITING DRAFT', color: '#204034', short: 'MLS is writing and verifying the reviewed unsigned draft in the exact Athena field. Athena persists the field as it is written; MLS never signs.' }
+        ? { label: 'WRITING DRAFT', color: '#204034', short: 'MLS is writing and verifying the reviewed unsigned draft in the exact Athena field. ' + (writeflightNativeProven(state, runRow) ? WRITEFLIGHT_PERSIST_SAY : WRITEFLIGHT_NEUTRAL_SAY) }
         : { label: 'SENDING', color: '#204034', short: 'MLS is writing the reviewed text into the exact Athena field. It never saves and never signs.' };
     }
     var n = sheetclarInAthena(state);
     /* owner 2026-08-31: after Done, Save / Sign must be unmissable as THE next
        manual step - it was one line inside a collapsed "final actions" drawer. */
-    if (n.total && n.landed === n.total) {
+    /* savetruth-1.1.0 (2026-09-10): A REFUSAL ON SCREEN OUTRANKS THE PROMISE.
+       MEASURED: every checked section landed and the final saved-note step was
+       refused, so this block was reached with kind 'err' and painted "VERIFY
+       SAVED NOTE - Every checked section was persisted and read back. This
+       final read-only step reads every reviewed section back..." directly over
+       the status line saying athenaOne had refused it. The refusal is what just
+       happened; the promise is what the NEXT press will do. While the refusal
+       is the thing painted (kind 'fix' or 'err') and the save row is carrying
+       that settled refusal, the word below says so - and 'fix'/'err' already
+       own two honest sentences, so nothing new is invented here. Both count
+       branches are skipped, because "4 of 4 note sections are in Athena; each
+       of the rest keeps its own reason below" is not a sentence either. */
+    var refusedNow = (kind === 'fix' || kind === 'err') && savenamedRefused(state);
+    if (n.total && n.landed === n.total && !refusedNow) {
       /* savenamed-app-1.0.0 (owner ruling 2026-09-02: "no one should have to
          touch Athena this entire process"). Until 3.0.111 this line was the
          end of the road and it told him to go and do BOTH remaining steps by
@@ -2312,10 +2462,21 @@
         ? { label: 'VERIFY SAVED NOTE', color: '#6d5010', short: SAVENAMED_NATIVE_WAITING_MSG }
         : { label: SAVENAMED_PILL_LABEL, color: '#6d5010', short: SAVENAMED_PILL_SHORT };
       if (savenamedVerified(state)) return { label: 'DONE', color: '#205c43', short: savenamedNativeVerified(state) ? SAVENAMED_NATIVE_DONE_SHORT : SAVENAMED_DONE_SHORT };
+      /* savetruth-1.1.0: a GENERIC review has no named-section save row, so it
+         fell straight to "MLS never saves and never signs" - even after its own
+         Save draft row had run and Athena had verified the save, which the
+         receipt panel three inches below was reporting as VERIFIED. */
+      if (unifiedSaveVerified(state)) return { label: 'DONE', color: '#205c43',
+        short: 'MLS saved this draft in athenaOne and read the save back. Now do the last step yourself in athenaOne: Sign. MLS never signs.' };
+      /* savetruth-1.3.0: ...and a GENERIC review with its Save draft row
+         SELECTED is not DONE either - one press is still owed, and it is the
+         save. Saying "MLS never saves" over a live, armed save press is the
+         one sentence on this sheet the doctor cannot act on. */
+      if (unifiedGenericSaveOwed(state)) return { label: SAVENAMED_PILL_LABEL, color: '#6d5010', short: GENERICSAVE_PILL_SHORT };
       return { label: 'DONE', color: '#205c43',
         short: 'Now do the last step yourself in athenaOne: Save, then Sign. MLS never saves and never signs.' };
     }
-    if (n.landed) {
+    if (n.landed && !refusedNow) {
       return { label: 'PARTLY DONE', color: '#6d5010',
         short: n.landed + ' of ' + n.total + ' note sections are in Athena; each of the rest keeps its own reason below. Save and Sign stay yours in athenaOne.' };
     }
@@ -2360,13 +2521,20 @@
       var svRiding = !probeOnlyActive() && !savenamedIsRow(readyRow) && !!savenamedOwedRow(state);
       if (svRiding) {
         return { label: 'READY', color: '#205c43',
-          short: 'One click on Confirm & Send runs ' + S(readyRow.label) + (nativeNamedSectionPersistenceReady()
-            ? ', then MLS verifies the saved unsigned note from Athena\'s persisted fields without pressing Save.'
+          short: 'One click on Confirm & Send runs ' + S(readyRow.label) + (savenamedNativeFinishShape(state)
+            ? SAVENAMED_BOTH_SHORT
             : ', then MLS saves the encounter in athenaOne.') + ' Nothing else: no signature, no billing, no orders.' };
       }
+      /* savetruth-1.1.0: ...and it may not say "no save" when the selected row
+         IS the save. Measured on a GENERIC review with Save draft selected:
+         "One click on Confirm & Send runs only Save draft in Athena. Nothing
+         else: no save..." - one sentence contradicting itself. Every other
+         exclusion is kept word for word. */
+      var readyIsSave = S(readyRow.action) === 'save_draft';
       return { label: probeOnlyActive() ? 'READY (PROBE ONLY)' : 'READY', color: '#205c43',
         short: 'One click on Confirm & Send runs only ' + S(readyRow.label) + '. Nothing else' +
-          (probeOnlyActive() ? ' - and in PROBE ONLY even that is rehearsed read-only, so nothing is written.' : ': no save, no signature, no billing, no orders.') };
+          (probeOnlyActive() ? ' - and in PROBE ONLY even that is rehearsed read-only, so nothing is written.'
+            : (readyIsSave ? ': no signature, no billing, no orders.' : ': no save, no signature, no billing, no orders.')) };
     }
     return { label: 'CHECKING', color: '#6d5010',
       short: 'MLS is reading the exact Athena chart read-only. Nothing has been sent.' };
@@ -2420,6 +2588,34 @@
     /* a recoverable step is neither a success nor a failure toast */
     actionSay(state.sourceOpts, message, kind === 'fix' ? '' : kind, behavior);
   }
+  /* savetruth-1.1.0 (2026-09-10) - THE CONTROL, WITHOUT THE LATCHES.
+     Twelve refusal sentences end in "press Check Athena again", and until this
+     existed the ONLY thing that ever put that button on screen was
+     unifiedRecheckButton, which is reachable from the read-only PROBE path
+     alone. A refusal that arrives from the EXECUTE path - the saved-note step
+     answering section-persistence-frame-changed, for instance - named a control
+     the doctor did not have. This is the DOM half of that same button and
+     nothing else: it does not latch probeSettled (the batch queue waits on that
+     latch and must not be nudged from an execute callback), does not record an
+     attempt, does not clear progress, does not touch the primary button and
+     does not start the automatic re-check cycle. Its click runs the SAME
+     read-only probeUnifiedRow the canonical button runs.
+     Returns 'exists' | 'added' | 'nohost' | 'error' so unifiedRecheckButton
+     below keeps its own early-return behaviour byte for byte. */
+  function unifiedRecheckControl(state, rowId) {
+    if (!state || state.closed) return 'nohost';
+    var el = null; try { el = document.getElementById('mlsAthenaUnifiedProbe'); } catch (e) { return 'nohost'; }
+    if (!el) return 'nohost';
+    try {
+      if (document.getElementById('mlsAthenaUnifiedRecheck')) return 'exists';
+      var btn = document.createElement('button');
+      btn.type = 'button'; btn.id = 'mlsAthenaUnifiedRecheck'; btn.textContent = 'Check Athena again';
+      btn.style.cssText = 'display:block;margin-top:7px;border:1px solid #cfe0d7;background:#fff;color:#204034;border-radius:8px;padding:6px 12px;font:700 12px inherit;cursor:pointer';
+      btn.addEventListener('click', function () { try { btn.remove(); } catch (e2) {} probeUnifiedRow(state, rowId); });
+      el.appendChild(btn);
+      return 'added';
+    } catch (e3) { return 'error'; }
+  }
   function unifiedRecheckButton(state, rowId) {
     /* wf2-1.9.0: read-only re-probe on demand; the button lives inside the
        status line and is wiped by the next unifiedStatus repaint. */
@@ -2442,16 +2638,11 @@
        amber or red status line and the fix strip carry the outcome. A run that
        already holds write verdicts keeps its surface. */
     try { wfprogClearPre(state); } catch (ePr) {}
-    var el = null; try { el = document.getElementById('mlsAthenaUnifiedProbe'); } catch (e) { return; }
-    if (!el) return;
-    try {
-      if (document.getElementById('mlsAthenaUnifiedRecheck')) return;
-      var btn = document.createElement('button');
-      btn.type = 'button'; btn.id = 'mlsAthenaUnifiedRecheck'; btn.textContent = 'Check Athena again';
-      btn.style.cssText = 'display:block;margin-top:7px;border:1px solid #cfe0d7;background:#fff;color:#204034;border-radius:8px;padding:6px 12px;font:700 12px inherit;cursor:pointer';
-      btn.addEventListener('click', function () { try { btn.remove(); } catch (e2) {} probeUnifiedRow(state, rowId); });
-      el.appendChild(btn);
-    } catch (e3) {}
+    /* savetruth-1.1.0: ONE definition of the control. 'nohost' is the old
+       `if (!el) return;`, 'exists' the old early return inside the try; an
+       append that threw still falls through to the fix strip, as it always did. */
+    var mint = unifiedRecheckControl(state, rowId);
+    if (mint === 'nohost' || mint === 'exists') return;
     /* wfdx-1.0.0: the recheck button is transient (the next status repaint wipes
        it). The diagnostics and the two fix buttons live in their own persistent
        strip below, so a refused check always leaves the doctor something to
@@ -2670,6 +2861,65 @@
     } catch (e) { return null; }
   }
   function savenamedIsRow(row) { return !!(row && row.id === SAVENAMED_ROW_ID && row.action === 'save_draft'); }
+  /* savetruth-1.0.0 (2026-09-10): THE CAPABILITY IS NOT THE SHAPE EITHER. The
+     reconciliation row above is minted ONLY by the named-section branch of the
+     manifest builder. A GENERIC review - one 'note' section, no named Athena
+     destinations - mints the plain 'save-draft' row instead, whose own
+     consequence says it clicks that encounter's Save / Save Draft control, and
+     mints no reconciliation row at all. So the sheet-wide sentences that talk
+     about the final press ask for the capability AND for the row that press
+     belongs to; otherwise the guide promised "it does not press Save" directly
+     above a Save-draft row that presses Save. */
+  /* savetruth-1.2.0 (2026-09-10): ...AND NOT EVERY NAMED FIELD CAN PERSIST.
+     MLS Assist lets athenaOne save a field as it is written only where athenaOne
+     renders that exact named field in its modern editor, and its own gate is a
+     closed four-key set (background.js: hpi / ros / exam / ap). A procedure or
+     operative note is never one of them, so on an op-note review the save press
+     is ALWAYS the legacy Save click - and the both-outcomes wording, which is
+     honest where either leg can run, was offering that doctor a read-only
+     alternative that cannot happen on his review. Where the shape rules native
+     persistence out entirely, every sentence goes back to naming the Save press
+     it will really make. (A legacy ENCOUNTER carrying these four keys is still
+     unknowable here - the editor is only visible to the extension - so those
+     reviews keep the both-outcomes wording, which is true either way.) */
+  /* MLS Assist's gate reads its OWN section names: /^(hpi|ros|exam|ap)$/. This
+     app never mints a row called 'ap' - its combined Assessment & Plan row is
+     'assessment_and_plan', which the extension aliases to 'ap' before that
+     test (background.js: assessment_and_plan -> ap). SEPARATE 'assessment' and
+     'plan' rows alias to themselves and are NOT in the set, which is why they
+     are absent here. The alias name is accepted too, so a caller that supplies
+     the extension's own spelling is read the same way. */
+  var NATIVE_PERSIST_KEYS = /^(?:hpi|ros|exam|ap|assessment_and_plan)$/;
+  function nativePersistShapeRows(rows) {
+    return (rows || []).some(function (row) { return row && row.action === 'write_note' && NATIVE_PERSIST_KEYS.test(S(row.kind)); });
+  }
+  function savenamedNativeFinishShape(state) {
+    try {
+      var manifest = state && state.manifest;
+      return nativeNamedSectionPersistenceReady() && !!unifiedRow(manifest, SAVENAMED_ROW_ID) && nativePersistShapeRows(manifest && manifest.rows);
+    } catch (e) { return false; }
+  }
+  /* savetruth-1.2.0: THE MID-RUN PERSISTENCE CLAIM IS A MEASURED FACT, NOT A
+     CAPABILITY. The pill painted while a section is on the wire said "Athena
+     persists this unsigned field as it is written" from the capability pong
+     alone - on a legacy encounter, and on every op note, MLS Assist answers
+     exact-note-editor-verified-unsaved and nothing is saved at all. It claims
+     persistence only for a row whose key is in the four-key set AND only once
+     this review holds a receipt that Athena really did persist one
+     (persistenceMode 'native-section', minted by nativeSectionPersistenceResponse).
+     Until then it says the part that is certainly true and claims nothing. */
+  function writeflightNativeProven(state, row) {
+    try {
+      if (!nativeNamedSectionPersistenceReady()) return false;
+      if (!row || !NATIVE_PERSIST_KEYS.test(S(row.kind))) return false;
+      var rows = (state && state.manifest && state.manifest.rows) || [];
+      for (var i = 0; i < rows.length; i++) {
+        var rec = (state.receipts && state.receipts[rows[i].id]) || sectionLedger[ledgerKey(state, rows[i].id)];
+        if (rec && rec.status === 'verified' && rec.persistenceMode === 'native-section') return true;
+      }
+    } catch (e) {}
+    return false;
+  }
   function nativeSectionPersistenceResponse(resp) {
     var results = resp && Array.isArray(resp.results) ? resp.results.filter(function (row) { return !row || row.execute !== false; }) : [];
     return !!(resp && resp.ok === true && resp.attempted === true && resp.written === true && resp.verified === true && resp.saved === true && resp.persisted === true && resp.serverVerified === true && S(resp.reason) === 'exact-note-editor-persisted' && results.length && results.every(function (row) { return row && row.attempted === true && row.written === true && row.verified === true && row.saved === true && row.persisted === true && row.serverVerified === true; }));
@@ -2690,6 +2940,87 @@
       var rec = (state.receipts && state.receipts[row.id]) || sectionLedger[ledgerKey(state, row.id)];
       return !!(rec && rec.status === 'verified' && rec.persistenceMode === 'native-section');
     } catch (e) { return false; }
+  }
+  /* savetruth-1.1.0 (2026-09-10) - ANY SAVE THIS REVIEW HAS ALREADY LANDED.
+     savenamedVerified answers only for the named-section reconciliation row, so
+     a GENERIC review - one 'note' section, whose own 'save-draft' row really
+     does click that encounter's Save control - could land a VERIFIED save and
+     still be told, by the pill, the progress footer, the green banner and the
+     receipt panel, that "nothing was saved". This reads the SAME receipts every
+     one of those surfaces already reads (this run's first, then the review's
+     durable ledger); it is a pure read and can never make a row sendable. */
+  function unifiedSaveVerified(state) {
+    try {
+      var rows = (state && state.manifest && state.manifest.rows) || [];
+      for (var i = 0; i < rows.length; i++) {
+        if (rows[i].action !== 'save_draft') continue;
+        var rec = (state.receipts && state.receipts[rows[i].id]) || sectionLedger[ledgerKey(state, rows[i].id)];
+        if (rec && rec.status === 'verified') return true;
+      }
+    } catch (e) {}
+    return false;
+  }
+  /* savetruth-1.3.0 - THE SAVE PRESS A GENERIC REVIEW STILL OWES. Every "one
+     press is left" sentence on this sheet is keyed off savenamedOwedRow, which
+     answers only for the named-section reconciliation row. A GENERIC review
+     mints the plain 'save-draft' row instead, so with the note written and Save
+     draft SELECTED the sheet read "DONE - MLS never saves and never signs" and
+     "Nothing left to send" over a live button armed for exactly that save.
+     It is deliberately narrow: it answers only for the row the doctor has
+     actually SELECTED, so a review he never pointed at the save is untouched
+     and keeps the finished-sheet ending it has always had. It reads the
+     manifest and the receipts and nothing else - it cannot select a row, arm a
+     button or send anything. */
+  function unifiedGenericSaveOwed(state) {
+    try {
+      if (!state || state.closed || savenamedRow(state)) return null;
+      var sel = unifiedRow(state.manifest, state.selectedRowId);
+      if (!sel || sel.action !== 'save_draft' || sel.capability !== 'ready') return null;
+      var rec = (state.receipts && state.receipts[sel.id]) || sectionLedger[ledgerKey(state, sel.id)];
+      if (rec && (rec.status === 'verified' || rec.status === 'uncertain')) return null;
+      return sel;
+    } catch (e) { return null; }
+  }
+  /* THE SAVE ROW HAS ALREADY BEEN REFUSED IN THIS REVIEW. 'blocked' is the
+     status MLS mints when the extension refused without touching Athena, so a
+     sheet carrying one may not paint the "one press is left" promise over it. */
+  function savenamedRefused(state) {
+    try {
+      var row = savenamedRow(state);
+      if (!row) return false;
+      var rec = (state.receipts && state.receipts[row.id]) || sectionLedger[ledgerKey(state, row.id)];
+      return !!(rec && rec.status === 'blocked');
+    } catch (e) { return false; }
+  }
+  /* ONE SENTENCE ABOUT WHAT IS SAVED, read by every surface that says it - the
+     receipt panel's "what landed" block and the standing safety banner - so the
+     two can never disagree about the same review. */
+  function unifiedSavedSentence(state) {
+    /* savetruth-1.3.0: "NOTHING WAS SAVED" IS A CLAIM, AND AN UNCERTAIN SAVE IS
+       PRECISELY WHERE NOBODY CAN MAKE IT. MEASURED: a legacy Save click came
+       back save-readback-missing (the extension's own words: "MLS pressed the
+       encounter Save control, but athenaOne did not paint a saved
+       confirmation"), and the standing safety banner - which repaints through
+       this same sentence - answered "Nothing was saved and nothing was signed."
+       directly under the pill saying the Save was attempted and unverified.
+       Where the outcome is unknown this says it is unknown, in the same three
+       cases the pill uses, so the two can never disagree again. */
+    var unsure = unifiedUncertainSaveReceipt(state);
+    if (unsure) return saveReceiptPressedSave(unsure)
+      ? 'MLS pressed Save in athenaOne and could not verify the result. Inspect this encounter; nothing was signed.'
+      : (saveReceiptReadOnlyLeg(unsure)
+        ? 'MLS could not verify the saved note and pressed nothing. Nothing was signed.'
+        : 'MLS could not verify the result of this save step. Inspect this encounter; nothing was signed.');
+    if (savenamedVerified(state)) return savenamedNativeVerified(state)
+      ? 'Athena persisted each field and MLS reconciled the saved unsigned note without pressing Save. Nothing was signed.'
+      : 'MLS then saved the encounter in athenaOne and read the save back. Nothing was signed.';
+    if (unifiedSaveVerified(state)) return 'MLS saved this draft in athenaOne and read the save back. Nothing was signed.';
+    /* "Complete saved-note verification is still owed" names the reconciliation
+       row - so it may only be said on a review that HAS one. */
+    if (savenamedNativeSectionsPersisted(state)) return savenamedRow(state)
+      ? 'Athena persisted these unsigned fields as they were written. Complete saved-note verification is still owed; nothing was signed.'
+      : 'Athena saved these unsigned fields itself as they were written. MLS did not press Save and nothing was signed.';
+    return 'Nothing was saved and nothing was signed.';
   }
   function savenamedNativeSectionsPersisted(state) {
     try {
@@ -2720,6 +3051,93 @@
       return !!(rec && rec.status === 'verified' && rec.persistenceMode === 'native-reconciled');
     } catch (e) { return false; }
   }
+  /* ===== savetruth-1.2.0 (2026-09-10) - WHICH LEG THIS SAVE RECEIPT CAME FROM.
+     A save_draft press reaches MLS Assist down one of two legs and they are not
+     the same event:
+       - the READ-ONLY saved-note reconciliation, which walks the encounter's
+         own section tabs (nav-bead clicks only) and NEVER touches a Save
+         control. Every one of its refusals is a section-persistence-* code and
+         a verified outcome is persistenceMode 'native-reconciled'.
+       - the SAVE CLICK, which presses this encounter's own Save / Save Draft
+         control once. Its outcomes name themselves (exact-save-control-*,
+         save-readback-*) or come back carrying saved / persisted.
+     Nothing on this sheet may say Save was attempted or pressed unless the
+     receipt PROVES the second leg ran: an outcome MLS cannot place is an
+     outcome where nothing was pressed, never one where something might have
+     been. This is a pure read of a frozen receipt; it decides no control. */
+  var SAVEPRESS_CLICK_REASON = /^(?:exact-save-control-|save-readback-)/;
+  /* the reconcile leg names itself two ways: its refusals are section-persistence-*
+     and its own completed walk is exact-section-persistence-reconciled. Both are
+     the SAME read-only leg; only the prefix differs. */
+  var SAVEPRESS_READONLY_REASON = /^(?:exact-)?section-persistence-/;
+  function saveReceiptPressedSave(rec) {
+    try {
+      if (!rec || rec.action !== 'save_draft') return false;
+      var reason = S(rec.reason);
+      if (SAVEPRESS_CLICK_REASON.test(reason)) return true;
+      if (SAVEPRESS_READONLY_REASON.test(reason)) return false;
+      if (rec.persistenceMode === 'native-reconciled' || rec.readOnly === true) return false;
+      return rec.saved === true || rec.persisted === true;
+    } catch (e) { return false; }
+  }
+  /* savetruth-1.3.0 - THE SAME QUESTION, ASKED THE OTHER WAY ROUND, AND IT IS
+     NOT THE COMPLEMENT. saveReceiptPressedSave answers "is the Save click
+     PROVEN"; this answers "is the read-only reconcile leg PROVEN". A receipt
+     can fail both - a timeout proves neither - and the sentence for that case
+     is neither of theirs. (owner decision D2, 2026-09-10: the family is the
+     section-persistence-* reasons, readOnly:true, and an attempted outcome that
+     carries no saved / persisted of its own.) A response that reports ANY
+     mutation - saved, persisted, or partialMutation - is never read-only here,
+     whatever it calls itself. */
+  function saveReceiptReadOnlyLeg(rec) {
+    try {
+      if (!rec || rec.action !== 'save_draft') return false;
+      if (rec.saved === true || rec.persisted === true || rec.partialMutation === true) return false;
+      var reason = S(rec.reason);
+      if (SAVEPRESS_CLICK_REASON.test(reason)) return false;
+      return SAVEPRESS_READONLY_REASON.test(reason) || rec.readOnly === true || rec.persistenceMode === 'native-reconciled';
+    } catch (e) { return false; }
+  }
+  /* the same question asked of a whole sheet: did the save this review has
+     already run press Save? Reads the receipts every other surface reads. */
+  function unifiedSavePressed(state) {
+    try {
+      var rows = (state && state.manifest && state.manifest.rows) || [];
+      for (var i = 0; i < rows.length; i++) {
+        if (rows[i].action !== 'save_draft') continue;
+        var rec = (state.receipts && state.receipts[rows[i].id]) || sectionLedger[ledgerKey(state, rows[i].id)];
+        if (rec && saveReceiptPressedSave(rec)) return true;
+      }
+    } catch (e) {}
+    return false;
+  }
+  /* savetruth-1.3.0: ...and the same question for the other leg, so a footer
+     can name the READ-ONLY check only on a review whose save step really took
+     it. An op note never can; a refused Save click never did. */
+  function unifiedSaveReadOnlyRefused(state) {
+    try {
+      var rows = (state && state.manifest && state.manifest.rows) || [];
+      for (var i = 0; i < rows.length; i++) {
+        if (rows[i].action !== 'save_draft') continue;
+        var rec = (state.receipts && state.receipts[rows[i].id]) || sectionLedger[ledgerKey(state, rows[i].id)];
+        if (rec && saveReceiptReadOnlyLeg(rec)) return true;
+      }
+    } catch (e) {}
+    return false;
+  }
+  /* savetruth-1.3.0: THIS REVIEW'S SAVE STEP CAME BACK UNCERTAIN. Read by every
+     surface that would otherwise assert an outcome for it. */
+  function unifiedUncertainSaveReceipt(state) {
+    try {
+      var rows = (state && state.manifest && state.manifest.rows) || [];
+      for (var i = 0; i < rows.length; i++) {
+        if (rows[i].action !== 'save_draft') continue;
+        var rec = (state.receipts && state.receipts[rows[i].id]) || sectionLedger[ledgerKey(state, rows[i].id)];
+        if (rec && rec.status === 'uncertain') return rec;
+      }
+    } catch (e) {}
+    return null;
+  }
   function unifiedUncertainReceipt(state) {
     try {
       var rows = (state && state.manifest && state.manifest.rows) || [];
@@ -2729,6 +3147,28 @@
       }
     } catch (e) {}
     return null;
+  }
+  /* savetruth-1.3.0 - AN OUTCOME THAT PRESSED NOTHING CANNOT HALT THE REVIEW.
+     The halt exists for ONE reason, written at the top of this file: "Athena
+     may already have changed and MLS cannot prove what". It kills the sheet -
+     every radio disabled, Confirm dead forever, no read-only re-check offered -
+     which is exactly right after a Save click whose result is unknown.
+     It is exactly WRONG after the read-only saved-note reconciliation, which
+     walks the encounter's own section tabs and never touches a control: nothing
+     changed, so there is nothing to inspect a mutation for, and the doctor is
+     left with a dead sheet and a cure sentence naming a button that can never
+     be pressed again. (owner decision D3, 2026-09-10: a cure may only name a
+     control that exists on that screen at that moment - so D2's "then press
+     Confirm again" has to be true, and this is what makes it true.)
+     The narrowing is POSITIVE and it is only ever this one leg: the response
+     must PROVE read-only (saveReceiptReadOnlyLeg), and any report of a mutation
+     - saved, persisted or partialMutation - takes it straight back out. The
+     pill still says UNCERTAIN, the receipt still says uncertain, nothing is
+     auto-retried, and no row becomes sendable that was not already: the doctor
+     simply gets his read-only re-check and his Confirm press back. */
+  function unifiedBlockingUncertainReceipt(state) {
+    var rec = unifiedUncertainReceipt(state);
+    return rec && !saveReceiptReadOnlyLeg(rec) ? rec : null;
   }
   /* "landed" is read the way the receipt panel reads it - this run's receipt
      first, then the review's own durable ledger - so a sheet REOPENED after its
@@ -2770,7 +3210,10 @@
   }
   function savenamedOwedRow(state) {
     var row = savenamedRow(state);
-    if (!row || unifiedUncertainReceipt(state) || (savenamedVerified(state) && savenamedSectionsLanded(state))) return null;
+    /* savetruth-1.3.0: a read-only reconcile refusal leaves this press STILL
+       OWED - nothing was pressed, so the save has not happened - which is the
+       press D2's cure sentence tells him to make again. */
+    if (!row || unifiedBlockingUncertainReceipt(state) || (savenamedVerified(state) && savenamedSectionsLanded(state))) return null;
     return savenamedArmed(state) ? row : null;
   }
   /* the checked NOTE sections of a list - the numbers every "N sections"
@@ -2806,16 +3249,38 @@
       if (save.phase === 'done' || save.phase === 'already' || save.phase === 'verified') saveText = savenamedNativeVerified(state)
         ? ' Saved unsigned note verified from persisted section receipts; MLS did not press Save and never signs.'
         : ' Encounter saved and read back. MLS never signs.';
-      else if (save.phase === 'refused' || save.phase === 'timeout' || save.phase === 'skipped') saveText = ' Encounter save was not verified. Inspect Athena before retrying. MLS never signs.';
+      /* savetruth-1.2.0: "Encounter save was not verified" is a sentence about
+         a Save press. The read-only saved-note step refuses without pressing
+         one, and a step that never ran pressed nothing either - so this footer
+         says Save only where the receipt proves the Save click ran. */
+      /* savetruth-1.3.0: ...and it names the step that refused, not a step this
+         review may not even have. "The saved-note check did not finish" was
+         painted for a refused SAVE CLICK (save-control-not-found) and for an
+         operative note, which has no saved-note check at all. Three legs, three
+         sentences: the Save click ran, the read-only check ran, or MLS never
+         got far enough to say which. */
+      else if (save.phase === 'refused' || save.phase === 'timeout' || save.phase === 'skipped') saveText = unifiedSavePressed(state)
+        ? ' Encounter save was not verified. Inspect Athena before retrying. MLS never signs.'
+        : (unifiedSaveReadOnlyRefused(state)
+          ? ' The saved-note check did not finish. MLS did not press Save and nothing was signed. Inspect Athena before retrying.'
+          : ' The encounter save did not finish. MLS did not press Save and nothing was signed. Inspect Athena before retrying.');
       else if (save.phase === 'verify') saveText = ' Saved-note receipt verification is in progress. This is read-only; MLS does not press Save and never signs.';
       else if (save.phase === 'check' || save.phase === 'write') saveText = ' Encounter save is in progress. MLS never signs.';
-      else saveText = nativeNamedSectionPersistenceReady()
-        ? ' After the checked sections are persisted, this same Confirm runs a read-only saved-note verification. MLS does not press Save and never signs.'
+      else saveText = savenamedNativeFinishShape(state)
+        ? ' After the checked sections are persisted, this same Confirm reads the saved note back, pressing this encounter\'s Save once first if Athena has not already saved it. MLS never signs.'
         : ' After the checked sections are verified, this same Confirm saves the encounter. MLS never signs.';
     } else if (savenamedVerified(state)) saveText = savenamedNativeVerified(state)
       ? ' Saved unsigned note verified from persisted section receipts; MLS did not press Save and never signs.'
       : ' Encounter saved and read back. MLS never signs.';
     else if (savenamedRow(state)) saveText = ' The encounter save remains a separate Confirm step. MLS never signs.';
+    /* savetruth-1.1.0: a GENERIC review's own Save draft row can land VERIFIED
+       without ever minting a named-section save row, and this footer was still
+       ending "MLS never saves or signs" underneath it. */
+    else if (unifiedSaveVerified(state)) saveText = ' MLS saved this draft in athenaOne and read the save back. It never signs.';
+    /* savetruth-1.3.0: a GENERIC review whose Save draft row the doctor has
+       SELECTED still owes that press, and "MLS never saves" is not a true
+       sentence to print above it. */
+    else if (unifiedGenericSaveOwed(state)) saveText = GENERICSAVE_FOOTER_OWED;
     else saveText = ' MLS never saves or signs.';
     return sectionText + saveText;
   }
@@ -2916,7 +3381,10 @@
     /* an all-unchecked sheet still leaves the label alone; a FINISHED one says
        so, in the same words renderUnifiedReceipts already writes (wfdone-1.0.0) */
     if (!checked.length) return '';
-    if (!remaining.length) return WFDONE_NOTHING_LEFT_LABEL;
+    /* savetruth-1.3.0: "Nothing left to send" was the label on a LIVE button
+       armed data-mls-athena-action=save_draft - the generic review's own save,
+       which carries no include checkbox and so was never on this list. */
+    if (!remaining.length) return unifiedGenericSaveOwed(state) ? GENERICSAVE_PRESS_LABEL : WFDONE_NOTHING_LEFT_LABEL;
     var next = remaining[0];
     /* savenamed-app-1.0.0: the save is the last press of the review, and when
        it is the only thing left the button says exactly what it does. */
@@ -2924,7 +3392,7 @@
     /* the "N sections" numbers count SECTIONS; the save press is named by its
        own clause instead of being counted as one. */
     var total = wfnextNoteRows(checked).length, left = wfnextNoteRows(remaining).length;
-    var saveTail = remaining.length > left ? (nativeNamedSectionPersistenceReady() ? ', then verify the saved unsigned note' : SAVENAMED_LABEL_TAIL) : '';
+    var saveTail = remaining.length > left ? (savenamedNativeFinishShape(state) ? SAVENAMED_BOTH_TAIL : SAVENAMED_LABEL_TAIL) : '';
     if (wfnextBatchArmReady() && remaining.length > 1) {
       return 'Confirm & write all ' + left + ', starting with ' + wfnextShortName(next) + saveTail;
     }
@@ -2941,8 +3409,13 @@
     var saveLeft = remaining.length > left;
     if (!checked.length) return '';
     if (!remaining.length) {
+      /* savetruth-1.3.0: a GENERIC review's selected Save draft row is a press
+         this sheet still owes, so "Save and Sign stay yours in athenaOne" was
+         telling him to go and do by hand the thing the live button does. */
       return 'All ' + total + ' checked section' + (total === 1 ? ' is' : 's are') + ' in Athena and verified' +
-        (savenamedVerified(state) ? SAVENAMED_ALL_DONE : '. Save and Sign stay yours in athenaOne.');
+        (savenamedVerified(state) ? SAVENAMED_ALL_DONE
+          : (unifiedGenericSaveOwed(state) ? GENERICSAVE_UPFRONT_TAIL
+            : (unifiedSaveVerified(state) ? '. MLS saved this draft in athenaOne and read the save back; Sign stays your own click.' : '. Save and Sign stay yours in athenaOne.')));
     }
     /* every section landed and only the save is owed - one press, said plainly */
     if (saveLeft && !left) {
@@ -2951,8 +3424,8 @@
     }
     /* sections still owed AND the save owed is only ever the batch lane, where
        one press writes them and then saves - so it is said as one press. */
-    var saveClause = saveLeft ? (nativeNamedSectionPersistenceReady()
-      ? ' Athena persists each modern section as it is written; the same press then verifies the complete saved unsigned note without pressing Save. Sign stays your own click.'
+    var saveClause = saveLeft ? (savenamedNativeFinishShape(state)
+      ? SAVENAMED_BOTH_CLAUSE
       : SAVENAMED_UPFRONT_TAIL) : '';
     if (total === 1) return 'One section checked - one press writes it, and MLS reads it back before it says so.' + saveClause;
     /* wfstarve-1.0.0: one appended clause, and ONLY when a checked section has
@@ -3020,11 +3493,28 @@
     var go = null;
     try { go = document.getElementById('mlsAthenaUnifiedGo'); } catch (e) { return; }
     if (!go || !state || state.closed || unifiedAthenaState !== state) return;
-    var uncertain = unifiedUncertainReceipt(state);
+    /* savetruth-1.3.0: the plan line is painted BEFORE this early return. A
+       halted sheet was left carrying the sentence it arrived with - "3 sections
+       checked - one press writes all 3... The same press then reads the saved
+       note back" - over a dead button, long after all 3 had landed. The
+       sentence is derived from the receipts, so on a halted sheet it reads
+       "All 3 checked sections are in Athena and verified", which is what
+       happened. It paints text; it decides nothing and enables nothing. */
+    var upfrontHost = wfnextUpfrontHost();
+    if (upfrontHost) { try { upfrontHost.textContent = wfnextUpfrontText(state); } catch (eUp) {} }
+    var uncertain = unifiedBlockingUncertainReceipt(state);
     if (state.halted || uncertain) {
       try {
         go.disabled = true; go.setAttribute('aria-disabled', 'true');
-        go.textContent = uncertain && uncertain.action === 'save_draft' ? 'Save outcome uncertain — inspect Athena' : 'Outcome uncertain — inspect Athena';
+        /* savetruth-1.2.0: the button says "Save outcome" only where the
+           receipt proves a Save control was pressed. The read-only saved-note
+           step refuses without touching one, and the pill and the receipt for
+           that same press both say so - this word may not disagree with them.
+           savetruth-1.3.0: and where NEITHER leg is proven - a save step that
+           never answered - the button claims neither. */
+        go.textContent = uncertain && uncertain.action === 'save_draft'
+          ? (saveReceiptPressedSave(uncertain) ? 'Save outcome uncertain — inspect Athena' : SAVENAMED_SAVE_UNKNOWN_LABEL)
+          : 'Outcome uncertain — inspect Athena';
         go.setAttribute('data-mls-primary-blocked', 'Inspect the exact Athena destination before any retry. MLS will not retry an uncertain outcome automatically.');
         go.title = go.getAttribute('data-mls-primary-blocked');
         go.removeAttribute('data-mls-athena-action'); go.removeAttribute('data-mls-preview-hash');
@@ -3043,8 +3533,8 @@
       }
       return;
     }
-    var host = wfnextUpfrontHost();
-    if (host) { try { host.textContent = wfnextUpfrontText(state); } catch (eHost) {} }
+    /* (the up-front plan line is painted at the top of this function now, so a
+       halted or in-flight sheet cannot keep the sentence it arrived with) */
     var boxes = [];
     try { boxes = bxCheckBoxes(); } catch (eBoxes) { boxes = []; }
     /* a sheet with no include controls is the legacy one-row lane - untouched */
@@ -3072,11 +3562,11 @@
        just pressed, and the sheet is wedged for good. A probe that refused, or
        one that never answered, still leaves this null. */
     var next = (armNext === true && (wfnextLandedCount(state) > 0 || wfnextCheckPassedFor(state, remaining[0]))) ? (remaining[0] || null) : null;
-    if (next && !go.getAttribute('data-mls-primary-blocked') && ATHENA_EXECUTABLE_ACTIONS[next.action] && unifiedAriaFor(next.action)) {
+    if (next && !go.getAttribute('data-mls-primary-blocked') && ATHENA_EXECUTABLE_ACTIONS[next.action] && unifiedAriaFor(next.action, state)) {
       try {
         go.setAttribute('data-mls-athena-action', next.action);
         go.setAttribute('data-mls-preview-hash', state.manifest.previewHash);
-        go.setAttribute('aria-label', unifiedAriaFor(next.action));
+        go.setAttribute('aria-label', unifiedAriaFor(next.action, state));
       } catch (eArm) {}
     }
     wfnextPaintBatchAttrs(state, go, remaining);
@@ -3446,6 +3936,11 @@
      click. It says what MLS did and what it did not do; it never says nothing
      happened, because something did. */
   var WFCLAR_MUTATED = ' MLS pressed Save once and sent nothing else; nothing was signed and nothing was billed.';
+  /* savetruth-1.0.0 (2026-09-10): the tail for the codes that can only be
+     minted AFTER MLS has already placed one reviewed section in its field.
+     Like WFCLAR_MUTATED it never says nothing happened, because something did;
+     unlike it, the thing that happened was a section write, not a Save press. */
+  var WFCLAR_SECTION_SENT = ' MLS sent this one reviewed section and nothing else; it did not sign and it did not bill.';
   var WFCLAR = {
     /* ---- one named step (amber) ------------------------------------- */
     'note-editor-not-empty': { fix: true, copy: true,
@@ -3580,6 +4075,34 @@
       say: 'MLS found more than one possible copy of a reviewed section, so it will not guess which one is saved. Inspect the unsigned note in athenaOne before retrying.' },
     'section-persistence-readback-mismatch': { fix: false,
       say: 'A saved Athena section no longer matches the reviewed text. Inspect the unsigned note in athenaOne before retrying.' },
+    /* savetruth-1.0.0 (2026-09-10) - THE LAST THREE SAVED-NOTE PROOF CODES.
+       All three were already on the closed WFDX_KNOWN_REASONS allowlist and
+       none of them had a sentence, so every surface that classifies a code -
+       the probe path above all - printed the raw extension token at the
+       doctor. They are minted on the read-only reconciliation leg, so they
+       keep WFCLAR_NOTHING byte for byte. None is on WFAUTO_RETRY. */
+    'section-persistence-proof-missing': { fix: true,
+      say: 'One step needed: MLS has no saved receipt for one of the reviewed sections, so it will not say the note is saved. Put that section on screen in athenaOne, then press Check Athena again.' },
+    'section-persistence-proof-mismatch': { fix: false,
+      say: 'A saved receipt for this review names different text than the section MLS reviewed, so MLS will not say the note is saved. Inspect the unsigned note in athenaOne before retrying.' },
+    'section-persistence-proof-expired': { fix: true,
+      say: 'One step needed: the saved receipts for this review are too old to prove the note is still the reviewed one. Press Check Athena again so MLS reads the saved note fresh.' },
+    /* savetruth-1.0.0 (2026-09-10) - THE NATIVE PERSISTENCE LEG'S OWN
+       REFUSALS, same story: on the closed allowlist since 510d1e4b, no
+       sentence anywhere, so the doctor read the code itself. Each one is
+       minted AFTER MLS placed this one reviewed section in its exact field,
+       so not one of them may carry the no-change guarantee - they take
+       WFCLAR_SECTION_SENT instead. fix:false throughout: the field now holds
+       text, so there is no read-only step that makes a resend safe, and
+       none of these is on WFAUTO_RETRY. */
+    'native-persistence-request-missing': { fix: false, tail: WFCLAR_SECTION_SENT,
+      say: 'MLS placed this reviewed section in its exact Athena field, but athenaOne never asked its server to save that field, so MLS cannot say it is saved. Look at this exact field in athenaOne and save the encounter there yourself before sending anything else.' },
+    'native-persistence-request-ambiguous': { fix: false, tail: WFCLAR_SECTION_SENT,
+      say: 'MLS placed this reviewed section in its exact Athena field, and athenaOne then sent more than one save for that field, so MLS will not guess which one it kept. Look at this exact field in athenaOne before sending anything else.' },
+    'native-persistence-response-failed': { fix: false, tail: WFCLAR_SECTION_SENT,
+      say: 'MLS placed this reviewed section in its exact Athena field and athenaOne\'s own save for that field came back failed. Look at this exact field in athenaOne and save the encounter there yourself before sending anything else.' },
+    'native-persistence-readback-mismatch': { fix: false, tail: WFCLAR_SECTION_SENT,
+      say: 'MLS placed this reviewed section in its exact Athena field, and what athenaOne read back afterwards is not the reviewed text. Look at this exact field in athenaOne before sending anything else; MLS will not send it again on its own.' },
     'patient-mismatch': { fix: false,
       say: 'The chart athenaOne has open is not this patient. MLS will not write into it and there is no shortcut past this. Open the correct chart yourself, then press Check Athena again.' },
     'dob-mismatch': { fix: false,
@@ -3635,7 +4158,7 @@
        may not be handed the no-change guarantee. It is one flag on one entry
        (save-readback-missing); every other entry keeps WFCLAR_NOTHING byte for
        byte, which is what the existing pins read. */
-    var tail = (clar && clar.mutated === true) ? WFCLAR_MUTATED : WFCLAR_NOTHING;
+    var tail = S(clar && clar.tail) || ((clar && clar.mutated === true) ? WFCLAR_MUTATED : WFCLAR_NOTHING);
     return S(say).replace('{where}', S(row && row.destination) || 'the exact Athena field') + tail;
   }
   /* The reviewed text of one refused section, so the doctor can finish it by
@@ -4264,7 +4787,7 @@
         go.disabled = false; go.setAttribute('aria-disabled', 'false');
         go.textContent = probeOnlyActive() ? 'Confirm (PROBE ONLY — nothing is written)' : (row.action === 'save_draft' ? 'Confirm & Save draft in Athena' : 'Confirm & Send to Athena');
         go.setAttribute('data-mls-athena-action', row.action);
-        go.setAttribute('data-mls-preview-hash', state.manifest.previewHash); go.setAttribute('aria-label', unifiedAriaFor(row.action)); go.title = unifiedAriaFor(row.action) + '. Runs only this selected action.';
+        go.setAttribute('data-mls-preview-hash', state.manifest.previewHash); go.setAttribute('aria-label', unifiedAriaFor(row.action, state)); go.title = unifiedAriaFor(row.action, state) + '. Runs only this selected action.';
         if (row.action === 'place_order') { go.setAttribute('data-mls-row-hash', row.rowHash); go.setAttribute('data-mls-client-order-id', probedClientOrderId); }
       }
       setUnifiedReadyTick(row.id);
@@ -4520,10 +5043,22 @@
        save it may not fire, or it would hide the very row his last press is on.
        And once the save HAS landed the sentence stops telling him to go and do
        it: the encounter is saved and read back, and Sign is what is left. */
-    var nb = sheetclarInAthena(state), nbSaveOwed = savenamedOwedRow(state), nbSavePresent = !!savenamedRow(state);
+    /* savetruth-1.3.0: THE SAME TWO RULES, APPLIED TO THE GENERIC REVIEW'S OWN
+       SAVE. (1) It may not fire while that save is still owed - this banner
+       ENDS the sheet, so it would kill the very press the doctor has selected;
+       that is exactly the rule already written above for the named row.
+       (2) Once it HAS landed the tail stops saying "Nothing was saved": the
+       measured screen read "Nothing was saved or signed; finish Save / Sign in
+       Athena yourself." directly above the same panel's "Save draft in Athena
+       VERIFIED - Athena verified Save / Save Draft for the exact encounter."
+       The footer's twin sentence already had this branch; the banner did not. */
+    var nb = sheetclarInAthena(state), nbSaveOwed = savenamedOwedRow(state) || unifiedGenericSaveOwed(state), nbSavePresent = !!savenamedRow(state);
+    var nbGenericSaved = false;
+    try { nbGenericSaved = !nbSavePresent && unifiedSaveVerified(state); } catch (eNbG) { nbGenericSaved = false; }
     var banner = (nb.total && nb.landed === nb.total && !nbSaveOwed && (!nbSavePresent || savenamedVerified(state)))
       ? '<div style="border:1px solid #bfe0cf;background:#eef7f2;color:#205c43;border-radius:10px;padding:10px 12px;margin-bottom:8px;font-weight:800">&#10003; Everything on this review is in Athena — ' + nb.landed + ' of ' + nb.total + ' note sections verified.' +
-        (savenamedVerified(state) ? (savenamedNativeVerified(state) ? ' The unsigned note is saved and verified from Athena\'s persisted section receipts; MLS did not press Save. Nothing was signed.' : SAVENAMED_BANNER_TAIL) : ' Nothing was saved or signed; finish Save / Sign in Athena yourself.') + '</div>'
+        (savenamedVerified(state) ? (savenamedNativeVerified(state) ? ' The unsigned note is saved and verified from Athena\'s persisted section receipts; MLS did not press Save. Nothing was signed.' : SAVENAMED_BANNER_TAIL)
+          : (nbGenericSaved ? GENERICSAVE_BANNER_TAIL : ' Nothing was saved or signed; finish Save / Sign in Athena yourself.')) + '</div>'
       : '';
     /* apsel-1.0.0: observation only - a landed A/P row teaches which shape this
        surface has, for the NEXT sheet's arrival tick. It writes no receipt,
@@ -4563,7 +5098,7 @@
         /* savenamed-app-1.0.0: the same fact, kept true. A review whose save has
            landed may not be told nothing was saved. */
         '<div style="margin-top:6px;color:#3d5147">Athena read each of these back from the exact field after the write. ' +
-        (savenamedVerified(state) ? (savenamedNativeVerified(state) ? 'Athena persisted each field and MLS reconciled the saved unsigned note without pressing Save. Nothing was signed.' : 'MLS then saved the encounter in athenaOne and read the save back. Nothing was signed.') : (savenamedNativeSectionsPersisted(state) ? 'Athena persisted these unsigned fields as they were written. Complete saved-note verification is still owed; nothing was signed.' : 'Nothing was saved and nothing was signed.')) + '</div>' +
+        esc(unifiedSavedSentence(state)) + '</div>' +
         (S(state.manifest.visit.encounterUrl).trim()
           ? '<div style="margin-top:7px"><a href="' + esc(S(state.manifest.visit.encounterUrl).trim()) + '" target="_blank" rel="noopener" style="color:#204034;font-weight:800">Open this encounter in athenaOne</a></div>'
           : '') + '</div>'
@@ -4594,6 +5129,23 @@
       } else if (cancelBtn && anyLanded) {
         cancelBtn.textContent = 'Close review (writes stay in Athena)';
       }
+      /* savetruth-1.1.0 (2026-09-10): THE STANDING SAFETY BANNER HAD NO SECOND
+         STATE. #mlsAthenaUnifiedSafety is written once, at sheet build, and
+         nothing ever repainted it - so after a finished run it still read
+         "Nothing has changed yet. Nothing leaves MLS until you press Confirm &
+         Send." on the same screen as "Everything on this review is in Athena"
+         and a receipt saying MLS had saved the encounter. Once something has
+         landed it says what has happened, in the SAME words the receipt panel's
+         own "what landed" line uses (unifiedSavedSentence), and it still names
+         the one guarantee that has not changed: nothing more leaves MLS without
+         another press. It repaints one paragraph; it decides nothing. */
+      try {
+        var safetyEl = document.getElementById('mlsAthenaUnifiedSafety');
+        if (safetyEl && anyLanded) {
+          safetyEl.innerHTML = '<b>This review has already sent to Athena.</b> ' + esc(unifiedSavedSentence(state)) +
+            ' Nothing further leaves MLS unless you press Confirm again.';
+        }
+      } catch (eSafety) {}
       /* wfdone-1.0.0 (2026-09-02): ONE state, ONE sentence. This renderer and
          wfnextButtonLabel now write the same shared constant, so the finished
          button can never say two different things depending on which surface
@@ -4636,9 +5188,34 @@
          words. An ATTEMPTED outcome keeps the extension's exact sentence and
          its uncertain status - nothing about a partial mutation is ever
          paraphrased. */
+      /* savetruth-1.0.0 (2026-09-10): THE GENERIC SENTENCE WAS SWALLOWING THE
+         PLAIN ONE. nativePersistenceFailureMessage's regex covers exactly the
+         codes the WFCLAR table now owns, and it was consulted FIRST - so the
+         five plain-English entries added for them could never render, and a
+         pre-read refusal like section-persistence-frame-changed (attempted
+         false, fix true) gave the doctor "MLS could not prove..." instead of
+         its own cure, "let the encounter finish loading, then press Check
+         Athena again". The table wins for a code it has a sentence for; the
+         generic sentence stays as the fallback for every code it does not.
+         The pre-existing rule is untouched: an ATTEMPTED outcome still keeps
+         the extension's exact words and its uncertain status. */
+      /* savetruth-1.3.0 (2026-09-10): A RAW CODE IS NOT A SENTENCE. The guard
+         above is right - an ATTEMPTED outcome keeps the extension's own words -
+         but MLS Assist 3.0.115 answers the read-only saved-note leg's mid-read
+         refusals with attempted:true and NO error text at all (3.0.116 sends a
+         plain sentence), so there were no words to keep and the fallback printed
+         the code itself: the doctor's receipt read "Verify or save the note in
+         Athena  UNCERTAIN  context-mismatch". Where the extension supplied no
+         sentence, MLS says in plain English what it knows about the step -
+         including, for a save that pressed nothing, that nothing was pressed.
+         The extension's words still win wherever it sent any. */
       var nativeFailure = nativePersistenceFailureMessage(resp);
-      var execClar = attempted || nativeFailure ? null : wfClarify(resp.reason);
-      message = nativeFailure || (execClar ? wfClarityText(execClar, row) : (S(resp.error || resp.message || resp.reason) || 'Athena refused the selected action. No other action ran.'));
+      var execClar = attempted ? null : wfClarify(resp.reason);
+      var extWords = S(resp.error || resp.message);
+      message = (execClar ? wfClarityText(execClar, row) : '') || nativeFailure || extWords ||
+        (row.action === 'save_draft' && saveReceiptReadOnlyLeg({ action: 'save_draft', reason: S(resp.reason), readOnly: resp.readOnly === true, saved: resp.saved === true, persisted: resp.persisted === true, partialMutation: resp.partialMutation === true })
+          ? SAVENAMED_READONLY_UNCERTAIN
+          : 'Athena refused the selected action. No other action ran.');
     }
     else if (row.action === 'write_note') {
       verifiedWrite = resp.attempted === true ? rememberVerifiedWrite(probe.patient, state.manifest.previewHash, { receiptSessionId: state.manifest.receiptSessionId }, row.payload, probe.context, resp) : null;
@@ -4666,10 +5243,18 @@
        the chart it acted on, alongside the intended patient id. A twin or a
        name+DOB collision is then legible in the receipt itself rather than
        being confirmed by the parameters we happened to send. */
-    var receipt = deepFreeze({ rowId: row.id, action: row.action, status: status, message: message, persistenceMode: persistenceMode, saved: resp.saved === true, persisted: resp.persisted === true, serverVerified: resp.serverVerified === true, reason: S(resp.reason), patientId: S(state.manifest.patient && state.manifest.patient.patientId).trim(), responseIdentity: stableClone((probe && probe.responseIdentity) || null), manifestHash: state.manifest.manifestHash, rowHash: row.rowHash, context: stableClone(probe && probe.context), completedAt: new Date().toISOString() });
+    /* savetruth-1.3.0: the receipt carries the two fields that say WHICH LEG
+       answered, so every later surface classifies from the frozen receipt
+       instead of re-deriving it from a response nobody kept. readOnly is MLS
+       Assist's own assertion that it touched no control; partialMutation is its
+       assertion that something may have changed - and that one always wins. */
+    var receipt = deepFreeze({ rowId: row.id, action: row.action, status: status, message: message, persistenceMode: persistenceMode, saved: resp.saved === true, persisted: resp.persisted === true, serverVerified: resp.serverVerified === true, readOnly: resp.readOnly === true, partialMutation: resp.partialMutation === true, reason: S(resp.reason), patientId: S(state.manifest.patient && state.manifest.patient.patientId).trim(), responseIdentity: stableClone((probe && probe.responseIdentity) || null), manifestHash: state.manifest.manifestHash, rowHash: row.rowHash, context: stableClone(probe && probe.context), completedAt: new Date().toISOString() });
     state.receipts[row.id] = receipt;
     rememberRowOutcome(state, row.id, receipt); /* wfsum-1.0.0: survives sheet reopens */
-    if (status === 'uncertain') state.halted = true;
+    /* savetruth-1.3.0: the halt is for an outcome that may have CHANGED Athena.
+       A proven read-only leg changed nothing, so it leaves the sheet alive -
+       see unifiedBlockingUncertainReceipt for the whole rule and its limits. */
+    if (status === 'uncertain' && !saveReceiptReadOnlyLeg(receipt)) state.halted = true;
     return receipt;
   }
   function nativePersistenceFailureMessage(resp) {
@@ -4958,8 +5543,14 @@
        sentence byte for byte. */
     var savedNow = false, hasSaveRow = false;
     try { savedNow = savenamedVerified(state); hasSaveRow = !!savenamedRow(state); } catch (eSv) { savedNow = false; hasSaveRow = false; }
+    /* savetruth-1.1.0: ...and a review with no NAMED save row can still have
+       saved, through its own generic Save draft row. */
+    var genericSaved = false;
+    try { genericSaved = !savedNow && !hasSaveRow && unifiedSaveVerified(state); } catch (eGs) { genericSaved = false; }
     var tail = (stopMsg ? ' ' + stopMsg : '') +
-      (savedNow ? (savenamedNativeVerified(state) ? ' Athena persisted the unsigned note fields and MLS verified the complete saved note without pressing Save. Nothing was signed.' : SAVENAMED_SUMMARY_SAVED) : (hasSaveRow ? SAVENAMED_SUMMARY_UNSAVED : ' Nothing was saved or signed; finish Save / Sign in Athena yourself.'));
+      (savedNow ? (savenamedNativeVerified(state) ? ' Athena persisted the unsigned note fields and MLS verified the complete saved note without pressing Save. Nothing was signed.' : SAVENAMED_SUMMARY_SAVED)
+        : (hasSaveRow ? SAVENAMED_SUMMARY_UNSAVED
+          : (genericSaved ? ' MLS saved this draft in athenaOne and read the save back. Nothing was signed; finish Sign in Athena yourself.' : ' Nothing was saved or signed; finish Save / Sign in Athena yourself.')));
     /* wfscope-1.0.0: the word "Done" belongs to the REVIEW, not to the queue.
        If checked sections of this review still have no verified receipt and
        were not on this press, say so and count over the review. Wrapped because
@@ -4989,6 +5580,10 @@
       }
     } catch (eSc) {}
     var pressed = wfnextNoteRows(rows || []).length;
+    /* savetruth-1.1.0: a press that carried NO clinical section - the review's
+       own encounter save, on its own - is not "Done: 0 of 0 sections written to
+       Athena and read back", which reads like a failure. Say what it was. */
+    if (!pressed) return 'This press ran the final encounter step only - no note section was on it.' + namesTail + tail;
     return 'Done: ' + written.length + ' of ' + pressed + ' section' + (pressed === 1 ? '' : 's') +
       ' written to Athena and read back.' + namesTail + tail;
   }
@@ -5003,6 +5598,17 @@
     var currentTaughtDestination = taughtDestinationFor(state.manifest, row);
     if (probe.taughtDestinationHash !== hashPreview(currentTaughtDestination || {})) { unifiedStatus(state, 'The taught destination changed after the read-only check. Select the action again before writing.', 'err'); invalidateUnifiedProbeForTeach(state); return; }
     state.running = true; go.disabled = true; go.setAttribute('aria-disabled', 'true'); go.textContent = 'Working…';
+    /* sheetclar repaint (2026-09-10): THE PILL HAD NO PAINTER FOR THIS EXACT
+       TRANSITION. sheetclarStateBase has always derived SENDING / WRITING DRAFT
+       / SAVING DRAFT / VERIFYING SAVED NOTE from state.running, but the only
+       thing that ever repainted it was unifiedStatus - which nothing calls
+       here - so during a batch the pill stayed on the previous row's CHECKING
+       ("Nothing new is being sent during this check.") while the button beside
+       it read "Writing 1 of 3..." and the write was already on the wire. One
+       paint of the surface that already exists: it derives, it never decides,
+       and it cannot enable a control or send anything. It runs BEFORE the
+       bridge post below so the word is true for the whole send. */
+    try { paintSheetclarState(state, ''); } catch (eRunPaint) {}
     /* wfsum-1.0.0 loading bar: the owner watched "Working…" for up to 40s with
        no sign of life. Tick the elapsed seconds on the button itself and fill
        it left-to-right (capped at 95% - only the receipt claims completion). */
@@ -5094,6 +5700,27 @@
       if (cancel) cancel.disabled = false; if (close) close.disabled = false;
       unifiedStatus(state, receipt.message + (state.halted ? ' This manifest is halted because the outcome is uncertain.' : ' No other action ran automatically.'), receipt.status === 'verified' ? 'ok' : 'err');
       if (receipt.status !== 'verified') wfdxShowExecuteReport(state);
+      /* savetruth-1.1.0: 'blocked' means MLS Assist refused without touching
+         Athena, and every one of those sentences ends in "press Check Athena
+         again". Put that control where the sentence says it is. A batch owns
+         its own terminal (finish() offers it once, after the summary repaint
+         that would otherwise wipe it); an UNCERTAIN outcome is never offered a
+         retry path of any kind. */
+      if (receipt.status === 'blocked' && !state.batchRunning) { try { unifiedRecheckControl(state, row.id); } catch (eRc) {} }
+      /* savetruth-1.3.0: ...and the read-only saved-note leg leaves the sheet
+         ALIVE, because it pressed nothing and changed nothing. Its own cure
+         sentence names the next press - "Inspect this encounter, then press
+         Confirm again" (owner decision D2) - so that press has to be one he can
+         actually make, and the read-only re-check has to be on screen beside
+         it. This is the SAME re-sync every settled PROBE refusal already runs
+         (unifiedRecheckButton). It arms nothing: wfnextPaintPrimary(state,
+         false) writes no action binding, and the plan it re-reads still sends
+         the press through a fresh read-only check before anything can go out. */
+      if (!state.halted && !state.batchRunning && saveReceiptReadOnlyLeg(receipt)) {
+        try { unifiedRecheckControl(state, row.id); } catch (eRc2) {}
+        try { unifiedSyncPrimaryButton(state); } catch (eSync2) {}
+        try { wfnextPaintPrimary(state, false); } catch (eNext2) {}
+      }
       if (state.halted) {
         for (var i = 0; i < radios.length; i++) radios[i].disabled = true;
       } else {
@@ -5258,7 +5885,7 @@
   }
   function unifiedPrimaryPlan(state) {
     if (!state || state.closed) return { mode: 'none', rows: [], reason: SHEETCLAR_NONE_READY_REASON };
-    if (state.halted || unifiedUncertainReceipt(state)) return { mode: 'none', rows: [], reason: 'An Athena outcome is uncertain. Inspect the exact destination before any retry; MLS will not retry automatically.' };
+    if (state.halted || unifiedBlockingUncertainReceipt(state)) return { mode: 'none', rows: [], reason: 'An Athena outcome is uncertain. Inspect the exact destination before any retry; MLS will not retry automatically.' };
     var sel = unifiedRow(state.manifest, state.selectedRowId);
     var selectable = !!(sel && sel.capability === 'ready' && sel.action);
     /* Save / Sign / order rows never join a batch - they keep the legacy path */
@@ -5269,9 +5896,26 @@
        selected AFTER it has landed - the review's own encounter save, which the
        queue selects as the final item of a press. It can only ever fall through
        to a plan that refuses; no new row can become sendable here. */
+    /* savetruth-1.1.0 (2026-09-10) - AND ONLY WHILE ITS OWN READ-ONLY CHECK IS
+       STILL BOUND TO IT. MEASURED: a batch wrote every section and its final
+       saved-note step was refused; executeUnifiedSelection had already nulled
+       state.probe, wfrearm put the extension's binding back on the button, and
+       this branch kept routing the still-selected save row down the 'single'
+       lane - which goes STRAIGHT to execute. So the sheet offered a live green
+       "Verify saved unsigned note in Athena" over a receipt reading "press
+       Check Athena again", and pressing it answered "The selected action is not
+       bound to a fresh exact Athena check" and did nothing at all, forever.
+       The 'batch' lane below runs the SAME probeUnifiedRow / executeUnifiedSelection
+       pair with its own read-only check first, which is exactly the step the
+       receipt names - so an unbound row falls through to it instead of dead-
+       ending. Nothing is loosened: a row with no fresh probe still cannot
+       execute, and a sheet with no include checkboxes (the legacy one-row lane)
+       still returns 'single' below, where only a validated probe enables the
+       button at all. */
     if (selectable && sel.action !== 'write_note') {
       var selRec = state.receipts[sel.id];
-      if (!(selRec && selRec.status === 'verified')) return { mode: 'single', rows: [sel], reason: '' };
+      var selBound = !!(state.probe && state.probe.rowId === sel.id && state.probe.rowHash === sel.rowHash && state.probe.manifestHash === state.manifest.manifestHash);
+      if (!(selRec && selRec.status === 'verified') && selBound) return { mode: 'single', rows: [sel], reason: '' };
     }
     if (!bxCheckBoxes().length) {
       return selectable ? { mode: 'single', rows: [sel], reason: '' } : { mode: 'none', rows: [], reason: SHEETCLAR_NONE_READY_REASON };
@@ -5300,7 +5944,13 @@
        can join a plan here, and re-ticking or a fresh receipt puts the row back
        through the very same reads. */
     var wfdoneOwed = rows.filter(function (r) { var rec = state.receipts[r.id]; return !(rec && rec.status === 'verified') && !apCovered(state, r); });
-    if (!wfdoneOwed.length) return saveOwed ? { mode: 'batch', rows: [saveOwed], reason: '' } : { mode: 'none', rows: [], reason: WFDONE_NOTHING_LEFT_REASON };
+    /* savetruth-1.3.0: "There is nothing left to send" is the wrong reason to
+       hand a doctor who has just selected this review's own Save draft row. The
+       MODE is unchanged - the press still unlocks only from its own validated
+       read-only probe, through the 'single' branch above - this is the sentence
+       on the disabled button while that check runs or after it refused. */
+    if (!wfdoneOwed.length) return saveOwed ? { mode: 'batch', rows: [saveOwed], reason: '' }
+      : { mode: 'none', rows: [], reason: unifiedGenericSaveOwed(state) ? GENERICSAVE_PLAN_PENDING : WFDONE_NOTHING_LEFT_REASON };
     /* EXACTLY ONE checked section that is already the selected row and already
        bound to this review's fresh validated probe IS the legacy single-row
        press. Route it there, so its receipt AND its request count are what
@@ -5348,7 +5998,14 @@
     } else if (plan.mode === 'batch') {
       try {
         go.disabled = false; go.removeAttribute('aria-disabled'); go.removeAttribute('data-mls-primary-blocked');
-        go.title = 'Sends every checked note section, one at a time, each with its own read-only Athena check and receipt. If this review includes the final Save step, MLS saves the draft after the sections finish. Sign stays manual.';
+        /* savetruth-1.1.0: when the queue this press will run is the encounter
+           save ALONE - every section already landed - "sends every checked note
+           section" describes work that is finished. Say what the press does. */
+        var qOnlySave = false;
+        try { var qRows = wfnextQueueRows(state); qOnlySave = qRows.length > 0 && qRows.every(savenamedIsRow); } catch (eQ) { qOnlySave = false; }
+        go.title = qOnlySave
+          ? 'Runs the final step of this review: MLS checks this exact Athena encounter read-only, then reads the saved note back - pressing this encounter\'s Save control once first if Athena has not already saved it. It never signs and never bills.'
+          : 'Sends every checked note section, one at a time, each with its own read-only Athena check and receipt. If this review includes the final Save step, MLS saves the draft after the sections finish. Sign stays manual.';
       } catch (e2) {}
     } else if (plan.mode === 'none') {
       try {
@@ -5480,6 +6137,16 @@
       /* wfsum-1.0.0: re-render so the completion banner and footer relabel
          (Done / Nothing left to send) survive the label restore above. */
       try { renderUnifiedReceipts(state); } catch (eRR) {}
+      /* savetruth-1.1.0: LAST, after the summary repaint that wipes the status
+         host. A row this press refused without touching Athena carries a cure
+         sentence ending "press Check Athena again"; this is that control. Read-
+         only, one per sheet, and never offered for an uncertain outcome. */
+      try {
+        /* savetruth-1.3.0: a read-only saved-note refusal is the same kind of
+           outcome - MLS touched nothing - so it gets the same control. */
+        var refusedRow = rows.filter(function (r) { var rc = state.receipts[r.id]; return rc && (rc.status === 'blocked' || saveReceiptReadOnlyLeg(rc)); })[0];
+        if (refusedRow && !state.halted) unifiedRecheckControl(state, refusedRow.id);
+      } catch (eRc2) {}
     }
     function step(i) {
       if (i >= rows.length || state.closed || unifiedAthenaState !== state) { finish(); return; }
@@ -6910,7 +7577,7 @@
     /* sheetux-1.0.0: the one shared "How" for every READY row, said once here
        instead of repeated verbatim inside each row. */
     var sharedHow = readyRows.some(function (row) { return row.action === 'write_note'; })
-      ? (' Leave the sections you want checked, then press <b>Confirm &amp; Send to Athena</b> once. Each checked section still gets its own read-only Athena check, its own write and its own receipt; ' + (nativeNamedSectionPersistenceReady() ? 'Athena persists modern named fields as they are written, and MLS finishes with a read-only saved-note verification. It does not press Save and never signs.' : 'MLS can save an unsigned draft when you choose Save draft, and never signs.'))
+      ? (' Leave the sections you want checked, then press <b>Confirm &amp; Send to Athena</b> once. Each checked section still gets its own read-only Athena check, its own write and its own receipt; ' + (savenamedNativeFinishShape(state) ? 'Athena saves some of these fields itself as they are written, and the last step reads the saved note back - pressing this encounter&rsquo;s Save once first if Athena has not already saved it. MLS never signs.' : 'MLS can save an unsigned draft when you choose Save draft, and never signs.'))
       : ' Every READY item needs its own Confirm &amp; Send.';
     /* writeui-1.0.0 (b1184): the What -> Where -> How paragraph is the same
        paragraph, byte for byte - it moved OUT of the doctor's first screen and
@@ -7109,7 +7776,7 @@
          aria-describedby, so it stays visible and outside every fold; the long
          boundary sentence it used to carry is one fold down in How this works,
          where it is still read by every pin that reads it. */
-      '<div id="mlsAthenaUnifiedSafety" style="margin-top:12px;padding:9px 11px;border:1px solid #f0d79a;background:#fff7e6;border-radius:9px;color:#6d5010;font-size:12px"><b>Nothing has changed yet.</b> Nothing leaves MLS until you press Confirm &amp; Send. ' + (nativeNamedSectionPersistenceReady() ? 'MLS writes and verifies each reviewed unsigned draft section; Athena persists these modern named fields as they are written. The final saved-note check is read-only, and MLS never signs.' : 'MLS writes the reviewed sections and can save an unsigned draft when you choose Save draft; it never signs.') + '</div>' +
+      '<div id="mlsAthenaUnifiedSafety" style="margin-top:12px;padding:9px 11px;border:1px solid #f0d79a;background:#fff7e6;border-radius:9px;color:#6d5010;font-size:12px"><b>Nothing has changed yet.</b> Nothing leaves MLS until you press Confirm &amp; Send. ' + (savenamedNativeFinishShape(state) ? 'MLS writes and verifies each reviewed unsigned draft section; Athena saves some of these fields itself as they are written, and where it does not, nothing is saved until the last step. That last step reads the saved note back, and presses this encounter&rsquo;s Save once first if Athena has not already saved it. MLS never signs.' : 'MLS writes the reviewed sections and can save an unsigned draft when you choose Save draft; it never signs.') + '</div>' +
       wfxEvidenceHtml(state) + /* wfx-1.0.0: W1 staleness, W2 contradiction screen, W4 completeness tally */
       howHtml +
       unifiedIdentityHtml(manifest) +
@@ -7166,7 +7833,20 @@
     var recoverSavedButton = card.querySelector('#mlsAthenaUnifiedRecoverSaved');
     if (recoverSavedButton) recoverSavedButton.addEventListener('click', function () { runUnifiedCanonicalRecovery(state, recoverSavedButton); });
     var radios = card.querySelectorAll('input[name="mlsAthenaUnifiedAction"]');
-    for (var i = 0; i < radios.length; i++) radios[i].addEventListener('change', function () { probeUnifiedRow(state, this.value); });
+    for (var i = 0; i < radios.length; i++) radios[i].addEventListener('change', function () {
+      probeUnifiedRow(state, this.value);
+      /* savetruth-1.3.0: SELECTING A ROW CHANGES WHAT THIS SHEET STILL OWES,
+         and the completion banner is written ONCE, at the end of the last run.
+         MEASURED: with the generic note written and Save draft then selected,
+         the green "Everything on this review is in Athena - Nothing was saved
+         or signed; finish Save / Sign in Athena yourself" banner stayed on
+         screen over a live, armed Save press, and the primary button under it
+         still read "Nothing left to send". Re-derive it from the receipts at
+         the one moment the answer can change. It is a renderer: it reads
+         receipts, paints, and sends nothing. probeUnifiedRow sets the selection
+         synchronously before its first async hop, so this reads the new one. */
+      try { renderUnifiedReceipts(state); } catch (eSelRender) {}
+    });
     var acceptBtns = card.querySelectorAll('[data-mls-accept-order]');
     for (var abi = 0; abi < acceptBtns.length; abi++) acceptBtns[abi].addEventListener('click', function () { acceptUnifiedSuggestion(state, this.getAttribute('data-mls-accept-order'), this); });
     var copyPayloadBtns = card.querySelectorAll('[data-mls-copy-payload]');
@@ -7834,7 +8514,7 @@
     wfdxReset(manifest);
     var state = { manifest: manifest, sourceOpts: opts, reopenOpts: null, editorFingerprint: wfbindEditorFingerprint(), selectedRowId: '', probe: null, probeGeneration: 0, probeSettled: 0, receipts: {}, running: false, generating: false, binding: false, halted: false, closed: false, batchRunning: false, returnFocus: returnFocus, a11yKeyHandler: null, autoOpened: false };
     state.reopenOpts = reopenOptions(opts, manifest);
-    state.halted = !!unifiedUncertainReceipt(state);
+    state.halted = !!unifiedBlockingUncertainReceipt(state);
     /* apsel-1.0.0: the doctor's A/P pick belongs to ONE review. A new sheet
        starts from the learned surface preference again. */
     apPickThisSheet = '';

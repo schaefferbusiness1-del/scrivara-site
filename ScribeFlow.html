@@ -30874,6 +30874,11 @@ function mlsDraftFailureMessage(err){
   var raw=Array.isArray(ai.issues)?ai.issues:[];
   var issues=raw.map(function(v){return String(v||'').trim();}).filter(function(v){return /^[a-z0-9_]{2,96}$/i.test(v);}).slice(0,6);
   var labels={
+    /* The claim refusal now fails closed (no documented-only substitute note),
+       so this code reaches the doctor. Without a label it printed as "output
+       safety check: unsupported clinical claim", which is the raw code with
+       spaces in it. */
+    unsupported_clinical_claim:'the draft stated something today’s transcript does not support',
     missing_result:'no structured result', note_not_string:'note was not text', empty_note:'note was blank',
     note_too_large:'note exceeded the safety size limit', unstructured_clinical_draft:'note was not structured',
     malformed_soap_heading:'malformed SOAP heading', unsupported_soap_wrapper:'unsupported SOAP wrapper',

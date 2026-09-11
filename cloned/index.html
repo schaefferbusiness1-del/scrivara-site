@@ -30888,6 +30888,11 @@ function mlsDraftFailureMessage(err){
   var raw=Array.isArray(ai.issues)?ai.issues:[];
   var issues=raw.map(function(v){return String(v||'').trim();}).filter(function(v){return /^[a-z0-9_]{2,96}$/i.test(v);}).slice(0,6);
   var labels={
+    /* The claim refusal now fails closed (no documented-only substitute note),
+       so this code reaches the doctor. Without a label it printed as "output
+       safety check: unsupported clinical claim", which is the raw code with
+       spaces in it. */
+    unsupported_clinical_claim:'the draft stated something today’s transcript does not support',
     missing_result:'no structured result', note_not_string:'note was not text', empty_note:'note was blank',
     note_too_large:'note exceeded the safety size limit', unstructured_clinical_draft:'note was not structured',
     malformed_soap_heading:'malformed SOAP heading', unsupported_soap_wrapper:'unsupported SOAP wrapper',
@@ -30910,11 +30915,10 @@ function _mlsUnsupportedClinicalClaimFailure(err){
   var issues=Array.isArray(ai.issues)?ai.issues:[];
   return String(ai.code||'')==='draft_quality_failed'&&issues.some(function(code){return String(code||'').toLowerCase()==='unsupported_clinical_claim';});
 }
-/* A claim-only rejection must not strand a recorded visit. The hosted repair
-   lane gets one conservative retry with the exact saved section/template
-   tuning still attached. If that transport is unavailable, generateNote()
-   falls back to a five-section draft containing only the clinician's own
-   recorded words plus explicit "not documented" placeholders. */
+/* A claim-only rejection gets one conservative hosted repair with the exact
+   saved section/template tuning still attached. If either hosted route
+   refuses, normal generation fails and retains the prior draft; it must not
+   substitute a different success-shaped note. */
 async function _mlsRepairUnsupportedClinicalClaim(sys,user,draftTuning,signal){
   var repairRule='\n\nCONSERVATIVE REPAIR REQUIRED: A previous draft was rejected because it stated a clinical claim that was not directly supported by TODAY_TRANSCRIPT. Regenerate the complete requested JSON now. Preserve every selected saved format, per-section template, heading, order, and AI comment, but treat all template wording as format only. Copy no clinical fact from a template or background. For every unsupported ROS, exam, assessment, plan, medication, order, diagnosis, code, or follow-up detail, write "Not documented in today\'s transcript." or leave the optional array/value empty. Do not infer stability, normal findings, continuation, a diagnosis, or a plan.';
   try{
@@ -30942,20 +30946,6 @@ async function _mlsRepairUnsupportedClinicalClaim(sys,user,draftTuning,signal){
     if(error&&(error.mlsStructuredNoteQuality||error.mlsAthenaNoteQuality))throw error;
     return '';
   }
-}
-function _mlsDocumentedOnlyNoteResult(transcript){
-  var documented=String(transcript||'').replace(/\s+/g,' ').trim().slice(0,12000);
-  if(!documented)documented='No current-visit statement was captured.';
-  var missing="Not documented in today's transcript.";
-  var note='HPI:\nDocumented today: '+documented+'\n\nROS:\n'+missing+'\n\nEXAM:\n'+missing+'\n\nASSESSMENT:\n'+missing+'\n\nPLAN:\n'+missing;
-  return {
-    note:note,athena_note:note,insuranceNote:'',patient_summary:'',
-    coding:{em:'',emJust:'Insufficient documentation in today\'s transcript',icd:[],cpt:[]},
-    emr:{cc:documented,dx:'—',meds:'—',orders:'—',fu:'—'},
-    red_flags:[],suggested_orders:[],differentials:[],opioids:[],recommendations:[],
-    conservative_care:{tried:[],still_needed:[]},imaging_concordance:'',surgical_options:[],preop_workup:[],consent_points:{benefits:[],risks:[],alternatives:[]},
-    mlsDocumentedOnlyFallback:true
-  };
 }
 function _mlsTemplateHeadingParts(value){
   var line=String(value||'').trim().replace(/^\s*(?:#{1,6}\s*|[-*•]\s+|\d+[.)]\s+)/,'').trim();
@@ -31877,18 +31867,12 @@ async function generateNote(){
       outcome='success'; outcomeCode='offline-example';
       return true;
     }
-    let result;
-    try{
-      result=await _mlsAwaitGeneration(
-        run,
-        callOpenAI(transcript,key,{signal:run.controller.signal,evidence:evidence,resolvedDraftTuning:generationDraftTuning}),
-        _mlsGenerationTimeoutMs('main',90000),
-        'generation-timeout'
-      );
-    }catch(initialGenerationError){
-      if(!_mlsUnsupportedClinicalClaimFailure(initialGenerationError))throw initialGenerationError;
-      result=_mlsDocumentedOnlyNoteResult(transcript);
-    }
+    let result=await _mlsAwaitGeneration(
+      run,
+      callOpenAI(transcript,key,{signal:run.controller.signal,evidence:evidence,resolvedDraftTuning:generationDraftTuning}),
+      _mlsGenerationTimeoutMs('main',90000),
+      'generation-timeout'
+    );
     /* Validate before currentSoap/currentInsurance/currentCoding or any editor
        surface changes.  A bad model/backend response leaves the current draft
        intact and remains explicitly retryable. */
@@ -31986,7 +31970,7 @@ async function generateNote(){
     autoPopulateExtras(result);
     // If a patient-friendly summary was requested, drop it into the handout / after-visit summary.
     try{ if(result.patient_summary){ currentHandout=result.patient_summary; var hb=document.getElementById('handoutBody'); if(hb){ hb.value=currentHandout; } var hc=document.getElementById('handoutCard'); if(hc){ hc.style.display='block'; } } }catch(e){}
-    toast(athenaSidecarReason?'Your note is ready to review. MLS could not build the five-field Athena payload for this draft, so review and complete those five sections in your note before sending.':(result.mlsDocumentedOnlyFallback?'Note generated from the documented words only. Review and add anything that was not captured.':(result.patient_summary?'Note + patient summary generated.':'Note generated. Optimize coding or sign when ready.')),athenaSidecarReason?'':'ok');
+    toast(athenaSidecarReason?'Your note is ready to review. MLS could not build the five-field Athena payload for this draft, so review and complete those five sections in your note before sending.':(result.patient_summary?'Note + patient summary generated.':'Note generated. Optimize coding or sign when ready.'),athenaSidecarReason?'':'ok');
     /* sidecar-1.0.0: a toast fades; the refusal of the Athena ROUTE must not.
        generateNote clears both ids on entry, so this cannot leak into the next
        run. */

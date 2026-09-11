@@ -345,6 +345,15 @@ function shippedFunction(name) {
          so the adversarial gates below actually execute again. */
       'var rememberedRowOutcomes = 0;',
       'var rememberRowOutcome = function () { rememberedRowOutcomes += 1; };',
+      /* savetruth-1.3.0 added one more read to the shipped classifier: the HALT
+         is now skipped for a save receipt whose response PROVES it pressed
+         nothing. That decision is exactly what the last assertion in this block
+         measures, so the REAL function is lifted rather than stubbed - a stub
+         returning the wrong answer would silently bless a manifest that failed
+         to halt. Its two closed reason patterns are lifted with it. */
+      (/\n(  var SAVEPRESS_CLICK_REASON = [^\n]*\n)/.exec(SOURCE) || [null, ''])[1],
+      (/\n(  var SAVEPRESS_READONLY_REASON = [^\n]*\n)/.exec(SOURCE) || [null, ''])[1],
+      shippedFunction('saveReceiptReadOnlyLeg'),
       shippedFunction('verifiedNoteWrite'),
       shippedFunction('resultToUnifiedReceipt'),
       'this.verify = verifiedNoteWrite; this.render = resultToUnifiedReceipt;'

@@ -99,13 +99,36 @@ const HEAD_REGIONS = [
      tests/write-generality-proof.js. */
   ['probe ladder (probeUnifiedRow: every refusal, auto-open, day-mismatch gate)',
     '  function probeUnifiedRow(state, rowId) {', '  /* wfsum-1.0.0 (owner 2026-08-26, watching his own writes land while the sheet',
-    '0435a7355d23ecc1e262a7ddca9c8ec3f010e3eb4bcb808995e03ad8b4883a95'],
+    '9f9cf42a359b1eb30c5aac95f3c168a87c7f3799bbc2e12b230bf17da7f8a572'],
+  /* MOVED DELIBERATELY, savetruth-1.0.0 (2026-09-10). The five plain-English
+     entries 999ba30f added for the section-persistence codes could never
+     render: nativePersistenceFailureMessage's regex covers exactly those
+     codes and it was consulted FIRST, so a pre-read refusal like
+     section-persistence-frame-changed (attempted false) told the doctor "MLS
+     could not prove..." instead of its own cure. ONE expression changed: the
+     WFCLAR table now wins for a code it has a sentence for, and the generic
+     sentence stays the fallback for every code it does not. The pre-existing
+     rule is untouched - an ATTEMPTED outcome still keeps the extension's exact
+     words and its uncertain status - and no gate, token, payload or receipt
+     STATUS changed; this region decides only which sentence is shown. Proven
+     in tests/native-persistence-clarity-proof.js. */
   ['receipt mint (resultToUnifiedReceipt: verified / uncertain / halt)',
     '  function resultToUnifiedReceipt(state, row, resp, probe) {', '  /* ===== wfprog-1.0.0 (owner 2026-08-27:',
-    '3c920a362765d5b9f30fdb0c546d70dae2d002db6921ac03a1c483ab3b8c7f9a'],
+    '9e6ec832e5e50201c1186f22912fa6017792358add914c93f6ee82c69210dfe3'],
+  /* MOVED DELIBERATELY, savetruth-1.0.0 (2026-09-10). The pill had no painter
+     for the running=true transition: sheetclarStateBase has always DERIVED
+     SENDING / WRITING DRAFT from state.running, but nothing repainted it here,
+     so during a batch the pill still read CHECKING with "Nothing new is being
+     sent during this check." while the button read "Writing 1 of 3..." and the
+     write was already on the wire. ONE line was added, immediately after
+     state.running = true and before the bridge post: a guarded
+     paintSheetclarState(state, ''). It paints a surface that already exists -
+     it derives nothing new, enables no control, and cannot send. Every gate,
+     latch, bound, token, payload and receipt path is byte-identical. Proven in
+     tests/write-ui-proof.js (the restored positive SENDING pin). */
   ['execute (executeUnifiedSelection: the only code that writes)',
     '  function executeUnifiedSelection(state) {', '  /* bx-1.0.0 - batch send (owner 2026-08-26:',
-    '9899793443dc4bb5f9d97f141fd435c3b747854ff5de4b072bbb7b5c2ccc44a0'],
+    '9c7b9629f4c917d475a2c6797068461b373c51f2c89c79bda6a28378cc25c60a'],
   /* MOVED DELIBERATELY, wfnext-1.0.0 (2026-09-01) - owner ruling 23:05,
      verbatim: "nothing here should be blocked or manual or not attempted once
      its run". MEASURED 22:50-22:56 on his own tab: one trusted press, six
@@ -137,7 +160,7 @@ const HEAD_REGIONS = [
      tests/paintwait-queue-proof.js. */
   ['batch queue (runUnifiedBatchSend: per-row probe/execute/receipt sequencing)',
     '  function runUnifiedBatchSend(state, btn) {', '  function reopenOptions(opts, manifest) {',
-    'bdd788bbeb2e715512453301ef660c9cc692b4a406dfb8a32d0e0f7cbc72ca92'],
+    '2ef699c2125f1056f571000de8766a21b029372940518ad2967aa546a526ac58'],
   ['closed allowlist ATHENA_EXECUTABLE_ACTIONS', '  var ATHENA_EXECUTABLE_ACTIONS = ', '\n',
     '27406852d9632ee5db6a143ac989eafa0308ac6e4a84326c731076941f2538a5'],
   ['closed allowlist OPBATCH_ACTIONS', '  var OPBATCH_ACTIONS = ', '\n',
