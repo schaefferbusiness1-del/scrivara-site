@@ -363,7 +363,7 @@ async function runtime() {
         });
       }
       const out = {};
-      try { if (typeof window.openSettings === 'function') window.openSettings(); } catch (e) { out.openErr = String(e && e.message); }
+      try { if (typeof window.openSettings === 'function') window.openSettings({ userInitiated: true }); } catch (e) { out.openErr = String(e && e.message); }
       await sleep(1500);
       out.cleanOwns = window.__mlsResidueSettings.cleanWorkspaceOwns();
       out.healthy = snap();

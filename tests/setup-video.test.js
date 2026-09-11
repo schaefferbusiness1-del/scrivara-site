@@ -398,7 +398,7 @@ for (const rel of SHELLS) {
   ok(/onclick="mlsSvRerunSetup\(this\)"/.test(s.slice(field, field + 2000)), rel + ': the re-run button calls the real re-runner');
   /* openSettings has to CALL the role gate. Searching the whole shell would
      match the function's own definition, so this reads openSettings' body. */
-  const openSettings = balanced(s, 'function openSettings()', rel + ' openSettings');
+  const openSettings = balanced(s, 'function openSettings(opts)', rel + ' openSettings');
   ok(/mlsSvApplySettingsUI\(\)/.test(openSettings),
     rel + ': openSettings no longer applies the re-run role gate - the button would ship unguarded to owner/admin/lawyer accounts');
 }

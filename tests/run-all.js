@@ -2479,7 +2479,17 @@ const tests = [
      inside the viewport", never "something got scrolled". */
   'patient-row-owns-its-clicks-runtime.test.js',
   'review-note-tab-lands-on-the-note.test.js',
-  'review-note-tab-lands-on-the-note-runtime.test.js'
+  'review-note-tab-lands-on-the-note-runtime.test.js',
+  /* NEW 2026-09-11, vanishbox-1.0.0. The Doctor visit room's transcript block
+     vanished ~0.7-8s after opening a patient: the calm pass folds
+     .ez3fl-transcript.mls-empty, and once the flow lane owns the top the
+     engine's own .ez3-transcript-card is already CSS-hidden, so BOTH boxes
+     went and "Paste a transcript" had nothing to reveal. The suite walks five
+     seeded schedule rows (one unlinked to any chart) and carries a
+     deterministic arm - one synchronous __mlsCalmShell.render(), the exact
+     call the calm dock's reconcile() makes - which fails on the pre-fix
+     bytes. */
+  'visit-transcript-survives-the-calm-pass-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

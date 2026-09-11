@@ -408,7 +408,7 @@ async function runtime() {
     const set = await page.evaluate(async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       const C = window.__clunky;
-      try { openSettings(); } catch (e) {}
+      try { openSettings({ userInitiated: true }); } catch (e) {}
       await sleep(1600);
       const out = { titles: 0, foot: {}, railHead: C.shown('.mls-set-rail-head') };
       /* 135: one "⚙️ Settings" on screen, not two. */
@@ -1754,7 +1754,7 @@ async function runtime() {
       try { closeSetup(); } catch (e) {}
       await sleep(400);
       /* 78: one statement about updating, and it is the true one */
-      try { openSettings(); } catch (e) {}
+      try { openSettings({ userInitiated: true }); } catch (e) {}
       await sleep(1400);
       const tabs = Array.prototype.slice.call(document.querySelectorAll('#settingsTabBar .set-tab'));
       /* BY GROUP KEY, NOT BY LABEL. t2settings-1.0.0 renamed this tab to
