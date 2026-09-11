@@ -149,6 +149,11 @@ include:
   - "index.html"
   - "intake.html"
   - "lawyers.html"
+  # 2026-09-11 - /opnotes.html, the client-surgeon op-note page. It shows one
+  # outside surgeon their own drafted op notes and nothing else of the app,
+  # and it is reachable only with a scoped link. Published on purpose, like
+  # every page above it. It registers NO service worker of its own.
+  - "opnotes.html"
   - "patient-portal.html"
   - "phone-setup.html"
   - "phone.html"

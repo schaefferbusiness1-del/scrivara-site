@@ -1229,6 +1229,16 @@ const tests = [
      procedure it names. The Send-to-Athena suite also pins the derived pages,
      so it is expected red between a 1p shell edit and the derive step. */
   'opnote-send-to-athena-control-runtime.test.js',
+  /* opnote-svc-1.0.0 (owner 2026-09-11): an op note drafted here can be handed
+     to an outside surgeon, who fills only what the draft could not and marks it
+     done on a page of its own. The owner-side suite byte-compares opPrepSave and
+     opPrepSendToAthena against HEAD - this lane is additive - and pins that the
+     fields the surgeon is asked to fill are EXACTLY opNoteBlankTokens(note), the
+     parser the save gate already uses. It reads all four shells, so like the
+     Send-to-Athena suite above it is expected red between a 1p shell edit and
+     the derive step. The client-page suite boots opnotes.html itself. */
+  'opnote-prepare-for-surgeon-runtime.test.js',
+  'opnotes-client-page-runtime.test.js',
   'opnote-template-binding-gate-runtime.test.js',
   'opnote-procedure-title-junk-strip.test.js',
   'opnote-pdf-reconciles-not-concatenates.test.js',
