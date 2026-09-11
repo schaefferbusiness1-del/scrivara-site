@@ -5036,6 +5036,32 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var startedAt = 0, hidden = true, stopped = false;
   var doneDismissed = false; /* dn-1.0: set only by the DONE card's Done button; re-armed when a new run starts */
   var stopRequested = false; /* clunky2-pull-1.0.0 (CLUNKY 128): survives Hide → show, cleared when the run ends */
+  /* ===== pillfirst-1.0.0 =================================================
+     OWNER 2026-09-11, verbatim: "when I'm pulling why does this big thing pop
+     up, no need for that".
+     EVERY automatic caller - pull start, a phase flip, a needs-attention
+     settle, the day-note catch-up, a month job's next day - reaches this
+     module through exactly ONE door: render(), off the engine's own state.
+     There is no second opener to delete. What made that one door pop open by
+     itself is that `hidden` is RUN-SCOPED state that OUTLIVED its run: it is
+     cleared by the pill's click and re-armed only where render() tears the
+     surface down (the run ended AND the DONE card was dismissed). A doctor who
+     opened the card once and did not press Done left hidden === false behind,
+     so the NEXT run - the catch-up, the next day of a month job, a second Pull
+     - found the door open and painted the full-screen card over the app with
+     nobody having asked for it.
+     So the door is gated on an explicit gesture instead of on leftover state:
+     the card may be shown only while `userOpened` is set, ONLY the pill's own
+     click handler sets it, and a new run (running false -> true) clears it.
+     Automatic callers therefore paint the PILL and nothing else, in every
+     phase and at every run boundary.
+     THE b940 GUARANTEES ARE KEPT: Hide still means "keep pulling" (the engine
+     is never touched here), the hidden state still survives sweep boundaries
+     (a sweep never flips state.running, so the run-boundary reset cannot fire
+     inside one pull), and "Stop pull" stays one click away - pill -> dialog ->
+     Stop pull - because the pill is always mounted while a pull runs. */
+  var userOpened = false; /* set ONLY by the pill's click handler */
+  var wasRunning = false; /* the previous tick's engine running flag */
 
   var wkUrl = null;
   try { wkUrl = URL.createObjectURL(new Blob(['onmessage=function(e){setTimeout(function(){postMessage(1)},e.data)}'], { type: 'application/javascript' })); } catch (e) {}
@@ -5117,7 +5143,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (f) return;
     f = document.createElement('button'); f.id = FAB; f.type = 'button';
     f.textContent = 'Pull running \u2014 show details';
-    f.onclick = function () { hidden = false; render(); };
+    /* pillfirst-1.0.0: THE ONLY place the dialog is ever allowed to open. */
+    f.onclick = function () { userOpened = true; hidden = false; render(); };
     document.body.appendChild(f);
   }
   /* b940 #36: the pill carries live progress instead of a frozen label. */
@@ -5352,7 +5379,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       '</div>';
     p.__ppBuilt = 1;
     var hb = document.getElementById('mlsPullProgHide');
-    if (hb) hb.onclick = function () { hidden = true; render(); };
+    /* pillfirst-1.0.0: Hide gives the gesture back, so the pull's remaining
+       phases stay in the corner pill instead of re-opening the card. */
+    if (hb) hb.onclick = function () { userOpened = false; hidden = true; render(); };
     /* stp-1.0.0 (owner: 'there should be a stop pull button'): cooperative
        abort - the engine checks the flag between charts and days, finishes the
        chart in flight cleanly, keeps every receipt, releases the lease, and
@@ -5411,6 +5440,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function render() {
     var S = state();
     var running = !!(S && S.running);
+    /* ===== pillfirst-1.0.0 (the door, gated) ==============================
+       A NEW run always starts in the corner pill, whoever started it and
+       whatever the last run left behind. A sweep/sub-batch never flips
+       state.running (ppStart keeps it true on base>0), so this cannot fire
+       inside one pull - the b940 "hidden survives sweep boundaries" guarantee
+       is untouched. The second line is the belt: `hidden` is now DERIVED from
+       the gesture, so no leftover false can paint the dialog by itself. */
+    if (running && !wasRunning && userOpened) { userOpened = false; hidden = true; }
+    wasRunning = running;
+    if (!userOpened && !hidden) hidden = true;
+    /* ===== end pillfirst-1.0.0 (the door, gated) ===== */
     if (running) watchedMaxTotal = Math.max(watchedMaxTotal, Number(S.total) || 0);
     if (!running) {
       /* dn-1.0 (owner 2026-08-11: "when its done it should stop and say
@@ -5426,6 +5466,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var p0 = document.getElementById(PANEL); if (p0) p0.remove();
       ensureFab(false);
       startedAt = 0; hidden = true; /* b940: reset to the pill DEFAULT, never to the modal */
+      userOpened = false; /* pillfirst-1.0.0: the gesture dies with the run it was made for */
       watchedMaxTotal = 0; /* pullzero-1.0.0: the next run measures itself */
       doneDismissed = false;
       stopRequested = false; /* clunky2-pull-1.0.0: the request dies with the run it stopped */
@@ -5552,15 +5593,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     /* pullzero-1.0.0: this run had no chart to read at all \u2014 say that, rather
        than reporting "\u2713 0 histories saved" as if zero were a result. */
     var zeroDay = (total === 0 && !(S.rows || []).length);
-    if (hidden) {
-      ensureFab(true);
-      var fD = document.getElementById(FAB);
-      if (fD) { var tD = zeroDay ? 'No charts to read \u2014 see why' : ('Pull done \u2014 \u2713 ' + ok + (failed ? ' \u00B7 \u26A0 ' + failed : '') + ' \u2014 see results'); if (fD.textContent !== tD) fD.textContent = tD; }
-      var phD = document.getElementById(PANEL); if (phD) phD.remove();
-      return;
-    }
-    ensureFab(false);
-    var p = buildPanel();
+    /* pillfirst-1.0.0: the day-note truth is computed BEFORE the pill
+       branch, because the corner pill now has to name what still needs the
+       doctor. ONE COUNT, TWO SURFACES: the pill reports the exact number the
+       card computes below, so a finished pull can never publish two.
+       Pure reads of S - no DOM, no engine state - so hoisting them costs a
+       closed card nothing it was not already paying. */
     var dv = S.dayVerdict || null;
     /* ===== lcd-1.0.0 (the open result card is LIVE) =========================
        OWNER 2026-08-19, verbatim: "as the things in orange get pulled in the
@@ -5624,6 +5662,21 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        rows AND by the engine's own stamp, whichever is less optimistic. */
     var dnNotesDone = dnPendingDone === 0 && (!dv || dv.tnNotesComplete !== false);
     /* ===== end dnote-1.0.0 (b1184) ===== */
+    if (hidden) {
+      ensureFab(true);
+      var fD = document.getElementById(FAB);
+      /* pillfirst-1.0.0: a run that ends owing the doctor something says so
+         IN THE PILL, and still does not open the card. attnP is the identical
+         expression the card paints as "N need attention" (failed plus the
+         day-note debt lcd-1.0.0/dnote-1.0.0 already reduced by what the rows
+         themselves prove), so the two surfaces cannot disagree. */
+      var attnP = failed + dvTnFailed;
+      if (fD) { var tD = zeroDay ? 'No charts to read \u2014 see why' : ('Pull done \u2014 \u2713 ' + ok + ' saved' + (attnP ? ' \u00B7 \u26A0 ' + attnP + (attnP === 1 ? ' needs' : ' need') + ' attention' : '') + ' \u2014 show details'); if (fD.textContent !== tD) fD.textContent = tD; }
+      var phD = document.getElementById(PANEL); if (phD) phD.remove();
+      return;
+    }
+    ensureFab(false);
+    var p = buildPanel();
     if (!p.__ppDoneApplied) {
       p.__ppDoneApplied = 1;
       api.doneShown = (api.doneShown || 0) + 1;

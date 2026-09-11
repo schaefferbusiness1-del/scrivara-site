@@ -54,6 +54,46 @@ assert(connect.includes("function paintFab(S)") &&
   connect.includes("if (!n) n = (S.done || 0) + '/' + (S.total || 0);"),
   'the pill mirrors the day-pull bar count, with its own state as the fallback');
 
+/* ---- 2b. pillfirst-1.0.0: the dialog is DOCTOR-OPENED ONLY ----
+   OWNER 2026-09-11, verbatim: "when I'm pulling why does this big thing pop
+   up, no need for that".
+   Every automatic caller - pull start, a phase flip, a needs-attention settle,
+   the day-note catch-up, a month job's next day - reaches this module through
+   ONE door, render(), off the engine's own state. What opened that door by
+   itself was `hidden`: run-scoped state that OUTLIVED its run, so a card the
+   doctor opened once and never pressed Done on was still open when the NEXT
+   run started. Pinned as the PROPERTY, not as a label: exactly one assignment
+   may open the card, it is the pill's own click handler, `hidden` is derived
+   from that gesture, and render() re-arms the gate at every run boundary. */
+{
+  const mod = connect.slice(connect.indexOf("var PANEL = 'mlsPullProgPanel'"),
+    connect.indexOf('window.__mlsPullProgress = api;'));
+  assert(mod.includes('var userOpened = false;'),
+    'the doctor-gesture gate is gone - the dialog can open on leftover state again');
+  assert.strictEqual((mod.match(/userOpened = true/g) || []).length, 1,
+    'exactly ONE place may open the pull dialog - a second opener is a second way for it to pop up by itself');
+  assert(mod.includes("f.onclick = function () { userOpened = true; hidden = false; render(); };"),
+    "the only opener is no longer the pill's own click handler");
+  assert(mod.includes('if (running && !wasRunning && userOpened) { userOpened = false; hidden = true; }'),
+    'a NEW run no longer returns the surface to the corner pill - the next pull inherits an open card');
+  assert(mod.includes('if (!userOpened && !hidden) hidden = true;'),
+    '`hidden` is no longer derived from the gesture, so a stale false can paint the dialog again');
+  assert(mod.includes("if (hb) hb.onclick = function () { userOpened = false; hidden = true; render(); };"),
+    'Hide no longer gives the gesture back, so the card can re-open later in the same pull');
+  /* Stop pull must stay one click away: pill -> dialog -> Stop pull. The pill
+     is what makes that route exist, so it is mounted on every running tick. */
+  assert(mod.includes('if (hidden) { ensureFab(true); paintFab(S);'),
+    'a running pull no longer mounts the pill, so "Stop pull" has no route');
+  /* A finished run that still owes the doctor something says so IN THE PILL,
+     and reports the card's own number - ONE COUNT, TWO SURFACES. */
+  assert(mod.includes('var attnP = failed + dvTnFailed;') &&
+    mod.includes("(attnP === 1 ? ' needs' : ' need') + ' attention'"),
+    'the finished pill no longer names the rows that need attention');
+  assert(mod.indexOf('var dvTnFailed = Math.max(') > 0 &&
+    mod.indexOf('var dvTnFailed = Math.max(') < mod.indexOf('var attnP = failed + dvTnFailed;'),
+    'the pill reads the day-note debt before renderDone computes it');
+}
+
 /* ---- 3. the reporter outlives sweeps (panel lives first row -> true end) ---- */
 assert(si.includes('if (!batchBodyCompleted && !sweepDepth) safe(ppEnd);') &&
   !si.includes('} finally { historyBatchRunning = false; ppEnd(); }'),
@@ -144,4 +184,4 @@ assert(si.includes('provider: rowProvider,'),
   assert(allScope.rows.every(function (r) { return !r.provider; }), 'an all-scope pull never invents attribution');
 }
 
-console.log('PASS pull panel calm under fire: built once + painted in place, pill by default, reporter outlives sweeps, store writes batched and sanitize stood down, scoped pulls attribute their provider');
+console.log('PASS pull panel calm under fire: built once + painted in place, pill by default, the dialog opens ONLY from the pill click and every run boundary re-arms that gate, reporter outlives sweeps, store writes batched and sanitize stood down, scoped pulls attribute their provider');
