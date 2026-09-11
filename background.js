@@ -243,6 +243,15 @@ async function mlsAthenaActionV2DriverFn(req) {
     function norm(v) { return text(v).toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim(); }
     function digits(v) { return String(v || '').replace(/\D/g, ''); }
     function dateKey(v) {
+      /* isodob-1.1.0 (3.0.117): an ISO DOB (1962-03-04) must not be scanned
+         by the M/D/Y reader below - it first matches INSIDE the year ('2-03-04')
+         and reads a different person, so 1962/1942/1902-03-04 all collapsed to
+         one key (measured 2026-09-11). Anchored ISO branch first; the M/D/Y
+         branch below is byte-unchanged. Same implementation as the module-scope
+         dateKey (isodob-1.0.0, 3.0.99) - an injected function cannot close over
+         a worker helper, so the branch is repeated, never shared. */
+      var iso = /(^|[^0-9])(\d{4})-([01]\d)-([0-3]\d)(?![0-9])/.exec(String(v || ''));
+      if (iso) return Number(iso[3]) + '/' + Number(iso[4]) + '/' + iso[2];
       var m = /([01]?\d)[\/\-.]([0-3]?\d)[\/\-.](\d{2,4})/.exec(String(v || ''));
       if (!m) return '';
       var y = m[3]; if (y.length === 2) y = (Number(y) > ((new Date().getFullYear() % 100) + 1) ? '19' : '20') + y;
@@ -5970,7 +5979,7 @@ function mlsReadActivePatient() {
 // ---- Patient matcher (pure/worker-scope, testable). Conservative: default refuse. ----
 function mlsMatchPatients(mls, ath) {
   function normName(s) { return String(s || '').toLowerCase().replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(function (w) { return w.length > 1; }).sort(); }
-  function normDob(s) { var m = /([01]?\d)[\/\-\.]([0-3]?\d)[\/\-\.](\d{2,4})/.exec(String(s || '')); if (!m) return ''; var y = m[3]; if (y.length === 2) y = (parseInt(y, 10) > 30 ? '19' : '20') + y; return ('0' + m[1]).slice(-2) + '/' + ('0' + m[2]).slice(-2) + '/' + y; }
+  function normDob(s) { /* isodob-1.1.0 (3.0.117): anchored ISO branch first - the M/D/Y regex matched INSIDE an ISO year, so this merge comparator returned one key for three different decades. The hardcoded >30 two-digit pivot is retired for the dynamic one. The zero-padded MM/DD/YYYY output shape is unchanged. */ var iso = /(^|[^0-9])(\d{4})-([01]\d)-([0-3]\d)(?![0-9])/.exec(String(s || '')); if (iso) return iso[3] + '/' + iso[4] + '/' + iso[2]; var m = /([01]?\d)[\/\-\.]([0-3]?\d)[\/\-\.](\d{2,4})/.exec(String(s || '')); if (!m) return ''; var y = m[3]; if (y.length === 2) y = (Number(y) > ((new Date().getFullYear() % 100) + 1) ? '19' : '20') + y; return ('0' + m[1]).slice(-2) + '/' + ('0' + m[2]).slice(-2) + '/' + y; }
   function normMrn(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
   var mDob = normDob(mls && mls.dob), aDob = normDob(ath && ath.dob);
   var mMrn = normMrn(mls && mls.mrn), aMrn = normMrn(ath && ath.mrn);
@@ -9343,8 +9352,60 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
         for(var _si=0;_si<_allS.length;_si++){try{var _csS=_dvS.getComputedStyle(_allS[_si]);if(/(auto|scroll)/.test(_csS.overflowX)&&_allS[_si].scrollWidth>_allS[_si].clientWidth+50&&_allS[_si].clientWidth>300){if(!_scS||_allS[_si].scrollWidth>_scS.scrollWidth)_scS=_allS[_si];}}catch(_e){}}
         var _ogS=_scS?(_scS.scrollLeft||0):0,_hMaxS=_scS?Math.max(0,_scS.scrollWidth-_scS.clientWidth):0,_hAxisS=_axisS(_hMaxS,_scS?Math.max(160,Math.round(_scS.clientWidth*((CFG&&CFG.scrollStepFrac)||0.55))):1,24);
         var _vS=[],_vSeenS=[];
-        _allS.forEach(function(el){try{var cs=_dvS.getComputedStyle(el),sh=el.scrollHeight||0,ch=el.clientHeight||0,shaped=!!el.querySelector('[class*="PatientAppointment_appointment-container"], [class~="filled-appointment-row"]');if(shaped&&/(auto|scroll)/.test(cs.overflowY)&&sh>ch+40&&ch>100)_vS.push({el:el,score:(sh-ch)+1000000});}catch(_e){}});
-        try{var _deS=doc.scrollingElement;if(_deS&&_deS.scrollHeight>_deS.clientHeight+40&&_deS.querySelector('[class*="PatientAppointment_appointment-container"], [class~="filled-appointment-row"]'))_vS.push({el:_deS,score:(_deS.scrollHeight-_deS.clientHeight)+500000});}catch(_e){}
+        /* bandnormalize-1.0.0 (3.0.117): discovery by SHAPE. The shipped test
+           accepted a scroll container ONLY when it ALREADY contained a rendered
+           appointment cell, so a grid parked on an empty band could never be
+           found - and it was the scrolling that would have rendered the rows.
+           Geometry plus a schedule/calendar/grid ancestor is the gate now;
+           containing a rendered cell is a SCORE BOOST, so on a day that paints
+           rows the same container still sorts first. */
+        function __vScanS(){var _vF=[];var _shapeSelS='[class*="PatientAppointment_appointment-container"], [class~="filled-appointment-row"]';_allS.forEach(function(el){try{var cs=_dvS.getComputedStyle(el),sh=el.scrollHeight||0,ch=el.clientHeight||0;if(!/(auto|scroll)/.test(cs.overflowY)||!(sh>ch+40)||!(ch>100))return;var shaped=!!el.querySelector(_shapeSelS);var gridish=false;try{gridish=!!(el.closest&&el.closest('[class*="schedule"],[class*="Schedule"],[class*="calendar"],[class*="Calendar"],[role="grid"],[role="table"],main'));}catch(_eG){}if(!shaped&&!gridish)return;_vF.push({el:el,score:(sh-ch)+(shaped?1000000:0)});}catch(_e){}});try{var _deS=doc.scrollingElement;if(_deS&&_deS.scrollHeight>_deS.clientHeight+40)_vF.push({el:_deS,score:(_deS.scrollHeight-_deS.clientHeight)+(_deS.querySelector(_shapeSelS)?500000:0)});}catch(_e){}return _vF;}
+        /* bandnormalize-1.0.0 (3.0.117, measured live 2026-09-11 00:03):
+           athenaOne's Day calendar can open auto-scrolled to the empty
+           19:00-23:00 band of its virtualized grid. With ZERO appointment cells
+           rendered nothing downstream can recover: the sweep had no container to
+           walk, 0 rows parsed, authoritativeEmpty stayed false (an empty band
+           paints no empty-state text) and the pull refused schedule-incomplete
+           with cause no-readable-rows on a day that was full. Forcing the
+           container to the top band rendered the whole day. This pre-pass runs
+           ONLY when the row count is zero, so a day that already paints rows
+           keeps the shipped path and the doctor's scroll position exactly.
+           Read-only: it scrolls a container and reads a count. Nothing is
+           clicked, typed or navigated. */
+        var _bandS = { attempted: false, scrolledToTop: false, rowsBefore: 0, rowsAfter: 0, stable: false, reads: 0, midBandRetry: false, containersBefore: 0, containersAfter: 0 };
+        function _rowCountS(){ try { return doc.querySelectorAll('[class*="PatientAppointment_appointment-container"], [class~="filled-appointment-row"]').length; } catch (_eRC) { return 0; } }
+        var _vScan0S = __vScanS();
+        _bandS.containersBefore = _vScan0S.length;
+        _bandS.rowsBefore = _rowCountS();
+        if (_bandS.rowsBefore === 0 && _vScan0S.length && __scheduleActionAllowed()) {
+          _vScan0S.sort(function(a,b){return b.score-a.score;});
+          var _bandElS = _vScan0S[0].el;
+          _bandS.attempted = true;
+          try { _bandElS.scrollTop = 0; _bandElS.dispatchEvent(new Event('scroll', { bubbles: true })); } catch (_eB1) {}
+          try { _bandS.scrolledToTop = Number(_bandElS.scrollTop || 0) <= 4; } catch (_eB2) { _bandS.scrolledToTop = false; }
+          var _bandPrevS = -1;
+          for (var _bandI = 0; _bandI < 10 && __scheduleActionAllowed(); _bandI++) {
+            if (!(await _sleepS(400))) break;
+            _bandS.reads++;
+            var _bandNowS = _rowCountS();
+            if (_bandNowS > 0 && _bandNowS === _bandPrevS) { _bandS.stable = true; break; }
+            _bandPrevS = _bandNowS;
+          }
+          _bandS.rowsAfter = _rowCountS();
+          if (_bandS.rowsAfter === 0 && __scheduleActionAllowed()) {
+            /* Still nothing at the top band. Try the middle band once, then
+               come back to the top and read again before anyone refuses. */
+            _bandS.midBandRetry = true;
+            try { var _bandMaxS = Math.max(0, (_bandElS.scrollHeight || 0) - (_bandElS.clientHeight || 0)); _bandElS.scrollTop = Math.round(_bandMaxS / 2); _bandElS.dispatchEvent(new Event('scroll', { bubbles: true })); } catch (_eB3) {}
+            if (await _sleepS(400)) { _bandS.reads++; _bandS.rowsAfter = _rowCountS(); }
+            try { _bandElS.scrollTop = 0; _bandElS.dispatchEvent(new Event('scroll', { bubbles: true })); } catch (_eB4) {}
+            if (await _sleepS(400)) { _bandS.reads++; _bandS.rowsAfter = _rowCountS(); }
+          }
+        }
+        var _vRescanS = __vScanS();
+        _bandS.containersAfter = _vRescanS.length;
+        out.diag.bandNormalize = _bandS;
+        _vRescanS.forEach(function(v){ _vS.push(v); });
         _vS.sort(function(a,b){return b.score-a.score;});_vS=_vS.filter(function(v){if(_vSeenS.indexOf(v.el)>=0)return false;_vSeenS.push(v.el);return true;});
         var _vContainerCapS=_vS.length>2,_vWorkS=_vS.slice(0,2);if(!_vWorkS.length)_vWorkS=[{el:null,score:0}];
         var _coverageS={complete:false,reason:'unverified',horizontalScrollable:!!_scS,horizontalMax:_hMaxS,horizontalSteps:_hAxisS.values.length,verticalContainers:_vS.length,verticalContainersSwept:0,cellsPlanned:0,cellsVisited:0,positionsReached:0,settleRetries:0,axisCap:!!_hAxisS.capped,containerCap:_vContainerCapS,budgetExpired:false,boundsStable:true,restored:true};
@@ -9728,6 +9789,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
           }
         } catch (__eAC) {}
         var __receipt = {
+          bandNormalize: (__dd && __dd.bandNormalize) || null, /* bandnormalize-1.0.0 (3.0.117): PHI-free - counts and flags only */
           reader: { strategy: String(__dd.strategy || ''), via: String(__dd.via || ''), apptCount: Number(__dd.apptCount || 0), providerCount: Number(__dd.providerCount || 0), tables: Number(__dd.tables || 0), rowsScanned: Number(__dd.rowsScanned || 0), scrolled: !!__dd.scrolled, sectionHeaders: Number(__dd.sectionHeaders || 0), sectionTagged: Number(__dd.sectionTagged || 0), stackedTagged: Number(__dd.stackedTagged || 0), columnTagged: Number(__dd.columnTagged || 0), headingRows: Number(__dd.headingRows || 0), coordErr: String(__dd.coordErr || '').slice(0, 60) }, /* readerdiag-1.0.0: PHI-free reader trace */
           sessionProof: __sessionProof, staleRisk: __staleRisk, liveSessionProven: !!__live.proven, dataAgeMs: __dataAgeMs, scheduleVerified: true, requestId: __schedRequestId, complete: !!__complete, authoritativeEmpty: !!__authoritativeEmpty,
           expectedCount: __expectedCount, candidateCount: __candidateCount, parsedCount: __parsedCount, unverifiableRows: __unverifiableRows, unverifiableRowCount: __unverifiableRowCount, provenNonClinicalCount: __provenNonClinical,
@@ -10543,7 +10605,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
           const globalStrongMismatch = !!(globalNameMatches && ((wantDob && ident.dob && !sameDobStrict(ident.dob, wantDob)) || (wantMrn && ident.mrn && mrnKeyStrict(ident.mrn) !== mrnKeyStrict(wantMrn))));
           if (want && ident && ident.name && (!globalNameMatches || globalStrongMismatch)) {
             await restoreFocus();
-            return chartRespond({ ok: false, reason: 'wrong-chart', chartName: ident.name, chartDob: ident.dob || '', opened: opened, version: versionStrict, error: 'The open athenaOne chart identity does not match ' + want + '. Nothing was captured for ' + want + '.' });
+            return chartRespond({ ok: false, reason: 'wrong-chart', attempted: false, captured: false, chartName: ident.name, chartDob: ident.dob || '', expectedMrnDigits: mrnKeyStrict(wantMrn).length, observedMrnDigits: mrnKeyStrict(ident.mrn).length, opened: opened, version: versionStrict, error: 'The open athenaOne chart identity does not match ' + want + '. Nothing was captured for ' + want + '.' });
           }
           if (want && !opened && !(ident && ident.name)) {
             await restoreFocus();
@@ -10613,7 +10675,15 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
              which never arrived stops looking identical to a patient with no problems. */
           const briefingShip = exactGlobalIdentity ? briefingMerged : '';
           const briefingDiag = { offered: (briefingFrames || []).length, bound: briefingBound.length, used: briefingUsed, omitted: briefingOmitted, chars: briefingShip.length, apptScoped: briefingApptRe ? 1 : 0, identityHeld: exactGlobalIdentity ? 1 : 0 };
-          return chartRespond({ ok: true, text: chartTextStrict, receipt: chartReceiptStrict, url: pickStrict.u || tab.url, title: tab.title, opened: opened, frames: eligibleFrames.length, stageMs: { total: Date.now() - chartRequestStartedAt, identity: __identDoneAt - T0, text: Date.now() - __identDoneAt, polls: polls }, chartName: (ident && ident.name) || '', chartDob: (ident && ident.dob) || '', chartMrn: (ident && ident.mrn) || '', version: versionStrict, via: (ident && ident.via) || '', briefingText: briefingShip, briefingDiag: briefingDiag, briefingNav: navClicked || '', identDiag: identDiag, textDiag: textDiagStrict, expected: expectName ? 1 : 0 });
+          /* identityfill-1.0.0 (3.0.117): PHI-free flags only - the chart DOB
+             itself already ships as chartDob on this same response. mrnMatched
+             says the opened chart proved the expected MRN; dobFillable says the
+             row carried NO DOB and the chart did, which is the one case the app
+             may fill instead of refusing. identityMode 'identity-name-only' says
+             the row had neither MRN nor DOB, so this capture is a suggestion and
+             never an automatic merge. */
+          const __mlsIdentityFill = { mrnMatched: !!(wantMrn && ident && ident.mrn && mrnKeyStrict(ident.mrn) === mrnKeyStrict(wantMrn)), dobRead: !!(ident && ident.dob), dobSource: (ident && ident.dob) ? 'chart' : '', dobFillable: !!(!wantDob && ident && ident.dob), identityMode: (!wantMrn && !wantDob) ? 'identity-name-only' : 'identity-verified' };
+          return chartRespond({ ok: true, text: chartTextStrict, receipt: chartReceiptStrict, url: pickStrict.u || tab.url, title: tab.title, opened: opened, frames: eligibleFrames.length, stageMs: { total: Date.now() - chartRequestStartedAt, identity: __identDoneAt - T0, text: Date.now() - __identDoneAt, polls: polls }, chartName: (ident && ident.name) || '', chartDob: (ident && ident.dob) || '', chartMrn: (ident && ident.mrn) || '', identity: __mlsIdentityFill, version: versionStrict, via: (ident && ident.via) || '', briefingText: briefingShip, briefingDiag: briefingDiag, briefingNav: navClicked || '', identDiag: identDiag, textDiag: textDiagStrict, expected: expectName ? 1 : 0 });
         }
       } catch (e) { chartRespond({ ok: false, error: String((e && e.message) || e) }); }
     })();
@@ -11344,11 +11414,20 @@ scheduleBackupAlarm();
 // ===========================================================================
 const KA_KEY = 'mlsKeepAlive';
 function kaGetCfg() { return new Promise(function (r) { chrome.storage.local.get([KA_KEY], function (c) { r(Object.assign({ enabled: true, periodMin: 3 }, (c && c[KA_KEY]) || {})); }); }); }
-function kaFrameTouch() {
+/* kabackstop-1.0.0 (3.0.117): kaMode 'dialog-only' runs ONLY the shadow-DOM
+   session-expiry dialog backstop - no synthetic events, no authenticated
+   fetches. The tick used to defer this whole function while a chart read or a
+   quiet pull was live, i.e. for the ENTIRE length of a day or month pull, so a
+   long run could meet athenaOne's idle logout with the backstop blind and the
+   rows simply stopped arriving. The frame touches stay deferred (they perturb
+   the DOM a read is walking); clicking a modal Continue button does not. */
+function kaFrameTouch(kaMode) {
   try {
-    try { document.dispatchEvent(new Event('mousemove', { bubbles: true })); } catch (e1) {}
-    try { document.dispatchEvent(new Event('scroll', { bubbles: true })); } catch (e2) {}
-    try { if (document.body) document.body.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 3, clientY: 3 })); } catch (e3) {}
+    if (kaMode !== 'dialog-only') {
+      try { document.dispatchEvent(new Event('mousemove', { bubbles: true })); } catch (e1) {}
+      try { document.dispatchEvent(new Event('scroll', { bubbles: true })); } catch (e2) {}
+      try { if (document.body) document.body.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 3, clientY: 3 })); } catch (e3) {}
+    }
     var hit = null;
     try {
       /* ka-2 (3.0.68): collect dialog hosts through SHADOW ROOTS too - the v1
@@ -11390,7 +11469,7 @@ function kaFrameTouch() {
        Returns 'ka-signedout' when the answer is not the signed-in 'OK', so
        the background can stamp the sign-out for the app to announce. */
     var kaPing = null;
-    if (window === window.top) {
+    if (window === window.top && kaMode !== 'dialog-only') {
       try {
         var kaSeg = String(window.location.pathname).match(/^\/(\d+)\//);
         var kaUrl = kaSeg ? ('/' + kaSeg[1] + '/6/ax/login/ping') : null;
@@ -11440,7 +11519,26 @@ async function kaTick() {
       try { chrome.storage.local.set({ mlsKeepAliveLastDeferredAt: Date.now() }, function () {}); } catch (eDeferredStore) {}
       try { chrome.alarms.create('mlsKaResume', { delayInMinutes: 1 }); } catch (eDeferredAlarm) {}
     }
+    /* kabackstop-1.0.0 (3.0.117): a busy tick no longer skips the expiry
+       dialog. Run the dialog-ONLY backstop across the signed-in athena tabs
+       first - one shadow-DOM walk and, at most, one click on a Continue
+       button - then defer the frame-touch tick exactly as before. */
     if (__kaPullBusyNow()) {
+      var __kaBackstopClicks = 0, __kaBackstopTabs = 0;
+      try {
+        var __kaBusyTabs = await chrome.tabs.query({ url: 'https://athenanet.athenahealth.com/*' });
+        for (var __kbi = 0; __kbi < (__kaBusyTabs || []).length; __kbi++) {
+          var __kbt = __kaBusyTabs[__kbi];
+          if (!__kbt || __kbt.id == null || __kbt.discarded) continue;
+          try { if (mlsAthIsLoginish(__kbt)) continue; } catch (eKbL) {}
+          __kaBackstopTabs++;
+          try {
+            var __kbr = await chrome.scripting.executeScript({ target: { tabId: __kbt.id, allFrames: true }, func: kaFrameTouch, args: ['dialog-only'] });
+            if ((__kbr || []).some(function (r0) { return r0 && r0.result === 'ka-clicked-continue'; })) __kaBackstopClicks++;
+          } catch (eKbX) {}
+        }
+      } catch (eKbQ) {}
+      try { chrome.storage.local.set({ mlsKeepAliveLastBackstopAt: Date.now(), mlsKeepAliveLastBackstopClicks: __kaBackstopClicks, mlsKeepAliveLastBackstopTabs: __kaBackstopTabs }, function () {}); } catch (eKbS) {}
       __kaDeferForPull();
       return;
     }
@@ -11453,7 +11551,14 @@ async function kaTick() {
       /* tabs.query is asynchronous; a chart read may have started while it
          was settling. Re-check on the same event-loop turn immediately before
          the injection so no keep-alive work crosses that newly acquired read. */
-      if (__kaPullBusyNow()) { __kaDeferForPull(); return; }
+      if (__kaPullBusyNow()) {
+        /* kabackstop-1.0.0 (3.0.117): a read acquired while tabs.query settled
+           still must not cost this tab its expiry backstop. */
+        try { await chrome.scripting.executeScript({ target: { tabId: t.id, allFrames: true }, func: kaFrameTouch, args: ['dialog-only'] }); } catch (eKbT) {}
+        try { chrome.storage.local.set({ mlsKeepAliveLastBackstopAt: Date.now() }, function () {}); } catch (eKbS2) {}
+        __kaDeferForPull();
+        return;
+      }
       try {
         var rs = await chrome.scripting.executeScript({ target: { tabId: t.id, allFrames: true }, func: kaFrameTouch });
         var clicked = (rs || []).some(function (r0) { return r0 && r0.result === 'ka-clicked-continue'; });
@@ -14759,10 +14864,33 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
              swap the field underneath us; if it is no longer safe for this
              string we type NOTHING and report the refusal. */
           if (!typableField(best)) return { phase: 'fill', filled: false, diag: diag, reason: 'numeric-only-field-refused' };
-          if (setter && setter.set) setter.set.call(best, searchStr); else best.value = searchStr;
-          if (!openAllowed()) return deadlineOut();
-          best.dispatchEvent(new Event('input', { bubbles: true }));
-          best.dispatchEvent(new Event('change', { bubbles: true }));
+          /* searchverify-1.0.0 (3.0.117, measured live 2026-09-11): athenaOne
+             global search DROPS or RE-ORDERS typed characters under load - a
+             typed 7-digit MRN read back as a DIFFERENT 7-digit id, and the chart
+             that opened belonged to someone else. Type, settle, READ THE FIELD
+             BACK, and submit only when it equals the intended string; otherwise
+             clear it (native setter plus input) and retype, up to three attempts.
+             A detached field can still report the value we wrote, so the node
+             must also still be connected. Nothing below this loop runs until the
+             value verifies; when it never does, nothing is submitted at all. */
+          function __svSleep(ms) { var __svAt = Date.now() + Math.max(0, Number(ms || 0)); return new Promise(function (r) { /* mls-hs-1.0.0: a hidden tab freezes timers; yield through a MessageChannel until the wall clock passes. */ if (typeof document === 'undefined' || !document.hidden) { setTimeout(r, Math.max(0, __svAt - Date.now())); return; } var __svCh = null; try { __svCh = new MessageChannel(); } catch (e) { __svCh = null; } if (!__svCh) { setTimeout(r, Math.max(0, __svAt - Date.now())); return; } __svCh.port1.onmessage = function () { if (Date.now() >= __svAt) { try { __svCh.port1.onmessage = null; __svCh.port1.close(); __svCh.port2.close(); } catch (e2) {} r(); return; } if (!document.hidden) { try { __svCh.port1.onmessage = null; __svCh.port1.close(); __svCh.port2.close(); } catch (e3) {} setTimeout(r, Math.max(0, __svAt - Date.now())); return; } try { __svCh.port2.postMessage(0); } catch (e4) { setTimeout(r, Math.max(0, __svAt - Date.now())); } }; __svCh.port2.postMessage(0); }); }
+          var __svTyped = false;
+          for (var __svTry = 0; __svTry < 3 && !__svTyped; __svTry++) {
+            if (!openAllowed()) return deadlineOut();
+            if (!typableField(best)) return { phase: 'fill', filled: false, attempted: false, diag: diag, reason: 'numeric-only-field-refused' };
+            try { if (setter && setter.set) setter.set.call(best, ''); else best.value = ''; } catch (eSvClear) {}
+            try { best.dispatchEvent(new Event('input', { bubbles: true })); } catch (eSvClearEv) {}
+            if (setter && setter.set) setter.set.call(best, searchStr); else best.value = searchStr;
+            if (!openAllowed()) return deadlineOut();
+            best.dispatchEvent(new Event('input', { bubbles: true }));
+            best.dispatchEvent(new Event('change', { bubbles: true }));
+            await __svSleep(260);
+            var __svRead = ''; try { __svRead = String(best.value == null ? '' : best.value); } catch (eSvRead) { __svRead = ''; }
+            if (__svRead === searchStr && best.isConnected !== false) { __svTyped = true; break; }
+            diag.searchRetypes = (diag.searchRetypes || 0) + 1;
+          }
+          diag.searchValueVerified = __svTyped;
+          if (!__svTyped) return { phase: 'fill', filled: false, attempted: false, diag: diag, reason: 'search-target-unverified', error: "athenaOne's search did not show this patient; nothing was opened" };
           ['keydown', 'keypress', 'keyup'].forEach(function (t) {
             if (!openAllowed()) return;
             try { best.dispatchEvent(new KeyboardEvent(t, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true })); } catch (e) {}
@@ -14834,6 +14962,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
         function clickRow(row) {
           clickRow.reason = '';
+          /* rowreverify-1.0.0 (3.0.117): the suggestion dropdown and the schedule
+             list both re-render between the scan that scored this row and this
+             click. Re-read the row's OWN live text and refuse if it no longer
+             carries the patient it was scored for. A detached node is never
+             clicked, and no click is ever issued from a stale coordinate. */
+          try {
+            if (row && row.isConnected === false) { clickRow.reason = 'row-identity-changed'; return false; }
+            var __crText = rowText(row).toLowerCase();
+            if ((lname && __crText.indexOf(lname) === -1) || (fname && __crText.indexOf(fname) === -1)) { clickRow.reason = 'row-identity-changed'; return false; }
+          } catch (eCrVerify) {}
           var clickT = null;
           // v1.53: prefer the child link whose text matches the patient NAME (not the
           // row's first <a>, which on a schedule row is often a time/status link).
@@ -14945,7 +15083,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (hit.ambiguous) return { phase: 'open', opened: false, candidates: hit.matches || 2, reason: 'appointment-id-ambiguous', diag: { frame: location.hostname, scanned: hit.scanned, topScore: hit.sc, apptIdBound: false, apptIdMatches: hit.matches || 2 } };
         if (hit.el) {
           if (!clickRow(hit.el)) {
-            if (clickRow.reason === 'appointment-target-not-clinical') return { phase: 'open', opened: false, candidates: 1, reason: clickRow.reason, diag: { frame: location.hostname, scanned: hit.scanned, topScore: hit.sc, apptIdBound: false, apptIdMatches: hit.matches || 1 } };
+            if (/^(appointment-target-not-clinical|row-identity-changed)$/.test(clickRow.reason || '')) return { phase: 'open', opened: false, attempted: false, candidates: 1, reason: clickRow.reason, diag: { frame: location.hostname, scanned: hit.scanned, topScore: hit.sc, apptIdBound: false, apptIdMatches: hit.matches || 1 } };
             return deadlineOut();
           }
           return { phase: 'open', opened: true, via: hit.viaApptId ? 'appt-id' : 'quick', candidates: 1, diag: { frame: location.hostname, scanned: hit.scanned, topScore: hit.sc, apptIdBound: hit.viaApptId === true, apptIdMatches: hit.matches || 1 } };
@@ -14986,7 +15124,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             if (h2.ambiguous) return { phase: 'open', opened: false, candidates: h2.matches || 2, reason: 'appointment-id-ambiguous', diag: { frame: location.hostname, scanned: scannedTotal, scrolledTo: y, topScore: h2.sc, apptIdBound: false, apptIdMatches: h2.matches || 2 } };
             if (h2.el) {
               if (!clickRow(h2.el)) {
-                if (clickRow.reason === 'appointment-target-not-clinical') return { phase: 'open', opened: false, candidates: 1, reason: clickRow.reason, diag: { frame: location.hostname, scanned: scannedTotal, scrolledTo: y, topScore: h2.sc, apptIdBound: false, apptIdMatches: h2.matches || 1 } };
+                if (/^(appointment-target-not-clinical|row-identity-changed)$/.test(clickRow.reason || '')) return { phase: 'open', opened: false, attempted: false, candidates: 1, reason: clickRow.reason, diag: { frame: location.hostname, scanned: scannedTotal, scrolledTo: y, topScore: h2.sc, apptIdBound: false, apptIdMatches: h2.matches || 1 } };
                 return deadlineOut();
               }
               return { phase: 'open', opened: true, via: h2.viaApptId ? 'appt-id-scroll' : 'scroll', candidates: 1, diag: { frame: location.hostname, scanned: scannedTotal, scrolledTo: y, topScore: h2.sc, apptIdBound: h2.viaApptId === true, apptIdMatches: h2.matches || 1 } };
@@ -15253,7 +15391,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (!lname) return { opened: false, reason: 'no-name' };
       var fq = (fname.split(/\s+/)[0] || '');
       var searchStr = fq ? (lname + ',' + fq) : lname;
-      function nrmDob(s) { var m = /([01]?\d)[\/\-\.]([0-3]?\d)[\/\-\.](\d{2,4})/.exec(String(s || '')); if (!m) return ''; var y = m[3].length === 2 ? ((Number(m[3]) > 26 ? '19' : '20') + m[3]) : m[3]; return Number(m[1]) + '/' + Number(m[2]) + '/' + y; }
+      function nrmDob(s) { /* isodob-1.1.0 (3.0.117): anchored ISO branch first - the M/D/Y regex matched INSIDE an ISO year, so this DOB veto compared 1962-03-04, 1942-03-04 and 1902-03-04 EQUAL and both passed and refused the wrong rows. The hardcoded >26 two-digit pivot is retired for the dynamic one. */ var iso = /(^|[^0-9])(\d{4})-([01]\d)-([0-3]\d)(?![0-9])/.exec(String(s || '')); if (iso) return Number(iso[3]) + '/' + Number(iso[4]) + '/' + iso[2]; var m = /([01]?\d)[\/\-\.]([0-3]?\d)[\/\-\.](\d{2,4})/.exec(String(s || '')); if (!m) return ''; var y = m[3].length === 2 ? ((Number(m[3]) > ((new Date().getFullYear() % 100) + 1) ? '19' : '20') + m[3]) : m[3]; return Number(m[1]) + '/' + Number(m[2]) + '/' + y; }
       function nrmMrn(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
       function mrnCellMatches(value, wanted) {
         var raw = String(value || ''), labeled = null;
@@ -15465,8 +15603,37 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (mrnPool.length) { mrnNarrowed = mrnPool.length < pool.length; pool = mrnPool; }
       }
       if (pool.length > 1) return { opened: false, reason: 'ambiguous', count: pool.length, tier: exact.length ? 'exact' : 'prefix' };
+      /* rowreverify-1.0.0 (3.0.117, measured live 2026-09-11): the result list
+         RE-ORDERS between the read that chose a row and the click that opens it,
+         so the chart that opened was a different person's and the app-side merge
+         refused 'wrong-chart' - correctly, but the row was lost for that pull.
+         Settle, RE-READ the live rows, and click only the ONE row that still
+         carries this last name (plus the first name, the MRN when the choice was
+         narrowed by one, and the DOB veto). Anything else refuses with
+         attempted:false and opens nobody. */
       if (!openAllowed()) return deadlineOut();
-      pool[0].a.click();
+      await sleep(320);
+      if (!openAllowed()) return deadlineOut();
+      var _rvWantMrn = (wantMrn && pool[0].mrnMatched === true) ? wantMrn : '';
+      var _rvRows = [];
+      try {
+        var _rvD = best.w.document;
+        var _rvAs = Array.prototype.slice.call(_rvD.querySelectorAll('a')).filter(function (a) { return /^chart$/i.test((a.innerText || '').trim()); });
+        for (var _rvI = 0; _rvI < _rvAs.length; _rvI++) {
+          var _rvTr = _rvAs[_rvI].closest ? _rvAs[_rvI].closest('tr') : null;
+          if (!_rvTr) continue;
+          var _rvCells = Array.prototype.slice.call(_rvTr.querySelectorAll('td,th')).map(function (x) { return (x.innerText || '').trim(); });
+          var _rvT = _rvCells.join(' | ').toLowerCase();
+          if (_rvT.indexOf(lnorm) < 0) continue;
+          if (fnorm && _rvT.indexOf(fnorm) < 0) continue;
+          if (_rvWantMrn) { var _rvMrnHit = false; for (var _rvC = 0; _rvC < _rvCells.length; _rvC++) { if (mrnCellMatches(_rvCells[_rvC], _rvWantMrn)) { _rvMrnHit = true; break; } } if (!_rvMrnHit) continue; }
+          if (wantDob) { var _rvDob = ''; for (var _rvC2 = 0; _rvC2 < _rvCells.length; _rvC2++) { var _rvDm = /([01]?\d)\/([0-3]?\d)\/(\d{4})/.exec(_rvCells[_rvC2]); if (_rvDm) { _rvDob = Number(_rvDm[1]) + '/' + Number(_rvDm[2]) + '/' + _rvDm[3]; break; } } if (_rvDob && _rvDob !== wantDob) continue; }
+          _rvRows.push(_rvAs[_rvI]);
+        }
+      } catch (_rvE) { _rvRows = []; }
+      if (_rvRows.length !== 1) return { opened: false, attempted: false, reason: 'search-target-unverified', rowsOnReread: _rvRows.length, error: "athenaOne's search did not show this patient; nothing was opened" };
+      if (!openAllowed()) return deadlineOut();
+      _rvRows[0].click();
       /* v1.82: return IMMEDIATELY after the Chart click - same contract as the
          schedule-click route. The app's open bridge budget is ~18s and the READ
          side's chart-ready gate (52s budget, shadow-aware from round 2) is the
@@ -16003,10 +16170,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                  links that cannot navigate from the isolated world; live:
                  phantom opens then junk reads "Mainline, Lauren" / "Fail, PTA"
                  that the app gate had to refuse). Fail honestly instead. */
-              if (findRes && /^(ambiguous|no-results|no-name-match|blank-error|rows-not-rendered|dob-mismatch)$/.test(findRes.reason || '')) {
+              if (findRes && /^(ambiguous|no-results|no-name-match|blank-error|rows-not-rendered|dob-mismatch|search-target-unverified)$/.test(findRes.reason || '')) {
                 sendResponse({ ok: false, opened: false, candidates: (findRes.count || 0),
                   error: findRes.reason === 'ambiguous' ? ('Found ' + (findRes.count || 'several') + ' possible matches for ' + (msg.name || '') + ' — refusing to open any of them without a matching DOB or MRN to disambiguate.')
                     : findRes.reason === 'dob-mismatch' ? ('athenaOne has ' + (findRes.count || 1) + ' name match(es) for ' + (msg.name || '') + ' but the DOB on file does not match any of them — check the stored DOB.')
+                    : findRes.reason === 'search-target-unverified' ? "athenaOne's search did not show this patient; nothing was opened."
                     : 'athenaOne patient search found no matching patient.',
                   findReason: findRes.reason }); return;
               }
@@ -16023,7 +16191,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           var fillRes = fillX.r || [];
           var fill = bestFrameResult(fillRes, 'fill');
           if (!fill || !fill.filled) {
-            sendResponse({ ok: false, opened: false, reason: (fill && fill.reason) || '', error: (fill && fill.reason === 'numeric-only-field-refused') ? 'Refused: the only patient field on this screen accepts numbers only, and typing a name there makes athenaNet raise a blocking dialog. The chart was skipped instead.' : 'Could not find the Athena patient search box on this screen.', diag: fill && fill.diag });
+            sendResponse({ ok: false, opened: false, attempted: false, reason: (fill && fill.reason) || '', error: (fill && fill.reason === 'numeric-only-field-refused') ? 'Refused: the only patient field on this screen accepts numbers only, and typing a name there makes athenaNet raise a blocking dialog. The chart was skipped instead.' : ((fill && fill.reason === 'search-target-unverified') ? "athenaOne's search did not show this patient; nothing was opened." : 'Could not find the Athena patient search box on this screen.'), diag: fill && fill.diag });
             return;
           }
           if (senderTab) progress(senderTab, 'Searching “' + (msg.name || '') + '”…', openGuard.token);
@@ -17041,6 +17209,12 @@ async function mlsReadVisitsPaneDriverFn(name, dob, athenaId) {
       return o >= 2 || (o >= 1 && Math.min(ta.length, tb.length) === 1);
     }
     function nrmDob(s) {
+      /* isodob-1.1.0 (3.0.117): anchored ISO branch first. The M/D/Y regex
+         below matches INSIDE an ISO year, so 1962-03-04, 1942-03-04 and
+         1902-03-04 all returned '2/3/2004' and the VISITS-READ wrong-chart
+         verdict compared different people equal (measured 2026-09-11). */
+      var iso = /(^|[^0-9])(\d{4})-([01]\d)-([0-3]\d)(?![0-9])/.exec(String(s || ''));
+      if (iso) { var isoMo = Number(iso[3]), isoDy = Number(iso[4]); if (isoMo < 1 || isoMo > 12 || isoDy < 1 || isoDy > 31) return ''; return isoMo + '/' + isoDy + '/' + iso[2]; }
       var m = /([01]?\d)[\/\-\.]([0-3]?\d)[\/\-\.](\d{2,4})/.exec(String(s || ''));
       if (!m) return '';
       /* v1.89 (wf_4): DYNAMIC 2-digit-year pivot - anything "after next year"
@@ -17727,6 +17901,12 @@ async function mlsUnifiedWriteDriverFn(name, dob, athenaId, sections) {
       return o >= 2 || (o >= 1 && Math.min(ta.length, tb.length) === 1);
     }
     function nrmDob(s) {
+      /* isodob-1.1.0 (3.0.117): anchored ISO branch first. The M/D/Y regex
+         below matches INSIDE an ISO year, so 1962-03-04, 1942-03-04 and
+         1902-03-04 all returned '2/3/2004' and the WRITE-LANE wrong-chart
+         verdict compared different people equal (measured 2026-09-11). */
+      var iso = /(^|[^0-9])(\d{4})-([01]\d)-([0-3]\d)(?![0-9])/.exec(String(s || ''));
+      if (iso) { var isoMo = Number(iso[3]), isoDy = Number(iso[4]); if (isoMo < 1 || isoMo > 12 || isoDy < 1 || isoDy > 31) return ''; return isoMo + '/' + isoDy + '/' + iso[2]; }
       var m = /([01]?\d)[\/\-\.]([0-3]?\d)[\/\-\.](\d{2,4})/.exec(String(s || ''));
       if (!m) return '';
       var pivot = (new Date().getFullYear() % 100) + 1;
