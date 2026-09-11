@@ -97,10 +97,19 @@ const HEAD_REGIONS = [
      rule is untouched - an ATTEMPTED outcome still keeps the extension's exact
      words and its uncertain status - and no gate, token, payload or receipt
      STATUS changed; this region decides only which sentence is shown. Proven
-     in tests/native-persistence-clarity-proof.js. */
+     in tests/native-persistence-clarity-proof.js.
+     MOVED DELIBERATELY A SECOND TIME, plainwords-1.0.0 (2026-09-11). A wording
+     pass only, re-aimed in lockstep with tests/sheet-clarity.test.js and
+     tests/write-auto-chain.test.js. TWO string literals in this region
+     changed, both of them sentences a doctor reads off the receipt, and
+     NOTHING else: "Athena did not return a verified exact-field insertion
+     receipt." became "Athena did not confirm that the text landed in the exact
+     field.", and the place_order refusal's "this manifest is halted." became
+     "this review is halted.". Every status assignment and every predicate is
+     byte-identical. Proven in tests/write-row-controls-proof.js section 4. */
   ['receipt mint (resultToUnifiedReceipt: verified / uncertain / halt)',
     '  function resultToUnifiedReceipt(state, row, resp, probe) {', '  /* ===== wfprog-1.0.0 (owner 2026-08-27:',
-    '9e6ec832e5e50201c1186f22912fa6017792358add914c93f6ee82c69210dfe3'],
+    '9022a4feef6efa16f7523ded47e4411321ac41093176e6767fa8be3bb15c28bb'],
   /* MOVED DELIBERATELY, savetruth-1.0.0 (2026-09-10). The pill had no painter
      for the running=true transition: sheetclarStateBase has always DERIVED
      SENDING / WRITING DRAFT from state.running, but nothing repainted it here,
@@ -122,10 +131,19 @@ const HEAD_REGIONS = [
      terminal. It appends one read-only button whose click runs the same
      probeUnifiedRow the canonical control runs; it latches nothing, records no
      attempt, touches no token and cannot send. An UNCERTAIN outcome is never
-     offered it. Proven in tests/native-persistence-clarity-proof.js section 6. */
+     offered it. Proven in tests/native-persistence-clarity-proof.js section 6.
+     MOVED DELIBERATELY A THIRD TIME, plainwords-1.0.0 (2026-09-11). A wording
+     pass only, re-aimed in lockstep with tests/sheet-clarity.test.js and
+     tests/write-auto-chain.test.js. THREE string literals in this region
+     changed, all three refusal sentences a doctor reads, and NOTHING else:
+     "not bound to a fresh exact Athena check" -> "not tied to a fresh exact
+     Athena check", "The confirmation binding changed." -> "The confirmation
+     changed.", and "This manifest is halted because" -> "This review is halted
+     because". The guard expressions around them are character-for-character
+     the same. Proven in tests/write-row-controls-proof.js section 4. */
   ['execute (executeUnifiedSelection: the only code that writes)',
     '  function executeUnifiedSelection(state) {', '  /* bx-1.0.0 - batch send (owner 2026-08-26:',
-    '9c7b9629f4c917d475a2c6797068461b373c51f2c89c79bda6a28378cc25c60a'],
+    '7977e3716cd6c6423ce1c076e9d4a3323fe76d74c2e7dc6ca924fb0c27b25468'],
   /* MOVED DELIBERATELY, wfnext-1.0.0 (2026-09-01) - owner ruling 23:05,
      verbatim: "nothing here should be blocked or manual or not attempted once
      its run". MEASURED 22:50-22:56 on his own tab: one trusted press, six
@@ -343,10 +361,20 @@ const KEEP_REGIONS = [
      'none' branch's REASON - "There is nothing left to send" - is replaced by
      one naming the Save draft press when a generic review's own save row is
      the selected, unsent row. The mode is still 'none'; only the sentence on
-     the dead button changed. */
+     the dead button changed.
+     RE-AIMED DELIBERATELY, plainwords-1.0.0 (2026-09-11). A wording pass only,
+     and the PLAN half did not move at all: the diff against b1230 (ef4e793c)
+     over this whole region is ONE changed line, and it is the SAME line that
+     moves KEEP_REGIONS' sibling pin on unifiedSyncPrimaryButton below - the
+     batch button's title, whose "each with its own read-only Athena check and
+     receipt" became "each with its own read-only Athena check and its own
+     confirmation". One string on one title attribute. unifiedPrimaryPlan is
+     byte-identical, which is the check that nothing about WHICH rows a press
+     runs, or whether it may run at all, changed here; the property assertions
+     below this table read the plan off the shipped source and still pass. */
   ['the primary button plan and its sync (unifiedPrimaryPlan + unifiedSyncPrimaryButton)',
     '  function unifiedPrimaryPlan(state) {', "  /* rwfix-1.0.0 (b1169): the include checkboxes' ONE handler",
-    'eb248a3ae8d0c07e973f7d40e06362e35462eacfb3aac2f3535e25a18a9c4aa4'],
+    '309768119e9afa7af1b1585c667480ed830dcd4632b8bb9c62fe524aa8d30f8e'],
   /* RE-AIMED DELIBERATELY, savetruth-1.0.0 (2026-09-10). Not a presentation
      pass: the READY sentence promised "MLS verifies the saved unsigned note
      ... without pressing Save" on the extension's CAPABILITY FLAG alone, but
@@ -384,10 +412,22 @@ const KEEP_REGIONS = [
      GENERIC review whose own Save draft row is selected and unsent - measured
      beside a LIVE armed save button labelled "Nothing left to send". Section 10
      of tests/native-persistence-clarity-proof.js drives both, and section 12
-     pins the timeout case in the doctor's own words. */
+     pins the timeout case in the doctor's own words.
+     RE-AIMED DELIBERATELY, plainwords-1.0.0 (2026-09-11). A wording pass only.
+     TWO string literals changed, and they are the same sentence twice - the
+     VERIFYING SAVED NOTE pill's one line, in the batch branch and in the
+     single-row branch, where "MLS is reconciling the persisted section
+     receipts for this exact encounter" became "MLS is checking the sections
+     Athena saved for this exact encounter". The label set is unchanged
+     ("VERIFYING SAVED NOTE" and its colour are byte-identical), no branch was
+     added or removed, and every predicate that decides WHICH state is derived
+     - savenamedIsRow, savenamedNativeSectionsPersisted,
+     nativeNamedSectionPersistenceReady, state.running - is
+     character-for-character the same. This region still derives exactly the
+     states it derived at b1230; only two sentences read differently. */
   ['the state derivation (sheetclarStateBase)',
     '  function sheetclarStateBase(state, kind) {', '  function paintSheetclarState(state, kind) {',
-    '38cb665b9e69f605e9f01c5722469638ac01f31cfd959f9d695f369155af4b77']
+    'aff1dce7c30801abc9e29f2ff372abfe485dd85eb0ec608fdc986d93ca8ddab7']
 ];
 KEEP_REGIONS.forEach(function (r) {
   const i = FLOW.indexOf(r[1]);
@@ -490,9 +530,20 @@ KEEP_REGIONS.forEach(function (r) {
      that is finished, so the title now names the final step instead. It is one
      string on one attribute: the enable/disable decisions, the action
      attributes, the preview hash and the batch list are byte-identical, which
-     is what the property assertions above and below this digest read. */
+     is what the property assertions above and below this digest read.
+     RE-AIMED DELIBERATELY, plainwords-1.0.0 (2026-09-11): re-aimed a second
+     time, and again for the SAME TITLE. The batch branch's title said each
+     section gets "its own read-only Athena check and receipt"; "receipt" is a
+     developer's word for a thing the doctor is shown as a confirmation, so it
+     now reads "its own read-only Athena check and its own confirmation". That
+     is the ONLY change in this slice - the diff against b1230 (ef4e793c) is
+     one line inside one string. Both enable/disable decisions, every
+     data-mls-* attribute this function writes, the preview hash, the batch
+     list and the qOnlySave branch are byte-identical, which is why
+     KEEP_REGIONS' plan+sync pin above moved by exactly this one line and the
+     plan half did not move at all. */
   eq(crypto.createHash('sha256').update(SYNC, 'utf8').digest('hex'),
-    '4ce803a572f5f20d95056c8df31f01779087db4a0f710c8475b6e85bac827ce1',
+    'efeedeaab1eeabb96aa161ad8c0ca8cef002705a908f9ecb119e11dfacea90c3',
     'THE BUTTON SYNC CHANGED OUTSIDE livecheck-1.0.0 - it may add only the current-probe disable branch proven by the runtime regression');
   ok(FLOW.indexOf("var WFDONE_NOTHING_LEFT_LABEL = 'Nothing left to send';") > 0,
     'the finished-sheet label stopped being the SAME shared constant renderUnifiedReceipts already writes - one state, two sentences');
@@ -529,8 +580,18 @@ KEEP_REGIONS.forEach(function (r) {
   ok(HOW.indexOf('boundaryLine') > 0, 'the one-action boundary disclosure is not inside How this works');
   ok(HOW.indexOf('id="mlsAthenaUnifiedContext"') > 0, 'the exact-encounter fact panel is not inside How this works');
   eq(tally(RENDER, 'id="mlsAthenaUnifiedContext"'), 1, 'the exact-encounter panel must exist exactly once - two would fight over one id');
-  /* and NOTHING in this sheet ships open */
-  eq(tally(RENDER, '<details open'), 0, 'a disclosure in the sheet ships OPEN again - the wall the owner is complaining about');
+  /* and NOTHING in this sheet ships open - EXCEPT the one drawer that holds
+     the rows the doctor still owes. rowfix-1.0.0 (2026-09-11): writeui-1.0.0
+     shut that drawer because every row in it was a red or amber label with
+     nothing to press - the wall. Each of those rows now carries its own
+     one-press next move (see tests/write-row-controls-proof.js), so what is
+     behind it is a to-do list, and it renders at all only when it HAS a row.
+     It is the ONLY <details open> allowed here, it is identified by name, and
+     it carries data-mls-clunky-seen="1" so the shell's fold pass leaves it be
+     instead of snapping it shut a beat after it paints. */
+  eq(tally(RENDER, '<details open'), 1, 'the sheet ships a disclosure open that is not the one actionable drawer - the wall the owner is complaining about');
+  eq(tally(RENDER, '<details open data-mls-fix-drawer="1" data-mls-clunky-seen="1"'), 1,
+    'the one disclosure allowed to ship open is not the actionable drawer, or it lost the marker that keeps the shell from folding it shut');
   eq(tally(FLOW.slice(FLOW.indexOf('function unifiedPayloadDetails('), at), '<details open'), 0,
     'a row/evidence disclosure ships OPEN again');
 
@@ -1002,9 +1063,14 @@ function primaryFollowsPlan(h, where) {
     const html = h.cardHtml();
     const row = manifest.rows.filter(r => r.action === 'write_note')[0];
 
-    /* nothing on this sheet ships open */
-    eq(tally(html, '<details open'), 0, 'a disclosure on the rendered sheet ships OPEN');
-    ok(/<details[^>]*\sopen[\s>]/.test(html) === false, 'a disclosure on the rendered sheet carries the open attribute');
+    /* nothing on this sheet ships open except the one actionable drawer, and
+       only when it HAS a row - rowfix-1.0.0, same rule as the markup pin above.
+       This review has a blocked row, so the drawer is on screen and open. */
+    const openFolds = (html.match(/<details[^>]*\sopen[\s>]/g) || []);
+    const fixDrawer = (html.match(/<details open data-mls-fix-drawer="1" data-mls-clunky-seen="1"/g) || []);
+    eq(openFolds.length - fixDrawer.length, 0, 'a disclosure on the rendered sheet other than the actionable drawer ships OPEN');
+    eq(fixDrawer.length, tally(html, 'data-mls-fix-drawer="1"'),
+      'the actionable drawer rendered without shipping open, so the rows the doctor still owes are behind a fold');
 
     /* exactly one view-text disclosure per row, and the payload is inside it */
     eq(tally(html, 'data-mls-view-text="'), tally(html, 'data-manifest-row="'),
@@ -1039,11 +1105,17 @@ function primaryFollowsPlan(h, where) {
     /* the doctor's heading survived, byte for byte */
     ok(html.indexOf('Review the exact text going to ' + row.destination) > 0,
       'the note review lost the heading that names its exact Athena destination');
-    /* and the technical ids moved to the FOOTER of that expanded view */
-    const hashAt = html.indexOf('Payload ' + row.payloadHash);
+    /* and the technical ids moved to the FOOTER of that expanded view.
+       rowfix-1.0.0 (2026-09-11): the two ids are the SAME two bytes; only the
+       words in front of them changed, from "Payload"/"Row" to "Text ID"/"Row
+       ID", because a doctor who opens this fold should not be reading the word
+       payload. row.payloadHash and row.rowHash are untouched. */
+    const hashAt = html.indexOf('Text ID ' + row.payloadHash);
     ok(hashAt > textAt && hashAt < closeAt,
-      'the payload / row ids are not at the bottom of the expanded view, in small type');
-    ok(/Payload [^<]*&middot; Row /.test(html), 'the payload and row ids stopped being reported at all');
+      'the text / row ids are not at the bottom of the expanded view, in small type');
+    ok(/Text ID [^<]*&middot; Row ID /.test(html), 'the text and row ids stopped being reported at all');
+    ok(html.indexOf('>Payload ' + row.payloadHash) < 0 && html.indexOf(' Payload ' + row.payloadHash) < 0,
+      'the id footer is back to labelling the two ids "Payload" and "Row" at the doctor');
     ok(html.indexOf('Review full payload and hashes') < 0,
       'the old engineering summary is back on the disclosure the doctor reads');
     /* Copy note survived, inside the same disclosure */
@@ -1210,8 +1282,8 @@ function primaryFollowsPlan(h, where) {
       expectedContext: { visitDate: '', provider: '', appointmentId: '' }, requireExpectedVisit: true, receiptSessionId: 'ui-unbound' });
     await settle(160);
     const html = h.cardHtml();
-    ok(html.indexOf('visit date not bound yet') > 0, 'an unbound visit date is silently omitted from the header');
-    ok(html.indexOf('provider not bound yet') > 0, 'an unbound provider is silently omitted from the header');
+    ok(html.indexOf('visit date not matched yet') > 0, 'an unbound visit date is silently omitted from the header');
+    ok(html.indexOf('provider not matched yet') > 0, 'an unbound provider is silently omitted from the header');
     ok(html.indexOf('Nothing on this review can be written yet') > 0,
       'the header sentence promises a write on a sheet that cannot write');
     eq(h.boxes().length, 0, 'an all-blocked sheet rendered an include checkbox');

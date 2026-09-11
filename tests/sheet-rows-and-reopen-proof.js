@@ -17,7 +17,7 @@
  *       He unchecked five of six sections and pressed Confirm for the one he
  *       wanted ("Write reviewed Assessment & Plan (combined)"), which went
  *       VERIFIED. The receipt then listed the five he had deliberately left
- *       alone as "NOT ATTEMPTED - Ready, but not attempted in this receipt."
+ *       alone as "NOT ATTEMPTED - Ready, but not attempted in this review."
  *       and totalled them into "Not written - 5 of 6". An unchecked row is a
  *       row the doctor chose not to send. It reads NOT SELECTED, in his own
  *       terms, and it is in neither number: "Not written - N of M" counts only
@@ -385,7 +385,7 @@ function whatHappenedRow(html, label) {
     ok(rec.indexOf('NOT SELECTED') > 0, 'the receipt does not paint NOT SELECTED for a row the doctor unchecked');
     eq((rec.match(/NOT SELECTED/g) || []).length, 2, 'the receipt did not paint NOT SELECTED once per unchecked row');
     eq(rec.indexOf('NOT ATTEMPTED'), -1, 'THE MEASURED DEFECT: a row the doctor unchecked is still reported NOT ATTEMPTED');
-    eq(rec.indexOf('Ready, but not attempted in this receipt.'), -1,
+    eq(rec.indexOf('Ready, but not attempted in this review.'), -1,
       'the unchecked rows still carry the "not attempted in this receipt" sentence');
     eq(rec.indexOf('Not written'), -1,
       'THE MEASURED DEFECT: rows the doctor never selected were totalled into "Not written - N of M"');
@@ -443,7 +443,7 @@ function whatHappenedRow(html, label) {
     const phantom = { id: 'row-no-checkbox', capability: 'ready', action: 'save_draft', reason: '' };
     eq(seam.rowState(state, phantom).status, 'not attempted',
       'a row with no include checkbox was called NOT SELECTED - only a real, unticked control may say that');
-    eq(seam.rowState(state, phantom).message, 'Ready, but not attempted in this receipt.',
+    eq(seam.rowState(state, phantom).message, 'Ready, but not attempted in this review.',
       'the no-checkbox fallback sentence changed');
     eq(seam.rowState(state, { id: 'row-manual', capability: 'manual', reason: 'Do this in Athena yourself.' }).status, 'manual',
       'a MANUAL row was swept into the new status');

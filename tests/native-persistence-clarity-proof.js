@@ -108,11 +108,11 @@ ok(PREFIX_FLOW !== FLOW && PREFIX_FLOW.length !== FLOW.length,
  * when the code was minted, which decides the tail. */
 const RECONCILE_CODES = [
   { code: 'section-persistence-frame-changed', cure: 'Let the encounter finish loading, then press Check Athena again.' },
-  { code: 'section-persistence-proof-ambiguous', cure: 'conflicting saved-section receipts' },
+  { code: 'section-persistence-proof-ambiguous', cure: 'Athena saved for these sections does not agree' },
   { code: 'section-persistence-readback-missing', cure: 'Put that section on screen in athenaOne, then press Check Athena again.' },
   { code: 'section-persistence-readback-ambiguous', cure: 'more than one possible copy of a reviewed section' },
   { code: 'section-persistence-readback-mismatch', cure: 'no longer matches the reviewed text' },
-  { code: 'section-persistence-proof-missing', cure: 'no saved receipt for one of the reviewed sections' },
+  { code: 'section-persistence-proof-missing', cure: 'Athena has not saved one of the reviewed sections yet' },
   { code: 'section-persistence-proof-mismatch', cure: 'names different text than the section MLS reviewed' },
   { code: 'section-persistence-proof-expired', cure: 'too old to prove the note is still the reviewed one' }
 ];

@@ -28,9 +28,13 @@
  *   C  the surface is never stolen - a pull-progress sentence, the "No more
  *      patients today." line and an empty node are all left untouched, because
  *      #heroPullStatus is shared with the pull lane;
- *   D  when the up-now patient is NOT the active patient the module repaints
- *      NOTHING, so today's honest strip keeps that case (and no second banner
- *      is ever minted);
+ *   D  when the up-now patient is NOT the active patient the banner is still
+ *      made truthful (upnowtail-1.0.1): with a DIFFERENT named chart open the
+ *      tail says so and names the next press, and where nothing is actually
+ *      known - no chart open at all, or a name too thin to reason about - the
+ *      module still stands down and leaves today's surface alone. This was the
+ *      one state with no sentence, which is exactly why the measured "loaded &
+ *      ready" lie could survive in it;
  *   E  the repaint is guarded - an already-correct banner costs zero writes,
  *      which is also what keeps the module's own MutationObserver from driving
  *      itself;
@@ -127,8 +131,12 @@ const TAIL = run('JSON.parse(JSON.stringify(UPNOW_TAIL))');
 ok(SHELL.indexOf(HEAD) > 0, 'the shell painter no longer writes the head this module matches on: ' + JSON.stringify(HEAD));
 ok(SHELL.indexOf(SEP + TAIL.ready) > 0,
   'the shell painter no longer writes the ready sentence this module reuses: ' + JSON.stringify(SEP + TAIL.ready));
-eq(Object.keys(TAIL).sort().join(','), 'generating,note,ready,recording,sent,transcript',
+eq(Object.keys(TAIL).sort().join(','), 'away,generating,note,ready,recording,sent,transcript',
   'the set of banner states changed without this suite being re-aimed');
+/* The one tail that is about the banner's patient rather than the open visit
+   still has to be a doctor's sentence with a next press in it. */
+ok(/open this patient/i.test(TAIL.away),
+  'the different-chart tail no longer names the one thing to do about it: ' + JSON.stringify(TAIL.away));
 
 /* --------------------------------------------------------------------------
  * A -- THE STATE TABLE, DRIVEN THROUGH THE SHIPPED DECISION
@@ -147,8 +155,13 @@ const TABLE = [
   ['transcript, no note', { upName: UP, activeName: ACTIVE, transcript: TX }, 'transcript'],
   ['note generated', { upName: UP, activeName: ACTIVE, transcript: TX, note: NOTE }, 'note'],
   ['note verified into Athena', { upName: UP, activeName: ACTIVE, transcript: TX, note: NOTE, sent: true }, 'sent'],
-  ['a different chart is open', { upName: UP, activeName: 'Anna Schaeffer', note: NOTE }, 'elsewhere'],
-  ['no chart is open at all', { upName: UP, activeName: '' }, 'elsewhere']
+  ['a different chart is open', { upName: UP, activeName: 'Anna Schaeffer', note: NOTE }, 'away'],
+  ['no chart is open at all', { upName: UP, activeName: '' }, 'elsewhere'],
+  /* upnowtail-1.0.1: "cannot tell" is not "a different patient". A name this
+     module refuses to reason about (one usable token) must keep standing down
+     rather than accuse the doctor of having the wrong chart open. */
+  ['the open chart has a one-word name', { upName: UP, activeName: 'Schaeffer' }, 'elsewhere'],
+  ['the schedule row has a one-word name', { upName: 'Schaeffer', activeName: ACTIVE }, 'elsewhere']
 ];
 for (const [label, ctx, want] of TABLE) eq(state(ctx), want, 'state table row "' + label + '"');
 
@@ -248,18 +261,50 @@ const freshPlan = paint(fresh, { activeName: ACTIVE });
 eq(freshPlan.state, 'ready', 'a freshly loaded patient did not read as ready');
 eq(fresh.htmlWrites, freshWrites, 'a correct "loaded & ready" banner was rewritten with identical bytes');
 
-/* D -- THE UP-NOW PATIENT IS NOT THE ACTIVE PATIENT: REPAINT NOTHING. That
-   case belongs to the schedule anchor's honest strip; a sentence here would be
-   the second banner this must not add. */
+/* D1 -- A DIFFERENT, NAMED CHART IS OPEN (upnowtail-1.0.1). This used to
+   repaint nothing, which is how the measured "loaded & ready. Hit Start
+   recording." lie survived over a chart that was not this patient at all. The
+   SAME banner now carries the truth and the next press - still one sentence in
+   one node, never a second banner, and the schedule anchor's own "working in a
+   different chart" strip is a separate surface and is untouched. */
 const away = makeEl('heroPullStatus');
 away.innerHTML = banner('Adam Schaeffer', '11:40 AM');
-const awayBefore = away.innerHTML, awayWrites = away.htmlWrites;
+const awayStale = away.innerHTML;
 const awayPlan = paint(away, { activeName: 'Anna Schaeffer', transcript: TX, note: NOTE });
-eq(awayPlan.state, 'elsewhere', 'a different active chart did not read as elsewhere');
-eq(awayPlan.html, '', 'the elsewhere state offered a sentence of its own to paint');
-eq(away.innerHTML, awayBefore, 'the elsewhere state repainted the banner instead of standing down');
-eq(away.htmlWrites, awayWrites, 'the elsewhere state wrote to the banner');
-eq(away.getAttribute('data-mls-upnow-state'), null, 'the elsewhere state stamped the shared node anyway');
+eq(awayPlan.state, 'away', 'a different named active chart did not read as away');
+ok(away.innerHTML !== awayStale,
+  'the stale "loaded & ready" sentence survived on a screen where a DIFFERENT patient chart was open');
+eq(away.innerHTML, HEAD + 'Adam Schaeffer</b> at 11:40 AM' + SEP + TAIL.away,
+  'the different-chart banner is not the head plus the away tail');
+eq(away.getAttribute('data-mls-upnow-state'), 'away', 'the away state is not published on the node');
+/* it is still the banner's own patient that is named, never the open one */
+ok(away.innerHTML.indexOf('Adam Schaeffer</b> at 11:40 AM') > 0,
+  'the away repaint renamed the banner patient or dropped their appointment time');
+ok(away.innerHTML.indexOf('Anna') < 0, 'the away repaint leaked the OPEN chart name into the schedule banner');
+/* and it is guarded like every other state */
+const awaySettled = away.htmlWrites;
+paint(away, { activeName: 'Anna Schaeffer', transcript: TX, note: NOTE });
+eq(away.htmlWrites, awaySettled, 'a second repaint of the same away state re-committed the banner HTML');
+
+/* D2 -- NOTHING IS ACTUALLY KNOWN: STAND DOWN, EXACTLY AS BEFORE. No chart
+   open at all is the very condition the shell's own _calLoadNextUp paints the
+   ready sentence under, and a one-token name is an inability to tell rather
+   than an answer. Painting D1's sentence in either case would be a newer lie
+   in place of the old one. */
+for (const [label, ctx] of [
+  ['no chart is open at all', { activeName: '', transcript: TX, note: NOTE }],
+  ['the open chart has a one-word name', { activeName: 'Schaeffer', transcript: TX, note: NOTE }]
+]) {
+  const down = makeEl('heroPullStatus');
+  down.innerHTML = banner('Adam Schaeffer', '11:40 AM');
+  const downBefore = down.innerHTML, downWrites = down.htmlWrites;
+  const downPlan = paint(down, ctx);
+  eq(downPlan.state, 'elsewhere', label + ' did not read as elsewhere');
+  eq(downPlan.html, '', label + ': the elsewhere state offered a sentence of its own to paint');
+  eq(down.innerHTML, downBefore, label + ': the elsewhere state repainted the banner instead of standing down');
+  eq(down.htmlWrites, downWrites, label + ': the elsewhere state wrote to the banner');
+  eq(down.getAttribute('data-mls-upnow-state'), null, label + ': the elsewhere state stamped the shared node anyway');
+}
 
 /* C -- THE SURFACE IS SHARED AND IS NEVER STOLEN. #heroPullStatus also carries
    the pull lane's progress sentences and the real-time module's honest
@@ -326,4 +371,5 @@ for (const twin of ['mls-connect.js', 'cloned-mls-connect.js']) {
 }
 
 console.log('upnow-banner-state-proof: ' + checks + ' checks passed');
-console.log('  state table: ready / recording / transcript / note / sent / elsewhere (stand down)');
+console.log('  state table: ready / recording / generating / transcript / note / sent / away (a different named chart) '
+  + '/ elsewhere (nothing known - stand down)');

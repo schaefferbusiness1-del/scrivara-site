@@ -231,6 +231,15 @@ const AUTOMATED_PROOF_FILES = new Set([
      And every ready write row shows the exact text that will land, in reading
      type with its line breaks, byte for byte the string the execute sends. */
   'write-sheet-agreement-proof.js',
+  'write-row-controls-proof.js',
+  /* REGISTERED HERE 2026-09-11, and this is the half that was missing. Both
+     names were already in the `tests` array below, but a proof file whose name
+     does not end in .test.js is only DISCOVERED through this set - so the
+     completeness check read them as "registered tests missing on disk" and
+     threw before a single suite ran. The gate could not start at all. Both run
+     green; nothing about either suite changed. */
+  'native-persistence-clarity-proof.js',
+  'save-press-truth-proof.js',
   /* label-1.0.0 (owner 2026-09-02: "whoever I have up needs to be consistent
      everywhere"; measured 2026-09-02 13:4x): the saved sidecar's fingerprint carried the
      up-now patient's NAME in patientLabel while every identity and clinical
@@ -1598,6 +1607,10 @@ const tests = [
      not have is covered, not owed; and each write row shows the exact text that
      will land (owner, same day: "actually showing what's going to be written"). */
   'write-sheet-agreement-proof.js',
+  /* rowfix-1.0.0 (2026-09-11): the review sheet speaks the doctor's words,
+     every BLOCKED / MANUAL / NOT SENT row carries its own one-press next move,
+     the drawer holding them ships open, and not one of those controls can send. */
+  'write-row-controls-proof.js',
   'reopen-label-identity-proof.js',
   'retry-visible-proof.js',
   'visit-template-scope-proof.js',
@@ -2419,7 +2432,15 @@ const tests = [
      as "The patient or visit source changed". The skip now needs BOTH a
      __mlsOpenSwitchFix.resets delta and changed bytes; a cross-tab switch, a
      newVisit() that threw, and a stale reset level all still clear. */
-  'f16-context-clear-owner-runtime.test.js'
+  'f16-context-clear-owner-runtime.test.js',
+  /* REGISTERED HERE 2026-09-11. These three shipped as .test.js files that no
+     list named, so the completeness check below threw "unregistered automated
+     tests" and the gate could not start. Each was run on its own first and is
+     green; registering them is the whole change. A suite nobody runs is
+     coverage that exists only on paper. */
+  'structured-repair-five-field-runtime.test.js',
+  'visit-navigation-intent-runtime.test.js',
+  'write-progress-save-accounting-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

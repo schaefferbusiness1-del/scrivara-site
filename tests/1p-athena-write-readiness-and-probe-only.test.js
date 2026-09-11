@@ -333,7 +333,10 @@ const NOTE = 'PREOPERATIVE DIAGNOSIS: right knee osteoarthritis.\nPROCEDURE: tot
     assert(diagLine.indexOf('keep one') >= 0, 'the diagnostics line does not say what to do about extra tabs');
     assert(diagLine.indexOf('unloaded by Chrome') >= 0, 'the diagnostics line does not report the unloaded tab');
     assert(diagLine.indexOf('expected day ' + DAY) >= 0, 'the diagnostics line does not report the expected day: ' + diagLine);
-    assert(diagLine.indexOf('appointment id is bound') >= 0, 'the diagnostics line does not report the appointment binding');
+    /* plainwords-1.1.0 (2026-09-11): the same fact, said as an outcome - the
+       word "bound" was the last engineering word in a line a doctor reads. */
+    assert(diagLine.indexOf('this visit is matched to its Athena appointment') >= 0,
+      'the diagnostics line does not report whether this visit is matched to its Athena appointment: ' + diagLine);
     [PATIENT.name, PATIENT.dob, PATIENT.mrn, APPOINTMENT].forEach(secret => {
       assert.strictEqual(diagLine.indexOf(secret), -1, 'the on-screen diagnostics line leaked ' + secret);
     });

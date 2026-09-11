@@ -55,9 +55,14 @@ const LEDGER = JSON.stringify({ v: 1, rows: {
   'appointment-id:70000777': { state: 'done', patientId: PATIENT.patientId, backendAppointmentId: CAL_ROW.id, appt_date: DAY }
 } });
 
-/* The exact refusal the owner photographed. */
-const SCREENSHOT_BLOCK = 'The exact visit needs its date, provider, and appointment ID (or a bound encounter ID and URL). MLS will not guess an encounter.';
-const CURE_LABEL = 'Bind this visit to its Athena appointment — re-pulls this day';
+/* The refusal the owner photographed, in the words it is said in today.
+   plainwords-1.1.0 (2026-09-11) reworded ONE clause of it - "a bound encounter
+   ID and URL" became "a saved encounter ID and link", because "bound" was the
+   last engineering word left in a sentence a doctor reads. Nothing else about
+   the refusal moved, and the owner's screenshot is quoted verbatim in the
+   header above so the record of what he saw is not edited by a wording pass. */
+const SCREENSHOT_BLOCK = 'The exact visit needs its date, provider, and appointment ID (or a saved encounter ID and link). MLS will not guess an encounter.';
+const CURE_LABEL = 'Match this visit to its Athena appointment — re-checks that day';
 
 /* ---- source pins: the cure cannot become a shortcut ---- */
 {
@@ -197,8 +202,9 @@ function historicalOpts() {
     ok(noteRow && noteRow.reason === SCREENSHOT_BLOCK, 'the refusal text must be the one the owner photographed');
     ok(wf.diagnostics.envLine().indexOf('this review has no expected day') >= 0,
       'the footer must say the review has no expected day');
-    ok(wf.diagnostics.envLine().indexOf('no appointment id is bound to this encounter') >= 0,
-      'the footer must say no appointment id is bound');
+    /* plainwords-1.1.0: the same fact, said as an outcome. */
+    ok(wf.diagnostics.envLine().indexOf('this visit is not matched to an Athena appointment yet') >= 0,
+      'the footer must say this visit is not matched to an Athena appointment yet');
 
     /* ---- 2. the sheet offers the cure, named as the owner asked ---- */
     const buttons = h.cureButtons();

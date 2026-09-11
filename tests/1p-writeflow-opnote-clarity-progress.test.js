@@ -731,8 +731,8 @@ async function settle(n) { for (let i = 0; i < (n || 400); i++) await new Promis
       expectedContext: { visitDate: '', provider: '', appointmentId: '' }, requireExpectedVisit: true, receiptSessionId: 'op-head-unbound' });
     await settle(120);
     const html = h.cardHtml();
-    ok(html.indexOf('visit date not bound yet') > 0, 'an unbound visit date is silently omitted from the header');
-    ok(html.indexOf('provider not bound yet') > 0, 'an unbound provider is silently omitted from the header');
+    ok(html.indexOf('visit date not matched yet') > 0, 'an unbound visit date is silently omitted from the header');
+    ok(html.indexOf('provider not matched yet') > 0, 'an unbound provider is silently omitted from the header');
   }
 
   /* ===== 7. THE THIRD OP-NOTE SURFACE: the writeback chat console ========= */

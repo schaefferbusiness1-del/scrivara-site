@@ -125,6 +125,76 @@ ok(/classList\.toggle\('ez3adv'/.test(WIRE_ADV_BODY), 'the toggle no longer flip
 ok(!/display/.test(WIRE_ADV_BODY), 'the advanced toggle now writes a display - that is how the flow disappeared');
 
 /* ==========================================================================
+ * 1b.  ONE NOTE ON THE SCREEN, NEVER TWO - AND NEVER ZERO  (onenote-1.1.0)
+ * --------------------------------------------------------------------------
+ * THE SHAPE ON PAPER. Opening the review workspace shows #noteCard, and this
+ * module ADOPTS the app's own #noteBox into it. The guided flow above renders
+ * its OWN #ez3Note - a two-way mirror of that same #noteBox - so on paper the
+ * doctor gets the same note twice, one above the other, and the flow's copy
+ * should yield.
+ *
+ * WHAT WAS ACTUALLY ON THE SCREEN (measured in the booted 1p app, 2026-09-11).
+ * feat_mls_visit_focus.js vf-1.2.0 ALREADY folds #noteCard's own renderings -
+ * #noteEmpty, .mlsf-bar, .mlsf-note, .mls-opaddword, .mls-nm-meter - under
+ * body.mls-vfocus.mls-note-live, and its ROUTES entry says in as many words
+ * that the route back is "the engine note ladder (#ez3Note) renders the same
+ * note text"; #noteBox itself carries an inline display:none from the
+ * formatter. So in every shipping shell - this file loads visit-focus itself,
+ * on idle - the workspace card shows NO note, and an unconditional yield here
+ * took the last one away: visible copies of the note went 1 -> 0, over a card
+ * reading "2 Review the note - Edit anything...".
+ *
+ * THE CONTRACT, in both directions. Exactly ONE surface shows the note in
+ * every body state. The yield fires only where the duplicate it was written
+ * for can actually happen - visit-focus not on the page, which is what
+ * __mlsVisitFocus.revert() and a failed deferred load both leave behind.
+ * MEASURED both ways after the fix: with visit-focus live the workspace shows
+ * textarea#ez3Note and nothing else; with visit-focus reverted it shows
+ * #noteCard's own rendering and nothing else.
+ *
+ * Only the NOTE yields: the record pill, Sign and Send are rendered outside
+ * .ez3-notecard and stay on screen in both states (pinned in
+ * tests/easy-pause-resume-runtime.test.js).
+ * ======================================================================== */
+ok(CONNECT.includes("'#captureCard,#noteCard,#emrCard,#outcomesCard{display:none!important;}'"),
+  'the engine cards are no longer hidden outside the review workspace - the note would show twice there');
+ok(CONNECT.includes("'body.ez3adv #noteCard,body.ez3adv #emrCard,body.ez3adv #outcomesCard{display:block!important;}'"),
+  'the review workspace no longer shows #noteCard - the surface that holds the adopted note');
+ok(CONNECT.includes("'body.ez3adv:not(.mls-vfocus) .ez3-notecard{display:none!important;}'"),
+  'the flow note card yields unconditionally again, so where visit-focus has already folded #noteCard\'s rendering the doctor is left with NO note at all (measured 1 -> 0)');
+ok(CONNECT.includes('\'<div class="ez3-card ez3-notecard">\''),
+  'the flow note card lost the .ez3-notecard hook, so the yield rule matches nothing');
+
+/* THE CROSS-CHECK THAT MAKES THE GUARD READABLE. The guard exists because of
+   a rule in ANOTHER file. Read that file: if visit-focus ever stops folding
+   #noteCard's note, this suite must be the thing that says the guard can go,
+   rather than leaving a :not() nobody can explain. */
+const VFOCUS = read('feat_mls_visit_focus.js');
+ok(/body\.' \+ BODY \+ '\.' \+ NOTE \+ ' #visitView #noteCard \.mlsf-note/.test(VFOCUS),
+  'feat_mls_visit_focus.js no longer folds #noteCard .mlsf-note, so the review workspace may show the note again and the :not(.mls-vfocus) guard on the yield is now the thing hiding a duplicate');
+ok(/var STYLE_ID = 'mlsVfCss', BODY = 'mls-vfocus'/.test(VFOCUS),
+  'feat_mls_visit_focus.js renamed the body class the yield guard reads, so the guard now matches nothing and the note can vanish again');
+ok(/document\.body\.classList\.toggle\(BODY, false\)/.test(VFOCUS),
+  'feat_mls_visit_focus.js revert() no longer drops its body class, so the yield can never fire in the one state it is for');
+
+/* The yield is guarded in one direction only: outside the workspace nothing
+   may hide the flow's note card, or the doctor would have no note at all. */
+const NOTECARD_RULES = CONNECT.match(/[^'"\n]*\.ez3-notecard[^'"{}\n]*\{[^}]*\}/g) || [];
+ok(NOTECARD_RULES.length >= 1, 'no stylesheet rule mentions .ez3-notecard at all');
+for (const rule of NOTECARD_RULES) {
+  if (!/display\s*:\s*none/i.test(rule)) continue;
+  ok(/^\s*body\.ez3adv:not\(\.mls-vfocus\)\s+\.ez3-notecard/.test(rule),
+    'a rule hides the flow note card without BOTH guards (body.ez3adv, and visit-focus not folding the other copy), so the note can vanish with nothing showing it: ' + rule);
+}
+
+/* And the same class may not be smuggled into the shells, where no rule here
+   could see it. */
+for (const [label, text] of [['1pScribeFlow.html', SHELL], ['1p/index.html', TWIN]]) {
+  ok(text.indexOf('ez3-notecard') < 0,
+    label + ' now styles or renders .ez3-notecard - the yield contract lives in one place, the connect stylesheet');
+}
+
+/* ==========================================================================
  * 2.  THE TOGGLE IS HONEST  (static half)
  * ======================================================================== */
 const ADV_ROW = CONNECT.slice(CONNECT.indexOf('  function advRowHtml() {'));

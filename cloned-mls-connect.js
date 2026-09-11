@@ -8332,6 +8332,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      last click is fired and never read. This lane cannot make the engine read
      it, but it can WATCH the same press and then look at the result, which is
      the same answer arrived at from the outside. */
+  /* recmore-1.1.0: the note screen's record door needed NO new entry here. It
+     is .ez3fl-recbtn - the lane's own pill, already on this list and already
+     wired to toggleTopRecording - kept on screen in one more state rather than
+     a second button beside it. */
   var REC_START_SEL = '#ez3ActiveGo,#ez3Rec,#ez3Rec2,#ez3Next,#ez3Nxt,#ez3Now,#captureBtn,.ez3fl-recbtn';
   /* The engine's own predicate, copied deliberately rather than shared: these
      hero buttons double as "go to the next patient" with data-rec="0", and
@@ -9267,7 +9271,22 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          states and the hero owns starting, exactly as onboarding teaches.
          (Pause/resume reachability is pinned by easy-pause-resume-runtime.) */
       var rbResumable = !!(text.trim() && _recSessionSeen);
-      setLaneHidden(rb, !live && !rbResumable);
+      /* recmore-1.1.0 (2026-09-11) - ONCE THE NOTE EXISTS, THE MICROPHONE
+         STAYS ON THE SCREEN. MEASURED in the booted app on the note screen:
+         #ez3Rec and #ez3Rec2 are not rendered in that state at all, and this
+         pill hid itself too, so a doctor who remembered one more finding had
+         NO record door anywhere - they had to sign or leave the visit before
+         they could say it. This is the b940 rule kept, not broken: that rule
+         took the pill off the IDLE screen because the taught hero there says
+         the same thing, and on the note screen nothing else offers recording.
+         The label is already right for both shapes - "Resume recording" when a
+         stopped session has transcript, "Start recording - <name>" when the
+         visit was pasted or dictated elsewhere - and the press is the ordinary
+         toggleTopRecording, so the exact-patient check, the recvis refusals and
+         the one-transcript append are the same ones every other door gets.
+         Nothing is generated and nothing is sent: the note in the box is left
+         exactly as it is until the doctor presses Regenerate. */
+      setLaneHidden(rb, !live && !rbResumable && !noteText.trim());
       if (rb.classList.contains('live') !== live) rb.classList.toggle('live', live);
       /* 2026-07-29: body.mls-recording had NO writer anywhere, while three
          modules stand down on it - so every one of those guards was dead and
@@ -22558,6 +22577,31 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     '#captureCard,#noteCard,#emrCard,#outcomesCard{display:none!important;}',
     'body.ez3adv #noteCard,body.ez3adv #emrCard,body.ez3adv #outcomesCard{display:block!important;}',
     'body.ez3adv #noteCard button[onclick*="generateNote"],body.ez3adv #noteCard button[onclick*="regenerateNote"],body.ez3adv #noteCard .ne-regen{display:none!important;}',
+    /* onenote-1.1.0: ONE NOTE ON THE SCREEN - AND NEVER ZERO.
+       The rule above shows #noteCard while the review workspace is open, and
+       revwork-1.2.0 ADOPTS the app's own #noteBox into it, so on paper the
+       guided flow's #ez3Note (a two-way mirror of that same #noteBox) is a
+       second copy of one note and should yield.
+
+       MEASURED IN THE BOOTED APP, 2026-09-11, and this is why the yield is
+       CONDITIONAL. feat_mls_visit_focus.js vf-1.2.0 already folds #noteCard's
+       own renderings - #noteEmpty, .mlsf-bar, .mlsf-note, .mls-opaddword -
+       under body.mls-vfocus.mls-note-live, and its ROUTES entry says in as many
+       words that the route back is "the engine note ladder (#ez3Note) renders
+       the same note text". #noteBox itself carries an inline display:none from
+       the formatter. So with visit-focus live - which is EVERY shipping shell,
+       because this same file loads it on idle - #noteCard shows no note at all,
+       and an unconditional yield here left the doctor on a workspace card that
+       read "2 Review the note" over nothing. Measured: visible copies of the
+       note went 1 -> 0.
+
+       So the yield fires only where the duplicate it was written for can
+       actually happen: visit-focus not on the page (it is deferred, and
+       __mlsVisitFocus.revert() removes both the stylesheet and this class).
+       Both states now show exactly one note - with visit-focus, #ez3Note;
+       without it, #noteCard. The record, Sign and Send controls live OUTSIDE
+       this card on purpose, so nothing actionable moves either way. */
+    'body.ez3adv:not(.mls-vfocus) .ez3-notecard{display:none!important;}',
     '.ez3-advrow{display:flex;justify-content:center;margin:2px 0 0;}',
     '.ez3-advrow button{background:none;border:0;color:#C9DCD2;font-size:12px;font-weight:700;cursor:pointer;padding:7px 10px;}',
     '.ez3-advrow button:hover{color:#EAF1EE;}',
@@ -24845,7 +24889,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          carries that cure as a button, instead of sending the doctor away. */
       var bindCureHere = /re-pull this day/i.test(S.lastWarn) && bindCureOffered();
       h += '<div class="' + (calmNotice ? 'ez3-infobar' : 'ez3-warnbar') + '" role="status">' + (calmNotice ? '' : '⚠️ ') + esc(S.lastWarn) +
-        (bindCureHere ? '<button type="button" class="ez3-sm" id="ez3BindNow" title="Sends athenaOne’s Day view to ' + esc(bindCureDay()) + ', re-pulls that day’s schedule, then re-checks this exact appointment. Reads Athena; writes nothing.">🔗 Bind this visit — re-pull this day</button>' : '') +
+        (bindCureHere ? '<button type="button" class="ez3-sm" id="ez3BindNow" title="Sends athenaOne’s Day view to ' + esc(bindCureDay()) + ', re-pulls that day’s schedule, then re-checks this exact appointment. Reads Athena; writes nothing.">🔗 Match this visit to its Athena appointment</button>' : '') +
         '</div>';
     }
     h += '<div class="ez3-card">' +
@@ -24901,7 +24945,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
            '<p class="ez3-status">MLS is writing the note for ' + esc(nm) + '. It appears here the moment it’s ready.</p>';
     } else if (S.phase === 'note') {
       var signedNow = S.signedAt > 0;
-      h += '<div class="ez3-card">' +
+      /* onenote-1.0.0: .ez3-notecard is the hook the stylesheet uses to yield
+         this copy of the note to #noteCard while the review workspace is open.
+         Nothing else in this branch carries it - the record, Sign and Send
+         controls below stay on screen in both states. */
+      h += '<div class="ez3-card ez3-notecard">' +
              '<textarea class="ez3-note" id="ez3Note" ' + (S.editing ? '' : 'readonly') + '></textarea>' +
              '<div class="ez3-chips" id="ez3StyleChips"></div>' +
              '<div class="ez3-row2" style="margin:10px 0 0">' +
@@ -24910,6 +24958,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
                '<button type="button" class="ez3-sm" id="ez3Copy">📋 Copy for Athena</button>' +
              '</div>' +
            '</div>';
+      /* recmore-1.1.0: THE NOTE SCREEN'S RECORD DOOR IS NOT RENDERED HERE, AND
+         DELIBERATELY SO. recmore-1.0.0 added an "Add more to this recording"
+         chip in this branch, inside a .ez3-row2 - and MEASURED in the booted
+         app it never reached the doctor: feat_mls_visit_focus.js folds every
+         .ez3-row2 child in a locked visit behind "Visit shortcuts", exactly as
+         it folds #ez3Rec2 on the stopped screen. A door nobody can see is not
+         a door, and a second one beside a door that works is the "two controls
+         for one job" defect walkfix-1.0.0 already paid for. The one door is
+         the lane's own record pill (.ez3fl-recbtn -> toggleTopRecording), and
+         syncTopLane now keeps it on screen once a note exists. */
       if (!signedNow && signReady()) {
         h += '<button type="button" class="ez3-big" id="ez3Sign">✔ Review &amp; Sign' +
              '<small>Signs and saves the note in MLS — never signs anything in Athena</small></button>' +
@@ -66432,12 +66490,21 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
  * carried over byte-for-byte from whoever painted it, so a repaint can never
  * rename a patient, drop their appointment time, or double-escape a name.
  *
- * WHEN THE UP-NOW PATIENT IS NOT THE ACTIVE PATIENT IT REPAINTS NOTHING. That
- * case already has an honest owner - the schedule anchor's "Up now on the
- * schedule: <name>. You are working in a different chart, so nothing was
- * switched." strip, and today's lateness strip - and a second sentence about
- * it is precisely the second banner this must not add. Standing down is the
- * whole behaviour there.
+ * WHEN THE UP-NOW PATIENT IS NOT THE ACTIVE PATIENT (upnowtail-1.0.1). This
+ * used to repaint nothing at all, and that was the one hole left in the very
+ * defect this module exists to close: with a different chart open, the
+ * load-time "loaded &amp; ready. Hit Start recording." sentence simply stayed
+ * on the screen, now describing a patient who was not open. It is split in
+ * two. When both names are decidable and they are DIFFERENT people, the same
+ * tail is replaced with the truth and the next press - "not the chart you have
+ * open - open this patient to work on their visit." That is still one sentence
+ * in the one banner, never a second banner: the schedule anchor's own "You are
+ * working in a different chart" strip is a separate surface and is untouched.
+ * When nothing is known - no active chart at all, which is exactly the
+ * condition the shell's _calLoadNextUp paints the ready sentence under, or a
+ * single-token name this module refuses to reason about - it still stands down
+ * and leaves today's surface alone, because a guess would only be a newer lie
+ * in place of the old one.
  *
  * REPAINTS ON THE EVENTS THE FLOW LANE ALREADY EMITS. The engine's
  * mls:generation-started / -settled / -refused, mls:active-patient-changed,
@@ -66478,7 +66545,13 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
     generating: 'generating your note - your transcript is safe.',
     transcript: 'transcript captured - Generate one note.',
     note: 'note ready - review, then send to Athena.',
-    sent: 'in Athena - this note is written and verified.'
+    sent: 'in Athena - this note is written and verified.',
+    /* upnowtail-1.0.1: the state that used to have NO sentence, which is why
+       the stale "loaded &amp; ready. Hit Start recording." survived on a screen
+       where a different chart was open. It is the one state whose sentence is
+       about the banner's patient rather than the open visit, so it names the
+       next press and nothing else. */
+    away: 'not the chart you have open - open this patient to work on their visit.'
   };
   function upNowUnescape(s) {
     return String(s == null ? '' : s)
@@ -66504,6 +66577,12 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
   function upNowKeyTokens(v) {
     return upNowNormName(v).split(' ').filter(function (x) { return x.length > 1; }).sort();
   }
+  /* upnowtail-1.0.1: "can this name decide anything at all". A blank chart and
+     a one-token name are both refused by upNowSamePerson, but they are not the
+     same fact: the first is an ANSWER (nothing is open), the second is an
+     inability to tell. Only a name this returns true for may be used to say
+     out loud that a DIFFERENT patient is open. */
+  function upNowNameKnown(v) { return upNowKeyTokens(v).length >= 2; }
   function upNowSamePerson(a, b) {
     var x = upNowKeyTokens(a), y = upNowKeyTokens(b);
     /* A single-token name on either side is refused outright - even when the
@@ -66541,7 +66620,24 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
      landed the doctor's only remaining question is whether it landed. */
   function upNowVisitState(ctx) {
     ctx = ctx || {};
-    if (!upNowSamePerson(ctx.upName, ctx.activeName)) return 'elsewhere';
+    if (!upNowSamePerson(ctx.upName, ctx.activeName)) {
+      /* upnowtail-1.0.1: THE ONE STATE WITH NO SENTENCE WAS THE ONE THE OWNER
+         SAW GO STALE. 'elsewhere' painted nothing, so the load-time "loaded
+         &amp; ready. Hit Start recording." stayed on screen over a chart that
+         was not this patient at all - the same class of lie this module exists
+         to end, in the only state it had left uncovered.
+
+         It is split in two, because only one of the two can be stated
+         truthfully. When BOTH names are decidable and they are different
+         people, the banner can say so and offer the next press ('away'). When
+         the active chart is blank - which is exactly the condition the shell's
+         own _calLoadNextUp paints "loaded &amp; ready" under - or when either
+         name is a single token this module refuses to reason about, nothing
+         here is known, so 'elsewhere' keeps standing down and today's surface
+         keeps its sentence. A guess would be a newer lie in place of the old
+         one. */
+      return (upNowNameKnown(ctx.upName) && upNowNameKnown(ctx.activeName)) ? 'away' : 'elsewhere';
+    }
     if (ctx.recording) return 'recording';
     if (ctx.generating) return 'generating';
     if (ctx.sent) return 'sent';

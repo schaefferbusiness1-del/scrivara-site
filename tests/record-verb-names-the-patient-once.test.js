@@ -68,10 +68,38 @@ assert(live > 0, "the live ez3 module marker (VER = '3.7.3') must still exist");
     'Stripping it would be an over-correction of the workspace fix.');
 }
 
-/* ---- SOURCE 1 (b676): the ez3fl flow-lane pill stays hidden when idle ---- */
-assert(connect.includes('setLaneHidden(rb, !live && !rbResumable)'),
-  'the b676 flow-lane guard is gone - the ez3fl record pill would render while idle again. ' +
-  'This is one of the three sources of the duplicate pill and it was previously fixed.');
+/* ---- SOURCE 1 (b676): the ez3fl flow-lane pill stays hidden when idle ----
+   RE-AIMED 2026-09-11 (recmore-1.1.0) FROM A SPELLING TO THE PROPERTY. This
+   pinned the literal `setLaneHidden(rb, !live && !rbResumable)`, and the
+   property b676 bought is narrower than that line: the pill must not render on
+   the IDLE screen, where the taught hero already says Start Recording. It now
+   also survives the NOTE state, because MEASURED on the note screen every
+   other record door is absent or hidden and a doctor who remembered one more
+   finding had nowhere to say it. So the pin runs the shipped predicate instead
+   of matching its text: idle - no transcript, no seen session, no note - still
+   hides it, which is exactly b676. (The whole truth table, including the note
+   state, is executed in tests/easy-pause-resume-runtime.test.js.) */
+{
+  const at = connect.indexOf('      var rbResumable = !!(text.trim() && _recSessionSeen);');
+  assert(at > 0, 'the b676 flow-lane guard is gone - the ez3fl record pill visibility predicate no longer exists');
+  const endAt = connect.indexOf(';', connect.indexOf('setLaneHidden(rb,', at));
+  assert(endAt > at, 'the b676 flow-lane guard no longer ends in a setLaneHidden call');
+  const predicate = connect.slice(at, endAt + 1);
+  const vm = require('vm');
+  const decide = (live, text, seen, noteText) => {
+    let got = null;
+    const ctx = { live, text, _recSessionSeen: seen, noteText, rb: {}, setLaneHidden(el, v) { got = v; } };
+    vm.createContext(ctx);
+    vm.runInContext('(function () {' + predicate + '})()', ctx);
+    assert(got !== null, 'the lane pill predicate decided nothing at all');
+    return !!got;
+  };
+  assert(decide(false, '', false, '') === true,
+    'the b676 flow-lane guard is gone - the ez3fl record pill renders on the idle screen again, beside the taught hero that says the same thing. ' +
+    'This is one of the three sources of the duplicate pill and it was previously fixed.');
+  assert(decide(false, '   ', false, '   ') === true,
+    'whitespace alone now counts as a transcript or a note, so the idle screen grows the duplicate pill back');
+}
 /* Matched on the distinctive fragment, not a resolved selector: these rules are
    built by CONCATENATION ('#' + ROOT_ID + ' .ez3fl-recbtn...'), so searching for
    the composed selector finds nothing even when the rule ships. */
