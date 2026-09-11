@@ -372,9 +372,34 @@ const KEEP_REGIONS = [
      byte-identical, which is the check that nothing about WHICH rows a press
      runs, or whether it may run at all, changed here; the property assertions
      below this table read the plan off the shipped source and still pass. */
+  /* MOVED DELIBERATELY / RE-AIMED DELIBERATELY, savetruth-1.4.0 (2026-09-11).
+     A presentation pass only, and the PLAN half did not move AT ALL - measured,
+     not asserted: the slice from `function unifiedPrimaryPlan(` to `function
+     unifiedSyncPrimaryButton(` is byte-identical to b1231 (615fe840), same
+     length, same SHA. The whole diff over this region against that commit is
+     the qOnlySave TITLE expression inside unifiedSyncPrimaryButton: one
+     hard-coded sentence became savenamedOnlySavePressTitle(state, qSaveRow),
+     which composes the title from the SAVE ROW'S OWN consequence string (the
+     SAVENAMED_BOTH_* constants the row itself renders) instead of keeping a
+     second hand-written copy of it. The supporting bytes are `qSaveRow` - a
+     local that is read by nothing but that title - and the try block widened
+     to set it. This also cured a live drift the hard-coded copy carried: it
+     promised "MLS checks this exact Athena encounter read-only" on EVERY
+     shape, including an operative note whose own row says MLS presses the
+     encounter Save.
+     No mode, branch, predicate or row-set moved: `plan.mode`, wfnextQueueRows,
+     savenamedIsRow and every enable/disable decision are character-for-character
+     the same, which is why KEEP_REGIONS[0] (the arrival default) and
+     KEEP_REGIONS[2] (the state derivation) did not move and why NONE of the
+     seven SHA-pinned write-path regions moved - recomputed against the shipped
+     source, all seven still equal the digests tests/sheet-clarity.test.js and
+     tests/write-auto-chain.test.js carry. The two shapes' titles, the
+     derivation (title CONTAINS the manifest row's own .consequence, not a
+     spelling) and a negative control on the pre-fix bytes are driven in
+     tests/native-persistence-clarity-proof.js section 15. */
   ['the primary button plan and its sync (unifiedPrimaryPlan + unifiedSyncPrimaryButton)',
     '  function unifiedPrimaryPlan(state) {', "  /* rwfix-1.0.0 (b1169): the include checkboxes' ONE handler",
-    '309768119e9afa7af1b1585c667480ed830dcd4632b8bb9c62fe524aa8d30f8e'],
+    'a032396732a4ad1d9e8b76a28af0c0d3fd95a31bc3517dfc1fa7757f42683dca'],
   /* RE-AIMED DELIBERATELY, savetruth-1.0.0 (2026-09-10). Not a presentation
      pass: the READY sentence promised "MLS verifies the saved unsigned note
      ... without pressing Save" on the extension's CAPABILITY FLAG alone, but
@@ -541,9 +566,29 @@ KEEP_REGIONS.forEach(function (r) {
      data-mls-* attribute this function writes, the preview hash, the batch
      list and the qOnlySave branch are byte-identical, which is why
      KEEP_REGIONS' plan+sync pin above moved by exactly this one line and the
-     plan half did not move at all. */
+     plan half did not move at all.
+     MOVED DELIBERATELY / RE-AIMED DELIBERATELY, savetruth-1.4.0 (2026-09-11):
+     re-aimed a third time, and again for the SAME TITLE - the qOnlySave branch,
+     the one this suite has now moved for three times running. The hard-coded
+     sentence became savenamedOnlySavePressTitle(state, qSaveRow), which builds
+     the title out of the SAVE ROW'S OWN consequence (the SAVENAMED_BOTH_*
+     constants the row already renders) rather than keeping a second
+     hand-written copy of it that can drift - and it HAD drifted: the literal
+     promised "MLS checks this exact Athena encounter read-only" on every shape,
+     including an operative note whose own row says MLS presses the encounter
+     Save. The supporting bytes are one local, `qSaveRow`, read by nothing but
+     that title, and the try block widened to set it. MEASURED against b1231
+     (615fe840): this slice's whole diff is that hunk, and the PLAN half
+     (unifiedPrimaryPlan) is byte-identical - same length, same SHA - so
+     KEEP_REGIONS' plan+sync pin above moved by exactly these same bytes and
+     nothing else. Both enable/disable decisions, every data-mls-* attribute
+     this function writes, the preview hash, the batch list and the non-qOnlySave
+     title are byte-identical. The derivation itself (the title CONTAINS the
+     manifest row's own .consequence, both shapes differ, and the pre-fix bytes
+     reproduce the read-only drift) is driven in
+     tests/native-persistence-clarity-proof.js section 15. */
   eq(crypto.createHash('sha256').update(SYNC, 'utf8').digest('hex'),
-    'efeedeaab1eeabb96aa161ad8c0ca8cef002705a908f9ecb119e11dfacea90c3',
+    '371c9d8275ee5b4843d228466acde9be57fb7d8829063180d8fffc63ea62fe14',
     'THE BUTTON SYNC CHANGED OUTSIDE livecheck-1.0.0 - it may add only the current-probe disable branch proven by the runtime regression');
   ok(FLOW.indexOf("var WFDONE_NOTHING_LEFT_LABEL = 'Nothing left to send';") > 0,
     'the finished-sheet label stopped being the SAME shared constant renderUnifiedReceipts already writes - one state, two sentences');

@@ -1247,6 +1247,23 @@
   var SAVENAMED_BOTH_TAIL = ', then verify or save the note in Athena';
   var SAVENAMED_BOTH_CLAUSE = ' The same press then reads the saved note back, pressing this encounter\'s Save once first if Athena has not already saved it. Sign stays your own click.';
   var SAVENAMED_BOTH_SHORT = ', then MLS reads the saved note back, pressing this encounter\'s Save once first if Athena has not already saved it.';
+  /* savetruth-1.4.0 (2026-09-11): THE LONE SAVE PRESS'S HOVER SENTENCE IS THE
+     ROW'S OWN SENTENCE. When the only thing a press will run is the save step,
+     the primary button's hover sentence was one hand-written paraphrase of the
+     both-outcomes wording, free to drift away from the row it describes - and
+     it already had: it promised "MLS checks this exact Athena encounter
+     read-only" on EVERY shape, including the legacy and operative ones, whose
+     own save row says plainly that MLS presses the encounter Save. The lead-in
+     says which press this is; the outcomes come from the row's OWN consequence
+     - SAVENAMED_BOTH_CONSEQUENCE where this review can take either leg,
+     SAVENAMED_ROW_CONSEQUENCE where it can only press Save - so a re-worded
+     constant moves the button with it. */
+  var SAVENAMED_ONLY_PRESS_LEAD = 'This is the last press of this review. ';
+  function savenamedOnlySavePressTitle(state, row) {
+    var say = S(row && row.consequence);
+    if (!say) say = savenamedNativeFinishShape(state) ? SAVENAMED_BOTH_CONSEQUENCE : SAVENAMED_ROW_CONSEQUENCE;
+    return SAVENAMED_ONLY_PRESS_LEAD + say;
+  }
   /* savetruth-1.1.0 (2026-09-10) - THE ARMING PHRASE IS NOT A PLACE FOR PROSE.
      MLS Assist mints a save_draft authorization ONLY from a trusted click whose
      textContent + aria-label + title matches content.js _mlsActionLabelMatches:
@@ -3261,11 +3278,18 @@
          operative note, which has no saved-note check at all. Three legs, three
          sentences: the Save click ran, the read-only check ran, or MLS never
          got far enough to say which. */
+      /* savetruth-1.4.0 (2026-09-11): ...and the THIRD leg claims nothing about
+         the press either. It was still ending "MLS did not press Save", which
+         is the one thing a timeout cannot know - the click may have landed and
+         the answer never come back - and it still called the step "the
+         encounter save" on a review whose save step may never have started. It
+         now says only what is certain: no answer came back, nothing was signed,
+         and here is the press the doctor can make next. */
       else if (save.phase === 'refused' || save.phase === 'timeout' || save.phase === 'skipped') saveText = unifiedSavePressed(state)
         ? ' Encounter save was not verified. Inspect Athena before retrying. MLS never signs.'
         : (unifiedSaveReadOnlyRefused(state)
           ? ' The saved-note check did not finish. MLS did not press Save and nothing was signed. Inspect Athena before retrying.'
-          : ' The encounter save did not finish. MLS did not press Save and nothing was signed. Inspect Athena before retrying.');
+          : ' MLS did not get an answer from Athena for the save step. Nothing was signed. Open the encounter to check, then press Confirm again.');
       else if (save.phase === 'verify') saveText = ' MLS is checking the saved note in Athena. This is read-only; MLS does not press Save and never signs.';
       else if (save.phase === 'check' || save.phase === 'write') saveText = ' Encounter save is in progress. MLS never signs.';
       else saveText = savenamedNativeFinishShape(state)
@@ -6010,10 +6034,16 @@
         /* savetruth-1.1.0: when the queue this press will run is the encounter
            save ALONE - every section already landed - "sends every checked note
            section" describes work that is finished. Say what the press does. */
-        var qOnlySave = false;
-        try { var qRows = wfnextQueueRows(state); qOnlySave = qRows.length > 0 && qRows.every(savenamedIsRow); } catch (eQ) { qOnlySave = false; }
+        /* savetruth-1.4.0: ...and it says it in the save ROW'S OWN words, never
+           a second hand-written copy of them (savenamedOnlySavePressTitle). */
+        var qOnlySave = false, qSaveRow = null;
+        try {
+          var qRows = wfnextQueueRows(state);
+          qOnlySave = qRows.length > 0 && qRows.every(savenamedIsRow);
+          qSaveRow = qOnlySave ? qRows[0] : null;
+        } catch (eQ) { qOnlySave = false; qSaveRow = null; }
         go.title = qOnlySave
-          ? 'Runs the final step of this review: MLS checks this exact Athena encounter read-only, then reads the saved note back - pressing this encounter\'s Save control once first if Athena has not already saved it. It never signs and never bills.'
+          ? savenamedOnlySavePressTitle(state, qSaveRow)
           : 'Sends every checked note section, one at a time, each with its own read-only Athena check and its own confirmation. If this review includes the final Save step, MLS saves the draft after the sections finish. Sign stays manual.';
       } catch (e2) {}
     } else if (plan.mode === 'none') {

@@ -59,6 +59,18 @@
  *       is made only for a key athenaOne can persist and only after a receipt
  *       carries persistenceMode native-section.
  *
+ * WHAT savetruth-1.4.0 ADDED (sections 14 - 15)
+ * ---------------------------------------------
+ *  14. THE THIRD LEG CLAIMS NEITHER LEG. The refused-save footer's third
+ *      branch - neither a Save click nor the read-only check proven - still
+ *      ended "MLS did not press Save and nothing was signed" over a TIMEOUT,
+ *      which proves neither, and opened "The encounter save did not finish"
+ *      on a step that may never have started.
+ *  15. THE LONE SAVE PRESS IS DESCRIBED IN THE ROW'S OWN WORDS. The primary
+ *      button's hover sentence for a save-only queue was a hand-written
+ *      paraphrase of the both-outcomes wording and had already drifted: it
+ *      promised a read-only check on every shape, operative notes included.
+ *
  * THE NEGATIVE CONTROL: every runtime case in sections 2-4 runs a SECOND time
  * against the pre-fix bytes, which must answer with the generic sentence, and
  * sections 7 and 9 each carry their own counter-case (a real Save press, an
@@ -906,5 +918,118 @@ async function reconcileReceipt(code, source) {
     }
   }
 
-  console.log('PASS native-persistence-clarity-proof: ' + checks + ' checks - all twelve saved-note refusal codes answer in the doctor\'s own words with a tail that is true for them, each of the five codes added by 999ba30f renders its own cure through the shipped receipt path (and the pre-fix bytes do not), an ATTEMPTED outcome is still never paraphrased, none of the twelve can start an automatic re-check, and the sheet-wide banner and guide state both outcomes on a named-section review while a generic one never claims MLS will not press Save; an operative note - which athenaOne can never persist natively - is told plainly that this press is the Save click; a cure that names Check Athena again puts that control on the screen and it re-probes; a read-only saved-note refusal never says Save was attempted on the pill, the button or the footer while a real Save press still does; a generic review never advertises a verify leg and reports the save it landed on the footer and the standing safety banner; and the mid-run persistence claim waits for a native-section receipt on a key athenaOne can persist');
+  /* ===== 14. THE THIRD LEG CLAIMS NEITHER LEG (savetruth-1.4.0) ============
+   * savetruth-1.3.0 split the footer's refused-save sentence into three legs,
+   * and the third one - the leg taken when NEITHER a Save click nor the
+   * read-only check is proven - still ended "MLS did not press Save and
+   * nothing was signed", under the opening "The encounter save did not
+   * finish". A timeout is exactly the outcome that proves neither of those:
+   * the click may have landed and the answer never come back, and the step may
+   * never have started. Section 12 pins the pill for that outcome; this pins
+   * the footer underneath it, and the two legs that ARE proven keep their own
+   * words (sections 7 and 11 carry those counter-cases). */
+  {
+    const NEW_THIRD = ' MLS did not get an answer from Athena for the save step. Nothing was signed. Open the encounter to check, then press Confirm again.';
+    const OLD_THIRD = ' The encounter save did not finish. MLS did not press Save and nothing was signed. Inspect Athena before retrying.';
+    ok(FLOW.indexOf("'" + NEW_THIRD + "'") > 0, 'the neither-leg footer sentence is not where this suite reads it');
+    eq(FLOW.indexOf(OLD_THIRD), -1, 'the pre-fix neither-leg sentence is still in the shipped bytes');
+    const PREFIX_THIRD_FLOW = FLOW.replace("'" + NEW_THIRD + "'", "'" + OLD_THIRD + "'");
+    ok(PREFIX_THIRD_FLOW !== FLOW && PREFIX_THIRD_FLOW.length !== FLOW.length,
+      'the neither-leg negative control is byte-identical to the shipped source - it would measure nothing');
+
+    async function timedOutSaveFooter(source) {
+      const h = makeHarness({
+        source: source,
+        onAction: (m, dflt) => ((m.mode === 'execute' && m.action === 'save_draft')
+          ? { __timeout: true } : dflt(m))
+      });
+      h.wf.openUnifiedConfirmation({ patient: PATIENT, sections: clone(NAMED_SECTIONS), expectedContext: BOUND, receiptSessionId: 'third-leg' });
+      await settle(200);
+      h.el('mlsAthenaUnifiedGo').click();
+      await settle(3000);
+      return String(h.el('mlsAthenaUnifiedProgress').innerHTML || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ');
+    }
+
+    const footer = await timedOutSaveFooter(FLOW);
+    eq(/did not press Save/.test(footer), false,
+      'the footer tells a timed-out save that Save was not pressed, which nobody can know: ' + footer);
+    eq(/saved-note check/.test(footer), false,
+      'the footer names a saved-note check this review is not proven to have run: ' + footer);
+    eq(/Encounter save was not verified/.test(footer), false,
+      'the footer reports a Save press that is not proven to have happened: ' + footer);
+    ok(footer.indexOf('MLS did not get an answer from Athena for the save step. Nothing was signed. Open the encounter to check, then press Confirm again.') >= 0,
+      'the footer does not say the one thing that is certain about a timed-out save: ' + footer);
+
+    /* THE NEGATIVE CONTROL: the pre-fix bytes make the claim again */
+    const pre = await timedOutSaveFooter(PREFIX_THIRD_FLOW);
+    ok(/did not press Save/.test(pre),
+      'the negative control does not reproduce the pre-fix claim, so this case measures nothing: ' + pre);
+  }
+
+  /* ===== 15. THE LONE SAVE PRESS IS DESCRIBED IN THE ROW'S OWN WORDS =======
+   * (savetruth-1.4.0.) When the queue this press will run is the save step
+   * ALONE, the primary button's hover sentence was one hand-written paraphrase
+   * of the both-outcomes wording - and it had already drifted: it promised
+   * "MLS checks this exact Athena encounter read-only" on EVERY shape,
+   * including the operative note, whose own save row says plainly that MLS
+   * presses the encounter Save (section 5b). The sentence is composed now, from
+   * the very consequence the save row carries, so the button cannot say one
+   * thing while the row it belongs to says another. */
+  {
+    const SHIPPED_TITLE_CALL = 'savenamedOnlySavePressTitle(state, qSaveRow)';
+    const OLD_TITLE_LITERAL = "'Runs the final step of this review: MLS checks this exact Athena encounter read-only, then reads the saved note back - pressing this encounter\\'s Save control once first if Athena has not already saved it. It never signs and never bills.'";
+    ok(FLOW.indexOf(SHIPPED_TITLE_CALL) > 0, 'the lone-save hover sentence is no longer composed where this suite reads it');
+    eq(FLOW.indexOf('Runs the final step of this review'), -1, 'the hard-coded lone-save hover sentence is still in the shipped bytes');
+    const PREFIX_TITLE_FLOW = FLOW.replace(SHIPPED_TITLE_CALL, OLD_TITLE_LITERAL);
+    ok(PREFIX_TITLE_FLOW !== FLOW && PREFIX_TITLE_FLOW.length !== FLOW.length,
+      'the hover-sentence negative control is byte-identical to the shipped source - it would measure nothing');
+
+    /* a refusal that touched nothing leaves the sheet alive with the save step
+       as the only thing left to press - the exact state this sentence is for */
+    async function loneSaveTitle(sections, source) {
+      const h = makeHarness({
+        source: source,
+        onAction: (m, dflt) => ((m.mode === 'execute' && m.action === 'save_draft')
+          ? { ok: false, mode: 'execute', action: 'save_draft', attempted: false, blocked: true, reason: 'section-persistence-frame-changed' }
+          : dflt(m))
+      });
+      const man = h.wf.openUnifiedConfirmation({ patient: PATIENT, sections: clone(sections), expectedContext: BOUND, receiptSessionId: 'lone-save-' + sections.length });
+      await settle(200);
+      h.el('mlsAthenaUnifiedGo').click();
+      await settle(3000);
+      const go = h.el('mlsAthenaUnifiedGo');
+      return { title: String(go.title || ''), disabled: go.disabled, row: man.rows.filter(r => r.action === 'save_draft')[0] };
+    }
+
+    /* the both-outcomes shape: named fields athenaOne can save itself */
+    const named = await loneSaveTitle(NAMED_SECTIONS, FLOW);
+    eq(named.disabled, false, 'this case no longer reaches the live lone-save press it is about');
+    ok(named.row && String(named.row.consequence).length > 40, 'the named-section save row carries no consequence to derive from');
+    ok(named.title.indexOf(String(named.row.consequence)) > 0,
+      'the hover sentence is not the save row\'s own consequence: ' + named.title);
+    ok(/If Athena already saved each reviewed section itself/.test(named.title),
+      'the lone-save hover sentence stopped stating both outcomes: ' + named.title);
+
+    /* THE COUNTER-CASE that keeps it honest: an operative note can never take
+       the read-only leg, and its row says so - so its button must say so too */
+    const op = await loneSaveTitle(OP_SECTION, FLOW);
+    eq(op.disabled, false, 'the op-note case no longer reaches the live lone-save press');
+    ok(op.row && /presses the encounter Save in athenaOne once/.test(String(op.row.consequence)),
+      'the op-note save row stopped naming the Save press, so this counter-case measures nothing');
+    ok(op.title.indexOf(String(op.row.consequence)) > 0,
+      'the op-note hover sentence is not its own save row\'s consequence: ' + op.title);
+    eq(/read-only/.test(op.title), false,
+      'the op-note button still offers a read-only alternative its sections can never take: ' + op.title);
+    ok(op.title !== named.title, 'both shapes get the same hover sentence, so it is not derived from the row');
+
+    /* THE NEGATIVE CONTROL: the pre-fix bytes hand the op note the read-only
+       promise again, and neither shape carries its own row's words */
+    const preOp = await loneSaveTitle(OP_SECTION, PREFIX_TITLE_FLOW);
+    ok(/read-only/.test(preOp.title),
+      'the negative control does not reproduce the pre-fix drift, so this case measures nothing: ' + preOp.title);
+    eq(preOp.title.indexOf(String(preOp.row.consequence)), -1,
+      'the negative control already carries the row\'s words, so it measures nothing: ' + preOp.title);
+  }
+
+  console.log('PASS native-persistence-clarity-proof: ' + checks + ' checks - all twelve saved-note refusal codes answer in the doctor\'s own words with a tail that is true for them, each of the five codes added by 999ba30f renders its own cure through the shipped receipt path (and the pre-fix bytes do not), an ATTEMPTED outcome is still never paraphrased, none of the twelve can start an automatic re-check, and the sheet-wide banner and guide state both outcomes on a named-section review while a generic one never claims MLS will not press Save; an operative note - which athenaOne can never persist natively - is told plainly that this press is the Save click; a cure that names Check Athena again puts that control on the screen and it re-probes; a read-only saved-note refusal never says Save was attempted on the pill, the button or the footer while a real Save press still does; a generic review never advertises a verify leg and reports the save it landed on the footer and the standing safety banner; and the mid-run persistence claim waits for a native-section receipt on a key athenaOne can persist; a save step that proved neither leg claims neither on the footer, and the lone save press is described to the doctor in its own row\'s words on both the both-outcomes and the operative shapes');
 })().catch(err => { console.error(err && err.message ? err.message : err); process.exit(1); });

@@ -92,10 +92,23 @@ eq(footer(refusedReadOnly, { outside: 0 }),
   'a refused read-only saved-note check is still reported as a Save that was pressed and failed');
 /* savetruth-1.3.0: NEITHER leg proven - a refused Save CLICK that never found
    the control, and every op note, which has no saved-note check to not finish.
-   The sentence names the step this review actually has. */
-eq(footer(state('refused'), { outside: 0 }),
-  '4 sections written, 0 not sent, 0 still to go. The encounter save did not finish. MLS did not press Save and nothing was signed. Inspect Athena before retrying.',
-  'a refused Save click is reported as a saved-note check this review never ran');
+   The sentence names the step this review actually has.
+   savetruth-1.4.0 (2026-09-11): ...and it claims nothing about the press. This
+   leg is also the one a TIMEOUT takes, and a timeout proves neither that Save
+   was pressed nor that it was not - the click may have landed and the answer
+   never come back - so "MLS did not press Save" was a claim nobody could make
+   here, under an opening ("The encounter save did not finish") that assumes the
+   step started. It now reports the one certain fact, the one guarantee that
+   always holds, and the press the doctor can make next. */
+const neitherProven = footer(state('refused'), { outside: 0 });
+eq(neitherProven,
+  '4 sections written, 0 not sent, 0 still to go. MLS did not get an answer from Athena for the save step. Nothing was signed. Open the encounter to check, then press Confirm again.',
+  'a save step that proved neither leg still claims one of them');
+/* the property, not just the spelling: neither unproven claim may come back */
+eq(/did not press Save/.test(neitherProven), false,
+  'the neither-proven footer claims Save was not pressed, which a timeout cannot know: ' + neitherProven);
+eq(/saved-note check/.test(neitherProven), false,
+  'the neither-proven footer names a saved-note check this review is not proven to have run: ' + neitherProven);
 /* savetruth-1.3.0: a GENERIC review with its own Save draft row selected */
 const genericOwed = { prog: { rows: ['note'].map(id => ({ id, phase: 'done' })) }, hasSave: false, genericSaveOwed: true };
 eq(footer(genericOwed, { outside: 0 }),

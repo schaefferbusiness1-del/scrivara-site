@@ -291,8 +291,28 @@ ok(WRITEFLOW.indexOf('var ATHENA_EXECUTABLE_ACTIONS = { write_note: true, save_d
 /* ==========================================================================
  * 5.  THE PASTE CHIPS REACH A TRANSCRIPT THAT IS ACTUALLY ON SCREEN
  * ======================================================================== */
-eq((CONNECT.match(/rw\.revealTranscript\(\)/g) || []).length, 2,
-  'both paste entries (the flow-lane chip and #ez3QPaste) must route through the one revealer');
+/* typedoor-1.0.0 (2026-09-11) raised this from two to THREE, and the number is
+   enumerated rather than bumped: Home now has its own "Type or paste visit
+   notes" door (openTypeOrPasteNotes), because MEASURED on b1230 there was no
+   doctor-visible way into the visit room that did not start a microphone. The
+   property is unchanged and is what this pins - EVERY paste entry reaches the
+   transcript through the ONE revealer, never through a scroll of its own.
+     1. the flow-lane chip  (#ez3flPaste)
+     2. the room chip       (#ez3QPaste)
+     3. the Home door       (#ez3ActiveNotes -> openTypeOrPasteNotes) */
+eq((CONNECT.match(/rw\.revealTranscript\(\)/g) || []).length, 3,
+  'every paste entry (the flow-lane chip, #ez3QPaste and the Home notes door) must route ' +
+  'through the one revealer');
+{
+  const doorAt = CONNECT.indexOf('function openTypeOrPasteNotes()');
+  ok(doorAt > 0, 'the Home "Type or paste visit notes" door is gone');
+  const door = CONNECT.slice(doorAt, CONNECT.indexOf('function signBtn()', doorAt));
+  ok(/rw\.revealTranscript\(\)/.test(door),
+    'the Home notes door reaches the transcript without the one revealer, so it can land on a ' +
+    'box the doctor cannot see');
+  ok(/__mlsVisitControlContinuity/.test(door) && /openPasteTranscript/.test(door),
+    'the Home notes door no longer asks the module that owns the paste dialog first');
+}
 ok(/TX_TARGETS\s*=\s*\['ez3flTranscript',\s*'ez3Transcript',\s*'transcript'\]/.test(CODE),
   'the transcript ladder is no longer most-visible-first');
 ok(/pasteChip\.id\s*=\s*'ez3flPaste'/.test(CONNECT), 'the flow-lane paste chip has no id to test with');

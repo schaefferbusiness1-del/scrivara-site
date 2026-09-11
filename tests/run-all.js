@@ -2440,7 +2440,26 @@ const tests = [
      coverage that exists only on paper. */
   'structured-repair-five-field-runtime.test.js',
   'visit-navigation-intent-runtime.test.js',
-  'write-progress-save-accounting-runtime.test.js'
+  'write-progress-save-accounting-runtime.test.js',
+  /* NEW 2026-09-11, from the b1230 first-day-doctor walkthrough.
+     rowclick-1.0.0: on the Patients screen the quick patient picker opened as
+     an absolute panel over the top of the roster, so presses at the top of a
+     row did nothing and one of them rewrote the search box with a different
+     patient's name. The panel now has its own space; the suite hit-tests every
+     on-screen row and carries a positive control that stages the pre-fix
+     layout and must fail.
+     reviewnote-1.1.0: the Review dock's "The note" tab navigated into the
+     visit room and left the note below the fold. The press now ends on the
+     note, without the block taking anything that belongs to the calm shell.
+     TWO suites, deliberately: the .test.js one executes the block against the
+     SHIPPING stub shape, and the -runtime one makes the same measurement on
+     the real page with two positive controls - because 1.0.0 passed a stub
+     that treated a 200px wrapper AS the note while the real wrapper paints no
+     note at all, and the doctor-visible property is "the note's own words are
+     inside the viewport", never "something got scrolled". */
+  'patient-row-owns-its-clicks-runtime.test.js',
+  'review-note-tab-lands-on-the-note.test.js',
+  'review-note-tab-lands-on-the-note-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
