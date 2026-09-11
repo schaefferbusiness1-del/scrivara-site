@@ -363,6 +363,10 @@ const tests = [
   'first-run-ai-tuning-entry-contract.test.js',
   'first-run-ai-tuning-loader-runtime.test.js',
   'draft-tuning-account-boundary-runtime.test.js',
+  /* vntpl-1.0.0: the plain "Visit note templates" screen is a second door onto
+     the same five-section contract, so it must keep writing that contract and
+     must keep its hands off the operative-note template library. */
+  'visit-note-templates-runtime.test.js',
   /* Recent production regressions must be part of the full release gate, not
      only ad-hoc focused runs: every draft family keeps its own format, the
      first full Athena pull safely seeds local starter structures, mixed

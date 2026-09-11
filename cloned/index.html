@@ -3561,6 +3561,10 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         <div class="genopt-row">
           <span class="genopt-lbl">Format</span>
           <div id="genStyleSeg" class="mini" aria-label="Note format">HPI / ROS / Exam / Assessment / Plan</div>
+          <!-- vntpl-1.0.0 - one line from the room where the note is written to the
+               screen that shapes it. VISIT note templates only; operative note
+               templates stay where they are, on the Templates screen. -->
+          <button type="button" class="genopt-extra" id="genVisitTemplatesLink" onclick="openVisitNoteTemplates()" title="Paste or upload the template MLS follows for HPI, ROS, Exam, Assessment and Plan">Visit note templates</button>
         </div>
         <div class="genopt-row">
           <span class="genopt-lbl">Length</span>
@@ -10284,6 +10288,20 @@ function mlsBuildSettingsTabs(){
     bar.appendChild(btn);
   });
   mlsSelectSettingsTab(0);
+}
+/* vntpl-1.0.0 - the visit room and Settings both reach ONE screen. It is owned
+   by feat_mls_draft_tuning.js (the module that already owns the visit-note
+   section templates), and that module is lazily loaded, so ensure it before
+   asking it to open. Never touches the operative-note template library. */
+async function openVisitNoteTemplates(){
+  try{ if(typeof window.__mlsEnsureDraftTuning==='function') await window.__mlsEnsureDraftTuning(); }catch(eVnLoad){}
+  try{
+    var dt=window.__mlsDraftTuning;
+    if(dt&&typeof dt.openVisitTemplates==='function'){ dt.openVisitTemplates(); return true; }
+  }catch(eVnOpen){}
+  try{ if(typeof openSettings==='function'){ openSettings(); return true; } }catch(eVnSettings){}
+  try{ if(typeof toast==='function') toast('Visit note templates could not be opened. Reload MLS and try again.','err'); }catch(eVnToast){}
+  return false;
 }
 function openSettings(){
   try{ window.__mlsEnsureDraftTuning(); }catch(eDtLoad){}

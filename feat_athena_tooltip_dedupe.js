@@ -817,6 +817,11 @@
        friendly heading is product copy, not a routing contract; stable id keeps
        the section in Notes & AI when that copy changes. */
     if (section && section.id === 'mlsDraftTuningSection') return 'notes';
+    /* vntpl-1.0.0 - same reason, same lane: the plain "Visit note templates"
+       screen is injected by that module too, so its heading copy is product
+       text and its stable id is the routing contract. Without this line the
+       card exists in the DOM and NO tab can ever display it. */
+    if (section && section.id === 'mlsVisitNoteTemplatesSection') return 'notes';
     if (/Account & access|Security & privacy/i.test(heading)) return 'account';
     if (/Practice & provider/i.test(heading)) return 'practice';
     if (/Note defaults|AI personalization|AI draft tuning|Provider preferences/i.test(heading)) return 'notes';

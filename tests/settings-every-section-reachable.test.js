@@ -62,6 +62,12 @@ assert.deepStrictEqual(orphans, [],
 assert.strictEqual(sandbox.groupFor({ id: 'mlsDraftTuningSection', heading: '🤖 AI output formats' }), 'notes',
   'injected draft-tuning section is not reachable from the Notes & AI tab by stable id');
 
+/* vntpl-1.0.0: the plain "Visit note templates" screen is injected by the same
+   module, so it is invisible to the heading scan above and needs the same pin.
+   Without it the card mounts into the DOM and no tab can ever display it. */
+assert.strictEqual(sandbox.groupFor({ id: 'mlsVisitNoteTemplatesSection', heading: '📋 Visit note templates' }), 'notes',
+  'the Visit note templates screen is not reachable from the Notes & AI tab by stable id');
+
 /* the owner asked for the avatar in Settings, "easily found" — so it must have its own
    tab rather than being buried inside another section's pane */
 assert.strictEqual(sandbox.groupFor({ heading: '🧑‍⚕️ Patient check-in avatar' }), 'avatar',
