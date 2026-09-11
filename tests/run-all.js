@@ -1127,6 +1127,16 @@ const tests = [
      only a bounded structured preferences object. This executes the shipped
      collector, proves its caps, and refuses any raw browser system prompt. */
   'note-defaults-transport-split.test.js',
+  /* NEW 2026-09-11. The practice billing code table, measured against the
+     shipped parser and editor. Reopening the Settings card and pressing Save
+     re-parsed an UNQUOTED prefill, so "Spondylosis without myelopathy, lumbar"
+     came back coded "LUMBAR"; a superbill's "Billing notes" column outranked
+     its "CPT" column; semicolon/pipe sheets, Excel's text-forcing apostrophe
+     and CPT Category II/III never parsed; and every ICD-10 and HCPCS row
+     reached /api/generate untyped because the store writes 'icd'/'hcpcs' while
+     the server allowlists 'icd10'/'cpt'. Every claim carries a control that
+     fails on the pre-fix bytes (45 of them). */
+  'billing-code-table-truth.test.js',
   'settings-scheduling-api-contract.test.js',
   'studio-tabs-show-one-panel.test.js',
   'visit-stage-rail-fills.test.js',

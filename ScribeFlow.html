@@ -9378,13 +9378,21 @@ function hostedNotePreferences(){
     const api=window.__mlsCodeTable;
     const loaded=api&&typeof api.load==='function'?api.load():null;
     const entries=loaded&&Array.isArray(loaded.entries)?loaded.entries:[];
+    /* /api/generate keeps only the first NOTE_PREF_MAX_BILLING_COUNT rows, so
+       collecting more than that was a silent truncation the Settings card then
+       described as "all N codes". Stop where the server stops and say so. */
+    const HOSTED_BILLING_MAX=24;
     let used=0;
-    for(let i=0;i<entries.length&&out.billingCodes.length<100;i++){
+    for(let i=0;i<entries.length&&out.billingCodes.length<HOSTED_BILLING_MAX;i++){
       const row=entries[i]||{};
       const desc=String(row.desc||'').trim().slice(0,180);
       const code=String(row.code||'').trim().slice(0,40);
       const rawKind=String(row.kind||'').trim().toLowerCase();
-      const kind=(rawKind==='icd10'||rawKind==='cpt')?rawKind:'';
+      /* The store writes 'icd' | 'cpt' | 'hcpcs'. The server's allowlist is
+         '' | 'icd10' | 'cpt' and it DISCARDS a whole row whose kind it does not
+         know, so translate what it knows and send the rest untyped -- an
+         untyped row still reaches the model, a rejected one does not. */
+      const kind=(rawKind==='icd'||rawKind==='icd10')?'icd10':(rawKind==='cpt'?'cpt':'');
       if(!desc||!code) continue;
       const cost=desc.length+code.length+kind.length;
       if(used+cost>6000) break;
