@@ -159,7 +159,11 @@ function makeHarness(options) {
     if (!m || m.source !== 'mls-app') return;
     if (m.type === 'mlsAppAthenaActionV2') return deliver('mlsAppAthenaActionV2Result', m.requestId, options.onProbe ? options.onProbe(m) : probeOk(m));
     if (m.type === 'mlsAppSearchOpenPatient') return deliver('mlsAppSearchOpenResult', m.requestId, options.onOpen ? options.onOpen(m) : { ok: true, opened: true, via: 'appointment-id' });
-    if (m.type === 'mlsAppGotoDate') return deliver('mlsAppGotoDateResult', m.requestId, options.onGoto ? options.onGoto(m) : { ok: true, supported: true, via: 'weekstrip', schedDate: m.date });
+    if (m.type === 'mlsAppGotoDate') {
+      const answer = options.onGoto ? options.onGoto(m) : { ok: true, supported: true, via: 'weekstrip', schedDate: m.date };
+      if (answer && typeof answer.then === 'function') return answer.then(resp => deliver('mlsAppGotoDateResult', m.requestId, resp));
+      return deliver('mlsAppGotoDateResult', m.requestId, answer);
+    }
     if (m.type === 'mlsExtHealth') return deliver('mlsExtHealthResult', m.requestId, options.onHealth ? options.onHealth(m) : { ok: true, version: '3.0.62', versionName: '3.0.62+core-sha256:abc', athena: { tabs: 3, discarded: 1 } });
   }
   function probeOk(m) {
@@ -329,7 +333,10 @@ const NOTE = 'PREOPERATIVE DIAGNOSIS: right knee osteoarthritis.\nPROCEDURE: tot
     assert(diagLine.indexOf('keep one') >= 0, 'the diagnostics line does not say what to do about extra tabs');
     assert(diagLine.indexOf('unloaded by Chrome') >= 0, 'the diagnostics line does not report the unloaded tab');
     assert(diagLine.indexOf('expected day ' + DAY) >= 0, 'the diagnostics line does not report the expected day: ' + diagLine);
-    assert(diagLine.indexOf('appointment id is bound') >= 0, 'the diagnostics line does not report the appointment binding');
+    /* plainwords-1.1.0 (2026-09-11): the same fact, said as an outcome - the
+       word "bound" was the last engineering word in a line a doctor reads. */
+    assert(diagLine.indexOf('this visit is matched to its Athena appointment') >= 0,
+      'the diagnostics line does not report whether this visit is matched to its Athena appointment: ' + diagLine);
     [PATIENT.name, PATIENT.dob, PATIENT.mrn, APPOINTMENT].forEach(secret => {
       assert.strictEqual(diagLine.indexOf(secret), -1, 'the on-screen diagnostics line leaked ' + secret);
     });
@@ -476,6 +483,53 @@ const NOTE = 'PREOPERATIVE DIAGNOSIS: right knee osteoarthritis.\nPROCEDURE: tot
     assert(h.posted.filter(m => m.type === 'mlsAppGotoDate').length === gotosBeforeManual + 1, 'the manual ladder did not make one fresh Day-view navigation');
     assert(h.posted.filter(m => m.type === 'mlsAppSearchOpenPatient').length >= 2, 'the ladder did not re-open the appointment row');
     probeOnlyGuard(h);
+  }
+
+  /* -- 5c. Cancel owns every remaining hop in a pending automatic open chain -- */
+  {
+    let releaseGoto;
+    let opens = 0;
+    let probes = 0;
+    const h = makeHarness({
+      onProbe: () => { probes++; return { ok: false, blocked: true, reason: 'context-unverified' }; },
+      onOpen: () => {
+        opens++;
+        return opens === 1
+          ? { ok: false, opened: false, reason: 'appointment-id-not-found', error: OWNER_OPEN_ERROR }
+          : { ok: true, opened: true, via: 'appointment-id' };
+      },
+      onGoto: m => new Promise(resolve => { releaseGoto = () => resolve({ ok: true, supported: true, via: 'weekstrip', schedDate: m.date }); })
+    });
+    h.wf.openUnifiedConfirmation({ patient: PATIENT, sections: [{ key: 'note', text: NOTE }], expectedContext: BOUND_CONTEXT });
+    await settle(60);
+    assert.strictEqual(typeof releaseGoto, 'function', 'the cancellation fixture never reached its pending Day-view request');
+    assert.strictEqual(opens, 1, 'the cancellation fixture did not stop at the row-first refusal');
+    assert.strictEqual(probes, 1, 'the cancellation fixture made an unexpected probe before Cancel');
+    h.el('mlsAthenaUnifiedCancel').onclick();
+    releaseGoto();
+    await settle(60);
+    assert.strictEqual(opens, 1, 'a completed Day-view request dispatched another patient open after Cancel');
+    assert.strictEqual(probes, 1, 'the canceled review re-probed Athena after its pending Day-view request finished');
+    assert.strictEqual(h.posted.filter(m => m.type === 'mlsAppGotoDate').length, 1,
+      'Cancel started another Day-view navigation instead of merely letting the outstanding request settle');
+    probeOnlyGuard(h);
+
+    let releaseActiveGoto;
+    let activeOpens = 0;
+    const active = makeHarness({
+      onProbe: () => ({ ok: false, blocked: true, reason: 'context-unverified' }),
+      onOpen: () => {
+        activeOpens++;
+        return { ok: false, opened: false, reason: 'appointment-id-not-found', error: OWNER_OPEN_ERROR };
+      },
+      onGoto: m => new Promise(resolve => { releaseActiveGoto = () => resolve({ ok: true, supported: true, via: 'weekstrip', schedDate: m.date }); })
+    });
+    active.wf.openUnifiedConfirmation({ patient: PATIENT, sections: [{ key: 'note', text: NOTE }], expectedContext: BOUND_CONTEXT });
+    await settle(60);
+    releaseActiveGoto();
+    await settle(60);
+    assert.strictEqual(activeOpens, 2, 'an active review did not continue from the completed Day-view request to its exact row retry');
+    probeOnlyGuard(active);
   }
 
   /* ------------------------------------------------------- 6. PROBE ONLY --- */

@@ -89,6 +89,7 @@ try {
   assert.match(await page.textContent('#mlsDtResetStatus') || '', /already using MLS defaults/i,
     'the default Reset state does not explain why the action is unavailable');
   const storageBeforeReset = await page.evaluate(() => JSON.stringify(Object.keys(localStorage).sort().map(key => [key, localStorage.getItem(key)])));
+  await page.locator('#mlsDtAdvanced').evaluate(el => { el.open = true; });
   await page.selectOption('#mlsDtLength', 'detailed');
   assert.ok(await page.locator('#mlsDtReset').isEnabled(), 'editing a draft family did not enable Reset');
   await page.click('#mlsDtReset');
@@ -207,6 +208,19 @@ try {
     // Re-preview and Apply through the explicit boundary only.
     importer.preview(derived);
     const applied = importer.apply(derived);
+    const editor = api.profileEditor('hpi');
+    editor.add({ id: 'blank_guide_programmatic', label: 'Blank guide', templateMode: 'guide', templateText: '' });
+    const blankGuideImport = api.exampleImporter('hpi', 'blank_guide_programmatic');
+    blankGuideImport.preview(derived);
+    blankGuideImport.apply();
+    editor.add({ id: 'explicit_guide_programmatic', label: 'Explicit guide', templateMode: 'guide', templateText: '' });
+    const explicitGuideImport = api.exampleImporter('hpi', 'explicit_guide_programmatic', { preserveTemplateMode: true });
+    explicitGuideImport.preview(derived);
+    explicitGuideImport.apply();
+    editor.add({ id: 'existing_guide_programmatic', label: 'Existing guide', templateMode: 'guide', templateText: 'Existing heading:\nExisting field:' });
+    const existingGuideImport = api.exampleImporter('hpi', 'existing_guide_programmatic');
+    existingGuideImport.preview(derived);
+    existingGuideImport.apply();
     const afterApply = api.read();
     const hpi = afterApply.families.hpi;
     const ros = afterApply.families.ros;
@@ -223,6 +237,11 @@ try {
       afterCancel,
       applied,
       target: hpiTarget,
+      importerModes: {
+        blank: hpi.profiles.find(profile => profile.id === 'blank_guide_programmatic').templateMode,
+        explicit: hpi.profiles.find(profile => profile.id === 'explicit_guide_programmatic').templateMode,
+        existing: hpi.profiles.find(profile => profile.id === 'existing_guide_programmatic').templateMode
+      },
       defaultProfile: hpiDefault,
       ros,
       routeCalls,
@@ -253,6 +272,9 @@ try {
   assert.ok(result.applied, 'Apply did not return an applied profile/result');
   assert.match(result.target.templateText, /Chief concern/, 'Apply did not save derived templateText to the selected profile');
   assert.match(result.target.instructions, /preserve chronology/, 'Apply did not save derived AI comments to the selected profile');
+  assert.strictEqual(result.importerModes.blank, 'adapt', 'programmatic first import inherited Guide for a blank profile');
+  assert.strictEqual(result.importerModes.explicit, 'guide', 'programmatic explicit Guide choice was overwritten');
+  assert.strictEqual(result.importerModes.existing, 'guide', 'programmatic replacement reset an existing Guide template');
   assert.ok(!result.defaultProfile.templateText.includes('Chief concern'),
     'example import leaked from the selected HPI profile into another HPI profile');
   assert.ok(!JSON.stringify(result.ros).includes('Chief concern'),

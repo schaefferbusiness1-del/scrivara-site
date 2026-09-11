@@ -112,7 +112,7 @@ function makeContext() {
 }
 
 function srrPollers(intervals) {
-  return intervals.filter(i => i.ms === 5000 && /rebinding this review/.test(String(i.fn)));
+  return intervals.filter(i => i.ms === 5000 && /rematching this review/.test(String(i.fn)));
 }
 
 /* ---- 1. unbound open arms the poller; the tick without a ledger does nothing ---- */
@@ -128,7 +128,7 @@ function srrPollers(intervals) {
   ok(pollers.length === 1, 'an UNBOUND review must arm exactly one srr poller (got ' + pollers.length + ')');
   pollers[0].fn();
   ok(!pollers[0].cleared, 'a tick with no resolvable id must keep polling');
-  ok(!h.toasts.some(t => /rebinding/.test(t)), 'no rebind claim before the ledger can resolve');
+  ok(!h.toasts.some(t => /rematching/.test(t)), 'no rebind claim before the ledger can resolve');
 
   /* ---- 2. seed the ledger the way a pull does, fire the tick: rebind ---- */
   h.localStorage.setItem('acct:schedImportIndexV1::' + DAY, JSON.stringify({ v: 1, rows: {
@@ -136,7 +136,7 @@ function srrPollers(intervals) {
   } }));
   pollers[0].fn();
   ok(pollers[0].cleared === true, 'the poller must disarm on the tick that rebinds');
-  ok(h.toasts.some(t => /rebinding this review/.test(t)), 'the rebind must be announced');
+  ok(h.toasts.some(t => /rematching this review/.test(t)), 'the rebind must be announced');
   const after = srrPollers(h.intervals);
   ok(after.length === 1, 'the rebuilt (now bound) review must NOT arm a second poller (got ' + after.length + ')');
 }

@@ -74,9 +74,23 @@ function eq(a, b, msg) { assert.strictEqual(a, b, msg + ' (got ' + JSON.stringif
  * The pre-fix bytes, verbatim: the dead manual row this lane replaced. Every
  * runtime section below runs against BOTH sources and asserts that the pre-fix
  * one cannot answer - so this suite can never pass by measuring nothing. */
+/* savetruth-1.0.0 (2026-09-10): re-aimed at the same two lines. The row copy
+   for the native-capable branch no longer promises the read-only outcome on
+   the capability flag alone - that flag says this MLS Assist CAN let Athena
+   persist named fields, never that this encounter DID, and the legacy leg of
+   MLS Assist 3.0.115 really does press the encounter's Save. The row now
+   states BOTH outcomes; everything this suite measures below is unchanged.
+   savetruth-1.2.0 (2026-09-10): re-aimed once more, at the same two lines, for
+   the other half of the same rule. MLS Assist can only let athenaOne save a
+   field it names in its own four-key set (hpi / ros / exam / ap), so on a
+   review with none of them - an operative note - the press is ALWAYS the Save
+   click, and offering that doctor a read-only alternative is offering him an
+   outcome his review cannot take. The row asks for the capability AND for a
+   section that could use it. */
 const SHIPPED_ROW =
-  "      addRow({ id: SAVENAMED_ROW_ID, action: 'save_draft', kind: 'save', label: SAVENAMED_ROW_LABEL, destination: SAVENAMED_ROW_DESTINATION,\n" +
-  "        capability: commonBlock ? 'blocked' : 'ready', reason: commonBlock, consequence: SAVENAMED_ROW_CONSEQUENCE, payload: notePayload, order: UNIFIED_ORDER.save_draft });";
+  "      var nativeNamedSave = nativeNamedSectionPersistenceReady() && nativePersistShapeRows(rows);\n" +
+  "      addRow({ id: SAVENAMED_ROW_ID, action: 'save_draft', kind: 'save', label: nativeNamedSave ? SAVENAMED_BOTH_LABEL : SAVENAMED_ROW_LABEL, destination: nativeNamedSave ? SAVENAMED_BOTH_DESTINATION : SAVENAMED_ROW_DESTINATION,\n" +
+  "        capability: commonBlock ? 'blocked' : 'ready', reason: commonBlock, consequence: nativeNamedSave ? SAVENAMED_BOTH_CONSEQUENCE : SAVENAMED_ROW_CONSEQUENCE, payload: notePayload, order: UNIFIED_ORDER.save_draft });";
 const PREFIX_ROW =
   "      addRow({ id: 'save-named-sections-manual', action: '', kind: 'save', label: 'Save named sections in Athena', destination: 'Athena encounter > section-specific Save controls',\n" +
   "        capability: 'manual', reason: namedFinalReason, consequence: 'Nothing is saved automatically from this row.', payload: notePayload, order: UNIFIED_ORDER.save_draft });";
@@ -326,6 +340,11 @@ function makeHarness(options) {
         capabilities: { supervisedOrderPlacementV2: true, destinationTeachingV2: true, athenaFinalActionsV1: true, phoneConfirmedWriteV1: true, batchArmV1: true } });
     }
     if (m.type === 'mlsAppAthenaActionV2') {
+      if (typeof options.onAction === 'function') options.onAction(m, {
+        state: window.__mlsWriteFlow.diagnostics.state(),
+        clarity: window.__mlsWriteFlow.diagnostics.sheetClarity.stateFor(''),
+        go: dom.resolve('mlsAthenaUnifiedGo')
+      });
       if (options.actionReply) {
         const custom = options.actionReply(m);
         if (custom) return deliver('mlsAppAthenaActionV2Result', m.requestId, custom);
@@ -561,6 +580,41 @@ function fireChange(box) { ((box.handlers && box.handlers.change) || []).forEach
       'THE NEGATIVE CONTROL IS INERT: the pre-fix press already saved the encounter');
   }
 
+  /* === 4A. REAL QUEUE EVENTS KEEP ONE BUTTON LOCKED AND NAME EACH PHASE === */
+  {
+    const trace = [];
+    const h = makeHarness({ batchArm: true, onAction: (message, ui) => {
+      if (!ui.state.batchRunning) return;
+      trace.push({ mode: message.mode, action: message.action, batchLabel: ui.state.batchLabel,
+        label: ui.clarity.label, short: ui.clarity.short, disabled: ui.go.disabled, button: ui.go.textContent });
+    } });
+    h.wf.openUnifiedConfirmation({ patient: PATIENT, sections: clone(SECTIONS), expectedContext: BOUND, receiptSessionId: 'save-running-truth' });
+    await settle(160);
+    h.el('mlsAthenaUnifiedGo').click(); await settle(1600);
+    const firstCheck = trace.find(x => x.mode === 'probe' && x.action === 'write_note');
+    const firstWrite = trace.find(x => x.mode === 'execute' && x.action === 'write_note');
+    const saveCheck = trace.find(x => x.mode === 'probe' && x.action === 'save_draft');
+    const saveWrite = trace.find(x => x.mode === 'execute' && x.action === 'save_draft');
+    ok(firstCheck && firstWrite && saveCheck && saveWrite, 'the real queue trace is missing a check, write, or final Save event');
+    ok(/^Checking 1 of 4/.test(firstCheck.batchLabel), 'the real read-only event is not marked as the first check');
+    eq(firstCheck.label, 'CHECKING', 'the real read-only event is presented as SENDING');
+    ok(/checking Athena read-only.*1 of 4.*Nothing new is being sent/i.test(firstCheck.short),
+      'the read-only state omits its scope or no-send boundary');
+    eq(firstWrite.batchLabel, 'Writing 1 of 4', 'the real note execute event is not marked as the first write');
+    eq(firstWrite.label, 'SENDING', 'the real note execute event is not presented as SENDING');
+    ok(/reviewed HPI.*1 of 4.*not saved or signed/i.test(firstWrite.short),
+      'the note-write state omits the current row or unsaved boundary');
+    ok(/^Checking 4 of 4/.test(saveCheck.batchLabel), 'the final Save probe is not presented as the final read-only check');
+    eq(saveCheck.label, 'CHECKING', 'the final Save probe is presented as if Save is already running');
+    eq(saveWrite.batchLabel, 'Writing 4 of 4', 'the final Save execute event is not marked as the final queue action');
+    eq(saveWrite.label, 'SAVING DRAFT', 'the final Save execute event still claims MLS never saves');
+    ok(/pressing Save.*4 of 4.*never signs/i.test(saveWrite.short), 'the final Save state does not name Save and the no-sign boundary');
+    trace.forEach(function (event) {
+      eq(event.disabled, true, 'Confirm became enabled during the running ' + event.mode + '/' + event.action + ' event');
+      eq(/Confirm & Send|Confirm & save/i.test(event.button), false, 'the running button invited a second Confirm press');
+    });
+  }
+
   /* ============== 5. THE WORDS THE SAVE ROW READS, IN EVERY STATE ========= */
   {
     const h = makeHarness({ batchArm: true });
@@ -593,6 +647,40 @@ function fireChange(box) { ((box.handlers && box.handlers.change) || []).forEach
     const signRow = h.state().manifest.rows.find(r => r.kind === 'sign');
     eq(h.wf.diagnostics.receiptLedger.rowState(h.state(), signRow).status, 'manual', 'the Sign & Save row stopped reading MANUAL');
     eq(signRow.action, '', 'the Sign & Save row became executable');
+  }
+
+  /* ===== 5A. AN ATTEMPTED, UNVERIFIED SAVE HALTS WITHOUT OFFERING RETRY === */
+  {
+    const receiptSessionId = 'save-uncertain';
+    const h = makeHarness({ batchArm: true, actionReply: m => (m.mode === 'execute' && m.action === 'save_draft')
+      ? { ok: false, attempted: true, action: 'save_draft', reason: 'save-readback-missing',
+        error: 'MLS pressed Save, but Athena did not show a new saved confirmation.' }
+      : null });
+    h.wf.openUnifiedConfirmation({ patient: PATIENT, sections: clone(SECTIONS), expectedContext: BOUND, receiptSessionId });
+    await settle(160);
+    const go = h.el('mlsAthenaUnifiedGo');
+    go.click(); await settle(1800);
+    eq(h.executes().filter(m => m.action === 'write_note').length, 3, 'the uncertain-save fixture lost a verified section write');
+    eq(h.executes().filter(m => m.action === 'save_draft').length, 1, 'the uncertain save was not attempted exactly once');
+    eq(h.save().rowState().status, 'uncertain', 'the attempted save with no readback was softened');
+    eq(h.state().halted, true, 'the uncertain save did not halt the review');
+    eq(h.save().owedRow(), null, 'the attempted uncertain save is still advertised as an untried owed press');
+    const uncertainty = h.wf.diagnostics.sheetClarity.stateFor('');
+    eq(uncertainty.label, 'UNCERTAIN', 'the primary state hides the uncertain save behind ONE PRESS LEFT');
+    ok(/Save was attempted.*could not verify.*will not retry automatically/i.test(uncertainty.short),
+      'the primary state does not explain the attempted save and no-auto-retry rule');
+    eq(/One press is left/gi.test(uncertainty.short), false, 'the uncertain state repeats the pre-attempt ONE PRESS LEFT promise');
+    eq(go.disabled, true, 'the uncertain save left a live retry button');
+    eq(go.textContent, 'Save outcome uncertain — inspect Athena', 'the halted button still invites another save attempt');
+    const beforeRetry = h.executes().length;
+    go.click(); await settle(80);
+    eq(h.executes().length, beforeRetry, 'clicking the halted button retried an uncertain save');
+
+    h.wf.openUnifiedConfirmation({ patient: PATIENT, sections: clone(SECTIONS), expectedContext: BOUND, receiptSessionId });
+    await settle(120);
+    eq(h.state().halted, true, 'reopening the same review forgot its uncertain receipt');
+    eq(h.wf.diagnostics.sheetClarity.stateFor('').label, 'UNCERTAIN', 'reopened review advertises work after an uncertain save');
+    eq(h.el('mlsAthenaUnifiedGo').disabled, true, 'reopened uncertain review enabled Confirm');
   }
 
   /* ===== 6. A REFUSED SAVE READS NOT SENT, WITH THE REFUSAL'S OWN REASON == */

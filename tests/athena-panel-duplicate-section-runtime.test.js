@@ -58,7 +58,7 @@ for (const sourceName of sourceNames) {
   const unique = gather(new Panel([{ key: 'hpi', text: 'one HPI' }]));
   assert.strictEqual(unique.sections.length, 1, `${sourceName}: unique HPI was unexpectedly blocked`);
   assert.strictEqual(unique.sections[0].text, 'one HPI', `${sourceName}: unique HPI text changed`);
-  assert(source.includes('duplicateByKey') && source.includes('More than one reviewed payload targets the same Athena destination'), `${sourceName}: duplicate guard derivation drifted`);
+  assert(source.includes('duplicateByKey') && source.includes('More than one reviewed item targets the same Athena destination'), `${sourceName}: duplicate guard derivation drifted`);
 }
 
 console.log('PASS Athena panel duplicate-section runtime/parity: repeated HPI/ROS/Exam/Assessment/Plan routes fail closed in 1p, production, and cloned lanes; unique routes remain executable');

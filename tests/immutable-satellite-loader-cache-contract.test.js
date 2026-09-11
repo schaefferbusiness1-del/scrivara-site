@@ -62,7 +62,7 @@ const assets = [
      tests/cache-token-cannot-go-stale.test.js. */
   ['feat_mls_patientpick.js', '20260811pick171', '20260811pick170'],
   ['feat_mls_study_calm.js', '20260802sg2f', '20260713sg2d'],
-  ['feat_mls_strip_day_couple.js', '20260808sdc202perf1', '20260719sdc201'],
+  ['feat_mls_strip_day_couple.js', '20260910sdc210', '20260808sdc202perf1'],
   ['feat_mls_widgetinsert.js', '20260802wi4', '20260624wi2c1'],
   ['feat_mls_topbar_unify.js', '20260722tb111', '20260719tb109'],
   ['feat_mls_command_palette.js', '20260831cpal107', '20260808cmd106perf2'],
@@ -75,7 +75,7 @@ const assets = [
   /* feat_task3_frontsync.js now follows the shared build token. It is derived
      across lanes and changes too often for a second hand-maintained token. */
   ['feat_mls_upnow_activeselect.js', '20260901uas6', '20260804uas4'],
-  ['feat_mls_upnow_sync.js', '20260808uns6perf2', '20260808uns5perf1'],
+  ['feat_mls_upnow_sync.js', '20260910uns7', '20260808uns6perf2'],
   /* 2026-08-05, unr-1.1.0 -> unr-1.1.1: the module's boot() poll re-ran its
      three installers 60 times while each guarded only on its own window marker,
      so a co-wrapper that did not carry that marker forward made the poll

@@ -19,19 +19,29 @@ const path = require('path');
 const vm = require('vm');
 
 const root = path.resolve(__dirname, '..');
-const si = fs.readFileSync(path.join(root, 'feat_mls_schedimport_exact.js'), 'utf8');
+const si = fs.readFileSync(path.join(root, '1p-feat_mls_schedimport_exact.js'), 'utf8');
 const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
 
 /* ---- source pins ------------------------------------------------------- */
 assert(connect.includes("'#' + FAB + '{position:fixed;left:14px;bottom:150px;"),
   'the pull pill must sit bottom-LEFT');
-assert(si.includes('ppStart((sweepProgressTotal > rows.length ? sweepProgressTotal : rows.length), sweepProgressBase);'),
-  'the modern sweep must start the progress state');
+assert(si.includes('var ppRequestedTotal = rows.length + unresolved.length;') &&
+  si.includes('ppStart((sweepProgressTotal > ppRequestedTotal ? sweepProgressTotal : ppRequestedTotal), sweepProgressBase);') &&
+  si.includes('ppSettleUnresolved(unresolved);'),
+  'the modern sweep must start progress with the complete requested scope, including identity refusals');
 assert(si.includes('ppCurrent(row.name || (target && target.name) || "");'),
   'the sweep must publish the patient being read');
 assert(si.includes('one.__ppRow = ppSettle(row.name,'), 'every processed row must settle into the panel state');
 assert(si.includes('ppResolve(pOne.__ppRow, pOne.complete === true,'),
   'pipelined rows must be corrected at finalization');
+assert(si.includes('ppSettleUnvisited(rows, i, "stopped-by-user");') &&
+  si.includes('ppSettleUnvisited(rows, i, "deferred-after-batch-deadline");') &&
+  si.includes('ppSettleUnvisited(rows, i, "athena-search-surface-unresponsive");') &&
+  si.includes('ppSettleUnvisited(rows, i + 1, "deferred-after-timeout");'),
+  'an early exit can still omit the unvisited remainder from visible progress');
+assert(si.includes('oneQueuedForSweep ? ppAutomaticRecheckReason(one)') &&
+  si.includes('fpQueuedForSweep ? ppAutomaticRecheckReason(fp)'),
+  'automatic re-check rows bypass the proof-aware progress wording');
 /* b744 #36: the reporter's close moved OUT of the per-patient finally — it
    used to fire before the automatic sweeps, killing and re-creating the whole
    panel at every sweep boundary (elapsed reset, hidden reset, and the pts
@@ -84,8 +94,13 @@ assert(si.includes('if(g.state&&g.state.running===true) return null;'),
 
 /* ---- runtime: drive the sliced helpers --------------------------------- */
 const helpers = si.slice(si.indexOf('function ppState()'), si.indexOf('var sweepDepth = Number('));
+const localPatients = {
+  'refused-1': { id: 'refused-1', name: 'Same Synthetic Name' },
+  'refused-2': { id: 'refused-2', name: 'Same Synthetic Name' }
+};
 const ctx = { window: {}, console: console };
 ctx.window = ctx;
+ctx.findPatient = (id) => localPatients[String(id)] || null;
 vm.createContext(ctx);
 vm.runInContext(helpers, ctx, { filename: 'si-pp-helpers.js' });
 
@@ -105,11 +120,82 @@ ctx.ppResolve(r2, true, '');
 assert(S.ok === 2 && S.failed === 1, 'finalization must upgrade the pending row and recount');
 void r1;
 
+/* Unresolved-at-entry rows are terminal requested outcomes too. The live
+   refuter was 22 requested = 14 readable + 8 source-proof-conflict, while the
+   panel incorrectly closed as 14/14 saved. Names stay out of this fixture and
+   duplicate display labels remain distinct through their local ids. */
+ctx.ppStart(22, 0);
+ctx.ppSettleUnresolved(Array.from({ length: 8 }, (_, i) => ({
+  patientId: 'refused-' + (i + 1), reason: 'source-proof-conflict'
+})));
+for (let i = 0; i < 14; i++) ctx.ppSettle('Readable chart', true, '', false, { pid: 'readable-' + (i + 1) });
+ctx.ppEnd();
+S = ctx.window.__mlsDayHistoryPull.state;
+assert.strictEqual(S.total, 22, 'progress hid unresolved rows from the requested total');
+assert.strictEqual(S.done, 22, 'progress did not account for every requested row');
+assert.strictEqual(S.ok, 14, 'identity refusals changed the saved count');
+assert.strictEqual(S.failed, 8, 'identity refusals were not reported as terminal attention rows');
+assert.strictEqual(S.rows.filter(r => r.reason === 'source-proof-conflict').length, 8,
+  'the exact fail-closed refusal code was not preserved in progress');
+const sameNameRefusals = S.rows.filter(r => r.name === 'Same Synthetic Name');
+assert.strictEqual(sameNameRefusals.length, 2,
+  'distinct exact-id patients sharing one name collapsed into one refusal row');
+assert.notStrictEqual(sameNameRefusals[0].k, sameNameRefusals[1].k,
+  'same-name refusal rows were not keyed by their distinct exact local ids');
+
+/* Pid-less refusals can arrive in separate sub-batches. Their numbered labels
+   may repeat, but their report keys must not; re-settling the same entry must
+   still replace its earlier verdict in the latest-key tally. */
+ctx.ppStart(23, 22);
+const pidlessA = { reason: 'patient-not-resolved' };
+ctx.ppSettleUnresolved([pidlessA]);
+ctx.ppStart(24, 23);
+const pidlessB = { reason: 'patient-not-resolved' };
+ctx.ppSettleUnresolved([pidlessB]);
+assert.notStrictEqual(pidlessA.__ppReportKey, pidlessB.__ppReportKey,
+  'distinct pid-less sub-batch refusals received a colliding report key');
+const beforeRestettle = S.done;
+ctx.ppSettleUnresolved([pidlessA]);
+assert.strictEqual(S.done, beforeRestettle,
+  're-settling the same pid-less refusal created a second progress outcome');
+
+/* Rows that the batch never visits are terminal retry outcomes, not empty
+   space between done and total. This helper only reports the already-decided
+   suffix; it does not run a chart operation. */
+ctx.ppStart(4, 0);
+ctx.ppSettle('Saved synthetic chart', true, '', false, { pid: 'saved-1' });
+const unvisited = [
+  { name: 'Saved synthetic chart', _mlsTargetPatientId: 'saved-1' },
+  { name: 'Stopped synthetic chart', _mlsTargetPatientId: 'stopped-2' },
+  { name: 'Stopped synthetic chart', _mlsTargetPatientId: 'stopped-3' },
+  { _mlsTargetPatientId: 'stopped-4' }
+];
+ctx.ppSettleUnvisited(unvisited, 1, 'stopped-by-user');
+S = ctx.window.__mlsDayHistoryPull.state;
+assert.strictEqual(S.done, 4, 'the stopped suffix did not fill the visible requested census');
+assert.strictEqual(S.ok, 1, 'reporting the stopped suffix changed the saved count');
+assert.strictEqual(S.failed, 3, 'unvisited stopped rows did not become visible terminal failures');
+assert.strictEqual(S.rows.filter(r => r.reason === 'stopped-by-user').length, 3,
+  'the exact stopped retry code was not preserved in progress');
+
+/* The existing renderer gives queued-for-automatic-recheck the stronger
+   sentence “chart saved — full visit notes queued”. The importer may emit
+   that code only when it has proof for both clauses. */
+ctx.pullVisitBodies = true;
+assert.strictEqual(ctx.ppAutomaticRecheckReason({ organized: true, dobVerified: true }), 'queued-for-automatic-recheck',
+  'a proven saved chart in full-notes mode lost the specific queued wording');
+assert.strictEqual(ctx.ppAutomaticRecheckReason({ organized: false, dobVerified: true }), 're-checking',
+  'a row with no saved chart falsely claims its chart was saved');
+ctx.pullVisitBodies = false;
+assert.strictEqual(ctx.ppAutomaticRecheckReason({ organized: true, dobVerified: true }), 're-checking',
+  'a day-facts row falsely claims full visit notes were queued');
+
 /* sub-batch: the bar NEVER resets (si-1.9.4 law) */
+const beforeSubBatch = { done: S.done, rows: S.rows.length, total: S.total };
 ctx.ppEnd();
 assert(S.running === false, 'end must disarm');
 ctx.ppStart(18, 15);
-assert(S.running === true && S.done === 3 && S.rows.length === 3 && S.total === 18,
+assert(S.running === true && S.done === beforeSubBatch.done && S.rows.length === beforeSubBatch.rows && S.total === 18 && beforeSubBatch.total === 4,
   'a sub-batch (base>0) must preserve done/rows - the bar only ever moves forward');
 
 /* legacy engine mid-run is never stolen */

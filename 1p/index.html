@@ -3547,30 +3547,20 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 
       <div id="micWarn" style="display:none" class="disclaim">⚠️ <span></span></div>
 
-      <label for="transcript">Live transcript <span style="font-weight:400;color:var(--muted)">(you can also type or paste)</span></label>
+      <label for="transcript">Visit transcript or doctor dictation</label>
       <div class="dotbar" id="dotBar">
         <span class="dotbar-lbl">⚡ Dot phrases:</span>
         <span id="dotChips"></span>
         <button class="dot-add" onclick="addDotPhrase()" title="Save a new quick-text macro">＋ Add</button>
         <button class="dot-add" onclick="manageDotPhrases()" title="Edit or delete saved macros">⚙ Manage</button>
       </div>
-      <textarea id="transcript" class="transcript" placeholder="The conversation will show up here as you speak. No microphone? Type or paste the visit conversation here."></textarea>
+      <textarea id="transcript" class="transcript" placeholder="Record the visit, dictate your post-visit summary, or type/paste notes here."></textarea>
 
       <!-- ===== NOTE GENERATION OPTIONS ===== -->
       <div id="genOptionsBar">
         <div class="genopt-row">
           <span class="genopt-lbl">Format</span>
-          <!-- fmt-1.0.0: the button TEXT is unchanged - the Easy view's chips
-               forward to these by label - but each title now says plainly what
-               the format IS. The SOAP title used to read "Subjective/Objective",
-               which is not what GEN_STYLE_LINE.soap asks the model for. -->
-          <div class="genseg" id="genStyleSeg">
-            <button type="button" data-v="soap" class="on" onclick="setGenStyle('soap')" title="HPI / ROS / Exam / Assessment / Plan — matches the athena chart fields">SOAP</button>
-            <button type="button" data-v="apso" onclick="setGenStyle('apso')" title="The same five sections, Assessment and Plan first">APSO</button>
-            <button type="button" data-v="narrative" onclick="setGenStyle('narrative')" title="Flowing prose paragraphs — no chart fields">Narrative</button>
-            <button type="button" data-v="problem" onclick="setGenStyle('problem')" title="Assessment &amp; Plan grouped by problem">Problem-based</button>
-            <button type="button" data-v="hp" onclick="setGenStyle('hp')" title="Full history and physical">H&amp;P</button>
-          </div>
+          <div id="genStyleSeg" class="mini" aria-label="Note format">HPI / ROS / Exam / Assessment / Plan</div>
         </div>
         <div class="genopt-row">
           <span class="genopt-lbl">Length</span>
@@ -5134,21 +5124,16 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
            and because the sentence under it is the one that was missing: which
            format matches the athena chart fields. ===== -->
       <div class="field">
-        <label for="noteFormatSel">Note format — the sections MLS writes</label>
-        <select class="sf-select" id="noteFormatSel">
-          <option value="soap">HPI / ROS / Exam / Assessment / Plan — matches the athena chart fields (recommended)</option>
-          <option value="apso">APSO — the same five sections, Assessment and Plan first</option>
-          <option value="narrative">Narrative — flowing prose paragraphs, no chart fields</option>
-          <option value="problem">Problem-based — assessment and plan grouped by problem</option>
-          <option value="hp">H&amp;P — full history and physical</option>
-        </select>
-        <p class="set-desc" style="margin-top:6px">This is the <b>shape</b> of the note. <b>HPI / ROS / Exam / Assessment / Plan</b> is the chart shape: those five headings are what MLS stages into athenaOne field by field. The other formats are useful free-form drafts, but athenaOne receives one block of text instead of five fields. The visit screen shows the active format on the note card, and the same control sits beside <b>Format</b> there.</p>
+        <label>Note format</label>
+        <input type="hidden" id="noteFormatSel" value="soap">
+        <div class="sf-select" role="note">HPI / ROS / Exam / Assessment / Plan</div>
+        <p class="set-desc" style="margin-top:6px">Every visit note uses these five sections, in this order, to match the Athena chart fields. Saved section formats below control the writing <b>inside</b> each field. Review for Athena shows the exact text for each destination.</p>
         <p class="mini" id="noteFormatMigrationNote" style="display:none;color:#8A5A00;margin-top:4px"></p>
         <p class="mini" id="mlsDtTestProfileLine" style="display:none;color:#8A5A00;margin-top:6px"></p>
       </div>
       <div class="set-grid2">
         <div class="field">
-          <label for="defaultFormat">Default note format</label>
+          <label for="defaultFormat">Initial note view</label>
           <select class="sf-select" id="defaultFormat">
             <option value="soap">SOAP (standard)</option>
             <option value="insurance">Insurance-ready</option>
@@ -5878,7 +5863,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     <p class="note" id="viewMeta"></p>
     <textarea id="viewBody" aria-label="Saved visit text" style="min-height:340px;font-size:14px" readonly></textarea>
     <div class="row">
-      <button class="btn-primary" onclick="reopenViewed()" style="flex:1">↩ Reopen in editor</button>
+      <button class="btn-primary" onclick="reopenViewed()" style="flex:1">↩ Continue this draft</button>
       <button class="btn-ghost" onclick="closeView()">Close</button>
     </div>
   </div>
@@ -7083,7 +7068,7 @@ function renderSignupAgreementManifest(m){
   if(info){
     info.textContent=m
       ? (m.syntheticTestFixture?'Local synthetic-test documents: ':'Current server-approved documents: ')+'Terms effective '+terms.effectiveAt.slice(0,10)+' and Privacy Notice effective '+privacy.effectiveAt.slice(0,10)+'. Open both links before confirming.'
-      : 'Account creation is held because a current server-approved agreement manifest is unavailable.';
+      : 'Account creation is held because the current Terms and Privacy Notice could not be loaded. Check your connection, then press Create account again.';
   }
   syncSignupAssentState();
 }
@@ -7091,7 +7076,7 @@ async function loadSignupAgreementManifest(options){
   options=options||{};
   const seq=++_signupManifestRequest;
   const info=document.getElementById('authSignupDocs');
-  if(info&&!options.quiet) info.textContent='Checking the current server-approved agreement manifest…';
+  if(info&&!options.quiet) info.textContent='Checking the current Terms and Privacy Notice…';
   try{
     const root=backendMode()?bkBase():'';
     const r=await fetch(root+SIGNUP_AGREEMENT_MANIFEST_PATH,{method:'GET',cache:'no-store',credentials:backendMode()?'omit':'same-origin',referrerPolicy:'no-referrer',headers:{'Accept':'application/json'}});
@@ -10300,7 +10285,73 @@ function mlsBuildSettingsTabs(){
   });
   mlsSelectSettingsTab(0);
 }
-function openSettings(){
+/* settingsgate-1.0.0 (owner P0 2026-09-11): THE FULL SETTINGS DIALOG OPENED BY
+   ITSELF DURING A DAY PULL. #settingsModal.show has exactly one writer -
+   openSettings() below - and openSettings() was being called from four
+   GENERATION REFUSAL branches (ai-unavailable in generateNote, the coding
+   review, recommendations, and an unresolved signer). generateNote() is
+   invoked PROGRAMMATICALLY by the kiosk avatar timer, the recording-segment
+   lane, the voice-intent router and the command palette, so a transient
+   hasAI() false while a pull saturated the network threw the whole Settings
+   dialog over work nobody had asked to interrupt.
+   The modal now opens only behind a real gesture: every TRUSTED pointerdown
+   or keydown stamps __mlsLastTrustedGesture, and openSettings returns false
+   without adding 'show' unless that stamp is younger than
+   __MLS_SETTINGS_GESTURE_MS or the caller passes {userInitiated:true}.
+   A refusal is silent by design - nothing is written to the doctor log,
+   because a refusal here is not a fault the doctor can act on. Callers that
+   legitimately run more than a second after the click - anything behind an
+   await - pass {userInitiated:true} explicitly. */
+var __mlsLastTrustedGesture=0;
+var __MLS_SETTINGS_GESTURE_MS=1000;
+(function(){
+  function __mlsStampTrustedGesture(ev){ if(ev&&ev.isTrusted===true) __mlsLastTrustedGesture=Date.now(); }
+  try{
+    document.addEventListener('pointerdown',__mlsStampTrustedGesture,true);
+    document.addEventListener('keydown',__mlsStampTrustedGesture,true);
+  }catch(eGestureListen){}
+})();
+function __mlsSettingsGestureFresh(){
+  return (Date.now()-__mlsLastTrustedGesture)<__MLS_SETTINGS_GESTURE_MS;
+}
+/* One inline offer for every refusal that used to yank Settings open. The
+   sentence is the refusal's own sentence; the button is the doctor's OWN
+   click, so it satisfies the gesture gate on its own event and does not need
+   the flag. Returns false and touches nothing when the anchor is absent - the
+   refusal toast has already carried the sentence either way. */
+function _mlsOfferSettingsAction(message,anchorIds){
+  try{
+    var ids=anchorIds||[],anchor=null;
+    for(var i=0;i<ids.length;i++){ var candidate=document.getElementById(ids[i]); if(candidate&&candidate.parentNode){ anchor=candidate; break; } }
+    if(!anchor) return false;
+    var prior=document.getElementById('mlsSettingsOfferRow');
+    if(prior&&prior.parentNode) prior.parentNode.removeChild(prior);
+    var row=document.createElement('div');
+    row.id='mlsSettingsOfferRow';
+    row.setAttribute('role','status');
+    row.style.cssText='display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;font-size:13px';
+    var say=document.createElement('span');
+    say.textContent=String(message||'');
+    row.appendChild(say);
+    var go=document.createElement('button');
+    go.type='button';
+    go.className='btn-ghost';
+    go.id='mlsSettingsOfferBtn';
+    go.style.cssText='font-size:12px;padding:4px 10px';
+    go.textContent='Open Settings';
+    go.addEventListener('click',function(){
+      try{ if(row.parentNode) row.parentNode.removeChild(row); }catch(eRowGone){}
+      try{ openSettings({userInitiated:true}); }catch(eOpenSettings){}
+    });
+    row.appendChild(go);
+    anchor.parentNode.insertBefore(row,anchor.nextSibling);
+    return true;
+  }catch(eOffer){ return false; }
+}
+function openSettings(opts){
+  /* settingsgate-1.0.0: the gate. See the note above - nothing below this line
+     runs for a caller nobody pressed. */
+  if(!(opts&&opts.userInitiated===true)&&!__mlsSettingsGestureFresh()) return false;
   try{ window.__mlsEnsureDraftTuning(); }catch(eDtLoad){}
   snapshotQolCommits();   /* what Close must put back if Save is never pressed */
   applyBackendModeUI();
@@ -10386,6 +10437,7 @@ function openSettings(){
      1p-mls-connect.js), so force one render right after the modal opens
      instead of waiting up to 4s for the next tick. */
   try{ if(window.__mlsExtVerLive&&typeof window.__mlsExtVerLive.render==='function') window.__mlsExtVerLive.render(); }catch(eExtVer){}
+  return true;
 }
 /* Theme, text size and compact are PREVIEW-only: applyThemePreview and friends
    toggle body classes and nothing else, and only Save writes them to storage.
@@ -23749,7 +23801,7 @@ function opPrepRender(){
       var _opAthTitle=_opAthBlanks
         ? ('Fill the '+_opAthBlanks+' unresolved field'+(_opAthBlanks===1?'':'s')+' above first. An op note with a blank in it is never offered to Athena.')
         : ('Opens the Athena review - nothing is sent until you confirm it there. If this note is not in '+a.name+'’s chart yet, it is saved there first.');
-      h+='<div class="row" style="margin-top:6px;gap:8px"><button class="btn-green" style="font-size:12.5px;padding:7px 13px" onclick="opPrepSave('+i+')">💾 Save to '+esc(a.name)+'’s chart</button><button class="btn-ghost" style="font-size:12.5px;padding:7px 13px"'+(_opAthBlanks?' disabled':'')+' title="'+esc(_opAthTitle)+'" onclick="opPrepSendToAthena('+i+')">🚀 Send to Athena</button><span id="opPrepMsg_'+i+'" class="mini" style="color:var(--muted);align-self:center"></span></div>';
+      h+='<div class="row" style="margin-top:6px;gap:8px"><button class="btn-green" style="font-size:12.5px;padding:7px 13px" onclick="opPrepSave('+i+')">💾 Save to '+esc(a.name)+'’s chart</button><button class="btn-ghost" style="font-size:12.5px;padding:7px 13px"'+(_opAthBlanks?' disabled':'')+' title="'+esc(_opAthTitle)+'" onclick="opPrepSendToAthena('+i+')">🚀 Send to Athena</button><button class="btn-ghost" style="font-size:12.5px;padding:7px 13px" onclick="opPrepForSurgeon('+i+')">👤 Prepare for a surgeon</button><span id="opPrepMsg_'+i+'" class="mini" style="color:var(--muted);align-self:center"></span></div>';
     }
     h+='</div>';
     return h;
@@ -24655,6 +24707,110 @@ function _opSendRefused(i){
 }
 try{ window._opSendRefused=_opSendRefused; }catch(_eSR){}
 try{ window.opPrepSendToAthena=opPrepSendToAthena; }catch(_eSA){}
+/* ===== opnote-svc-1.0.0 - PREPARE THIS OP NOTE FOR A CLIENT SURGEON =======
+   Owner, 2026-09-11: "make a link where I can draft op notes for someone with
+   templates then send them a link that brings them to a simple op notes page,
+   op notes only ... the goal is that everything else is done."
+
+   THE BLANKS ARE NOT RE-DERIVED. What the surgeon is asked to fill is EXACTLY
+   window.opNoteBlankTokens(note) - the one canonical parser opPrepSave and the
+   Athena push already gate on. A second, looser placeholder parser has shipped
+   a disagreement in this repo before (a placeholder-bearing note filed as
+   complete); the whole value of this control is that the two lists cannot
+   drift apart, so it never grows a regex of its own.
+
+   THE LINK IS SHOWN ONCE. The server returns its raw value only at mint. It is
+   held in a read-only field with a Copy button, the dialog says so, and
+   closing the dialog removes it from the document. Nothing here stores it: the
+   clinician's own credential never leaves this page, and the surgeon's link
+   never enters this app's storage.
+
+   NOTHING ELSE ON THIS CARD MOVES. opPrepSave and opPrepSendToAthena are
+   untouched - this is an additional destination for a finished draft, not a
+   change to either existing one. */
+var _opSurgeonRow=null, _opSurgeonClients=[];
+async function _opSurgeonApi(path,opts){
+  opts=opts||{};
+  opts.headers=Object.assign({'Authorization':'Bearer '+bkToken()},opts.headers||{});
+  if(opts.body&&!opts.headers['Content-Type']) opts.headers['Content-Type']='application/json';
+  var r=await fetch(bkBase()+path,opts);
+  var d={}; try{ d=await r.json(); }catch(e){}
+  if(!r.ok){ var err=new Error((d&&d.error&&d.error.message)||('Request failed ('+r.status+').')); err.status=r.status; throw err; }
+  return d;
+}
+function _opSurgeonDialog(inner){
+  var old=document.getElementById('opSurgeonModal'); if(old&&old.parentNode) old.parentNode.removeChild(old);
+  var d=document.createElement('div');
+  d.id='opSurgeonModal';
+  d.setAttribute('role','dialog'); d.setAttribute('aria-modal','true'); d.setAttribute('aria-label','Prepare for a surgeon');
+  d.style.cssText='position:fixed;left:0;top:0;right:0;bottom:0;z-index:12000;background:rgba(16,24,20,.55);display:flex;align-items:center;justify-content:center;padding:18px';
+  d.innerHTML='<div style="background:var(--card,#fff);color:var(--ink,#17211c);border:1px solid var(--line,#e7e5dd);border-radius:16px;width:100%;max-width:560px;max-height:86vh;overflow:auto;padding:18px 20px">'+inner+'</div>';
+  document.body.appendChild(d);
+  return d;
+}
+function opSurgeonClose(){ var d=document.getElementById('opSurgeonModal'); if(d&&d.parentNode) d.parentNode.removeChild(d); _opSurgeonRow=null; }
+function _opSurgeonBlanks(){ try{ return window.opNoteBlankTokens((((window._opPrep||[])[_opSurgeonRow])||{}).note||'')||[]; }catch(e){ return []; } }
+function _opSurgeonPick(){
+  var blanks=_opSurgeonBlanks();
+  var opts='';
+  for(var j=0;j<_opSurgeonClients.length;j++){ var c=_opSurgeonClients[j]||{}; opts+='<option value="'+esc(c.id)+'">'+esc(c.name||c.label||c.id)+'</option>'; }
+  var h='<div style="font-weight:800;font-size:17px">Prepare for a surgeon</div>';
+  h+='<div class="mini" style="color:var(--muted);margin-top:6px">'+blanks.length+' field'+(blanks.length===1?'':'s')+' will be left for them to fill in. Everything else is already written.</div>';
+  if(opts) h+='<label class="mini" for="opSurgeonPick" style="display:block;margin:12px 0 3px;color:var(--muted)">Surgeon</label><select id="opSurgeonPick" style="width:100%;min-height:40px;padding:6px 9px;border:1px solid var(--line);border-radius:10px">'+opts+'</select><div class="mini" style="color:var(--muted);margin-top:10px">Or add a new one:</div>';
+  h+='<div class="row" style="gap:8px;margin-top:6px;flex-wrap:wrap"><input id="opSurgeonName" placeholder="Name" style="flex:1;min-width:150px;min-height:40px;padding:6px 9px;border:1px solid var(--line);border-radius:10px"><input id="opSurgeonPractice" placeholder="Practice" style="flex:1;min-width:150px;min-height:40px;padding:6px 9px;border:1px solid var(--line);border-radius:10px"></div>';
+  h+='<input id="opSurgeonEmail" placeholder="Email" style="width:100%;margin-top:8px;min-height:40px;padding:6px 9px;border:1px solid var(--line);border-radius:10px">';
+  h+='<div id="opSurgeonMsg" class="mini" style="color:#8b2525;font-weight:700;margin-top:8px"></div>';
+  h+='<div class="row" style="gap:8px;margin-top:14px"><button class="btn-primary" onclick="opSurgeonSend()">Send this op note</button><button class="btn-ghost" onclick="opSurgeonClose()">Cancel</button></div>';
+  _opSurgeonDialog(h);
+}
+function _opSurgeonSay(t){ var m=document.getElementById('opSurgeonMsg'); if(m) m.textContent=t; }
+function _opSurgeonField(id){ var e=document.getElementById(id); return e?String(e.value||'').trim():''; }
+function _opSurgeonShowLink(url,n){
+  var h='<div style="font-weight:800;font-size:17px">Ready for them</div>';
+  h+='<div class="mini" style="color:var(--muted);margin-top:6px">The op note is waiting on their page with '+n+' field'+(n===1?'':'s')+' to fill in.</div>';
+  h+='<input id="opSurgeonLink" readonly value="'+esc(url)+'" style="width:100%;margin-top:12px;min-height:40px;padding:6px 9px;border:1px solid var(--line);border-radius:10px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px">';
+  h+='<div class="mini" style="color:#8b2525;font-weight:700;margin-top:6px">Copy this now - it is not shown again.</div>';
+  h+='<div class="row" style="gap:8px;margin-top:14px"><button class="btn-primary" onclick="opSurgeonCopy()">Copy link</button><button class="btn-ghost" onclick="opSurgeonClose()">Done</button></div>';
+  _opSurgeonDialog(h);
+}
+function opSurgeonCopy(){
+  var f=document.getElementById('opSurgeonLink'); if(!f) return;
+  try{ if(f.select) f.select(); }catch(e){}
+  try{ if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(f.value); else if(document.execCommand) document.execCommand('copy'); }catch(e){}
+  try{ toast('Link copied. It is not shown again.','ok'); }catch(e){}
+}
+async function opPrepForSurgeon(i){
+  var row=(window._opPrep||[])[i];
+  if(!row||!String(row.note||'').trim()){ try{ toast('Draft the op note first - there is nothing to hand over yet.','err'); }catch(e){} return; }
+  _opSurgeonRow=i;
+  _opSurgeonDialog('<div style="font-weight:800;font-size:17px">Prepare for a surgeon</div><div class="mini" style="color:var(--muted);margin-top:10px">One moment.</div>');
+  try{ var d=await _opSurgeonApi('/api/opnote-clients'); _opSurgeonClients=(d&&d.clients)||[]; }
+  catch(e){ _opSurgeonClients=[]; }
+  _opSurgeonPick();
+}
+async function opSurgeonSend(){
+  var i=_opSurgeonRow; var row=(window._opPrep||[])[i]; if(!row) return;
+  var pick=document.getElementById('opSurgeonPick');
+  var clientId=pick?String(pick.value||''):'';
+  var newName=_opSurgeonField('opSurgeonName');
+  if(newName){
+    try{
+      var made=await _opSurgeonApi('/api/opnote-clients',{method:'POST',body:JSON.stringify({name:newName,practice:_opSurgeonField('opSurgeonPractice'),email:_opSurgeonField('opSurgeonEmail')})});
+      clientId=(made&&made.client&&made.client.id)||'';
+    }catch(e){ _opSurgeonSay('That surgeon could not be added. Try again in a moment.'); return; }
+  }
+  if(!clientId){ _opSurgeonSay('Pick a surgeon, or type a name to add one.'); return; }
+  var blanks=_opSurgeonBlanks();
+  var title=String(row.proc||'').trim()||'Op note';
+  try{
+    await _opSurgeonApi('/api/opnote-jobs',{method:'POST',body:JSON.stringify({clientId:clientId,templateId:row.tplId||null,title:title,noteText:String(row.note||''),blanks:blanks})});
+  }catch(e){ _opSurgeonSay('That did not go through. Try again in a moment.'); return; }
+  try{
+    var minted=await _opSurgeonApi('/api/opnote-clients/'+encodeURIComponent(clientId)+'/link',{method:'POST'});
+    _opSurgeonShowLink((minted&&minted.link&&minted.link.url)||'',blanks.length);
+  }catch(e){ _opSurgeonSay('The op note is waiting for them, but the link did not come back. Open this again to get one.'); }
+}
+try{ window.opPrepForSurgeon=opPrepForSurgeon; window.opSurgeonSend=opSurgeonSend; window.opSurgeonCopy=opSurgeonCopy; window.opSurgeonClose=opSurgeonClose; }catch(_eOS){}
 function opPrepSave(i){
   var row=(window._opPrep||[])[i]; if(!row) return;
   var note=row.note||''; if(!note.trim()){ try{ toast('Nothing to save yet.','err'); }catch(e){} return; }
@@ -27278,6 +27434,80 @@ function attachVisitToPatient(rec){
 
 let currentNoteId=null; // id of the history record being edited (null = brand new)
 
+/* ===== adhocid-1.0.0 (owner-measured 2026-09-11) ==========================
+ * AN AD-HOC VISIT AUTO-SAVED ITSELF ONTO A JULY HISTORY RECORD.
+ *
+ * WHAT HAPPENED. The doctor opened a patient by search - no appointment, a
+ * brand-new encounter - recorded it, and the note landed on top of a record
+ * created in July. currentNoteId is the whole story: it is the id of the
+ * History record being edited, and noteRecordFromState() reuses it verbatim,
+ * so upsertNote()'s update branch replaces that row and keeps its `created`.
+ *
+ * WHY IT SURVIVED THE SWITCH. newVisit() nulls currentNoteId, but the patient
+ * switch calls newVisit({patientSwitchReset:true}), which visitowner-1.0.0
+ * deliberately treats as an internal reset that PRESERVES the per-patient
+ * switch-back stash - and that stash carries `noteId`, written the last time
+ * the doctor left this patient with a History record loaded (Continue this
+ * draft -> loadRecordIntoEditor -> currentNoteId=n.id). restoreFor() put it
+ * straight back, so the next visit for that patient started life already
+ * pointing at an old row.
+ *
+ * TWO CURES, at the two moments a stale id can do harm:
+ *   1. restoreFor() no longer restores the id as a matter of course
+ *      (visitowner-1.0.0). A restored in-tab draft is UNSAVED WORK, not an
+ *      open History record; the id it came back with is kept as provenance
+ *      (rec.continuedFrom), and is re-adopted at the END of the restore ONLY
+ *      if this editor is still entitled to it by the guard below. Dropping it
+ *      unconditionally cured the overwrite and MEASURED a duplicate row in its
+ *      place - save, switch away, switch back, save again gave one visit two
+ *      History rows - so the re-adoption is part of the cure, not a softening
+ *      of it.
+ *   2. this guard, read by noteRecordFromState() on every single save. If
+ *      currentNoteId names a stored record that belongs to a DIFFERENT
+ *      patient, or whose stored transcript is neither empty nor the beginning
+ *      of the transcript now on screen, then whatever this editor holds is not
+ *      that record and a fresh id is minted instead of overwriting it.
+ *
+ * FAIL-OPEN ON PURPOSE. Every unknown - no id, no store, an id that names
+ * nothing, an exception - answers "yes, still ours", so the ordinary
+ * continue-this-draft path (record loaded, more dictation appended) keeps
+ * updating the one row exactly as it always did. The only thing that mints a
+ * new id is positive evidence that the row on disk is a different encounter.
+ * Whitespace is normalised before the prefix test so a reformat is not
+ * mistaken for a different visit.
+ * ======================================================================== */
+function _mlsNoteTranscriptContinues(was,now){
+  try{
+    var a=String(was==null?'':was).replace(/\s+/g,' ').trim();
+    var b=String(now==null?'':now).replace(/\s+/g,' ').trim();
+    if(!a) return true;                 /* nothing stored to contradict */
+    return b.indexOf(a)===0;            /* the saved visit, continued */
+  }catch(eTc){ return true; }
+}
+function _mlsNoteIdStillOurs(){
+  try{
+    if(!currentNoteId) return true;
+    if(typeof getNotes!=='function') return true;
+    var saved=(getNotes()||[]).find(function(n){return n&&String(n.id)===String(currentNoteId);});
+    if(!saved) return true;             /* nothing on disk to overwrite */
+    var active=(typeof getActivePtId==='function')?String(getActivePtId()||''):'';
+    var owner=String(saved.patientId||'');
+    if(owner&&active&&owner!==active) return false;
+    var nowText=(document.getElementById('transcript')||{}).value;
+    if(!_mlsNoteTranscriptContinues(saved.transcript,nowText)) return false;
+    return true;
+  }catch(eNid){ return true; }
+}
+/* The id an overwritten-and-replaced record came FROM, so the new row can say
+   where it started without pretending to BE that row. Set by the switch-back
+   restore; cleared by newVisit() and by actually opening a record. */
+function _mlsContinuedFromId(){
+  try{ return String(window.__mlsContinuedFromNoteId||''); }catch(eCf){ return ''; }
+}
+function _mlsSetContinuedFromId(id){
+  try{ window.__mlsContinuedFromNoteId=String(id||''); }catch(eCf2){}
+}
+
 function newVisit(opts){
   opts=opts||{};
   try{if(typeof _mlsAbortActiveGeneration==='function')_mlsAbortActiveGeneration('source-changed','new-visit');}catch(eGeneration){}
@@ -27292,6 +27522,7 @@ function newVisit(opts){
   if(!opts.preserveRecovery){ try{ if(typeof _wipeVisitDraft==='function') _wipeVisitDraft(); }catch(e){} }
   try{ if(typeof _hideNextActions==='function') _hideNextActions(); }catch(e){}
   currentNoteId=null;
+  _mlsSetContinuedFromId('');   /* adhocid-1.0.0: a fresh visit continues nothing */
   try{ if(typeof _heroReset==='function') _heroReset(); }catch(e){}   // clear the record-first hero for the next patient
   document.getElementById('patientLabel').value='';
   document.getElementById('transcript').value=''; finalText='';
@@ -27336,8 +27567,22 @@ function newVisit(opts){
 function noteRecordFromState(markSigned){
   const routePatient=currentVisitAthenaBinding&&currentVisitAthenaBinding.patient?currentVisitAthenaBinding.patient:null;
   const routeContext=currentVisitAthenaBinding&&currentVisitAthenaBinding.visitContext?currentVisitAthenaBinding.visitContext:null;
+  /* adhocid-1.0.0: the id this editor is entitled to overwrite. The guard is
+     declared just above `function newVisit(opts)`; the typeof check exists only
+     so a suite that runs this serializer in isolation still gets the shipped
+     behaviour (fail-open = keep the id), and the name is pinned by
+     tests/1p-visitowner-adhoc-record-identity-runtime.test.js. */
+  const _idOurs=(typeof _mlsNoteIdStillOurs==='function')?_mlsNoteIdStillOurs():true;
+  const _fromId=(function(){
+    try{
+      if(!_idOurs&&currentNoteId) return String(currentNoteId);
+      return (typeof _mlsContinuedFromId==='function')?_mlsContinuedFromId():'';
+    }catch(eFrom){ return ''; }
+  })();
   return {
-    id: currentNoteId || ('n'+Date.now()+Math.random().toString(36).slice(2,6)),
+    id: (_idOurs?currentNoteId:'') || ('n'+Date.now()+Math.random().toString(36).slice(2,6)),
+    /* provenance only - never an instruction to overwrite that row */
+    continuedFrom: _fromId,
     patient: (routePatient&&routePatient.name)||document.getElementById('patientLabel').value.trim()||'Unlabeled',
     patientLabel: document.getElementById('patientLabel').value,
     patientDob: (routePatient&&routePatient.dob)||'',
@@ -27676,6 +27921,19 @@ async function loadRecordsFromServer(opts){
   }catch(e){/* offline — keep local history */ return false; }
 }
 
+/* adhocid-1.0.0: ONE DEFINITION OF "WHEN DID THIS VISIT LAST CHANGE".
+   upsertNote() stamps `updated` on every write and preserves the original
+   `created` on an update, and the insert branch writes `created` a tick AFTER
+   the record was built - so neither field alone is reliably the later one.
+   The row's date and the row's place in the list must agree, and both are this
+   number. Never negative, never NaN: an unparseable record sorts last. */
+function _mlsNoteRecency(n){
+  try{
+    var u=Number(n&&n.updated)||0, c=Number(n&&n.created)||0;
+    var v=u>c?u:c;
+    return (isFinite(v)&&v>0)?v:0;
+  }catch(eRec){ return 0; }
+}
 function renderHistory(){
   const all=getNotes();
   const histData=__mlsHistoryData(all);
@@ -27710,6 +27968,15 @@ function renderHistory(){
   if(!arr.length){ empty.style.display='block'; list.innerHTML=''; list._mlsSig=''; empty.innerHTML='<span class="big">📭</span>'+(ap?'No saved visits for this patient yet. Generate a note and press <b>Save to history</b>.':'No saved visits yet. Generate a note and press <b>Save to history</b>.'); return; }
   empty.style.display='none';
   let ordered=mine.concat(orphans);
+  /* adhocid-1.0.0: A ROW THAT RECEIVED NEW BYTES TODAY MAY NOT HIDE UNDER AN
+     OLD DATE. __mlsHistoryData orders by `updated` alone, and the row label
+     below read `updated||created`, so any record whose stored `updated` is
+     missing, zero or older than its own `created` sank to the bottom of the
+     list wearing the wrong day - which is exactly how an overwritten July row
+     stayed invisible while it was being written into. Recency is the LATER of
+     the two, everywhere. Sorted on a copy (mine/orphans are the shared history
+     cache's own arrays and must never be reordered in place). */
+  ordered=ordered.slice().sort(function(a,b){ return _mlsNoteRecency(b)-_mlsNoteRecency(a); });
   // ---- Search + type filter so the doctor can find anything fast ----
   const qEl=document.getElementById('histSearch'); const q=(qEl&&qEl.value?qEl.value:'').trim().toLowerCase();
   const fEl=document.getElementById('histFilter'); const fv=fEl?fEl.value:'';
@@ -27765,7 +28032,7 @@ function renderHistory(){
           : ' <span class="badge" style="background:#e8f5ed;color:#204034;border-color:#cfe0d7" title="Backed up to your account (encrypted)">☁ Synced</span>')
     : ' <span class="badge draft" title="Saved only in this browser — sign in to back it up to your account">📱 This device</span>';
   var _histHtml=ordered.map(n=>{
-    const d=new Date(n.updated||n.created||Date.now());
+    const d=new Date(_mlsNoteRecency(n)||Date.now());   /* adhocid-1.0.0: the LATER of created/updated */
     const dateStr=d.toLocaleDateString()+' '+d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
     const status = n.isDraft ? '<span class="badge draft">● Draft</span>'
                   : (n.signed ? '<span class="badge signed">✔ Signed</span>' : '<span class="badge draft">● Unsigned</span>');
@@ -27920,10 +28187,9 @@ function _mlsContinueSavedRecord(n){
   }
   showView('visit');
   loadRecordIntoEditor(n);
+  try{ const easy=window.__mlsEasyV32||window.__mlsEasyV3; if(easy&&typeof easy.open==='function') easy.open('doctor'); }catch(e){}
   renderPatientBar();
   toast('Draft reopened with its patient and visit details. Save to history when you are done editing.','');
-  const noteCard=document.getElementById('noteCard');
-  if(noteCard&&noteCard.scrollIntoView) noteCard.scrollIntoView({behavior:'smooth',block:'start'});
   return true;
 }
 function reopenViewed(){
@@ -27937,6 +28203,7 @@ function loadRecordIntoEditor(n){
   _athenaSetVisitBinding(_athenaBindingForSavedRecord(n),true);
   _athenaResetSuperbill(true);
   currentNoteId=n.id;
+  _mlsSetContinuedFromId('');   /* adhocid-1.0.0: this record IS open, not continued from */
   document.getElementById('patientLabel').value=n.patient&&n.patient!=='Unlabeled'?n.patient:'';
   document.getElementById('transcript').value=n.transcript||''; finalText=(n.transcript||'')+' ';
   var savedNoteProvenance=(n&&typeof n.noteProvenance==='string'&&/^(typed|saved|generated_soap|edited_generated_soap|generated_nonsoap)$/.test(n.noteProvenance))?n.noteProvenance:'saved';
@@ -30884,10 +31151,10 @@ function showNote(text){
    STRUCTURED NOTE RESPONSE CONTRACT
 
    /api/generate is a structured-note transport, but the browser still keeps
-   the final mutation gate.  A malformed response must never clear or replace
-   the clinician's current draft.  Keep this check deliberately small and
-   style-neutral: every supported style still covers at least two clinical
-   sections, while arbitrary error text / empty JSON cannot reach the editor.
+   the final mutation gate. A malformed response must never clear or replace
+   the clinician's current draft. Visit notes have one fixed five-field
+   display, so this boundary validates those exact fields and the unambiguous
+   structure of each selected strict/adapt section template.
    ========================================================= */
 function _mlsStructuredNoteQualityError(reason){
   var e=new Error('The AI returned an unusable note draft.');
@@ -30904,6 +31171,11 @@ function mlsDraftFailureMessage(err){
   var raw=Array.isArray(ai.issues)?ai.issues:[];
   var issues=raw.map(function(v){return String(v||'').trim();}).filter(function(v){return /^[a-z0-9_]{2,96}$/i.test(v);}).slice(0,6);
   var labels={
+    /* The claim refusal now fails closed (no documented-only substitute note),
+       so this code reaches the doctor. Without a label it printed as "output
+       safety check: unsupported clinical claim", which is the raw code with
+       spaces in it. */
+    unsupported_clinical_claim:'the draft stated something today’s transcript does not support',
     missing_result:'no structured result', note_not_string:'note was not text', empty_note:'note was blank',
     note_too_large:'note exceeded the safety size limit', unstructured_clinical_draft:'note was not structured',
     malformed_soap_heading:'malformed SOAP heading', unsupported_soap_wrapper:'unsupported SOAP wrapper',
@@ -30919,18 +31191,17 @@ function mlsDraftFailureMessage(err){
     if(m) return (m[2].toUpperCase()+' section had an invalid heading');
     return 'output safety check: '+code.replace(/_/g,' ');
   });
-  return 'Note was rejected by the safety checks. Nothing changed.'+(readable.length?' Details: '+readable.join('; ')+'.':' Retry Generate after confirming the transcript has enough documented detail.');
+  return 'Note generation could not finish its safety checks. Your prior draft was retained if one was already open.'+(readable.length?' Details: '+readable.join('; ')+'. Retry Generate when ready.':' Retry Generate after confirming the transcript has enough documented detail.');
 }
 function _mlsUnsupportedClinicalClaimFailure(err){
   var ai=err&&err.mlsAi||{};
   var issues=Array.isArray(ai.issues)?ai.issues:[];
   return String(ai.code||'')==='draft_quality_failed'&&issues.some(function(code){return String(code||'').toLowerCase()==='unsupported_clinical_claim';});
 }
-/* A claim-only rejection must not strand a recorded visit. The hosted repair
-   lane gets one conservative retry with the exact saved section/template
-   tuning still attached. If that transport is unavailable, generateNote()
-   falls back to a five-section draft containing only the clinician's own
-   recorded words plus explicit "not documented" placeholders. */
+/* A claim-only rejection gets one conservative hosted repair with the exact
+   saved section/template tuning still attached. If either hosted route
+   refuses, normal generation fails and retains the prior draft; it must not
+   substitute a different success-shaped note. */
 async function _mlsRepairUnsupportedClinicalClaim(sys,user,draftTuning,signal){
   var repairRule='\n\nCONSERVATIVE REPAIR REQUIRED: A previous draft was rejected because it stated a clinical claim that was not directly supported by TODAY_TRANSCRIPT. Regenerate the complete requested JSON now. Preserve every selected saved format, per-section template, heading, order, and AI comment, but treat all template wording as format only. Copy no clinical fact from a template or background. For every unsupported ROS, exam, assessment, plan, medication, order, diagnosis, code, or follow-up detail, write "Not documented in today\'s transcript." or leave the optional array/value empty. Do not infer stability, normal findings, continuation, a diagnosis, or a plan.';
   try{
@@ -30942,40 +31213,95 @@ async function _mlsRepairUnsupportedClinicalClaim(sys,user,draftTuning,signal){
     });
     if(!response.ok)return '';
     var payload=await response.json();
-    return String((payload&&payload.content)||'').trim();
+    var repaired=String((payload&&payload.content)||'').trim();
+    if(!repaired)return '';
+    /* The generic completion route returns a JSON string, not a checked note
+       object. Parse and apply the same final five-field + selected-template
+       contract before this repair can rejoin normal generation. */
+    var candidate=parseGenJSON(repaired);
+    _mlsValidateStructuredNoteResult(candidate,draftTuning);
+    return repaired;
   }catch(error){
     if(signal&&signal.aborted)throw error;
+    /* A malformed repair is a generation failure, not permission to display
+       it or silently substitute a different note. The outer generation catch
+       keeps the clinician's prior draft untouched. */
+    if(error&&(error.mlsStructuredNoteQuality||error.mlsAthenaNoteQuality))throw error;
     return '';
   }
 }
-function _mlsDocumentedOnlyNoteResult(transcript){
-  var documented=String(transcript||'').replace(/\s+/g,' ').trim().slice(0,12000);
-  if(!documented)documented='No current-visit statement was captured.';
-  var missing="Not documented in today's transcript.";
-  var note='HPI:\nDocumented today: '+documented+'\n\nROS:\n'+missing+'\n\nEXAM:\n'+missing+'\n\nASSESSMENT:\n'+missing+'\n\nPLAN:\n'+missing;
-  return {
-    note:note,athena_note:note,insuranceNote:'',patient_summary:'',
-    coding:{em:'',emJust:'Insufficient documentation in today\'s transcript',icd:[],cpt:[]},
-    emr:{cc:documented,dx:'—',meds:'—',orders:'—',fu:'—'},
-    red_flags:[],suggested_orders:[],differentials:[],opioids:[],recommendations:[],
-    conservative_care:{tried:[],still_needed:[]},imaging_concordance:'',surgical_options:[],preop_workup:[],consent_points:{benefits:[],risks:[],alternatives:[]},
-    mlsDocumentedOnlyFallback:true
-  };
+function _mlsTemplateHeadingParts(value){
+  var line=String(value||'').trim().replace(/^\s*(?:#{1,6}\s*|[-*•]\s+|\d+[.)]\s+)/,'').trim();
+  line=line.replace(/^(?:\*\*|__|`+)/,'').replace(/(?:\*\*|__|`+)$/,'').trim();
+  var colon=line.indexOf(':'),raw=colon>=0?line.slice(0,colon):line;
+  var label=raw.replace(/(?:\*\*|__|`+)$/,'').trim();
+  return {label:label,normalized:label.replace(/:\s*$/,'').replace(/\s+/g,' ').trim().toUpperCase(),hasColon:colon>=0};
 }
-function _mlsValidateStructuredNoteResult(result){
+function _mlsTemplateHeadingIsReserved(normalized){
+  var key=String(normalized||'').replace(/\s+/g,' ').trim().toUpperCase();
+  return ['HPI','ROS','EXAM','ASSESSMENT','PLAN','SUBJECTIVE','OBJECTIVE','SIGNATURE','ATTESTATION','DATE OF SERVICE','ENCOUNTER MODALITY','VISIT TYPE','ASSESSMENT AND PLAN','ASSESSMENT & PLAN'].indexOf(key)>=0;
+}
+function _mlsRequiredTemplateHeadings(profile,family){
+  try{
+    var mode=String(profile&&profile.templateMode||'').toLowerCase(),text=String(profile&&profile.templateText||'');
+    if((mode!=='strict'&&mode!=='adapt')||!text.trim())return [];
+    var lines=text.split(/\r?\n/),candidates=[];
+    for(var i=0;i<lines.length;i++){
+      var part=_mlsTemplateHeadingParts(lines[i]),label=part.label;
+      var placeholderTokens=label.match(/\[[^\]]+\]/g)||[];
+      /* A bracket token anywhere before the colon makes this a fill pattern,
+         not one literal heading the model can preserve. A real heading such
+         as "DIAGNOSIS: [value]" is still eligible because label parsing stops
+         at the colon, before its placeholder. Keep this exactly aligned with
+         the backend extractor. */
+      if(!label||label.length>80||placeholderTokens.length)continue;
+      var words=label.match(/[A-Za-z0-9]+/g)||[],next='';
+      for(var n=i+1;n<lines.length;n++){if(lines[n].trim()){next=lines[n];break;}}
+      var nextPlaceholder=/^\s*\[[^\]]+\]\s*$/.test(next),allCaps=/[A-Z]/.test(label)&&label===label.toUpperCase();
+      if(!words.length||words.length>10||(!part.hasColon&&!allCaps&&!nextPlaceholder))continue;
+      if(part.normalized===String(family||'').toUpperCase()||_mlsTemplateHeadingIsReserved(part.normalized))continue;
+      if(!candidates.some(function(row){return row.heading===part.normalized;}))candidates.push({heading:part.normalized,index:i,hasColon:part.hasColon,nextPlaceholder:nextPlaceholder});
+    }
+    /* Match the backend extractor: a leading all-caps title without a colon or
+       following placeholder is preamble, not a required clinical field. */
+    var first=lines.findIndex(function(line){return line.trim();});
+    if(candidates.length>1&&candidates[0].index===first&&!candidates[0].hasColon&&!candidates[0].nextPlaceholder)candidates.shift();
+    /* One label is commonly prose or a title. Two or more ordered labels are
+       the smallest unambiguous template structure; placeholder-only and
+       natural-text templates therefore remain guidance rather than gates. */
+    return candidates.length>=2?candidates.map(function(row){return row.heading;}).slice(0,16):[];
+  }catch(e){return [];}
+}
+function _mlsValidateActiveTemplateStructure(canonical,tuning){
+  var families=tuning&&tuning.families||{},sections=canonical&&canonical.sections||[];
+  ['hpi','ros','exam','assessment','plan'].forEach(function(family){
+    var required=_mlsRequiredTemplateHeadings(families[family],family);
+    if(!required.length)return;
+    var section=sections.filter(function(row){return row&&row.key===family;})[0],lines=String(section&&section.text||'').split(/\r?\n/),at=-1;
+    /* The clinical evidence contract owns the exact no-evidence body.
+       A presentation template cannot require invented inner fields there. */
+    if(String(section&&section.text||'').trim()==="Not documented in today's transcript.")return;
+    for(var i=0;i<required.length;i++){
+      var next=-1;
+      for(var j=at+1;j<lines.length;j++){if(_mlsTemplateHeadingParts(lines[j]).normalized===required[i]){next=j;break;}}
+      if(next<0)throw _mlsStructuredNoteQualityError('active '+String(families[family].templateMode||'template')+' '+family+' template structure was not preserved');
+      at=next;
+    }
+  });
+  return canonical;
+}
+function _mlsValidateStructuredNoteResult(result,tuning){
   if(!result || typeof result!=='object' || Array.isArray(result)) throw _mlsStructuredNoteQualityError('response is not an object');
   if(typeof result.note!=='string') throw _mlsStructuredNoteQualityError('note is not a string');
   var note=result.note.trim();
   if(!note) throw _mlsStructuredNoteQualityError('note is blank');
   if(note.length>50000) throw _mlsStructuredNoteQualityError('note exceeds the browser safety bound');
-  var anchors=[
-    /\b(?:subjective|hpi|history of present illness|chief complaint)\b/i,
-    /\b(?:objective|physical exam|examination|exam|review of systems|\bros\b)\b/i,
-    /\b(?:assessment|impression|diagnos(?:is|es))\b/i,
-    /\b(?:plan|follow[- ]?up|recommendations?)\b/i
-  ];
-  var sections=anchors.reduce(function(count,re){return count+(re.test(note)?1:0);},0);
-  if(note.length<24 || sections<2) throw _mlsStructuredNoteQualityError('note is not a structured clinical draft');
+  /* Visit notes are now one fixed, exact five-field display. Validate the
+     bytes the clinician would see before any editor/canonical mutation. */
+  var canonical;
+  try{canonical=_mlsValidateAthenaNote(note);}
+  catch(error){throw _mlsStructuredNoteQualityError(String(error&&error.mlsAi&&error.mlsAi.detail||'note did not contain the exact five fields'));}
+  _mlsValidateActiveTemplateStructure(canonical,tuning);
   return result;
 }
 
@@ -31009,7 +31335,8 @@ function _mlsValidateAthenaNote(text){
   var required=['hpi','ros','exam','assessment','plan'];
   var labels={hpi:'HPI',ros:'Review of Systems',exam:'Physical Exam',assessment:'Assessment',plan:'Plan / Follow-up'};
   var lines=src.split('\n'), flat=/^\s*(HPI|ROS|EXAM|ASSESSMENT|PLAN)\s*:?\s*(.*)$/i, combinedWrapper=/^\s*(?:#{1,6}\s*|\*{1,3}\s*|_{1,3}\s*|`{1,3}\s*)?ASSESSMENT\s*(?:AND|&)\s*PLAN\b/i;
-  var malformed=/^\s*(?:#{1,6}\s*|\*{1,3}\s*|_{1,3}\s*|`{1,3}\s*|\d+[.)]\s*|[-•]\s+)?(?:HPI|ROS|EXAM|EXAMINATION|ASSESSMENT|PLAN|SUBJECTIVE|OBJECTIVE|ASSESSMENT\s*(?:AND|&)\s*PLAN|CHIEF\s+COMPLAINT|HISTORY|PMH|PAST\s+MEDICAL\s+HISTORY|MEDICATIONS?|ALLERGIES|VITALS?|VITAL\s+SIGNS|FINDINGS|LABS?|IMAGING|DIAGNOS(?:IS|ES)|REVIEW\s+OF\s+SYSTEMS|PHYSICAL\s+EXAM)\b\s*(?:[*_`]+)?\s*:?\s*$/i;
+  var malformed=/^\s*(?:#{1,6}\s*|\*{1,3}\s*|_{1,3}\s*|\x60{1,3}\s*|\d+[.)]\s*|[-•]\s+)?(?:HPI|ROS|EXAM|ASSESSMENT|PLAN|SUBJECTIVE|OBJECTIVE|ASSESSMENT\s*(?:AND|&)\s*PLAN|REVIEW\s+OF\s+SYSTEMS|PHYSICAL\s+EXAM)\b\s*(?:[*_\x60]+)?\s*:?\s*$/i;
+  var signatureHeading=/^\s*(?:#{1,6}\s*|\*{1,3}\s*|_{1,3}\s*|\x60{1,3}\s*|\d+[.)]\s*|[-•]\s+)?SIGNATURE\s*(?:[*_\x60]+)?\s*:?\s*(?:[*_\x60]+\s*)?(?:\[[^\]\n]*\])?\s*$/i;
   var bodies={}, current=null, seen={}, order=[];
   for(var i=0;i<lines.length;i++){
     var line=lines[i], trimmed=line.trim(); if(!trimmed)continue;
@@ -31022,6 +31349,7 @@ function _mlsValidateAthenaNote(text){
        was reviewed") stays writable - measured false-positive class. */
     if(/\([^)\n]*carried[^)\n]*\)/i.test(line)||/\([^)\n]*(?:last|prior|previous)\s+visit[^)\n]*review/i.test(line)||/\([^)\n]*review[^)\n]*(?:last|prior|previous)\s+visit[^)\n]*\)/i.test(line)||/^\s*(?:PAST\s+MEDICAL\s+HISTORY|MEDICAL\s+HISTORY|PAST\s+MEDICAL\s+HX|PMHX?|PAST\s+SURGICAL\s+HISTORY|SURGICAL\s+HISTORY|PAST\s+SURGERIES|PAST\s+SURGICAL\s+HX|PSHX?|FAMILY\s+HISTORY|FAMILY\s+HX|FHX?|SOCIAL\s+HISTORY|SOCIAL\s+HX|SHX?|ALLERGIES|ALLERGY|DRUG\s+ALLERGIES)\s*\([^)\n]*\)\s*:/i.test(line)||/={2,}\s*(?:END\s+)?CARRIED\s+HISTORY/i.test(line))throw _mlsAthenaNoteQualityError('carried-forward content is not allowed in athena_note');
     if(combinedWrapper.test(line))throw _mlsAthenaNoteQualityError('combined Assessment and Plan heading is not allowed');
+    if(signatureHeading.test(line))throw _mlsAthenaNoteQualityError('signature heading is not allowed');
     var m=flat.exec(line);
     if(m){
       var key=m[1].toLowerCase();
@@ -31041,6 +31369,14 @@ function _mlsValidateAthenaNote(text){
     if(!_mlsAthenaBodyIsSubstantive(body))throw _mlsAthenaNoteQualityError('non-substantive '+required[r]+' section');
   }
   return {text:src,sections:required.map(function(key){return {key:key,text:String(bodies[key].join('\n')).trim(),execute:true,label:labels[key]};})};
+}
+/* The reviewed standard note owns the field text. This is deterministic:
+   remove only app-owned signature/carried-history decoration, never rewrite. */
+function _mlsAthenaCanonicalFromStandardNote(text){
+  var source=String(text==null?'':text);
+  if(typeof stripSignatureBlock==='function')source=stripSignatureBlock(source);
+  if(typeof _autoDraftStripCarried==='function')source=_autoDraftStripCarried(source);
+  return _mlsValidateAthenaNote(source);
 }
 function _mlsAthenaSourceState(binding,includeDisplay){
   try{
@@ -31062,6 +31398,64 @@ function _mlsAthenaSourceState(binding,includeDisplay){
   }catch(e){return null;}
 }
 function _mlsAthenaSourceFingerprint(binding){var state=_mlsAthenaSourceState(binding,true);try{return state?JSON.stringify(state):'';}catch(e){return '';}}
+/* bindfp-1.0.0: An explicit appointment choice changes only the visit identity
+   attached to an otherwise unchanged generated note. Re-anchor that note's
+   source proof only after the Send sheet has frozen and read back the exact
+   patient + appointment. The ordinary path proves the prior fingerprint
+   against the prior binding byte for byte. The saved-note recovery is narrower:
+   it runs only on a fresh explicit choice of the same stored appointment, and
+   proves the current editor, stored source, and complete patient identity before
+   deterministically rebuilding the five-field Athena sidecar from currentSoap.
+   It never edits transcript/SOAP text and never makes the saved comparator lax. */
+function _mlsAthenaBindState(raw){try{var s=typeof raw==='string'?JSON.parse(raw):raw;return s&&s.v===2?s:null;}catch(e){return null;}}
+function _mlsAthenaBindClinicalPatientSame(a,b){
+  try{
+    if(!a||!b)return false;var ap=a.patient||{},bp=b.patient||{};
+    return String(a.transcript||'')===String(b.transcript||'')&&String(a.context||'')===String(b.context||'')&&String(a.visitComment||'')===String(b.visitComment||'')&&String(a.standardNote||'')===String(b.standardNote||'')&&
+      String(a.activePatientId||'')===String(b.activePatientId||'')&&String(ap.patientId||'')===String(bp.patientId||'')&&String(ap.name||'')===String(bp.name||'')&&String(ap.dob||'')===String(bp.dob||'')&&String(ap.mrn||'')===String(bp.mrn||'');
+  }catch(e){return false;}
+}
+function _mlsAthenaBindDayKey(v){var s=String(v||'').trim(),m=/^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s)||/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(s);if(!m)return s;if(s.indexOf('/')>=0)return m[3]+'-'+('0'+m[1]).slice(-2)+'-'+('0'+m[2]).slice(-2);return m[1]+'-'+('0'+m[2]).slice(-2)+'-'+('0'+m[3]).slice(-2);}
+function _mlsAthenaBindVisitSame(a,b){
+  try{var av=a&&a.visit||{},bv=b&&b.visit||{};return String(av.visitDate||'')===String(bv.visitDate||'')&&String(av.provider||'')===String(bv.provider||'')&&String(av.appointmentId||'')===String(bv.appointmentId||'')&&String(av.encounterId||'')===String(bv.encounterId||'')&&String(av.encounterUrl||'')===String(bv.encounterUrl||'');}catch(e){return false;}
+}
+function _mlsAthenaLegacyBindingRecoveryCandidate(readback){
+  try{
+    var rb=readback||{},rbc=rb.visitContext||{};
+    if(!String(rbc.appointmentId||'').trim()||typeof currentNoteId==='undefined'||!currentNoteId||typeof getNotes!=='function')return null;
+    var live=_mlsAthenaSourceState(readback,true);if(!live)return null;
+    var saved=(getNotes()||[]).find(function(n){return n&&String(n.id)===String(currentNoteId);});if(!saved)return null;
+    if(!/^(generated_soap|edited_generated_soap)$/.test(String(saved.noteProvenance||''))||!/^(generated|edited)$/.test(String(saved.athenaNoteProvenance||'')))return null;
+    if(String(saved.appointmentId||'')!==String(rbc.appointmentId||''))return null;
+    var stored=_mlsAthenaBindState(saved.athenaNoteSourceFingerprint);if(!stored||String((stored.visit||{}).appointmentId||''))return null;
+    var record={v:2,transcript:String(saved.transcript||''),context:String(saved.context||''),visitComment:String(saved.visitComment||''),standardNote:String(saved.soap||''),activePatientId:String(saved.patientId||''),patient:{patientId:String(saved.patientId||''),name:String(saved.patient||''),dob:String(saved.patientDob||saved.dob||''),mrn:String(saved.patientMrn||saved.mrn||'')},visit:{visitDate:String(saved.visitDate||''),provider:String(saved.provider||''),appointmentId:String(saved.appointmentId||''),encounterId:String(saved.encounterId||''),encounterUrl:String(saved.encounterUrl||'')}};
+    if(!_mlsAthenaBindClinicalPatientSame(stored,record)||String((stored.visit||{}).provider||'')!==record.visit.provider||String((stored.visit||{}).encounterId||'')!==record.visit.encounterId||String((stored.visit||{}).encounterUrl||'')!==record.visit.encounterUrl)return null;
+    var rv=record.visit||{},lv=live.visit||{};
+    if(!_mlsAthenaBindClinicalPatientSame(record,live)||String(((document.getElementById('noteBox')||{}).value)||'')!==String(saved.soap||'')||_mlsAthenaBindDayKey(rv.visitDate)!==_mlsAthenaBindDayKey(lv.visitDate)||String(rv.provider||'')!==String(lv.provider||'')||String(rv.appointmentId||'')!==String(lv.appointmentId||'')||String(rv.encounterId||'')!==String(lv.encounterId||'')||String(rv.encounterUrl||'')!==String(lv.encounterUrl||''))return null;
+    return saved;
+  }catch(e){return null;}
+}
+function _mlsAthenaCanRecoverExplicitBinding(readback){return !!_mlsAthenaLegacyBindingRecoveryCandidate(readback);}
+function _mlsAthenaReanchorExplicitBinding(prior,readback){
+  try{
+    var rb=readback||{},rbc=rb.visitContext||{};
+    if(String(rb.source||'')!=='send-sheet-explicit-bind'||!String(rbc.appointmentId||'').trim())return false;
+    var live=_mlsAthenaSourceState(readback,true);if(!live)return false;
+    var old=_mlsAthenaBindState(typeof currentAthenaNoteSourceFingerprint!=='undefined'?currentAthenaNoteSourceFingerprint:'');
+    var before=_mlsAthenaSourceState(prior||{},true);
+    if((currentAthenaNoteProvenance==='generated'||currentAthenaNoteProvenance==='edited')&&old&&before&&_mlsAthenaBindClinicalPatientSame(old,before)&&_mlsAthenaBindVisitSame(old,before)&&_mlsAthenaBindClinicalPatientSame(old,live)){
+      currentAthenaNoteSourceFingerprint=JSON.stringify(live);return true;
+    }
+    /* A previously saved note from before bindfp-1.0.0 was marked stale during
+       History restore. Recover it only when this explicit choice names the same
+       stored appointment and every source/patient byte still proves ownership. */
+    if(!_mlsAthenaLegacyBindingRecoveryCandidate(readback))return false;
+    _mlsSetAthenaNote(String(typeof currentSoap!=='undefined'?currentSoap:''),'edited');
+    return _mlsAthenaFingerprintMatchesCurrent(currentAthenaNoteSourceFingerprint);
+  }catch(e){return false;}
+}
+window._mlsAthenaCanRecoverExplicitBinding=_mlsAthenaCanRecoverExplicitBinding;
+window._mlsAthenaReanchorExplicitBinding=_mlsAthenaReanchorExplicitBinding;
 function _mlsAthenaGenerationSourceFingerprint(binding){var state=_mlsAthenaSourceState(binding,false);try{return state?JSON.stringify(state):'';}catch(e){return '';}}
 function _mlsAthenaFingerprintMatchesCurrent(expected){
   var want=String(expected||''); if(!want)return false;
@@ -31233,9 +31627,8 @@ function _mlsSavedAthenaCanonicalForWrite(n){
   n=n||{}; var provenance=String(n.athenaNoteProvenance||'none'), generatedDisplay=/^(generated_soap|edited_generated_soap|generated_nonsoap)$/.test(String(n.noteProvenance||''));
   if(provenance==='none')return generatedDisplay?{required:true,ok:false,reason:'missing-canonical-note'}:null;
   if(provenance!=='generated'&&provenance!=='edited')return {required:true,ok:false,reason:'stale-canonical-provenance'};
-  if(!String(n.athenaNote||'').trim())return {required:true,ok:false,reason:'missing-canonical-note'};
   if(!_mlsSavedAthenaFingerprintMatchesRecord(n.athenaNoteSourceFingerprint,n))return {required:true,ok:false,reason:'canonical-source-changed'};
-  try{var valid=_mlsValidateAthenaNote(n.athenaNote);valid.required=true;valid.ok=true;return valid;}catch(e){return {required:true,ok:false,reason:'malformed-canonical-note'};}
+  try{var valid=/^(generated_soap|edited_generated_soap)$/.test(String(n.noteProvenance||''))?_mlsAthenaCanonicalFromStandardNote(n.soap):_mlsValidateAthenaNote(n.athenaNote);valid.required=true;valid.ok=true;return valid;}catch(e){return {required:true,ok:false,reason:'malformed-canonical-note'};}
 }
 /* reopen-1.0.0 (owner 2026-09-02, measured on his own tab 01:5x-02:1x): REOPENING
    A SAVED GENERATED VISIT NOTE THREW AWAY ITS ATHENA SIDECAR. The record he
@@ -31290,14 +31683,15 @@ function _mlsAthenaCanonicalForWrite(){
   var provenance=String(typeof currentAthenaNoteProvenance!=='undefined'?currentAthenaNoteProvenance:'none');
   if(provenance==='none')return null; // typed/manual notes retain legacy generic-note behavior
   if(provenance!=='generated'&&provenance!=='edited')return {required:true,ok:false,reason:'stale-canonical-provenance'};
-  if(!String(currentAthenaNote||'').trim())return {required:true,ok:false,reason:'missing-canonical-note'};
   /* reopen-1.1.0: a reopen-restored sidecar whose CLINICAL inputs are unchanged
      is re-anchored here rather than refused for identity churn it does not
      depend on. Any other sidecar keeps the original rule exactly, and a stale
      one never reaches this line - the provenance check above refuses it first. */
   if(!_mlsAthenaFingerprintMatchesCurrent(currentAthenaNoteSourceFingerprint)&&!_mlsAthenaReanchorIfClinicalUnchanged())return {required:true,ok:false,reason:'canonical-source-changed'};
   try{
-    var valid=_mlsValidateAthenaNote(currentAthenaNote); valid.required=true; valid.ok=true; return valid;
+    var reviewedDisplay=typeof currentNoteProvenance!=='undefined'&&/^(generated_soap|edited_generated_soap)$/.test(String(currentNoteProvenance));
+    var valid=reviewedDisplay?_mlsAthenaCanonicalFromStandardNote(currentSoap):_mlsValidateAthenaNote(currentAthenaNote);
+    valid.required=true; valid.ok=true; return valid;
   }catch(e){return {required:true,ok:false,reason:(e&&e.mlsAi&&e.mlsAi.detail)||'malformed-canonical-note'};}
 }
 
@@ -31662,6 +32056,26 @@ function _mlsGenerationDraftTuning(evidence){
   }
   return tuning;
 }
+function _mlsFreezeGenerationDraftTuning(value){
+  var copy;
+  try{copy=JSON.parse(JSON.stringify(value||{families:{}}));}catch(e){copy={families:{}};}
+  try{
+    (function freezeTree(node){
+      if(!node||typeof node!=='object'||Object.isFrozen(node))return;
+      Object.keys(node).forEach(function(key){freezeTree(node[key]);});
+      Object.freeze(node);
+    })(copy);
+  }catch(eFreeze){}
+  return copy;
+}
+function _mlsResolvedGenerationDraftTuning(transcript,evidence){
+  try{
+    var requested=_mlsGenerationDraftTuning(evidence),api=window.__mlsDraftTuning;
+    if(!api||!api.installed)return _mlsFreezeGenerationDraftTuning(requested);
+    if(typeof api.autoRoute==='function')requested=api.autoRoute({todayTranscript:String(transcript||'')},requested);
+    return _mlsFreezeGenerationDraftTuning(typeof api.forStructured==='function'?api.forStructured(requested):requested);
+  }catch(e){return _mlsFreezeGenerationDraftTuning(_mlsGenerationDraftTuning(evidence));}
+}
 async function generateNote(){
   /* gsup-1.0.0 (measured 2026-09-02 10:xx): the supersede abort lives ONLY in
      _mlsStartGeneration, where a replacement run really is being created. A
@@ -31678,8 +32092,16 @@ async function generateNote(){
   if(!_athenaGuardBoundEditor('note generation'))return _mlsRefuseGeneration('visit-binding-blocked','MLS could not bind this draft to the active patient. Re-open the intended visit and try again.',false);
   const hasAiNow=hasAI();
   if(!hasAiNow&&transcript.trim()!==EXAMPLE.trim()){
-    openSettings();
-    return _mlsRefuseGeneration('ai-unavailable','Add your OpenAI API key in Settings to generate notes.');
+    /* settingsgate-1.0.0: this branch used to call openSettings(), and this
+       function runs programmatically (kiosk avatar timer, recording segments,
+       voice intent, command palette) - a transient hasAI() false during a day
+       pull is what opened the full dialog over the doctor's work. The refusal
+       code, sentence and return value are unchanged; only the door changed
+       from forced to offered. */
+    var _mlsAiKeyMessage='Add your OpenAI API key in Settings to generate notes.';
+    var _mlsAiKeyRefusal=_mlsRefuseGeneration('ai-unavailable',_mlsAiKeyMessage);
+    _mlsOfferSettingsAction(_mlsAiKeyMessage,['noteGenError','genError','genBtn']);
+    return _mlsAiKeyRefusal;
   }
   const gb=document.getElementById('genBtn');
   const run=_mlsStartGeneration(transcriptEl,evidence);
@@ -31707,6 +32129,7 @@ async function generateNote(){
     const generationSourceRest=_mlsGenerationSourceRest(generationSourceFingerprint);
     const generationStyle=getGenStyle();
     const key=getKey();
+    const generationDraftTuning=_mlsResolvedGenerationDraftTuning(transcript,evidence);
     if(!hasAiNow){
       currentSoap=_reorderNoteForStyle(offlineExampleNote(), generationStyle);
       currentNoteProvenance='typed';
@@ -31735,26 +32158,20 @@ async function generateNote(){
       outcome='success'; outcomeCode='offline-example';
       return true;
     }
-    let result;
-    try{
-      result=await _mlsAwaitGeneration(
-        run,
-        callOpenAI(transcript,key,{signal:run.controller.signal,evidence:evidence}),
-        _mlsGenerationTimeoutMs('main',90000),
-        'generation-timeout'
-      );
-    }catch(initialGenerationError){
-      if(!_mlsUnsupportedClinicalClaimFailure(initialGenerationError))throw initialGenerationError;
-      result=_mlsDocumentedOnlyNoteResult(transcript);
-    }
+    let result=await _mlsAwaitGeneration(
+      run,
+      callOpenAI(transcript,key,{signal:run.controller.signal,evidence:evidence,resolvedDraftTuning:generationDraftTuning}),
+      _mlsGenerationTimeoutMs('main',90000),
+      'generation-timeout'
+    );
     /* Validate before currentSoap/currentInsurance/currentCoding or any editor
        surface changes.  A bad model/backend response leaves the current draft
        intact and remains explicitly retryable. */
-    _mlsValidateStructuredNoteResult(result);
+    _mlsValidateStructuredNoteResult(result,generationDraftTuning);
     /* noteq-1.0.0 (b1169): grade the validated draft and, when it lands under
        floor, run the ONE permitted repair pass - before any editor surface is
        mutated, so a failed retry cannot disturb a good draft. */
-    try{ result=await _mlsNoteQualityRepairStructured(result,transcript,key,evidence,run); }catch(eNoteqRepair){}
+    try{ result=await _mlsNoteQualityRepairStructured(result,transcript,key,evidence,run,generationDraftTuning); }catch(eNoteqRepair){}
     /* Older /api/generate deployments may return the already-valid flat SOAP
        note without the newer athena_note sidecar. Reuse it only when it
        independently passes the exact five-destination validator; narrative,
@@ -31772,7 +32189,7 @@ async function generateNote(){
        validator bytes and the write gate are unchanged; only the blast radius
        is. */
     let canonicalAthenaNoteOrNull=null,athenaSidecarReason='';
-    try{ canonicalAthenaNoteOrNull=_mlsValidateAthenaNote(result.athena_note==null?(typeof _autoDraftStripCarried==='function'?_autoDraftStripCarried(result.note):result.note):result.athena_note); }
+    try{ canonicalAthenaNoteOrNull=generationStyle==='soap'?_mlsAthenaCanonicalFromStandardNote(result.note):_mlsValidateAthenaNote(result.athena_note==null?(typeof _autoDraftStripCarried==='function'?_autoDraftStripCarried(result.note):result.note):result.athena_note); }
     catch(eAthenaSidecar){ athenaSidecarReason=String((eAthenaSidecar&&eAthenaSidecar.mlsAi&&eAthenaSidecar.mlsAi.detail)||'malformed athena_note').slice(0,120); }
     const canonicalAthenaNote=canonicalAthenaNoteOrNull;
     if(!_athenaAsyncBindingStillSafe(generationBinding,'note generation',generationEpoch)){try{run.abortDiscardField='binding';_mlsNoteGenerationDiscard(run.id,'binding');}catch(eDbind){}throw _mlsGenerationAbortError('source-changed','binding');}
@@ -31823,7 +32240,7 @@ async function generateNote(){
        (default comment/signature) has settled. Its fingerprint therefore owns
        the exact standard note the clinician reviewed, not the pre-render text. */
     if(canonicalAthenaNote){
-      _mlsSetAthenaNote(canonicalAthenaNote.text,'generated');
+      _mlsSetAthenaNote(generationStyle==='soap'?_mlsAthenaCanonicalFromStandardNote(currentSoap).text:canonicalAthenaNote.text,'generated');
     }else{
       /* sidecar-1.0.0: these three assignments are LOAD-BEARING, not belt and
          braces. _mlsMarkAthenaNoteStale returns early when provenance is
@@ -31844,11 +32261,11 @@ async function generateNote(){
     autoPopulateExtras(result);
     // If a patient-friendly summary was requested, drop it into the handout / after-visit summary.
     try{ if(result.patient_summary){ currentHandout=result.patient_summary; var hb=document.getElementById('handoutBody'); if(hb){ hb.value=currentHandout; } var hc=document.getElementById('handoutCard'); if(hc){ hc.style.display='block'; } } }catch(e){}
-    toast(athenaSidecarReason?'Your note is ready to review. MLS could not build the five-field Athena payload for this draft, so Send to Athena is unavailable until you regenerate.':(result.mlsDocumentedOnlyFallback?'Note generated from the documented words only. Review and add anything that was not captured.':(result.patient_summary?'Note + patient summary generated.':'Note generated. Optimize coding or sign when ready.')),athenaSidecarReason?'':'ok');
+    toast(athenaSidecarReason?'Your note is ready to review. MLS could not build the five-field Athena payload for this draft, so review and complete those five sections in your note before sending.':(result.patient_summary?'Note + patient summary generated.':'Note generated. Optimize coding or sign when ready.'),athenaSidecarReason?'':'ok');
     /* sidecar-1.0.0: a toast fades; the refusal of the Athena ROUTE must not.
        generateNote clears both ids on entry, so this cannot leak into the next
        run. */
-    if(athenaSidecarReason){try{window.__mlsLastAthenaSidecarReason=athenaSidecarReason;}catch(eSidecarProbe){}try{['genError','noteGenError'].forEach(function(id){var el=document.getElementById(id);if(el){el.textContent='Your note is ready to review. MLS could not build the five-field Athena payload for this draft ('+athenaSidecarReason+'), so Send to Athena is unavailable until you regenerate.';el.style.display='block';}});}catch(eSidecarSurface){}}
+    if(athenaSidecarReason){try{window.__mlsLastAthenaSidecarReason=athenaSidecarReason;}catch(eSidecarProbe){}try{['genError','noteGenError'].forEach(function(id){var el=document.getElementById(id);if(el){el.textContent='Your note is ready to review. MLS could not build the five-field Athena payload for this draft ('+athenaSidecarReason+'), so review and complete those five sections in your note before sending.';el.style.display='block';}});}catch(eSidecarSurface){}}
     /* Main draft owns the Generate lifecycle and settles now. Optional
        template formatting has its own source listener/controller/deadline;
        it may improve this successful draft later, but it can neither keep the
@@ -32365,7 +32782,7 @@ function mapOpioidName(raw){
 function friendlyError(err){
   const m=(err&&err.message)||String(err);
   if(err&&err.mlsAi&&err.mlsAi.code==='draft_quality_failed') return mlsDraftFailureMessage(err);
-  if(err&&err.mlsStructuredNoteQuality) return 'The AI returned an unusable note draft. Nothing was changed. Please retry.';
+  if(err&&err.mlsStructuredNoteQuality) return 'Note generation could not finish its safety checks. Your prior draft was retained if one was already open. Please retry.';
   if(err&&err.mlsAthenaNoteQuality) return 'The AI returned an unusable Athena note payload. Nothing was changed. Please retry.';
   if(err&&err.noAccess) return 'Your account needs access — enter an access code (Settings) or ask the owner to enable you.';
   if(err&&err.freeform) return 'This AI helper isn\'t available in the hosted server version yet. (Note generation still works.)';
@@ -32407,38 +32824,11 @@ function getPreset(){ const el=document.getElementById('specialtyPreset'); var v
    switch would be a category error that answers 'soap' for every value it can
    hold while looking like it read a real preference. A legacy #noteStyle
    select still wins if some host page provides one. */
-function getNoteStyle(){
-  const el=document.getElementById('noteStyle'); if(el) return el.value;
-  try{ const on=document.querySelector('#genStyleSeg button.on'); const v=on&&on.getAttribute('data-v'); if(v) return v; }catch(e){}
-  return 'SOAP';
-}
+function getNoteStyle(){ return 'SOAP'; }
 /* ===== NOTE GENERATION OPTIONS — per-visit style / length / focus that feed the
    main Generate Note call. Style & length persist; focus is per-visit. ===== */
-/* ===== fmt-1.0.0 (owner-measured 2026-09-02, real visit) — THE DISPLAY DEFAULT
-   IS THE CHART SHAPE, AND ONLY THE DOCTOR CAN MOVE IT.
-   WHAT HE SAW: a generated note headed "History: ... Examination: Not documented
-   in today's transcript. Assessment: 1. ... Plan: Not documented in today's
-   transcript." — the NARRATIVE prose family — and said "this is not a good
-   format and its missing the hpi and other stuff".
-   WHY: uns('genStyle') held 'narrative' on that account. Nothing in this file
-   ever defaults to narrative. The ONLY writer is setGenStyle(), and its only
-   pressers are the five #genStyleSeg buttons and the Easy view's style chips
-   that forward to them. On 2026-09-01 the same account carried draft-tuning
-   profiles named "QA HPI Template 2026 ..." and "Engineering Compliance
-   Assessment Template" — artifacts of TEST LANES driving this app through those
-   very controls. In one bare string, a value a test lane pressed is
-   indistinguishable from a value the doctor chose.
-   SO THE STRING IS NO LONGER THE CHOICE. An explicit pick writes a stamp —
-   {format, chosenAt, source} — and only a stamped format is honoured. A stored
-   format with no stamp is treated as UNSET, and unset is 'soap': HPI / ROS /
-   EXAM / ASSESSMENT / PLAN, the five flat headings athenaOne stages field by
-   field (GEN_STYLE_LINE.soap below is the prompt that produces them, and
-   hostedNotePreferences() maps exactly this value to the backend's
-   flat_hpi_ros_exam_assessment_plan_v1 family).
-   THE OLD VALUE IS NOT DELETED. uns('genStyle') is left exactly as it was and
-   Settings says out loud which stored format is being ignored and why, so a
-   doctor who really did choose Narrative gets it back with one press instead of
-   finding a setting silently gone. ===== */
+/* Visit notes always use the five Athena fields. Legacy format metadata is
+   readable for saved records; it cannot change new generation. */
 var GEN_FORMAT_IDS=['soap','apso','narrative','problem','hp'];
 var GEN_FORMAT_NAMES={soap:'HPI / ROS / Exam / Assessment / Plan',apso:'APSO',narrative:'Narrative',problem:'Problem-based',hp:'H&P'};
 var GEN_FORMAT_CHOICE_KEY='genStyleChoiceV1';
@@ -32458,12 +32848,11 @@ function getGenStyleChoice(){
    owes the doctor. '' when there is nothing to say: nothing stored, a stored
    'soap' (already the chart shape), or a real stamped choice. */
 function getGenStyleIgnored(){
-  if(getGenStyleChoice()) return '';
   var v='';
   try{ v=String(localStorage.getItem(uns('genStyle'))||''); }catch(e){ return ''; }
   return (v&&v!=='soap'&&GEN_FORMAT_IDS.indexOf(v)>=0)?v:'';
 }
-function getGenStyle(){ var c=getGenStyleChoice(); return c?c.format:'soap'; }
+function getGenStyle(){ return 'soap'; }
 function refreshGenSectionProfiles(){
   var api=window.__mlsDraftTuning, row=document.getElementById('genSectionProfilesRow');
   if(!api||!api.installed||typeof api.profiles!=='function') return;
@@ -32483,11 +32872,9 @@ function getGenLength(){ return localStorage.getItem(uns('genLength'))||'standar
 function getGenInstr(){ var el=document.getElementById('genInstr'); return el?el.value.trim():''; }
 function getGenPatientSummary(){ var el=document.getElementById('genPatientSummary'); return !!(el&&el.checked); }
 function _genSegSet(segId, v){ var seg=document.getElementById(segId); if(!seg) return; var btns=seg.querySelectorAll('button'); for(var i=0;i<btns.length;i++){ btns[i].classList.toggle('on', btns[i].getAttribute('data-v')===v); } }
-/* fmt-1.0.0: a press here is the doctor saying so, so it writes BOTH the format
-   and the stamp that makes it a choice. Without the stamp getGenStyle() would
-   keep answering 'soap' and the press would appear to do nothing. */
+/* Compatibility callers cannot switch the five-field visit format. */
 function setGenStyle(v, source){
-  var f=(GEN_FORMAT_IDS.indexOf(String(v))>=0)?String(v):'soap';
+  var f='soap';
   try{ localStorage.setItem(uns('genStyle'), f); }catch(e){}
   try{ localStorage.setItem(uns(GEN_FORMAT_CHOICE_KEY), JSON.stringify({format:f, chosenAt:new Date().toISOString(), source:String(source||'settings')})); }catch(eStamp){}
   _genSegSet('genStyleSeg', f);
@@ -32502,19 +32889,16 @@ function refreshNoteFormatBadge(){
   var el=document.getElementById('noteFormatBadge'); if(!el) return;
   var f=getGenStyle();
   el.textContent='Format: '+genFormatName(f);
-  el.title=(f==='soap')
-    ? 'HPI / ROS / Exam / Assessment / Plan - the five flat headings that match the athena chart fields. Change it under Format on the visit screen or in Settings > Note defaults.'
-    : genFormatName(f)+' - not the athena chart shape, so athenaOne gets one block of text instead of five fields. Change it under Format on the visit screen or in Settings > Note defaults.';
+  el.title='Every visit note uses these five fields. Review for Athena shows the exact text for each destination.';
   el.setAttribute('data-format', f);
 }
-/* fmt-1.0.0: never delete a doctor's real setting silently — if a stored format
-   is being ignored for want of a stamp, Settings says so and offers it back. */
+/* Explain the fixed format without rewriting existing notes. */
 function refreshNoteFormatMigrationNote(){
   var el=document.getElementById('noteFormatMigrationNote'); if(!el) return;
   var ignored=getGenStyleIgnored();
   if(!ignored){ el.style.display='none'; el.textContent=''; return; }
   el.style.display='';
-  el.textContent='A "'+genFormatName(ignored)+'" format is stored on this device but was never chosen here, so MLS is writing notes as HPI / ROS / Exam / Assessment / Plan. Your stored setting has not been deleted - choose "'+genFormatName(ignored)+'" above and save to use it again.';
+  el.textContent='Visit notes now always use HPI / ROS / Exam / Assessment / Plan. Previously saved notes keep their existing text.';
 }
 function setGenLength(v){ try{ localStorage.setItem(uns('genLength'), v); }catch(e){} _genSegSet('genLenSeg', v); }
 function toggleGenFocus(){ var el=document.getElementById('genInstr'); var b=document.getElementById('genFocusToggle'); if(!el) return; var show=el.style.display==='none'; el.style.display=show?'block':'none'; if(b) b.classList.toggle('on',show); if(show) el.focus(); }
@@ -33541,14 +33925,14 @@ For red_flags/suggested_orders/differentials/opioids/recommendations: use ONLY w
     templateName:(tplContract&&tplContract.name)?tplContract.name:'',
     findings:options.noteqFindings||null
   });
-  return await postChat(sys+tplSysLine,'TODAY_TRANSCRIPT_BEGIN\n'+transcript+'\nTODAY_TRANSCRIPT_END'+ctxLine+turnsBlock+seedLine+tplBlock+noteqBlock,key,{draftTuning:_mlsGenerationDraftTuning(options.evidence),specialty:spec,signal:options.signal});
+  return await postChat(sys+tplSysLine,'TODAY_TRANSCRIPT_BEGIN\n'+transcript+'\nTODAY_TRANSCRIPT_END'+ctxLine+turnsBlock+seedLine+tplBlock+noteqBlock,key,{draftTuning:options.resolvedDraftTuning||_mlsGenerationDraftTuning(options.evidence),draftTuningResolved:!!options.resolvedDraftTuning,specialty:spec,signal:options.signal});
 }
 
 /* noteq-1.0.0 (b1169): ONE repair pass for the PRIMARY structured note.
    Runs after the first result validates and BEFORE any editor surface is
    mutated, so a failed or worse retry leaves the original draft untouched.
    Returns the result to display, and stamps the grade for the strip. */
-async function _mlsNoteQualityRepairStructured(result,transcript,key,evidence,run){
+async function _mlsNoteQualityRepairStructured(result,transcript,key,evidence,run,generationDraftTuning){
   var firstText='';
   try{ firstText=String((result&&result.soap)||''); }catch(eNoteqFirst){ firstText=''; }
   if(!firstText.trim()) return result;
@@ -33570,11 +33954,11 @@ async function _mlsNoteQualityRepairStructured(result,transcript,key,evidence,ru
   try{
     var second=await _mlsAwaitGeneration(
       run,
-      callOpenAI(transcript,key,{signal:run.controller.signal,evidence:evidence,noteqFindings:res}),
+      callOpenAI(transcript,key,{signal:run.controller.signal,evidence:evidence,noteqFindings:res,resolvedDraftTuning:generationDraftTuning}),
       _mlsGenerationTimeoutMs('main',90000),
       'generation-timeout'
     );
-    _mlsValidateStructuredNoteResult(second);
+    _mlsValidateStructuredNoteResult(second,generationDraftTuning);
     var secondText=String((second&&second.soap)||'');
     var secondRes=__mlsNoteQualityGrade(secondText,'visit-note-soap',ctx);
     var pick=__mlsNoteQualityBetter(firstText,res,secondText,secondRes);
@@ -33847,6 +34231,15 @@ function __mlsNoteQualityStrip(hostId,res,label){
    In PER-DEVICE KEY MODE: POST OpenAI directly with the key.
    Returns the raw JSON string the model produced.
    --------------------------------------------------------- */
+/* A helper payload may contain chart history, a generated note, and document
+   boilerplate. None of those is today's dictation. Helpers must pass the
+   frozen visit transcript explicitly for conditional format selection;
+   otherwise use the saved format or the clinician's explicit override. */
+function _mlsTemplateRoutingSource(user,opts){
+  opts=opts||{};
+  if(Object.prototype.hasOwnProperty.call(opts,'todayTranscript')) return String(opts.todayTranscript==null?'':opts.todayTranscript).slice(0,24000);
+  return opts.freeform?'':String(user==null?'':user);
+}
 async function aiCallRaw(sys,user,key,opts){
   opts=opts||{};
   /* Load account draft preferences only for an actual generation request. */
@@ -33879,17 +34272,19 @@ async function aiCallRaw(sys,user,key,opts){
            against TODAY_TRANSCRIPT. autoRoute returns profile ids only, so
            background chart text and patient wording never enter settings or
            the tuning payload. An explicit one-visit picker always wins. */
-        if(typeof _dt.autoRoute==='function'){
+        if(opts.draftTuningResolved!==true&&typeof _dt.autoRoute==='function'){
           var _routeOptions=_draftFamily==='soap'?(_effectiveDraftTuning||{}):{families:{}};
           if(_draftFamily!=='soap') _routeOptions.families[_draftFamily]=_effectiveDraftTuning||{};
-          var _routedTuning=_dt.autoRoute({todayTranscript:user},_routeOptions);
+          var _routedTuning=_dt.autoRoute({todayTranscript:_mlsTemplateRoutingSource(user,opts)},_routeOptions);
           if(_draftFamily==='soap') _effectiveDraftTuning=_routedTuning;
           else {
             var _routedFamily=_routedTuning&&_routedTuning.families&&_routedTuning.families[_draftFamily];
             if(_routedFamily) _effectiveDraftTuning=Object.assign({},_effectiveDraftTuning||{},_routedFamily);
           }
         }
-        _draftTuning=(!_draftFamily||_draftFamily!=='soap')
+        _draftTuning=opts.draftTuningResolved===true&&_draftFamily==='soap'
+          ? _effectiveDraftTuning
+          : (!_draftFamily||_draftFamily!=='soap')
           ? _dt.forFamily(_draftFamily,_effectiveDraftTuning)
           : (typeof _dt.forStructured==='function'
             ? _dt.forStructured(_effectiveDraftTuning)
@@ -34195,7 +34590,8 @@ async function reviewCodingDocumentation(){
       document.getElementById('optCard').scrollIntoView({behavior:'smooth'});
     } else {
       toast('Add your OpenAI API key in Settings to optimize coding.','err');
-      openSettings();
+      /* settingsgate-1.0.0: offer the door, never force it open. */
+      _mlsOfferSettingsAction('Add your OpenAI API key in Settings to optimize coding.',['optBtn']);
     }
     return;
   }
@@ -34661,7 +35057,8 @@ async function generateRecommendations(){
       toast('Offline example recommendations shown. Add your OpenAI key for any visit.','');
     } else {
       toast('Add your OpenAI API key in Settings to generate recommendations.','err');
-      openSettings();
+      /* settingsgate-1.0.0: offer the door, never force it open. */
+      _mlsOfferSettingsAction('Add your OpenAI API key in Settings to generate recommendations.',['genRecsBtn']);
     }
     return;
   }
@@ -34886,7 +35283,8 @@ function signNote(){
   if(!resolvedSigner){
     setBadge(false);
     toast('MLS cannot confirm who is signing this note. Set your provider name in Settings, then sign.','err');
-    try{ if(typeof openSettings==='function') openSettings(); }catch(eSign){}
+    /* settingsgate-1.0.0: offer the door, never force it open. */
+    try{ _mlsOfferSettingsAction('MLS cannot confirm who is signing this note. Set your provider name in Settings, then sign.',['signBtn','signLine']); }catch(eSign){}
     return;
   }
   const name=resolvedSigner;
@@ -35036,6 +35434,7 @@ function _athenaSetVisitBinding(binding,replaceExisting){
   currentVisitAthenaEpoch++;
   return true;
 }
+function _athenaGetVisitBinding(){return currentVisitAthenaBinding;}
 function _athenaCurrentMatchesBound(binding){
   if(!binding||!binding.patient)return false;
   var active=null; try{active=(typeof activePatient==='function')?activePatient():null;}catch(e){}
@@ -35532,7 +35931,7 @@ function pushEntireVisitToAthena(btn){
   var binding=_athenaBoundVisitForAction('note',false); if(!binding)return false;
   var built=_athenaBuildPlan(binding);
   if(built&&built.blocked){
-    try{ toast('The five exact Athena draft fields are missing, malformed, or stale. Use Generate / Regenerate in this review. It updates only the local MLS draft; nothing was written to Athena.','err'); }catch(eBlocked){}
+    try{ toast('Your existing note is unchanged. Return to the note to review updated visit text or complete its five sections, then reopen the Athena preview. Nothing was written to Athena.','err'); }catch(eBlocked){}
     _athenaOpenCanonicalGenerationReview(binding,built.blockReason);
     return false;
   }
@@ -35772,7 +36171,7 @@ function pushSuperbillToAthena(){
    status line written into the DOM would be erased by the next unrelated
    repaint - which is the same class of disappearance this fix is for. */
 var _mlsHistPushRefusals=Object.create(null);
-var HIST_REFUSAL_CANON_CURE='Open this visit ▸ Regenerate ▸ Save to history, then review again';
+var HIST_REFUSAL_CANON_CURE='Open this visit ▸ Review or complete the existing note ▸ Open Send to Athena again ▸ Save to history when ready';
 function _mlsHistRefusalFor(id){ try{ return _mlsHistPushRefusals[String(id||'')]||null; }catch(e){ return null; } }
 function _mlsHistRefusalClear(id){ try{ delete _mlsHistPushRefusals[String(id||'')]; }catch(e){} }
 function _mlsHistRefusalHtml(id){
@@ -35835,7 +36234,7 @@ function pushHistoryNoteToAthena(id){
       /* THE ONE THE OWNER HIT on 2026-09-01. It is also the only refusal here
          whose cure is a sequence rather than a single act, so the row carries
          that sequence under the sentence. */
-      if(!savedCanonical.ok){_mlsHistPushRefuse(id,'This saved generated note no longer has a current, verified five-section Athena payload. Reopen it, regenerate or repair the standard note, and save it again. Nothing changed in Athena.',HIST_REFUSAL_CANON_CURE);return;}
+      if(!savedCanonical.ok){_mlsHistPushRefuse(id,'This saved generated note no longer has a current, verified five-section Athena payload. Reopen it, review and complete the standard note, and save it again. Nothing changed in Athena.',HIST_REFUSAL_CANON_CURE);return;}
       plan=savedCanonical.sections.map(function(s){return {kind:s.key,body:s.text,generatedSoap:true,generatedCanonical:true};});
       lines=['📝 Canonical Athena note  →  five exact Athena clinical destinations'];
     }
@@ -37153,6 +37552,7 @@ async function generatePriorAuth(){
       })(),
       provider:clinicalProviderName()||'[Provider name]', spec:getPreset()||getSpec()||'',
       dxLine:dxLineNow, note:noteNow, noteFormat:currentFormat,
+      todayTranscript:String((document.getElementById('transcript')||{}).value||''),
       pctx:buildPatientContext(),
       denialReason:appealNow?(((document.getElementById('paDenialReason')||{}).value)||'Not medically necessary'):'',
       denialText:appealNow?((((document.getElementById('paDenialText')||{}).value)||'').trim()):'',
@@ -37224,11 +37624,10 @@ CRITICAL HONESTY RULES:
 Return ONLY the letter text, no preamble, no markdown fences.`;
       user='REQUESTED SERVICE / ITEM:\n'+service+'\n\n'+ptLine+(payerLine?('\n'+payerLine):'')+'\nRequesting provider: '+provider+(spec?(' ('+spec+')'):'')+'\nWorking diagnosis: '+dxLine+'\n\nVISIT NOTE (sole source of clinical facts — do not invent beyond this):\n'+(note||'[No note generated — provider to complete clinical narrative]')+(pctx?('\n\nPATIENT CHART BACKGROUND (history/meds/allergies — for context; do not invent new findings):\n'+pctx):'');
     }
-    // Both request and appeal modes share the prior-auth validator. Keep the
-    // two machine-checkable anchors explicit even when the narrative wording
-    // differs between modes.
-    sys += '\n\nOUTPUT CONTRACT: include exact headings "Requested service" and "Medical necessity" on separate lines, using placeholders when the record is missing a required fact.';
-    const priorAuthDraft=(await aiCallRaw(sys,user,priorAuthSources.key,{freeform:true,family:'priorauth'})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+    // These are defaults for an untemplated letter. A selected template owns
+    // presentation; clinical evidence and missing-information rules still apply.
+    sys += '\n\nDEFAULT FORMAT: include "Requested service" and "Medical necessity" on separate lines. A selected strict or adapted template controls its own headings and order. Use placeholders when the record is missing a required fact.';
+    const priorAuthDraft=(await aiCallRaw(sys,user,priorAuthSources.key,{freeform:true,family:'priorauth',todayTranscript:priorAuthSources.todayTranscript})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
     if(!_athenaAsyncBindingStillSafe(priorAuthBinding,'prior-authorization drafting',priorAuthEpoch)) return;
     if(JSON.stringify(_readPriorAuthSources())!==priorAuthSourceFingerprint){
       toast('The prior-authorization inputs changed while the letter was being drafted, so MLS discarded that older result. Review the current visit and draft again. Nothing changed in Athena.','err');
@@ -38173,6 +38572,7 @@ async function generateAVS(){
     return {
       note:(currentFormat==='insurance'?insuranceNow:soapNow)||soapNow||'',
       noteFormat:currentFormat,
+      todayTranscript:String((document.getElementById('transcript')||{}).value||''),
       pctx:buildPatientContext(),
       prefs:docPrefsBlock(),
       key:getKey()
@@ -38183,8 +38583,8 @@ async function generateAVS(){
   const avsSourceFingerprint=JSON.stringify(avsSources);
   btn.disabled=true; btn.innerHTML='<span class="spin"></span> Writing…';
   try{
-    let sys=`You are a clinician writing a PATIENT-FACING after-visit summary (AVS). Convert the clinical note into clear, warm, plain language at about a 6th-grade reading level. Use short sections with simple headers: "Why you came in today", "What we found", "Your medicines", "What to do at home", "Tests / follow-up", and "When to get help right away". Use ONLY information in the note and the patient background provided — do not invent. The "Your medicines" section should reflect the patient's current/home medications plus anything changed today. Avoid jargon; explain any necessary terms. No coding/billing content. Address the patient as "you".`+avsSources.prefs;
-    sys += '\n\nOUTPUT CONTRACT: use these exact headings, each on its own line and in this order: Why you came in today; What we found; What to do at home. Add other sections only when supported by the source.';
+    let sys=`You are a clinician writing a PATIENT-FACING after-visit summary (AVS). Convert the clinical note into clear, warm, plain language at about a 6th-grade reading level. When no saved template specifies the format, use short sections with simple headers: "Why you came in today", "What we found", "Your medicines", "What to do at home", "Tests / follow-up", and "When to get help right away". Use ONLY information in the note and the patient background provided — do not invent. The "Your medicines" section should reflect the patient's current/home medications plus anything changed today. Avoid jargon; explain any necessary terms. No coding/billing content. Address the patient as "you".`+avsSources.prefs;
+    sys += '\n\nDEFAULT FORMAT: use these headings, each on its own line and in this order: Why you came in today; What we found; What to do at home. A selected strict or adapted template controls its own headings and order. Add content only when supported by the source.';
     const user='CLINICAL NOTE:\n'+avsSources.note+(avsSources.pctx?('\n\nPATIENT BACKGROUND (chart history — use for context only, do not invent new findings):\n'+avsSources.pctx):'');
     /* noteq-1.0.0 (b1169): the after-visit summary is patient-facing prose and
        has no rubric of its own; the SOAP contract is the closest honest fit and
@@ -38195,10 +38595,10 @@ async function generateAVS(){
     /* noteq-1.1.0 (b1177): bounded await before the patient-facing summary. */
     try{ await __mlsNoteQualityEnsure(); }catch(eNoteqReadyAvs){}
     const noteqAvs=__mlsNoteQualityContract('visit-note-soap',noteqAvsCtx);
-    let avsDraft=(await aiCallRaw(sys+noteqAvs,user,avsSources.key,{freeform:true,family:'avs'})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+    let avsDraft=(await aiCallRaw(sys+noteqAvs,user,avsSources.key,{freeform:true,family:'avs',todayTranscript:avsSources.todayTranscript})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
     try{
       const avsGraded=await __mlsNoteQualityOnce(avsDraft,'visit-note-soap',noteqAvsCtx,async function(retry){
-        const again=await aiCallRaw(sys+noteqAvs+retry,user,avsSources.key,{freeform:true,family:'avs'});
+        const again=await aiCallRaw(sys+noteqAvs+retry,user,avsSources.key,{freeform:true,family:'avs',todayTranscript:avsSources.todayTranscript});
         return String(again||'').replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
       });
       if(avsGraded&&String(avsGraded.text||'').trim()) avsDraft=avsGraded.text;
@@ -38278,6 +38678,7 @@ async function generateReferral(){
       spec:getPreset()||getSpec()||'',
       note:(currentFormat==='insurance'?insuranceNow:soapNow)||soapNow||'',
       noteFormat:currentFormat,
+      todayTranscript:String((document.getElementById('transcript')||{}).value||''),
       pctx:buildPatientContext(),
       prefs:docPrefsBlock(),
       key:getKey()
@@ -38288,10 +38689,10 @@ async function generateReferral(){
   const referralSourceFingerprint=JSON.stringify(referralSources);
   btn.disabled=true; btn.innerHTML='<span class="spin"></span> Drafting…';
   try{
-    let sys=`You are drafting a concise, professional REFERRAL LETTER from one physician to another. Use a standard letter format: date line, "Dear [recipient]:", a brief reason for referral, a short relevant history & exam summary, current medications/allergies, the working assessment, what has been done so far, and the specific question/request for the consultant. Close with "Thank you" and a signature block for the referring provider. Use ONLY facts from the note and the patient background provided — do not invent. Pull current medications, allergies, and chronic problems from the patient background. Keep it under ~250 words.`+referralSources.prefs;
-    sys += '\n\nOUTPUT CONTRACT: begin with Dear [recipient]: and include the exact heading Reason for referral: before the history and findings.';
+    let sys=`You are drafting a concise, professional REFERRAL LETTER from one physician to another. When no saved template specifies the format, use a standard letter format: date line, "Dear [recipient]:", a brief reason for referral, a short relevant history & exam summary, current medications/allergies, the working assessment, what has been done so far, and the specific question/request for the consultant. Close with "Thank you" and a signature block for the referring provider. Use ONLY facts from the note and the patient background provided — do not invent. Pull current medications, allergies, and chronic problems from the patient background. Keep it under ~250 words.`+referralSources.prefs;
+    sys += '\n\nDEFAULT FORMAT: begin with Dear [recipient]: and include Reason for referral: before the history and findings. A selected strict or adapted template controls its own headings and order; retain the documented referral purpose and recipient.';
     const user=`Referring provider: ${referralSources.from}${referralSources.spec?' ('+referralSources.spec+')':''}\nReferring to: ${referralSources.to}\n\nCLINICAL NOTE:\n${referralSources.note}`+(referralSources.pctx?('\n\nPATIENT BACKGROUND (chart history):\n'+referralSources.pctx):'');
-    const referralDraft=(await aiCallRaw(sys,user,referralSources.key,{freeform:true,family:'referral'})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+    const referralDraft=(await aiCallRaw(sys,user,referralSources.key,{freeform:true,family:'referral',todayTranscript:referralSources.todayTranscript})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
     if(!_athenaAsyncBindingStillSafe(referralBinding,'referral drafting',referralEpoch)) return;
     if(JSON.stringify(_readReferralSources())!==referralSourceFingerprint){
       toast('The note, patient background, or referral details changed while the letter was being drafted, so MLS discarded that older result. Review the current visit and draft it again. Nothing changed in Athena.','err');
@@ -39340,7 +39741,8 @@ async function generateHandout(){
       const note=currentNoteText();
       const target=((document.getElementById('handoutBody')||{}).value||'');
       const stored=String(typeof currentHandout==='undefined'?'':currentHandout||'');
-      return {dxStr:currentDxStr,note,fingerprint:JSON.stringify([editor,currentDxStr,note,target,stored])};
+      const todayTranscript=String((document.getElementById('transcript')||{}).value||'');
+      return {dxStr:currentDxStr,note,todayTranscript,fingerprint:JSON.stringify([editor,currentDxStr,note,todayTranscript,target,stored])};
     }catch(e){ return null; }
   };
   const handoutSource=handoutSourceNow();
@@ -39356,15 +39758,10 @@ async function generateHandout(){
   };
   btn.disabled=true; btn.innerHTML='<span class="spin"></span> Writing…';
   try{
-    const sys=`You are a physical medicine & rehabilitation (PM&R)/spine clinician writing a PLAIN-LANGUAGE PATIENT HANDOUT for a home-exercise and self-care program. Write at about a 6th-grade reading level in a warm, encouraging tone. Use simple section headers:
-"What's going on" (explain the diagnosis in lay terms),
-"Home exercises" (list 4-6 specific, safe exercises appropriate to the diagnosis — for lumbar/low-back issues use things like pelvic tilts, knee-to-chest, cat-camel, bird-dog, glute bridges, walking; for cervical/neck use chin tucks, gentle range-of-motion; give each exercise a short how-to and reps/sets),
-"Do's and don'ts" (activity guidance),
-"Call us right away if" (red-flag symptoms — e.g. new weakness, numbness, loss of bowel/bladder control, fever, severe worsening),
-"Follow-up" (when to come back).
-Use ONLY the diagnosis and note provided; do not invent specific medications or test results. End with the exact line: "Follow your physician's specific instructions." Keep it concise and printable.`;
+    const sys=`Write a plain-language patient handout from the documented visit note. Address the patient as "you" and explain documented terms clearly. The selected patient-summary template controls headings, order, and layout. Without a selected template, use "Why you came in today", "What we found", and "What to do at home", adding a follow-up section when documented.
+Include only exercises, activity instructions, precautions, medicines, tests, and follow-up that the clinician actually documented. Do not invent an exercise program, repetitions, restrictions, warning signs, or treatment recommendations to fill a template. Keep patient questions distinct from clinician decisions. When a required template field has no source support, leave an explicit neutral missing-information marker. Use only the supplied diagnosis and note; keep the result clear and printable.`;
     const user='DIAGNOSIS: '+handoutSource.dxStr+'\n\nVISIT NOTE (for context):\n'+handoutSource.note;
-    const raw=await aiCallRaw(sys,user,getKey(),{freeform:true,family:'general_draft'});
+    const raw=await aiCallRaw(sys,user,getKey(),{freeform:true,family:'avs',draftSubtype:'patient_handout',todayTranscript:handoutSource.todayTranscript});
     if(!handoutResultStillSafe()) return;
     currentHandout=String(raw||'').replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
     document.getElementById('handoutBody').value=currentHandout;
@@ -54087,6 +54484,8 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
 
   var MAX_PATIENTS = 6;        /* newest kept; a stash is a convenience, not a record */
   var MAX_CHARS = 240000;      /* one entry; sessionStorage is finite */
+  var freshVisitEpoch = 0;     /* explicit New visit outranks queued switch-back restore */
+  var restoreIntentSerial = 0; /* only the newest real patient switch may restore */
 
   function stashKey() {
     return safe(function () { return (typeof uns === 'function') ? uns('visitDraftByPt') : 'mls_visitDraftByPt'; }, 'mls_visitDraftByPt');
@@ -54099,6 +54498,13 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
     }, {});
   }
   function writeStash(map) { safe(function () { sessionStorage.setItem(stashKey(), JSON.stringify(map)); }); }
+  function discardStashFor(id) {
+    var key = str(id);
+    if (!key) return false;
+    var map = readStash();
+    if (!Object.prototype.hasOwnProperty.call(map, key)) return false;
+    delete map[key]; writeStash(map); return true;
+  }
 
   function editorState() {
     var t = safe(function () { return str((el('transcript') || {}).value); }, '');
@@ -54178,7 +54584,24 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
     if (str(d.ptId) !== want) { delete map[want]; writeStash(map); return false; }
     if (editorState().any) return false;
 
-    safe(function () { if (typeof currentNoteId !== 'undefined') currentNoteId = d.noteId || null; });
+    /* adhocid-1.0.0 (owner-measured 2026-09-11): A RESTORED IN-TAB DRAFT IS
+       UNSAVED WORK, NOT AN OPEN HISTORY RECORD.
+       This line used to restore currentNoteId from the stash, and that is how
+       an ad-hoc visit - a patient opened by search, no appointment - auto-saved
+       itself onto a record created in July. The stashed noteId was written the
+       last time the doctor left this patient with a History record loaded
+       (Continue this draft -> loadRecordIntoEditor -> currentNoteId = n.id);
+       restoring it made noteRecordFromState reuse that id, so upsertNote's
+       update branch replaced the old row and kept its `created`.
+       The editor keeps every byte it had. Only the claim to overwrite a stored
+       row is dropped, and the id survives as PROVENANCE - the next saved record
+       carries it as rec.continuedFrom, so nothing about where this work came
+       from is lost. The END of this function re-adopts that id if, once the
+       transcript and the patient are back, this editor is still entitled to it
+       - otherwise a doctor who saves, switches away and comes back would get a
+       SECOND History row for one visit. */
+    safe(function () { if (typeof currentNoteId !== 'undefined') currentNoteId = null; });
+    safe(function () { if (typeof _mlsSetContinuedFromId === 'function') _mlsSetContinuedFromId(str(d.noteId)); });
     safe(function () { var tx = el('transcript'); if (tx) tx.value = d.t || ''; });
     safe(function () { if (typeof finalText !== 'undefined') finalText = d.t || ''; });
     safe(function () { if (typeof currentSoap !== 'undefined') currentSoap = d.soap || ''; });
@@ -54223,6 +54646,31 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
       safe(function () { if (typeof renderCoding === 'function') renderCoding(d.coding || null); });
       safe(function () { if (d.emr && typeof populateEMR === 'function') populateEMR(d.emr, d.coding || null); });
     }
+    /* adhocid-1.0.0, THE OTHER HALF - and it is not optional. Dropping the id
+       unconditionally fixes the July overwrite and MEASURES a new defect in
+       its place: save a bound visit, switch away, switch back, save again, and
+       the second save minted a SECOND History row for one visit (measured in
+       the booted shell: 2 rows on the unconditional drop, 1 before it). One
+       visit is one row; a duplicate is its own patient-safety problem, and the
+       app already carries a banner and a cleanup pass for exactly that.
+       So the id comes back - but only when this editor is still entitled to it,
+       judged by the SAME test every save is judged by, now that the transcript,
+       the patient and the binding are all restored. The owner's July record
+       fails that test (its transcript is not the beginning of the ad-hoc visit
+       now on screen) and stays dropped; a draft that is genuinely the stored
+       visit continued passes it and keeps its one row.
+       Fail-closed: if the guard is not on the page, the draft stays unsaved
+       work. Worst case that is an extra row; the alternative is an overwrite. */
+    safe(function () {
+      if (typeof currentNoteId === 'undefined') return;
+      var wasId = str(d.noteId);
+      if (!wasId) return;
+      if (typeof _mlsNoteIdStillOurs !== 'function') return;
+      currentNoteId = wasId;
+      if (!_mlsNoteIdStillOurs()) currentNoteId = null;
+      /* re-adopted: this IS that row again, so it is not "continued from" it */
+      else if (typeof _mlsSetContinuedFromId === 'function') _mlsSetContinuedFromId('');
+    });
     window.__mlsVisitEditorOwnerId = want;
     delete map[want];
     writeStash(map);
@@ -54439,6 +54887,18 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
       var r = orig.apply(this, arguments);
       safe(clearVisitResidue);
       window.__mlsVisitEditorOwnerId = activeId();
+      var opts = arguments[0] || {};
+      /* OpenSwitchFix must empty the newly selected patient's editor before
+         the queued switch-back restore. That internal reset preserves the
+         resumable per-patient slot. Startup's preserveRecovery pass likewise
+         preserves recovery data. Every ordinary newVisit call is the doctor's
+         fresh-encounter intent: advance the epoch and retire only this active
+         patient's ephemeral switch-back stash, never their History record. */
+      if (!(opts && (opts.patientSwitchReset === true || opts.preserveRecovery === true))) {
+        freshVisitEpoch++;
+        restoreIntentSerial++;
+        safe(function () { discardStashFor(activeId()); });
+      }
       return r;
     };
   });
@@ -54472,7 +54932,11 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
        the same task as this event, so a restore must wait for the next one. A
        timer, never requestAnimationFrame: rAF does not fire in a tab that is
        not compositing, and this must work in a background tab. */
-    setTimeout(function () { safe(function () { restoreFor(next); }); }, 0);
+    var intent = ++restoreIntentSerial, epoch = freshVisitEpoch;
+    setTimeout(function () { safe(function () {
+      if (intent !== restoreIntentSerial || epoch !== freshVisitEpoch || activeId() !== next) return;
+      restoreFor(next);
+    }); }, 0);
   }
   window.addEventListener('mls:active-patient-changed', onSwitched);
 
@@ -55849,6 +56313,12 @@ html body.mls-recording .ez3fl-transcript.mls-empty .ez3fl-txhead::after{
   flex-basis:100%; order:9;
   font:600 11.5px/1.35 var(--sans, system-ui, sans-serif);
   color:#2E6A4B;
+}
+
+/* vanishbox-1.0.0 - measured b1233: with the flow lane owning the top the engine's
+   .ez3-transcript-card is hidden, so folding the empty flow box leaves NO box at all. */
+html body.mls-calm #mlsEz3Body.ez3fl-top-owns .ez3fl-transcript.mls-empty{
+  display:block !important;
 }
 
 /* ---- (2) ONE RECORD CONTROL -------------------------------------------
@@ -63294,7 +63764,7 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
     'verify saved data': 'Check that work saved in MLS is really stored on this device.',
     'share / export': 'Share or export what is saved in MLS.',
     'export everything for emr': 'Export all saved data in a form another EMR can import.',
-    'full visit notes': 'Open the full captured visit notes.'
+    'chart import settings': 'Open Settings to choose how much visit history Athena pulls include.'
   };
 
   /* TWO menus, and the doctor calls the first one Tools. #mlsToolsMenu is the
@@ -65577,6 +66047,13 @@ html [aria-busy="true"][data-mls-busy-paint]{ opacity:.72; cursor:progress; }
   var pendingCancel = null;
   var stats = { armed: 0, begun: 0, skipped: 0 };
 
+  /* Navigation that finishes synchronously has no Promise-backed work interval
+     for this module to describe. calOpenDay returns synchronously, so BusyAll
+     could never paint or time work for it. Leave that function stable instead
+     of temporarily replacing it; asynchronous calendar actions are still
+     instrumented normally. */
+  var SYNC_NAV = { calOpenDay: 1 };
+
   /* Controls whose busy state belongs to the pull lane. It renames and
      instruments them itself; two blocks on one control would fight. */
   var OWNED_ELSEWHERE = {
@@ -65726,6 +66203,7 @@ html [aria-busy="true"][data-mls-busy-paint]{ opacity:.72; cursor:progress; }
   }
 
   function arm(name) {
+    if (SYNC_NAV[name]) return false;
     var fn = window[name];
     if (typeof fn !== 'function' || fn.__mlsBusyAll) return false;
     var wrapped = function () {
@@ -65797,14 +66275,11 @@ html [aria-busy="true"][data-mls-busy-paint]{ opacity:.72; cursor:progress; }
          unrelated control was disabled, and the double-fire guard then ate
          real clicks on it until the cap.
 
-         Clicking a day in the calendar month grid died with "Maximum call
-         stack size exceeded". feat_mls_caldedupe_render.js and
-         1p-mls-connect.js BOTH wrap calOpenDay, each capturing whatever the
-         global held when its pass ran; a third wrapper left standing in that
-         chain lets it close into a loop, recursing w -> w -> w between the two
-         files. The shell alone never does this and this block alone never does
-         it - the block PLUS somebody else's re-wrap does, which is why it
-         surfaced intermittently and only after a walk had clicked enough.
+         calOpenDay is synchronous. Wrapping it during capture cannot produce a
+         busy indicator because begin() only runs for Promise-returning work;
+         it only adds a temporary global assignment around an already wrapped
+         navigation function. Exclude it via SYNC_NAV and leave asynchronous
+         calendar work instrumented.
 
        An inline onclick runs synchronously inside this dispatch, so clearing
        and disarming on the very next task keeps every genuine press, drops

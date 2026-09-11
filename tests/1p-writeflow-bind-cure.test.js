@@ -27,8 +27,9 @@
  *   5. an unbindable visit (no schedule row for this patient) is offered no
  *      cure and stays CANNOT SEND;
  *   6. an IDENTITY-blocked row never advertises a cure a pull cannot deliver;
- *   7. the cure assigns no visit field and mints no appointment id — the only
- *      thing that can bind is the ordinary resolver.
+ *   7. the cure assigns no manifest visit field and mints no appointment id —
+ *      the ordinary resolver supplies it, then the exact explicit choice is
+ *      read back from the canonical Visit binding before success.
  */
 
 const assert = require('assert');
@@ -54,9 +55,14 @@ const LEDGER = JSON.stringify({ v: 1, rows: {
   'appointment-id:70000777': { state: 'done', patientId: PATIENT.patientId, backendAppointmentId: CAL_ROW.id, appt_date: DAY }
 } });
 
-/* The exact refusal the owner photographed. */
-const SCREENSHOT_BLOCK = 'The exact visit needs its date, provider, and appointment ID (or a bound encounter ID and URL). MLS will not guess an encounter.';
-const CURE_LABEL = 'Bind this visit to its Athena appointment — re-pulls this day';
+/* The refusal the owner photographed, in the words it is said in today.
+   plainwords-1.1.0 (2026-09-11) reworded ONE clause of it - "a bound encounter
+   ID and URL" became "a saved encounter ID and link", because "bound" was the
+   last engineering word left in a sentence a doctor reads. Nothing else about
+   the refusal moved, and the owner's screenshot is quoted verbatim in the
+   header above so the record of what he saw is not edited by a wording pass. */
+const SCREENSHOT_BLOCK = 'The exact visit needs its date, provider, and appointment ID (or a saved encounter ID and link). MLS will not guess an encounter.';
+const CURE_LABEL = 'Match this visit to its Athena appointment — re-checks that day';
 
 /* ---- source pins: the cure cannot become a shortcut ---- */
 {
@@ -64,11 +70,14 @@ const CURE_LABEL = 'Bind this visit to its Athena appointment — re-pulls this 
   ok(block.length > 500, 'the wfbind-1.0.0 block must exist in the fork');
   ok(src.indexOf("var WFBIND_LABEL = '" + CURE_LABEL + "'") > 0,
     'the cure control must carry the exact name the owner asked for');
-  /* The cure may never write a binding. It may only re-pull and re-ask. */
+  /* The cure never mutates its manifest or invents a binding. It re-pulls,
+     re-asks the ordinary resolver, then commits only that explicit result. */
   ok(!/\bvisit\.(appointmentId|encounterId|encounterUrl|visitDate|provider)\s*=[^=]/.test(block),
     'the cure must never assign a visit field');
   ok(!/capability\s*=\s*['"]ready['"]/.test(block), 'the cure must never mark a row ready');
   ok(/expectedVisitContext\(/.test(block), 'the cure must re-ask the ordinary resolver');
+  ok(/wfbindCommitCanonical/.test(block) && /_athenaGetVisitBinding/.test(block),
+    'the explicit resolved binding must reach the canonical Visit owner and be read back');
   ok(/openUnifiedConfirmation\(/.test(block), 'the cure must rebuild through the reopen path, never mutate a manifest');
   ok(/observed !== day/.test(block), 'the cure must refuse to pull a day athenaOne did not paint');
   ok(/WFBIND_POLL_TICKS = 36/.test(block), 'the cure poll must be bounded');
@@ -142,6 +151,16 @@ function makeContext(opts) {
     pullScheduleViaAssist: function () { pulls.push({ at: Date.now(), skipProbe: window.pullScheduleViaAssist.__skipProbe === true }); },
     toast: (msg) => { toasts.push(String(msg)); }
   };
+  let visitBinding = null;
+  window.activePatient = () => PATIENT;
+  window._athenaEditorFingerprint = () => 'bind-cure-editor-fingerprint';
+  window._athenaFreezeVisitBinding = (patient, meta) => ({
+    id: 'bind-cure-' + Date.now(),
+    patient: { patientId: patient.id || patient.patientId, name: patient.name, dob: patient.dob, mrn: patient.mrn },
+    visitContext: Object.assign({}, meta.visitContext), source: meta.source
+  });
+  window._athenaSetVisitBinding = (binding) => { visitBinding = binding || null; return true; };
+  window._athenaGetVisitBinding = () => visitBinding;
   window.window = window;
   const ctx = vm.createContext({
     window, document, localStorage,
@@ -183,8 +202,9 @@ function historicalOpts() {
     ok(noteRow && noteRow.reason === SCREENSHOT_BLOCK, 'the refusal text must be the one the owner photographed');
     ok(wf.diagnostics.envLine().indexOf('this review has no expected day') >= 0,
       'the footer must say the review has no expected day');
-    ok(wf.diagnostics.envLine().indexOf('no appointment id is bound to this encounter') >= 0,
-      'the footer must say no appointment id is bound');
+    /* plainwords-1.1.0: the same fact, said as an outcome. */
+    ok(wf.diagnostics.envLine().indexOf('this visit is not matched to an Athena appointment yet') >= 0,
+      'the footer must say this visit is not matched to an Athena appointment yet');
 
     /* ---- 2. the sheet offers the cure, named as the owner asked ---- */
     const buttons = h.cureButtons();

@@ -79,6 +79,14 @@ const CAL_ROW = { id: 'cal-row-op', patient_external_id: PATIENT.patientId, name
 const BOUND = { visitDate: ATHENA_DAY, provider: PROVIDER, appointmentId: APPOINTMENT, encounterId: ENCOUNTER, encounterUrl: ENCOUNTER_URL };
 const OP_BODY = 'PROCEDURE PERFORMED: synthetic left L5-S1 transforaminal epidural steroid injection.\nFINDINGS: synthetic body for this suite.';
 const OP_SECTION = [{ key: 'procedure', text: OP_BODY }];
+/* savetruth-1.2.0 (2026-09-10): the native-persistence cases need a key
+   athenaOne can actually save itself. MLS Assist gates that on its OWN
+   four-key set (background.js: /^(hpi|ros|exam|ap)$/) - 'procedure' is
+   never in it, so an operative note ALWAYS takes the Save click and a
+   native fixture built on OP_SECTION was measuring a shape that cannot
+   happen. One section, so the run shape (one write, then the save) is
+   exactly what those cases always drove. */
+const NATIVE_SECTION = [{ key: 'hpi', text: 'Synthetic HPI narrative for the native-persistence cases.' }];
 const THREE = [
   { key: 'hpi', text: 'Synthetic HPI body.' },
   { key: 'ros', text: 'Synthetic ROS body.' },
@@ -223,7 +231,8 @@ function makeHarness(options) {
     activePatient: () => PATIENT,
     toast: (m, k) => said.push({ message: String(m), kind: String(k || '') }),
     location: { hostname: 'mlsscribe.com', origin: 'https://mlsscribe.com' },
-    __mlsExtensionCapabilities: { athenaFinalActionsV1: true, supervisedOrderPlacementV2: true },
+    __mlsExtensionCapabilities: { athenaFinalActionsV1: true, supervisedOrderPlacementV2: true,
+      batchArmV1: options.batchArm !== false, nativeNamedSectionPersistenceV1: options.nativePersistence === true },
     addEventListener(type, fn) { if (type === 'message') listeners.push(fn); },
     removeEventListener(type, fn) { const i = listeners.indexOf(fn); if (i >= 0) listeners.splice(i, 1); },
     postMessage(message) { posted.push(message); route(message); }
@@ -241,8 +250,14 @@ function makeHarness(options) {
   };
   function defaultAction(m) {
     if (m.mode === 'execute') {
-      return { ok: true, mode: 'execute', action: m.action, attempted: true, verified: true, written: true,
+      if (options.nativePersistence && m.action === 'save_draft') return { ok: true, mode: 'execute', action: m.action,
+        attempted: false, verified: true, saved: true, persisted: true, serverVerified: true, reason: 'exact-section-persistence-reconciled', sectionsDeclared: 5, persistedDestinations: 4,
+        results: ['hpi','ros','exam','ap'].map(key => ({ ok: true, key, saved: true, persisted: true, verified: true })), context: clone(CONTEXT) };
+      const out = { ok: true, mode: 'execute', action: m.action, attempted: true, verified: true, written: true,
         noteWriteProof: 'proof-' + ENCOUNTER, noteWriteProofExpiresAt: Date.now() + 600000, context: clone(CONTEXT) };
+      if (options.nativePersistence && m.action === 'write_note') Object.assign(out, { saved: true, persisted: true, serverVerified: true,
+        reason: 'exact-note-editor-persisted', results: [{ key: String(m.sections && m.sections[0] && m.sections[0].key || ''), attempted: true, written: true, verified: true, saved: true, persisted: true, serverVerified: true }] });
+      return out;
     }
     return { ok: true, mode: 'probe', readOnly: true, action: m.action, actionToken: 'one-use-token',
       rowHash: m.rowHash, clientOrderId: m.clientOrderId || '', reason: 'context-verified', context: clone(CONTEXT) };
@@ -261,7 +276,7 @@ function makeHarness(options) {
        from ONE trusted click, which is the lane on which one press still writes
        every checked section; the one-press-per-section lane an older extension
        gets is proved in tests/write-next-press-proof.js. */
-    if (m.type === 'mlsPing') return deliverRaw({ source: 'mls-ext', type: 'mlsPong', requestId: m.requestId, version: '3.0.108', buildId: '3.0.108', batchArm: '1.0.0', capabilities: { supervisedOrderPlacementV2: true, destinationTeachingV2: true, athenaFinalActionsV1: true, phoneConfirmedWriteV1: true, batchArmV1: true } });
+    if (m.type === 'mlsPing') return deliverRaw({ source: 'mls-ext', type: 'mlsPong', requestId: m.requestId, version: '3.0.114', buildId: '3.0.114', batchArm: options.batchArm === false ? '' : '1.0.0', capabilities: { supervisedOrderPlacementV2: true, destinationTeachingV2: true, athenaFinalActionsV1: true, phoneConfirmedWriteV1: true, batchArmV1: options.batchArm !== false, nativeNamedSectionPersistenceV1: options.nativePersistence === true } });
     if (m.type === 'mlsExtHealth') return deliver('mlsExtHealthResult', m.requestId, { ok: true, version: '3.0.84', versionName: '3.0.84+core-sha256:abc', athena: { tabs: 1, discarded: 0 } });
   }
 
@@ -308,8 +323,15 @@ async function settle(n) { for (let i = 0; i < (n || 400); i++) await new Promis
     'the progress summary counts written sections from something other than the durable receipt');
   ok(!/bridge\(|postMessage|\.disabled\s*=/.test(prog), 'the progress summary can send or enable something');
   /* wfclar's execute-side use must never paraphrase an ATTEMPTED outcome */
+  /* savetruth-1.0.0 (2026-09-10): re-aimed, same property. The generic
+     native-persistence sentence no longer pre-empts the WFCLAR table (it was
+     covering exactly the codes the table owns, so five plain-English entries
+     could never render); what this line has always guarded - an ATTEMPTED
+     outcome is never paraphrased - is still the only condition on it. */
   ok(FLOW.indexOf('var execClar = attempted ? null : wfClarify(resp.reason);') > 0,
     'an attempted (possibly partial) Athena outcome can now be paraphrased');
+  ok(FLOW.indexOf("message = (execClar ? wfClarityText(execClar, row) : '') || nativeFailure ||") > 0,
+    'the plain-English entry no longer wins over the generic native-persistence sentence');
 }
 
 (async function run() {
@@ -402,6 +424,80 @@ async function settle(n) { for (let i = 0; i < (n || 400); i++) await new Promis
     eq(/Nothing was saved or signed/.test(summary), false,
       'the final summary still claims nothing was saved on a run that saved the encounter: ' + summary);
     ok(h.progressHtml().indexOf('data-mls-prog-pct="100"') > 0, 'a verified single write never filled its bar');
+  }
+
+  /* 2a-bis. AN OP NOTE NEVER TAKES THE READ-ONLY LEG (savetruth-1.2.0).
+     The same capable MLS Assist, on a review whose only section is the
+     operative note: athenaOne cannot save that field itself, so this press is
+     always the encounter Save click and every word for it says so. This is the
+     counter-example that keeps 2b honest - if the shape gate were removed,
+     this case and 2b would say the same thing. */
+  {
+    const h = makeHarness({ nativePersistence: true });
+    const manifest = h.wf.openUnifiedConfirmation({ patient: PATIENT, sections: OP_SECTION, expectedContext: BOUND, receiptSessionId: 'op-native-capable' });
+    await settle(140);
+    const finish = manifest.rows.filter(r => r.action === 'save_draft')[0];
+    eq(finish.label, 'Save the encounter in Athena', 'the op-note save row claims an outcome its sections cannot take');
+    eq(finish.destination, 'Athena encounter > Save / Save Draft control', 'the op-note save row points somewhere other than the Save control it presses');
+    ok(/presses the encounter Save in athenaOne once/.test(finish.consequence),
+      'the op-note save row stopped naming the Save press it will really make: ' + finish.consequence);
+    const opGo = h.el('mlsAthenaUnifiedGo');
+    eq(/verify/i.test(String(opGo.getAttribute('aria-label') || '')), false,
+      'the op-note press advertises a verify leg its sections cannot take: ' + opGo.getAttribute('aria-label'));
+  }
+
+  /* 2b. Modern named fields persist through Athena's own native request. The
+     final save_draft wire action reconciles those receipts read-only; every
+     visible and spoken label must distinguish it from the legacy Save click. */
+  {
+    const h = makeHarness({ nativePersistence: true });
+    const manifest = h.wf.openUnifiedConfirmation({ patient: PATIENT, sections: NATIVE_SECTION, expectedContext: BOUND, receiptSessionId: 'native-persisted' });
+    await settle(140);
+    const write = manifest.rows.filter(r => r.action === 'write_note')[0];
+    const finish = manifest.rows.filter(r => r.action === 'save_draft')[0];
+    /* savetruth-1.0.0 (2026-09-10): the row is frozen at manifest time, before
+       any receipt can say whether Athena saved each section itself (read-only
+       reconciliation) or this encounter takes the legacy leg, where MLS Assist
+       really does press the encounter's Save once. The capability flag proves
+       neither, so the row states BOTH outcomes - and may not promise the
+       read-only one, which is what the pill for the same press (gated on the
+       receipts) was already contradicting. */
+    eq(finish.label, 'Verify or save the note in Athena', 'the final row no longer names both outcomes of that press');
+    ok(/only reads the saved note back/.test(finish.consequence) && /presses this encounter's Save control once/.test(finish.consequence),
+      'the native final-row consequence does not state both outcomes: ' + finish.consequence);
+    ok(!/This final check is read-only/.test(finish.consequence),
+      'the final row promises read-only on the capability alone again: ' + finish.consequence);
+    const go = h.el('mlsAthenaUnifiedGo');
+    ok(/reads the saved note back, pressing this encounter's Save once first if Athena has not already saved it/.test(String(go.getAttribute('aria-label'))),
+      'the native one-press explanation does not state both outcomes: ' + String(go.getAttribute('aria-label')));
+    go.click();
+    await settle(1800);
+    const writeReceipt = h.wf.diagnostics.state().receipts[write.id];
+    eq(writeReceipt.persistenceMode, 'native-section', 'persisted native write was stored as an unsaved insertion');
+    ok(/persisted by Athena/.test(writeReceipt.message) && /unsigned draft section is saved/.test(writeReceipt.message), 'native write receipt does not say the unsigned section was persisted');
+    const finalReceipt = h.wf.diagnostics.state().receipts[finish.id];
+    eq(finalReceipt.status, 'verified', 'complete native persistence reconciliation did not verify the saved note');
+    eq(finalReceipt.persistenceMode, 'native-reconciled', 'read-only attempted:false reconciliation was not accepted from its persistence proof');
+    ok(/without pressing Save/.test(h.statusText()), 'native completion summary claims or implies MLS pressed Save: ' + h.statusText());
+    ok(/unsigned note/.test(h.statusText()) && /persisted/.test(h.statusText()), 'native completion summary does not say what Athena saved: ' + h.statusText());
+    ok(!/Saving draft|MLS is pressing Save|MLS presses Save/.test(h.progressHtml()), 'native progress uses legacy Save-click wording: ' + h.progressHtml());
+    const nativeFinalProgress = h.wf.diagnostics.progress.snapshot().rows.filter(r => r.id === finish.id)[0];
+    eq(nativeFinalProgress.phase, 'verified', 'read-only native reconciliation is labeled as a write');
+  }
+  {
+    const h = makeHarness({ nativePersistence: true, onAction: (m, dflt) => {
+      if (m.mode === 'execute' && m.action === 'save_draft') return { ok: true, saved: true, persisted: true,
+        reason: 'exact-section-persistence-reconciled', sectionsDeclared: 5, persistedDestinations: 3, context: clone(BOUND) };
+      return dflt(m);
+    } });
+    const manifest = h.wf.openUnifiedConfirmation({ patient: PATIENT, sections: NATIVE_SECTION, expectedContext: BOUND, receiptSessionId: 'native-incomplete-proof' });
+    await settle(140); h.el('mlsAthenaUnifiedGo').click(); await settle(1800);
+    const finish = manifest.rows.filter(r => r.action === 'save_draft')[0];
+    const receipt = h.wf.diagnostics.state().receipts[finish.id];
+    eq(receipt.status, 'uncertain', 'incomplete native reconciliation was marked saved and verified');
+    eq(receipt.persistenceMode, '', 'incomplete native reconciliation received the verified-native marker');
+    ok(/all reviewed sections match the saved Athena note/.test(receipt.message), 'incomplete native reconciliation does not explain the missing proof');
+    ok(/did not press Save/.test(receipt.message), 'incomplete read-only reconciliation is described as a failed Save click');
   }
 
   /* == 3a. THE OP NOTE'S OWN REFUSAL IS AMBER, PLAIN, AND CARRIES THE CURE == */
@@ -541,17 +637,15 @@ async function settle(n) { for (let i = 0; i < (n || 400); i++) await new Promis
     const written = snap.rows.filter(r => r.phase === 'done').length;
     const refused = snap.rows.filter(r => r.phase === 'refused' || r.phase === 'timeout').length;
     eq(refused, 1, 'the refused section is not reported as not-sent');
-    /* savenamed-app-1.0.0 (owner ruling 2026-09-02): the encounter save runs at
-       the end of the same press. It is a DRAFT save of whatever did land - it
-       protects the sections that went in, it signs nothing, and it can never
-       turn a refusal into a write: the refused section is still refused, is
-       still named, and still never reached an execute. */
-    eq(written, total, 'the rows that did land are not all reported as written');
-    eq(h.executes().length, total, 'a refused read-only check still reached an execute');
+    /* The final save/reconciliation requires every checked section to land.
+       A refused section remains named and never reaches execute; the final row
+       also stays not-sent instead of saving/reconciling an incomplete note. */
+    eq(written, total - 1, 'the rows that did land are not all reported as written');
+    eq(h.executes().length, total - 1, 'a refused read-only check or guarded final row still reached an execute');
     eq(h.executes().filter(m => m.action === 'write_note').length, total - 1,
       'A REFUSED READ-ONLY CHECK STILL REACHED A NOTE WRITE');
-    eq(h.executes().filter(m => m.action === 'save_draft').length, 1,
-      'the encounter save did not run once at the end of the press');
+    eq(h.executes().filter(m => m.action === 'save_draft').length, 0,
+      'the encounter save/reconciliation ran despite a refused checked section');
     const summary = h.statusText();
     ok(new RegExp('Done: ' + (total - 1) + ' of ' + total + ' sections written').test(summary),
       'the mixed summary overstates what landed: ' + summary);
@@ -637,8 +731,8 @@ async function settle(n) { for (let i = 0; i < (n || 400); i++) await new Promis
       expectedContext: { visitDate: '', provider: '', appointmentId: '' }, requireExpectedVisit: true, receiptSessionId: 'op-head-unbound' });
     await settle(120);
     const html = h.cardHtml();
-    ok(html.indexOf('visit date not bound yet') > 0, 'an unbound visit date is silently omitted from the header');
-    ok(html.indexOf('provider not bound yet') > 0, 'an unbound provider is silently omitted from the header');
+    ok(html.indexOf('visit date not matched yet') > 0, 'an unbound visit date is silently omitted from the header');
+    ok(html.indexOf('provider not matched yet') > 0, 'an unbound provider is silently omitted from the header');
   }
 
   /* ===== 7. THE THIRD OP-NOTE SURFACE: the writeback chat console ========= */

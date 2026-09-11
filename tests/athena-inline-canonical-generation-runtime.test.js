@@ -1,9 +1,9 @@
 'use strict';
 
-/* A stale/missing canonical Athena sidecar is repaired only by a deliberate
-   local Generate/Regenerate press. The schedule bind cure stays identity-only;
-   successful generation re-enters the ordinary review builder, which stages
-   five exact destinations and still performs only a read-only probe. */
+/* A stale/missing canonical Athena sidecar keeps the existing note blocked.
+   Changed source offers Return to note only. The exact legacy saved-binding
+   mismatch offers one explicit zero-AI repair through the normal Bind gate,
+   then reopens the ordinary review; neither path starts an Athena write. */
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
@@ -16,11 +16,11 @@ const shellSources = Object.fromEntries(shellPaths.map(file => [file, fs.readFil
 const site = shellSources['1pScribeFlow.html'];
 
 /* Source boundaries: bind/re-pull may never generate clinical content, while
-   the explicit generation control must call the existing page-owned gate. */
+   the legacy internal generation helper remains available only for compatibility. */
 const bindBlock = source.slice(source.indexOf('/* ===== wfbind-1.0.0'), source.indexOf('/* ===== end wfbind-1.0.0'));
 assert(bindBlock.length > 500, 'bind-cure block is missing');
 assert(!/generateNote|runUnifiedCanonicalGeneration/.test(bindBlock), 'bind/re-pull silently started clinical generation');
-assert(/return generate\(\)/.test(source), 'inline action no longer calls the normal generateNote gate');
+assert(/return generate\(\)/.test(source), 'legacy generation helper lost its normal generateNote gate');
 /* RE-AIMED, regenkeep-1.0.0 (2026-09-02), and STRENGTHENED, not relaxed. The
    rebuild itself is unchanged - it is still reopen(null), the ordinary Athena
    review entrypoint - but the call is now wrapped so the ONE-SHOT visit
@@ -39,8 +39,11 @@ for (const file of shellPaths) {
   assert(/function _athenaOpenCanonicalGenerationReview\(binding,reason\)/.test(shell), `${file} is missing the inline canonical generation integration`);
   assert(/generationIssue:String\(reason\|\|'athena-note-missing-canonical-note'\)/.test(shell), `${file} does not carry the canonical failure into the review`);
   assert(/_athenaOpenCanonicalGenerationReview\(binding,built\.blockReason\)/.test(shell), `${file} still early-returns instead of opening the deliberate generation review`);
-  assert(!/The canonical Athena note is missing, malformed, or stale\. Nothing was opened or written; regenerate the note and review again\./.test(shell), `${file} still contains the dead-end early-return toast`);
 }
+assert(/id=\"mlsAthenaUnifiedReturnToNote\"/.test(source), 'writeflow is missing the Return to note action');
+assert(/id=\"mlsAthenaUnifiedRecoverSaved\"/.test(source), 'writeflow is missing the exact legacy saved-binding recovery action');
+assert(/function runUnifiedCanonicalRecovery[\s\S]*wfbindCommitCanonical/.test(source), 'saved-binding recovery bypasses the frozen editor / exact patient Bind gate');
+assert(!/id=\"mlsAthenaUnifiedGenerateSections\"/.test(source), 'writeflow still renders a Generate/Regenerate action in Send review');
 
 /* Page integration: a blocked canonical build opens a zero-row generation
    review with the exact frozen identity; a valid build follows the normal plan
@@ -170,11 +173,9 @@ const five = [
 ];
 let generated = 0, reopened = 0;
 window.generateNote = async () => { generated++; return true; };
-window.pushEntireVisitToAthena = () => {
-  reopened++;
-  window.__mlsWriteFlow.openUnifiedConfirmation({ patient, expectedContext: exactVisit, sections: five, preferredAction: 'write_note', receiptSessionId: 'inline-rebuilt' });
-  return true;
-};
+window.pushEntireVisitToAthena = () => { reopened++; return true; };
+
+const noteBox = new El('textarea'); noteBox.id = 'noteBox'; noteBox.value = 'Existing generated display note.'; document.body.appendChild(noteBox);
 
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 (async () => {
@@ -184,101 +185,82 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
   });
   const firstCard = byId.mlsAthenaUnifiedConfirm.children[0];
   assert.strictEqual(missing.rows.length, 0, 'missing canonical draft unexpectedly exposed a writable row');
-  assert(/Generate HPI, ROS, Exam, Assessment &amp; Plan/.test(firstCard.innerHTML), 'missing canonical draft has no deliberate inline Generate action');
+  assert(/Return to the note/i.test(firstCard.innerHTML), 'missing canonical draft does not offer a return to the retained note');
+  assert(/existing note retained/i.test(firstCard.innerHTML), 'blocked canonical draft does not explain that the existing note is retained');
+  assert(!/mlsAthenaUnifiedGenerateSections|Generate HPI|Regenerate HPI/i.test(firstCard.innerHTML), 'Send review still presents an AI generation action');
   assert.strictEqual(byId.mlsAthenaUnifiedGo.disabled, true, 'Confirm enabled before canonical generation');
   assert.strictEqual(sent.filter(m => m.type === 'mlsAppAthenaActionV2').length, 0, 'generation-only sheet started an Athena probe');
 
-  byId.mlsAthenaUnifiedGenerateSections.click();
-  await wait(30);
-  assert.strictEqual(generated, 1, 'explicit Generate press did not run exactly one normal generation');
-  assert.strictEqual(reopened, 1, 'successful generation did not rebuild the normal Athena review exactly once');
-  const rebuilt = window.__mlsWriteFlow.diagnostics.state().manifest;
-  const writeRows = rebuilt.rows.filter(row => row.action === 'write_note');
-  /* ap-1.0.0 (deliberate pin move, same as athena-what-goes-where-runtime):
-     athenaOne owns ONE combined Assessment & Plan editor, so the rebuilt
-     review stages the five named sections PLUS the combined row that writes
-     assessment and plan together. */
-  assert.deepStrictEqual(Array.from(writeRows, row => row.kind), ['hpi', 'ros', 'exam', 'assessment', 'plan', 'assessment_and_plan'], 'rebuilt review did not stage all six exact destinations');
-  assert.strictEqual(rebuilt.patient.patientId, patient.patientId, 'rebuilt review changed the immutable patient');
-  assert.strictEqual(rebuilt.visit.appointmentId, exactVisit.appointmentId, 'rebuilt review changed the exact appointment');
-  assert.strictEqual(sent.filter(m => m.type === 'mlsAppAthenaActionV2' && m.mode === 'probe').length, 1, 'rebuilt review did not perform exactly one read-only exact-destination probe');
-  assert.strictEqual(sent.filter(m => m.type === 'mlsAppAthenaActionV2' && m.mode === 'execute').length, 0, 'generation/rebuild executed an Athena write');
-  assert.strictEqual(byId.mlsAthenaUnifiedGo.disabled, false, 'valid exact read-only probe did not enable the selected rebuilt destination');
-
-  let failedReopen = 0;
-  window.generateNote = async () => false;
-  window.pushEntireVisitToAthena = () => { failedReopen++; return true; };
-  const failed = window.__mlsWriteFlow.openUnifiedConfirmation({
-    patient, expectedContext: exactVisit, generationIssue: 'athena-note-stale-canonical-provenance', receiptSessionId: 'inline-failed'
-  });
-  const failedCard = byId.mlsAthenaUnifiedConfirm.children[0];
-  assert(/Regenerate HPI, ROS, Exam, Assessment &amp; Plan/.test(failedCard.innerHTML), 'stale canonical draft has no deliberate inline Regenerate action');
-  byId.mlsAthenaUnifiedGenerateSections.click();
+  const beforePatient = JSON.stringify(missing.patient), beforeVisit = JSON.stringify(missing.visit);
+  byId.mlsAthenaUnifiedReturnToNote.click();
   await wait(20);
-  assert.strictEqual(failedReopen, 0, 'failed generation rebuilt or advanced the Athena review');
-  assert.strictEqual(window.__mlsWriteFlow.diagnostics.state().manifest.manifestHash, failed.manifestHash, 'failed generation changed the review manifest');
-  assert.strictEqual(byId.mlsAthenaUnifiedGo.disabled, true, 'failed generation enabled Confirm');
-  assert.strictEqual(sent.filter(m => m.type === 'mlsAppAthenaActionV2' && m.mode === 'execute').length, 0, 'failure path executed an Athena write');
+  assert.strictEqual(generated, 0, 'Return to note invoked AI generation');
+  assert.strictEqual(reopened, 0, 'Return to note rebuilt the review');
+  assert.strictEqual(byId.mlsAthenaUnifiedConfirm, undefined, 'Return to note did not close the review');
+  assert.strictEqual(noteBox.value, 'Existing generated display note.', 'Return to note changed the retained note');
+  assert.strictEqual(JSON.stringify(missing.patient), beforePatient, 'Return to note changed patient identity');
+  assert.strictEqual(JSON.stringify(missing.visit), beforeVisit, 'Return to note changed visit context');
+  assert.strictEqual(sent.filter(m => m.type === 'mlsAppAthenaActionV2').length, 0, 'Return to note started an Athena action');
 
-  /* Bind owns the sheet first: generation must not start while the read-only
-     day navigation / pull promise is outstanding. */
-  let generateDuringBind = 0;
-  window.generateNote = async () => { generateDuringBind++; return true; };
-  window.pushEntireVisitToAthena = () => true;
-  window.__mlsWriteFlow.openUnifiedConfirmation({
-    patient, expectedContext: { visitDate: exactVisit.visitDate, provider: exactVisit.provider, appointmentId: '' },
-    generationIssue: 'athena-note-missing-canonical-note', receiptSessionId: 'inline-bind-first'
+  let currentBinding = { patient, source: 'saved-record', historical: true,
+    visitContext: { visitDate: exactVisit.visitDate, provider: exactVisit.provider, appointmentId: exactVisit.appointmentId, encounterId: '', encounterUrl: '' } };
+  let canonicalReady = false, reanchors = 0;
+  window.activePatient = () => patient;
+  window._athenaEditorFingerprint = () => 'unchanged-editor-fingerprint';
+  window._athenaGetVisitBinding = () => currentBinding;
+  window._athenaFreezeVisitBinding = (activePatient, meta) => ({
+    id: 'fresh-explicit-binding', patient: activePatient, source: meta.source,
+    visitContext: Object.assign({}, meta.visitContext)
   });
-  const bindState = window.__mlsWriteFlow.diagnostics.state();
-  const gotoBeforeBind = sent.filter(m => m.type === 'mlsAppGotoDate').length;
-  assert.strictEqual(window.__mlsWriteFlow.bindCure.run('2026-08-23'), true, 'bind-first fixture did not start its read-only bind');
-  assert.strictEqual(bindState.binding, true, 'bind-first fixture did not own the sheet with a separate binding flag');
-  assert.strictEqual(sent.filter(m => m.type === 'mlsAppGotoDate').length, gotoBeforeBind + 1, 'bind-first fixture did not start exactly one day navigation');
-  byId.mlsAthenaUnifiedGenerateSections.click();
-  await wait(0);
-  assert.strictEqual(generateDuringBind, 0, 'generation started while bind/re-pull owned the sheet');
-  assert.strictEqual(sent.filter(m => m.type === 'mlsAppGotoDate').length, gotoBeforeBind + 1, 'generation click started a second bind/pull');
+  window._athenaSetVisitBinding = binding => { currentBinding = binding; return true; };
+  window._mlsAthenaCanRecoverExplicitBinding = binding => binding === currentBinding;
+  window._mlsAthenaReanchorExplicitBinding = (prior, readback) => {
+    assert.strictEqual(prior.patient.patientId, patient.patientId, 'recovery lost the prior exact patient');
+    assert.strictEqual(readback.visitContext.appointmentId, exactVisit.appointmentId, 'recovery changed the selected appointment');
+    reanchors++; canonicalReady = true; return true;
+  };
+  window._mlsAthenaCanonicalForWrite = () => ({ required: true, ok: canonicalReady });
 
-  /* Generation owns the sheet first: bind must not start. Replacing/closing
-     the sheet before the deferred result settles must also suppress rebuild. */
-  let settleDeferred = null, deferredCalls = 0, staleRebuilds = 0;
-  window.generateNote = () => { deferredCalls++; return new Promise(resolve => { settleDeferred = resolve; }); };
-  window.pushEntireVisitToAthena = () => { staleRebuilds++; return true; };
-  window.__mlsWriteFlow.openUnifiedConfirmation({
-    patient, expectedContext: { visitDate: exactVisit.visitDate, provider: exactVisit.provider, appointmentId: '' },
-    generationIssue: 'athena-note-stale-canonical-provenance', receiptSessionId: 'inline-generate-first'
+  const eligible = window.__mlsWriteFlow.openUnifiedConfirmation({
+    patient, expectedContext: exactVisit, plan: [], sections: [], preferredAction: '',
+    generationIssue: 'athena-note-stale-canonical-provenance', receiptSessionId: 'inline-legacy-recovery'
   });
-  const generateState = window.__mlsWriteFlow.diagnostics.state();
-  const gotoBeforeGenerate = sent.filter(m => m.type === 'mlsAppGotoDate').length;
-  byId.mlsAthenaUnifiedGenerateSections.click();
-  await wait(0);
-  assert.strictEqual(deferredCalls, 1, 'generate-first fixture did not start exactly one generation');
-  assert.strictEqual(generateState.generating, true, 'generate-first fixture did not own the sheet with the generation flag');
-  assert.strictEqual(window.__mlsWriteFlow.bindCure.run('2026-08-23'), false, 'bind started while generation owned the sheet');
-  assert.strictEqual(sent.filter(m => m.type === 'mlsAppGotoDate').length, gotoBeforeGenerate, 'generation-owned sheet posted a day navigation');
-  window.__mlsWriteFlow.openUnifiedConfirmation({ patient, expectedContext: exactVisit, plan: [], sections: [], receiptSessionId: 'inline-replacement' });
-  assert.strictEqual(generateState.closed, true, 'replacement did not close the deferred generation sheet');
-  settleDeferred(true);
+  const eligibleCard = byId.mlsAthenaUnifiedConfirm.children[0];
+  assert(byId.mlsAthenaUnifiedRecoverSaved, 'exact legacy saved-binding issue has no reachable recovery action');
+  assert(/Use this note for this visit/.test(eligibleCard.innerHTML), 'recovery action does not name the retained-note outcome');
+  const eligiblePatient = JSON.stringify(eligible.patient), eligibleVisit = JSON.stringify(eligible.visit);
+  window._athenaEditorFingerprint = () => 'changed-after-sheet-open';
+  byId.mlsAthenaUnifiedRecoverSaved.click();
   await wait(20);
-  assert.strictEqual(staleRebuilds, 0, 'a stale/closed generation completion rebuilt the Athena review');
+  assert.strictEqual(reanchors, 0, 'changed editor reached saved-note recovery');
+  assert.strictEqual(reopened, 0, 'changed editor reopened the ordinary Athena review');
+  assert(byId.mlsAthenaUnifiedConfirm, 'changed-editor refusal closed the retained-note explanation');
+  assert.strictEqual(noteBox.value, 'Existing generated display note.', 'changed-editor refusal mutated the retained note');
+  window._athenaEditorFingerprint = () => 'unchanged-editor-fingerprint';
+  byId.mlsAthenaUnifiedRecoverSaved.click();
+  await wait(20);
+  assert.strictEqual(reanchors, 1, 'explicit recovery did not pass through the canonical binding/re-anchor gate exactly once');
+  assert.strictEqual(generated, 0, 'saved-note recovery invoked AI generation');
+  assert.strictEqual(reopened, 1, 'saved-note recovery did not re-enter the ordinary Athena review');
+  assert.strictEqual(noteBox.value, 'Existing generated display note.', 'saved-note recovery changed the displayed note');
+  assert.strictEqual(JSON.stringify(eligible.patient), eligiblePatient, 'saved-note recovery changed the sheet patient');
+  assert.strictEqual(JSON.stringify(eligible.visit), eligibleVisit, 'saved-note recovery changed the sheet appointment');
+  assert.strictEqual(currentBinding.visitContext.appointmentId, exactVisit.appointmentId, 'saved-note recovery changed the canonical appointment');
+  assert.strictEqual(sent.filter(m => m.type === 'mlsAppAthenaActionV2').length, 0, 'recovery itself started an Athena action before the normal review');
 
-  /* Other active review work and a global pull lease independently refuse a
-     generation start; neither is represented by the generation flag. */
-  let ownershipGenerateCalls = 0;
-  window.generateNote = async () => { ownershipGenerateCalls++; return true; };
-  window.__mlsWriteFlow.openUnifiedConfirmation({ patient, expectedContext: exactVisit, generationIssue: 'athena-note-missing-canonical-note', receiptSessionId: 'inline-running-owner' });
-  const runningState = window.__mlsWriteFlow.diagnostics.state();
-  runningState.running = true;
-  byId.mlsAthenaUnifiedGenerateSections.click();
-  await wait(0);
-  assert.strictEqual(ownershipGenerateCalls, 0, 'generation started while the review action flag was active');
-  runningState.running = false;
-  window.__mlsSchedulePullLease = { at: Date.now() };
-  byId.mlsAthenaUnifiedGenerateSections.click();
-  await wait(0);
-  assert.strictEqual(ownershipGenerateCalls, 0, 'generation started while the global schedule-pull lease was active');
-  delete window.__mlsSchedulePullLease;
-  assert.strictEqual(sent.filter(m => m.type === 'mlsAppAthenaActionV2' && m.mode === 'execute').length, 0, 'ownership race tests executed an Athena write');
+  window._mlsAthenaCanRecoverExplicitBinding = () => false;
+  const changed = window.__mlsWriteFlow.openUnifiedConfirmation({
+    patient, expectedContext: exactVisit, plan: [], sections: [], preferredAction: '',
+    generationIssue: 'athena-note-canonical-source-changed', receiptSessionId: 'inline-changed-source'
+  });
+  const changedCard = byId.mlsAthenaUnifiedConfirm.children[0];
+  assert.strictEqual(byId.mlsAthenaUnifiedRecoverSaved, undefined, 'changed source incorrectly exposed saved-note recovery');
+  assert(/Existing note retained; review the updated source or complete its five sections/.test(changedCard.innerHTML), 'changed-source issue retained stale generation instructions');
+  byId.mlsAthenaUnifiedReturnToNote.click();
+  await wait(20);
+  assert.strictEqual(generated, 0, 'changed-source Return invoked AI generation');
+  assert.strictEqual(reopened, 1, 'changed-source Return rebuilt the Athena review');
+  assert.strictEqual(noteBox.value, 'Existing generated display note.', 'changed-source Return changed the retained note');
 
-  console.log('PASS Athena inline canonical generation: deliberate local Generate/Regenerate only; success rebuilds HPI/ROS/Exam/Assessment/Plan under the same patient and appointment; bind/generate/action/pull ownership is mutually exclusive; stale completion cannot rebuild; execute count 0');
+  console.log('PASS Athena inline canonical review: ordinary stale source offers Return only; exact legacy binding offers explicit zero-AI recovery through the canonical bind gate and normal review');
 })().catch(error => { console.error(error && error.stack || error); process.exit(1); });

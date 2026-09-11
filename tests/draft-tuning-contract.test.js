@@ -229,9 +229,20 @@ ok(!/body:JSON\.stringify\(\{[\s\S]{0,220}response_format:\{type:'json_object'\}
 for (const family of ['avs', 'referral', 'priorauth']) {
   ok(shell.includes(`family:'${family}'`), `${family} helper does not declare an explicit draft family`);
 }
-ok(shell.includes('OUTPUT CONTRACT: use these exact headings'), 'AVS helper lacks validator-compatible exact headings');
+ok(shell.includes('When no saved template specifies the format, use short sections with simple headers:') &&
+   ['Why you came in today', 'What we found', 'Your medicines', 'What to do at home', 'Tests / follow-up', 'When to get help right away']
+     .every((heading) => shell.includes(`"${heading}"`)),
+  'AVS helper lacks its default headings for visits without a saved format');
+ok(shell.includes('A selected strict or adapted template controls its own headings and order.'),
+  'AVS helper does not give a selected custom format control of presentation');
+ok(shell.includes('Use ONLY information in the note and the patient background provided') &&
+   shell.includes('do not invent.') &&
+   shell.includes('Add content only when supported by the source.'),
+  'AVS helper lost its source-only and no-invention protections');
 ok(shell.includes('Reason for referral:'), 'referral helper lacks validator-compatible literal heading');
-ok(shell.includes('exact headings "Requested service" and "Medical necessity"'), 'prior-auth helper lacks validator-compatible headings');
+ok(shell.includes('DEFAULT FORMAT: include "Requested service" and "Medical necessity" on separate lines.') &&
+   shell.includes('Use placeholders when the record is missing a required fact.'),
+  'prior-auth helper lacks its default headings or missing-fact protection');
 ok(shell.includes("family:'general_draft'"), 'supporting clinical drafts do not declare the tunable general-draft family');
 ok(stdline.includes("family: 'general_draft'"), 'standard-line weave is not routed through the safe general-draft family');
 ok(!connect.includes("feat_mls_draft_tuning.js"),

@@ -6,7 +6,7 @@
  * retired route from being replayed by an older browser cache or opened as an
  * HTML navigation if a future static-site configuration regresses.
  */
-const CACHE = 'mls-v229';
+const CACHE = 'mls-v251';
 
 const SHELL = [
   '/ScribeFlow.html',
@@ -36,6 +36,7 @@ const PUBLIC_HTML_PATHS = new Set([
   'index.html',
   'intake.html',
   'lawyers.html',
+  'opnotes.html',
   'app.html',
   'patient-portal.html',
   'phone-setup.html',
@@ -192,6 +193,9 @@ const NETWORK_ONLY_HTML_PATHS = new Set([
   '/best-doctors-optout.html',
   '/booking.html',
   '/intake.html',
+  /* opnotes.html carries a capability link in its fragment, which a service
+     worker cannot see. Never serve it from a cache. */
+  '/opnotes.html',
   '/patient-portal.html',
   '/phone.html',
 ]);
@@ -398,3 +402,9 @@ self.addEventListener('fetch', (e) => {
   e.respondWith(response);
   e.waitUntil(response.then(() => cacheWrite).catch(() => {}));
 });
+
+
+
+
+
+

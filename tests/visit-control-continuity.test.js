@@ -46,6 +46,14 @@ assert(/isTrusted === true[\s\S]{0,400}W\.startPhoneMic\(/.test(code), 'startPho
 assert(code.includes('action(ev);'), 'onQuickToolClick must thread the trusted event into the popup actions');
 assert(code.includes("W.showView('orders')"), 'Orders popup must lead to the dedicated Orders page');
 assert(code.includes("MODAL_ID = 'mlsQuickToolPopup'"), 'in-place Quick Tool dialog is missing');
+assert(code.includes("popup('Type or paste visit notes', 'Paste a visit transcript or type your post-visit doctor dictation here."),
+  'text-entry dialog must name both a visit transcript and post-visit doctor dictation');
+assert(code.includes("ta.setAttribute('aria-label', 'Visit transcript or post-visit doctor dictation')"),
+  'text-entry textarea accessible name must include post-visit doctor dictation');
+assert(code.includes("button('Use these visit notes', 'primary'"),
+  'text-entry apply action must accept visit notes without calling them only a transcript');
+assert(code.includes("text.indexOf('paste a transcript')"),
+  'inclusive dialog copy must not break the existing Quick Tool trigger');
 
 // The day-progress label has two writers. The short 15-second legacy write is
 // normalized before paint, while its intrinsic pill is capped so it cannot

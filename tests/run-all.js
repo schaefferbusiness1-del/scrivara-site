@@ -231,6 +231,15 @@ const AUTOMATED_PROOF_FILES = new Set([
      And every ready write row shows the exact text that will land, in reading
      type with its line breaks, byte for byte the string the execute sends. */
   'write-sheet-agreement-proof.js',
+  'write-row-controls-proof.js',
+  /* REGISTERED HERE 2026-09-11, and this is the half that was missing. Both
+     names were already in the `tests` array below, but a proof file whose name
+     does not end in .test.js is only DISCOVERED through this set - so the
+     completeness check read them as "registered tests missing on disk" and
+     threw before a single suite ran. The gate could not start at all. Both run
+     green; nothing about either suite changed. */
+  'native-persistence-clarity-proof.js',
+  'save-press-truth-proof.js',
   /* label-1.0.0 (owner 2026-09-02: "whoever I have up needs to be consistent
      everywhere"; measured 2026-09-02 13:4x): the saved sidecar's fingerprint carried the
      up-now patient's NAME in patientLabel while every identity and clinical
@@ -737,6 +746,12 @@ const tests = [
   '1p-athena-all-actions-ready-3062.test.js',
   '1p-avatar-loader-runtime.test.js',
   '1p-calm-dock-owner-runtime.test.js',
+  /* 2026-09-10: an UNRESOLVED merge conflict stood on these two lines at
+     999ba30f, so tests/run-all.js could not be parsed at all and the release
+     gate ran NOTHING. Both suites exist on disk and each was listed exactly
+     once - inside the conflict - so the resolution is to keep both. */
+  'calm-tools-menu-lifecycle-runtime.test.js',
+  'keepalive-never-navigates-athena-runtime.test.js',
   '1p-avatar-face-loader-runtime.test.js',
   '1p-avatar-face-studio-runtime.test.js',
   '1p-avatar-face-likeness-runtime.test.js',
@@ -854,6 +869,17 @@ const tests = [
      noteRecordFromState() stamped B's id onto A's chart data. Carries its own
      causal control against origin/main's shell bytes. */
   '1p-visit-owner-isolation-runtime.test.js',
+  'visit-new-intent-cancels-restore-runtime.test.js',
+  /* adhocid-1.0.0 (owner-measured 2026-09-11): an ad-hoc visit - a patient
+     opened by search, no appointment - auto-saved itself ON TOP OF a History
+     record created in July, because the per-patient switch-back stash carried
+     the noteId of the record he last had open and restoreFor put it back.
+     Boots the real shell, arms that stash, and proves the restore hands back
+     work without a claim on a stored row, the save mints its own record dated
+     today, the July record keeps its own bytes, and History lists the new one
+     first - with a control that puts the id back by hand and shows the
+     overwrite really is reachable. */
+  '1p-visitowner-adhoc-record-identity-runtime.test.js',
   '1p-provider-unknown-census-runtime.test.js',
   '1p-provider-day-calendar-runtime.test.js',
   /* b1026's pdr-1.0.0 provider Day render fix was never ported to the fork, so
@@ -976,6 +1002,7 @@ const tests = [
      while immutable clinical/legal/coding safeguards remain authoritative. */
   'draft-tuning-contract.test.js',
   'draft-tuning-route-reach.test.js',
+  'template-helper-routing-source-runtime.test.js',
   'conditional-draft-profile-routing-contract.test.js',
   /* Every HPI, ROS, Exam, Assessment and Plan format is independently
      reusable: name, outline/template, use-when rule and AI prompt comments
@@ -1067,6 +1094,7 @@ const tests = [
   'generate-note-lifecycle-runtime.test.js',
   'generation-abort-transport-runtime.test.js',
   'generation-legacy-athena-sidecar-runtime.test.js',
+  'athena-reviewed-display-source-runtime.test.js',
   /* gkey/gsrc/gsx/gsup (2026-09-02): four measured defects on the ONE
      post-response guard, each proved against the shipped engine with the
      pre-fix bytes reverted in memory as its control - a cosmetic #patientLabel
@@ -1201,6 +1229,16 @@ const tests = [
      procedure it names. The Send-to-Athena suite also pins the derived pages,
      so it is expected red between a 1p shell edit and the derive step. */
   'opnote-send-to-athena-control-runtime.test.js',
+  /* opnote-svc-1.0.0 (owner 2026-09-11): an op note drafted here can be handed
+     to an outside surgeon, who fills only what the draft could not and marks it
+     done on a page of its own. The owner-side suite byte-compares opPrepSave and
+     opPrepSendToAthena against HEAD - this lane is additive - and pins that the
+     fields the surgeon is asked to fill are EXACTLY opNoteBlankTokens(note), the
+     parser the save gate already uses. It reads all four shells, so like the
+     Send-to-Athena suite above it is expected red between a 1p shell edit and
+     the derive step. The client-page suite boots opnotes.html itself. */
+  'opnote-prepare-for-surgeon-runtime.test.js',
+  'opnotes-client-page-runtime.test.js',
   'opnote-template-binding-gate-runtime.test.js',
   'opnote-procedure-title-junk-strip.test.js',
   'opnote-pdf-reconciles-not-concatenates.test.js',
@@ -1271,6 +1309,7 @@ const tests = [
   'visit-draft-lifecycle-runtime.test.js',
   'history-raw-note-wrapper-runtime.test.js',
   'history-generated-note-continuation.test.js',
+  'history-bind-save-reopen-runtime.test.js',
   'recording-no-appointment-consent.test.js',
   'quick-find-lifecycle-runtime.test.js',
   'find-canonical-route-runtime.test.js',
@@ -1590,6 +1629,10 @@ const tests = [
      not have is covered, not owed; and each write row shows the exact text that
      will land (owner, same day: "actually showing what's going to be written"). */
   'write-sheet-agreement-proof.js',
+  /* rowfix-1.0.0 (2026-09-11): the review sheet speaks the doctor's words,
+     every BLOCKED / MANUAL / NOT SENT row carries its own one-press next move,
+     the drawer holding them ships open, and not one of those controls can send. */
+  'write-row-controls-proof.js',
   'reopen-label-identity-proof.js',
   'retry-visible-proof.js',
   'visit-template-scope-proof.js',
@@ -2029,6 +2072,7 @@ const tests = [
   'recent-patients-exact-event-lifecycle-runtime.test.js',
   'patient-banner-minimal-contract.test.js',
   'recording-ai-visibility-contract.test.js',
+  '1p-paused-note-transcript-freshness-runtime.test.js',
   'dock-settings-controls-never-throw.test.js',
   'documents-dialog-meds-runtime.test.js',
   'orders-required-fields-runtime.test.js',
@@ -2300,6 +2344,20 @@ const tests = [
      cannot overstate what landed; and neither op-note send path in either 1p
      shell dead-ends in silence. */
   '1p-writeflow-opnote-clarity-progress.test.js',
+  '1p-native-reconciled-save-contract.test.js',
+  /* savetruth-1.0.0: the twelve saved-note refusal codes answer in the
+     doctor's own words with a tail that is true for them; each of the five
+     added by 999ba30f renders its own cure through the shipped receipt path
+     instead of being swallowed by the generic sentence (proved against the
+     pre-fix bytes); an ATTEMPTED outcome is still never paraphrased; and none
+     of them can start an automatic re-check. */
+  'native-persistence-clarity-proof.js',
+  /* savetruth-1.1.0/1.2.0: MLS Assist arms a save_draft press ONLY from a
+     trusted click whose composed label matches its own pattern, so the save
+     press's aria-label is load-bearing, not prose. This runs the composed
+     label through BOTH shipped extensions' own matchers - read off disk where
+     a copy is present - in all four review shapes. */
+  'save-press-truth-proof.js',
   /* cap-mrn-1.0.0: the open-patient capture reply's MRN is digits-only. */
   'capture-mrn-normalize-pins.test.js',
   /* Codex 00:2x: capture-shaped legacy-grid attribution fixtures - the
@@ -2396,7 +2454,44 @@ const tests = [
      as "The patient or visit source changed". The skip now needs BOTH a
      __mlsOpenSwitchFix.resets delta and changed bytes; a cross-tab switch, a
      newVisit() that threw, and a stale reset level all still clear. */
-  'f16-context-clear-owner-runtime.test.js'
+  'f16-context-clear-owner-runtime.test.js',
+  /* REGISTERED HERE 2026-09-11. These three shipped as .test.js files that no
+     list named, so the completeness check below threw "unregistered automated
+     tests" and the gate could not start. Each was run on its own first and is
+     green; registering them is the whole change. A suite nobody runs is
+     coverage that exists only on paper. */
+  'structured-repair-five-field-runtime.test.js',
+  'visit-navigation-intent-runtime.test.js',
+  'write-progress-save-accounting-runtime.test.js',
+  /* NEW 2026-09-11, from the b1230 first-day-doctor walkthrough.
+     rowclick-1.0.0: on the Patients screen the quick patient picker opened as
+     an absolute panel over the top of the roster, so presses at the top of a
+     row did nothing and one of them rewrote the search box with a different
+     patient's name. The panel now has its own space; the suite hit-tests every
+     on-screen row and carries a positive control that stages the pre-fix
+     layout and must fail.
+     reviewnote-1.1.0: the Review dock's "The note" tab navigated into the
+     visit room and left the note below the fold. The press now ends on the
+     note, without the block taking anything that belongs to the calm shell.
+     TWO suites, deliberately: the .test.js one executes the block against the
+     SHIPPING stub shape, and the -runtime one makes the same measurement on
+     the real page with two positive controls - because 1.0.0 passed a stub
+     that treated a 200px wrapper AS the note while the real wrapper paints no
+     note at all, and the doctor-visible property is "the note's own words are
+     inside the viewport", never "something got scrolled". */
+  'patient-row-owns-its-clicks-runtime.test.js',
+  'review-note-tab-lands-on-the-note.test.js',
+  'review-note-tab-lands-on-the-note-runtime.test.js',
+  /* NEW 2026-09-11, vanishbox-1.0.0. The Doctor visit room's transcript block
+     vanished ~0.7-8s after opening a patient: the calm pass folds
+     .ez3fl-transcript.mls-empty, and once the flow lane owns the top the
+     engine's own .ez3-transcript-card is already CSS-hidden, so BOTH boxes
+     went and "Paste a transcript" had nothing to reveal. The suite walks five
+     seeded schedule rows (one unlinked to any chart) and carries a
+     deterministic arm - one synchronous __mlsCalmShell.render(), the exact
+     call the calm dock's reconcile() makes - which fails on the pre-fix
+     bytes. */
+  'visit-transcript-survives-the-calm-pass-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
@@ -2471,3 +2566,4 @@ if (executed !== tests.length) {
 }
 console.log(`GATE_COMPLETE executed=${executed} of=${tests.length}`);
 console.log(`PASS all ${tests.length} local regression suites`);
+

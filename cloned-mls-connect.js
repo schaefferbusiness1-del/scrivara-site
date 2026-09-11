@@ -1128,7 +1128,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     },
     {
       key: 'capture', badge: 'The visit', title: 'No mic? Five other ways to capture',
-      view: 'visit', target: ['#ez3QDictate', '#ez3QuickTools'],
+      /* onechiprow-1.0.0: whichever chip row is actually on screen. The room
+         and the flow lane each own one, only one is ever rendered, and the
+         tour must point at the one the doctor can see. */
+      view: 'visit', target: ['#ez3QDictate', '#ez3flDictate', '#ez3QuickTools', '.ez3fl-quick'],
       body: textBody([
         'The quick chips under the record button cover every situation:'
       ], [
@@ -5033,6 +5036,32 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var startedAt = 0, hidden = true, stopped = false;
   var doneDismissed = false; /* dn-1.0: set only by the DONE card's Done button; re-armed when a new run starts */
   var stopRequested = false; /* clunky2-pull-1.0.0 (CLUNKY 128): survives Hide → show, cleared when the run ends */
+  /* ===== pillfirst-1.0.0 =================================================
+     OWNER 2026-09-11, verbatim: "when I'm pulling why does this big thing pop
+     up, no need for that".
+     EVERY automatic caller - pull start, a phase flip, a needs-attention
+     settle, the day-note catch-up, a month job's next day - reaches this
+     module through exactly ONE door: render(), off the engine's own state.
+     There is no second opener to delete. What made that one door pop open by
+     itself is that `hidden` is RUN-SCOPED state that OUTLIVED its run: it is
+     cleared by the pill's click and re-armed only where render() tears the
+     surface down (the run ended AND the DONE card was dismissed). A doctor who
+     opened the card once and did not press Done left hidden === false behind,
+     so the NEXT run - the catch-up, the next day of a month job, a second Pull
+     - found the door open and painted the full-screen card over the app with
+     nobody having asked for it.
+     So the door is gated on an explicit gesture instead of on leftover state:
+     the card may be shown only while `userOpened` is set, ONLY the pill's own
+     click handler sets it, and a new run (running false -> true) clears it.
+     Automatic callers therefore paint the PILL and nothing else, in every
+     phase and at every run boundary.
+     THE b940 GUARANTEES ARE KEPT: Hide still means "keep pulling" (the engine
+     is never touched here), the hidden state still survives sweep boundaries
+     (a sweep never flips state.running, so the run-boundary reset cannot fire
+     inside one pull), and "Stop pull" stays one click away - pill -> dialog ->
+     Stop pull - because the pill is always mounted while a pull runs. */
+  var userOpened = false; /* set ONLY by the pill's click handler */
+  var wasRunning = false; /* the previous tick's engine running flag */
 
   var wkUrl = null;
   try { wkUrl = URL.createObjectURL(new Blob(['onmessage=function(e){setTimeout(function(){postMessage(1)},e.data)}'], { type: 'application/javascript' })); } catch (e) {}
@@ -5114,7 +5143,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (f) return;
     f = document.createElement('button'); f.id = FAB; f.type = 'button';
     f.textContent = 'Pull running \u2014 show details';
-    f.onclick = function () { hidden = false; render(); };
+    /* pillfirst-1.0.0: THE ONLY place the dialog is ever allowed to open. */
+    f.onclick = function () { userOpened = true; hidden = false; render(); };
     document.body.appendChild(f);
   }
   /* b940 #36: the pill carries live progress instead of a frozen label. */
@@ -5349,7 +5379,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       '</div>';
     p.__ppBuilt = 1;
     var hb = document.getElementById('mlsPullProgHide');
-    if (hb) hb.onclick = function () { hidden = true; render(); };
+    /* pillfirst-1.0.0: Hide gives the gesture back, so the pull's remaining
+       phases stay in the corner pill instead of re-opening the card. */
+    if (hb) hb.onclick = function () { userOpened = false; hidden = true; render(); };
     /* stp-1.0.0 (owner: 'there should be a stop pull button'): cooperative
        abort - the engine checks the flag between charts and days, finishes the
        chart in flight cleanly, keeps every receipt, releases the lease, and
@@ -5408,6 +5440,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function render() {
     var S = state();
     var running = !!(S && S.running);
+    /* ===== pillfirst-1.0.0 (the door, gated) ==============================
+       A NEW run always starts in the corner pill, whoever started it and
+       whatever the last run left behind. A sweep/sub-batch never flips
+       state.running (ppStart keeps it true on base>0), so this cannot fire
+       inside one pull - the b940 "hidden survives sweep boundaries" guarantee
+       is untouched. The second line is the belt: `hidden` is now DERIVED from
+       the gesture, so no leftover false can paint the dialog by itself. */
+    if (running && !wasRunning && userOpened) { userOpened = false; hidden = true; }
+    wasRunning = running;
+    if (!userOpened && !hidden) hidden = true;
+    /* ===== end pillfirst-1.0.0 (the door, gated) ===== */
     if (running) watchedMaxTotal = Math.max(watchedMaxTotal, Number(S.total) || 0);
     if (!running) {
       /* dn-1.0 (owner 2026-08-11: "when its done it should stop and say
@@ -5423,6 +5466,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var p0 = document.getElementById(PANEL); if (p0) p0.remove();
       ensureFab(false);
       startedAt = 0; hidden = true; /* b940: reset to the pill DEFAULT, never to the modal */
+      userOpened = false; /* pillfirst-1.0.0: the gesture dies with the run it was made for */
       watchedMaxTotal = 0; /* pullzero-1.0.0: the next run measures itself */
       doneDismissed = false;
       stopRequested = false; /* clunky2-pull-1.0.0: the request dies with the run it stopped */
@@ -5549,15 +5593,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     /* pullzero-1.0.0: this run had no chart to read at all \u2014 say that, rather
        than reporting "\u2713 0 histories saved" as if zero were a result. */
     var zeroDay = (total === 0 && !(S.rows || []).length);
-    if (hidden) {
-      ensureFab(true);
-      var fD = document.getElementById(FAB);
-      if (fD) { var tD = zeroDay ? 'No charts to read \u2014 see why' : ('Pull done \u2014 \u2713 ' + ok + (failed ? ' \u00B7 \u26A0 ' + failed : '') + ' \u2014 see results'); if (fD.textContent !== tD) fD.textContent = tD; }
-      var phD = document.getElementById(PANEL); if (phD) phD.remove();
-      return;
-    }
-    ensureFab(false);
-    var p = buildPanel();
+    /* pillfirst-1.0.0: the day-note truth is computed BEFORE the pill
+       branch, because the corner pill now has to name what still needs the
+       doctor. ONE COUNT, TWO SURFACES: the pill reports the exact number the
+       card computes below, so a finished pull can never publish two.
+       Pure reads of S - no DOM, no engine state - so hoisting them costs a
+       closed card nothing it was not already paying. */
     var dv = S.dayVerdict || null;
     /* ===== lcd-1.0.0 (the open result card is LIVE) =========================
        OWNER 2026-08-19, verbatim: "as the things in orange get pulled in the
@@ -5621,6 +5662,21 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        rows AND by the engine's own stamp, whichever is less optimistic. */
     var dnNotesDone = dnPendingDone === 0 && (!dv || dv.tnNotesComplete !== false);
     /* ===== end dnote-1.0.0 (b1184) ===== */
+    if (hidden) {
+      ensureFab(true);
+      var fD = document.getElementById(FAB);
+      /* pillfirst-1.0.0: a run that ends owing the doctor something says so
+         IN THE PILL, and still does not open the card. attnP is the identical
+         expression the card paints as "N need attention" (failed plus the
+         day-note debt lcd-1.0.0/dnote-1.0.0 already reduced by what the rows
+         themselves prove), so the two surfaces cannot disagree. */
+      var attnP = failed + dvTnFailed;
+      if (fD) { var tD = zeroDay ? 'No charts to read \u2014 see why' : ('Pull done \u2014 \u2713 ' + ok + ' saved' + (attnP ? ' \u00B7 \u26A0 ' + attnP + (attnP === 1 ? ' needs' : ' need') + ' attention' : '') + ' \u2014 show details'); if (fD.textContent !== tD) fD.textContent = tD; }
+      var phD = document.getElementById(PANEL); if (phD) phD.remove();
+      return;
+    }
+    ensureFab(false);
+    var p = buildPanel();
     if (!p.__ppDoneApplied) {
       p.__ppDoneApplied = 1;
       api.doneShown = (api.doneShown || 0) + 1;
@@ -7672,6 +7728,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     '#mlsEz3 .ez3-h1{color:#1A211C !important;font-family:Newsreader,Georgia,serif !important;font-weight:600 !important;letter-spacing:-.015em !important;}',
     '#mlsEz3 .ez3-big:not(.rec):not(.ok):not(.dim){background:#204034 !important;color:#fff !important;border:0 !important;box-shadow:0 10px 26px -10px rgba(32,64,52,.55) !important;}',
     '#mlsEz3 .ez3-big.dim{background:#F2F0E9 !important;color:#55605A !important;border:1px solid #E4E1D8 !important;box-shadow:none !important;}',
+    /* doorlight-1.0.0 (2026-09-11, measured live on b1232): the Type-or-paste door
+       shipped with the dark-surface tokens (#EAF1EE on rgba(255,255,255,.07)) on the
+       light #mlsEz3 gradient - contrast ~1.2:1, the owner could not see it. Same
+       light tokens the dim hero already uses; ~13:1 on the page. */
+    '#mlsEz3 .ez3-alt{background:#F2F0E9 !important;color:#1A211C !important;border:1px solid #D9D5CA !important;box-shadow:none !important;}',
+    '#mlsEz3 .ez3-alt:hover{background:#E9E6DD !important;}',
+    '#mlsEz3 .ez3-alt small{color:#4A5550 !important;opacity:1 !important;}',
     '#mlsEz3 .ez3-sm.pri{background:#204034 !important;color:#fff !important;border-color:transparent !important;}',
     '#mlsEz3 .ez3-modeseg .on,#mlsEz3 .ez3-seg button.on{background:#fff !important;color:#1A211C !important;box-shadow:0 1px 3px rgba(20,33,28,.15) !important;}',
     '#mlsEz3 select,#mlsEz3 input{background:#FCFBF8 !important;color:#1A211C !important;border:1px solid #E4E1D8 !important;}',
@@ -7916,6 +7979,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        does not require trusting a label. */
     '#mlsEz3 .ez3fl-txmeta #ez3flCount[data-live="1"]{color:#9F2D2D;font-weight:700;}',
     '#mlsEz3 .ez3fl-quick{flex-basis:100%;display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;}',
+    /* typedoor-1.0.0: the SECOND door into the visit, under the hero. It is
+       deliberately quieter than .ez3-big so the screen still carries exactly
+       one bold primary action, and deliberately a full-width row rather than a
+       chip, because it is a door into the visit and not a tool inside one. */
+    '#mlsEz3 .ez3-alt{display:flex;width:100%;align-items:center;justify-content:center;flex-direction:column;',
+      'min-height:56px;border:1px solid rgba(255,255,255,.22);border-radius:16px;cursor:pointer;',
+      'background:rgba(255,255,255,.07);color:#EAF1EE;font-size:16px;font-weight:800;',
+      'padding:11px 16px;margin:-4px 0 14px;text-align:center;transition:background .12s;}',
+    '#mlsEz3 .ez3-alt:hover{background:rgba(255,255,255,.14);}',
+    '#mlsEz3 .ez3-alt small{display:block;font-size:12.5px;font-weight:600;opacity:.9;margin-top:3px;}',
     '#mlsEz3 .ez3fl-qlbl{font-size:10px;font-weight:700;letter-spacing:.07em;color:var(--muted);}',
     '#mlsEz3 .ez3fl-qchip{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid #E7E5DD;border-radius:999px;color:#55605A;font-size:12.5px;font-weight:600;cursor:pointer;padding:6px 12px;transition:background .15s ease,color .15s ease;}',
     '#mlsEz3 .ez3fl-qchip:hover{background:#F4F2EC;color:#1A211C;}',
@@ -8332,6 +8405,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      last click is fired and never read. This lane cannot make the engine read
      it, but it can WATCH the same press and then look at the result, which is
      the same answer arrived at from the outside. */
+  /* recmore-1.1.0: the note screen's record door needed NO new entry here. It
+     is .ez3fl-recbtn - the lane's own pill, already on this list and already
+     wired to toggleTopRecording - kept on screen in one more state rather than
+     a second button beside it. */
   var REC_START_SEL = '#ez3ActiveGo,#ez3Rec,#ez3Rec2,#ez3Next,#ez3Nxt,#ez3Now,#captureBtn,.ez3fl-recbtn';
   /* The engine's own predicate, copied deliberately rather than shared: these
      hero buttons double as "go to the next patient" with data-rec="0", and
@@ -8631,6 +8708,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       try { note.dispatchEvent(new Event('input', { bubbles: true })); } catch (eSync) {}
     }
     if (!note || !(note.value || '').trim()) { flowToast('Generate the note first, then review it before sending.', 'err'); return; }
+    /* recnote-1.0.0: Resume may have appended dictation after this note was
+       created. The dim is advisory by design, so the click gate must enforce
+       the same freshness verdict before any Athena review door can open. */
+    var reviewPatient = null;
+    try { reviewPatient = verifiedActivePatient(); } catch (eNextGatePatient) {}
+    var reviewPatientId = String(reviewPatient && (reviewPatient.id || reviewPatient.patientId || reviewPatient.patient_external_id) || '');
+    if (noteTranscriptOutdated(genTranscriptText(), note.value, reviewPatientId, noteRecordIdentity())) { flowToast(NOTE_TRANSCRIPT_STALE_WHY, 'err'); return; }
     /* nextgate-1.1.0 (measured 2026-09-02 10:xx): the dim on #ez3flReview is
        deliberately not `disabled`, so the click still arrives here - answer it
        with the same sentence the tooltip carries. Placement is load-bearing:
@@ -8905,6 +8989,22 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     value = String(value);
     if (el && el.getAttribute(name) !== value) el.setAttribute(name, value);
   }
+  /* The shared next-step owner composes its reason onto aria-label and saves
+     the control's original label in __mlsNgLabel. The record pill can change
+     from Pause to Resume while it is still marked, so changing only the
+     visible child leaves assistive tech announcing the prior action. Keep the
+     owned base label and the composed current label in step with the text;
+     when the glow moves, its deannotate() then restores the new base label. */
+  function setLaneControlLabel(el, value) {
+    if (!el) return;
+    value = String(value == null ? '' : value);
+    var current = String(el.getAttribute('aria-label') || '');
+    var marker = ' \u2014 next step: ';
+    var at = current.indexOf(marker);
+    var suffix = (el.getAttribute('data-mls-ng-note') === '1' && at >= 0) ? current.slice(at) : '';
+    if (el.getAttribute('data-mls-ng-note') === '1') el.__mlsNgLabel = value;
+    setLaneAttr(el, 'aria-label', value + suffix);
+  }
   /* ===== genvis-1.0.0 begin ============================================== */
   /* MEASURED LIVE 2026-09-01 in the owner's own tab on b1188. He pressed this
      lane's "Generate one note". The engine really started: window fired
@@ -8968,6 +9068,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var d = detail || {};
     _genRun.id = Number(d.runId || 0) || 0;
     _genRun.active = true;
+    _noteGenerationAccepted = false;
     /* A NEW RUN is the one thing besides a transcript edit that clears the old
        verdict, and nothing else does: the doctor decides when they have read
        it, not a timer and not the next repaint. */
@@ -8982,7 +9083,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (_genRun.id && runId && runId !== _genRun.id) return genRunHint();
     _genRun.active = false;
     var status = String(d.status || '');
-    if (status === 'success' || status === 'ok') { _genRun.settled = null; return genRunHint(); }
+    if (status === 'success' || status === 'ok') { _genRun.settled = null; _noteGenerationAccepted = true; return genRunHint(); }
     _genRun.settled = {
       runId: runId, status: status || 'failed',
       code: String(d.code || ''), message: String(d.message || ''),
@@ -9019,21 +9120,68 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     };
   }
   try { window.__mlsGenerationRunState = genRunState; } catch (eGenRun) {}
-  function laneHintDefault(live, text, noteTextValue) {
+  /* recnote-1.0.0: a note and transcript can both be restored, then the doctor
+     can Resume and append another segment. Presence of the old note is not
+     proof that it contains the new words. Keep one context-bound baseline:
+     when the patient or saved record changes, the restored note becomes the baseline;
+     while both stay fixed, any transcript change means Review must wait for
+     an explicit Generate. No text is copied, cleared, or generated here. */
+  var _noteTranscriptProof = { ready: false, patientId: '', recordId: '', note: '', transcript: '' };
+  var _noteGenerationAccepted = false;
+  var _noteManualEditPending = false;
+  var NOTE_TRANSCRIPT_STALE_WHY = 'New visit text was added after this note was created. Update the note before reviewing.';
+  function noteRecordIdentity() {
+    try { if (typeof currentNoteId !== 'undefined' && currentNoteId != null && String(currentNoteId)) return 'note:'+String(currentNoteId); } catch (eNoteId) {}
+    try { if (typeof currentVisitAthenaBinding !== 'undefined' && currentVisitAthenaBinding) return 'binding:'+JSON.stringify(currentVisitAthenaBinding); } catch (eBinding) {}
+    return '';
+  }
+  function noteTranscriptOutdated(transcriptText, noteTextValue, patientId, recordId) {
+    var tx = String(transcriptText == null ? '' : transcriptText);
+    var nt = String(noteTextValue == null ? '' : noteTextValue);
+    var pid = String(patientId == null ? '' : patientId);
+    var rid = String(recordId == null ? '' : recordId);
+    /* A transient repaint can briefly lose the verified patient while the old
+       visit remains mounted. Do not let that blank frame erase stale truth. */
+    if (!pid && _noteTranscriptProof.ready) pid = _noteTranscriptProof.patientId;
+    if (!rid && _noteTranscriptProof.ready) rid = _noteTranscriptProof.recordId;
+    if (!nt.trim()) {
+      _noteTranscriptProof = { ready: false, patientId: pid, recordId: rid, note: '', transcript: tx };
+      _noteGenerationAccepted = false; _noteManualEditPending = false;
+      return false;
+    }
+    if (!_noteTranscriptProof.ready || _noteTranscriptProof.patientId !== pid || _noteTranscriptProof.recordId !== rid) {
+      _noteTranscriptProof = { ready: true, patientId: pid, recordId: rid, note: nt, transcript: tx };
+      _noteGenerationAccepted = false; _noteManualEditPending = false;
+      return false;
+    }
+    /* Only evidence that can actually incorporate the current transcript may
+       advance its baseline: the engine's successful generation receipt, or a
+       trusted edit in one of the two note editors. Background formatting and
+       mirror writes may change note bytes, but cannot clear stale dictation. */
+    if (_noteGenerationAccepted || _noteManualEditPending) {
+      _noteTranscriptProof = { ready: true, patientId: pid, recordId: rid, note: nt, transcript: tx };
+      _noteGenerationAccepted = false; _noteManualEditPending = false;
+      return false;
+    }
+    if (_noteTranscriptProof.note !== nt) _noteTranscriptProof.note = nt;
+    return tx !== _noteTranscriptProof.transcript;
+  }
+  function laneHintDefault(live, text, noteTextValue, noteTranscriptStale) {
     var tx = String(text == null ? '' : text);
     var nt = String(noteTextValue == null ? '' : noteTextValue);
     if (live) return 'Recording now. Pause whenever you need to; everything captured stays here so you can resume later.';
+    if (noteTranscriptStale) return NOTE_TRANSCRIPT_STALE_WHY;
     if (nt.trim()) return 'Your note is ready below. Review and edit it here before using any send tools.';
     if (tx.trim()) return _recSessionSeen
       ? 'Recording stopped. Resume to add more, or generate one note from every segment.'
       : 'Transcript added. Record to add more, or generate one note from every segment.';
     return 'Records locally and drafts the note here - nothing goes to Athena until you review and send it.';
   }
-  function paintLaneHint(hint, live, text, noteTextValue) {
+  function paintLaneHint(hint, live, text, noteTextValue, noteTranscriptStale) {
     if (!hint) return '';
     genRunTranscriptChanged(text);
     var run = genRunHint();
-    var next = run.text || laneHintDefault(live, text, noteTextValue);
+    var next = run.text || laneHintDefault(live, text, noteTextValue, noteTranscriptStale);
     setLaneText(hint, next);
     /* role=status so the sentence is ANNOUNCED and not merely drawn. A refusal
        is the one thing on this lane a doctor must not be able to miss, and the
@@ -9115,6 +9263,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     setTopVoiceChip(rec, 'ez3flAssistant', assistantOpen, 'MLS Assistant', 'Close MLS Assistant');
     setTopVoiceChip(rec, 'ez3flDictate', dictateOn, 'Dictate', 'Stop Dictate');
   }
+  function doctorVisitLaneReady() {
+    /* The enhancement lane belongs to an ACTIVE Easy visit, not merely to the
+       Visit tab or to text left in the shared editor.  Those broader facts are
+       also true on Home, where mounting this lane beside #ez3StartActive made
+       the page offer both "Start the visit" and Generate at once. */
+    try {
+      var easy = window.__mlsEasyV32;
+      var state = easy && typeof easy.state === 'function' ? easy.state() : null;
+      return !!(state && state.mode === 'doctor' && state.screen === 'doctor' && state.locked);
+    } catch (e) { return false; }
+  }
   function clickTopVoiceControl(id, label) {
     var control = $(id);
     if (!control) { flowToast(label + ' is still loading. Try again in a moment.', 'err'); return; }
@@ -9164,6 +9323,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var noteWrap = $('ez3flNoteWrap'), topNote = $('ez3flNote');
     var avsQuick = rec.querySelector('#ez3flAvs');
     var avsPatient = verifiedActivePatient();
+    var notePatientId = String(avsPatient && (avsPatient.id || avsPatient.patientId || avsPatient.patient_external_id) || '');
+    var noteTranscriptStale = noteTranscriptOutdated(text, noteText, notePatientId, noteRecordIdentity());
     if (avsQuick) {
       setLaneDisabled(avsQuick, !avsPatient);
       setLaneAttr(avsQuick, 'aria-disabled', avsPatient ? 'false' : 'true');
@@ -9182,8 +9343,23 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          a stopped session has transcript. So it now shows ONLY in those two
          states and the hero owns starting, exactly as onboarding teaches.
          (Pause/resume reachability is pinned by easy-pause-resume-runtime.) */
-      var rbResumable = !!(text.trim() && _recSessionSeen) && !noteText.trim();
-      setLaneHidden(rb, !live && !rbResumable);
+      var rbResumable = !!(text.trim() && _recSessionSeen);
+      /* recmore-1.1.0 (2026-09-11) - ONCE THE NOTE EXISTS, THE MICROPHONE
+         STAYS ON THE SCREEN. MEASURED in the booted app on the note screen:
+         #ez3Rec and #ez3Rec2 are not rendered in that state at all, and this
+         pill hid itself too, so a doctor who remembered one more finding had
+         NO record door anywhere - they had to sign or leave the visit before
+         they could say it. This is the b940 rule kept, not broken: that rule
+         took the pill off the IDLE screen because the taught hero there says
+         the same thing, and on the note screen nothing else offers recording.
+         The label is already right for both shapes - "Resume recording" when a
+         stopped session has transcript, "Start recording - <name>" when the
+         visit was pasted or dictated elsewhere - and the press is the ordinary
+         toggleTopRecording, so the exact-patient check, the recvis refusals and
+         the one-transcript append are the same ones every other door gets.
+         Nothing is generated and nothing is sent: the note in the box is left
+         exactly as it is until the doctor presses Regenerate. */
+      setLaneHidden(rb, !live && !rbResumable && !noteText.trim());
       if (rb.classList.contains('live') !== live) rb.classList.toggle('live', live);
       /* 2026-07-29: body.mls-recording had NO writer anywhere, while three
          modules stand down on it - so every one of those guards was dead and
@@ -9198,7 +9374,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         var dot = document.createElement('span'); dot.className = 'dot'; rb.appendChild(dot);
         rbLabel = document.createElement('span'); rbLabel.className = 'ez3fl-rblabel'; rb.appendChild(rbLabel);
       }
-      setLaneText(rbLabel, live ? '\u23F8 Pause recording' : (text.trim() && _recSessionSeen ? '\uD83C\uDFA4 Resume recording' : '\uD83C\uDFA4 ' + (pname ? 'Start recording - ' + pname : 'Start a visit recording')));
+      var recordLabel = live ? 'Pause recording' : (text.trim() && _recSessionSeen ? 'Resume recording' : (pname ? 'Start recording - ' + pname : 'Start a visit recording'));
+      setLaneText(rbLabel, live ? '\u23F8 ' + recordLabel : '\uD83C\uDFA4 ' + recordLabel);
+      setLaneControlLabel(rb, recordLabel);
       setLaneAttr(rb, 'aria-pressed', live ? 'true' : 'false');
     }
     /* walkfix-1.0.0 (b1184): ONE DOOR AT A TIME. #ez3Adv (the engine's own
@@ -9219,7 +9397,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       setLaneAttr(ob, 'aria-expanded', wsOpen ? 'true' : 'false');
     }
     if (gb) {
-      setLaneHidden(gb, live || !text.trim() || !!noteText.trim());
+      setLaneHidden(gb, live || !text.trim() || (!!noteText.trim() && !noteTranscriptStale));
       setLaneDisabled(gb, !genReal || !!genReal.disabled);
       /* genvis-1.0.0: #genBtn.disabled was the ONLY evidence this label had
          that a run was in flight, and on 2026-09-01 it was not enough - the
@@ -9231,7 +9409,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          the single writer of those on this button and runs immediately below,
          and two writers on one attribute is a defect this repo already pays
          for elsewhere. */
-      setLaneText(gb, (_genRun.active || (genReal && genReal.disabled)) && !noteText.trim() ? 'Generating note...' : '\u2728 Generate one note');
+      setLaneText(gb, (_genRun.active || (genReal && genReal.disabled)) ? 'Generating note...' : (noteTranscriptStale ? '\u2728 Update note with new visit text' : '\u2728 Generate one note'));
     }
     syncTopGenerationOwnership(rec, gb);
     /* gcx-1.0.0: the top lane's Generate carries the same read-only evidence
@@ -9242,7 +9420,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        laneHintDefault(); paintLaneHint puts the live generation state in front
        of them. This is the line that read "Your note is ready below" for the
        whole 28 s of a run that ended in a refusal. */
-    paintLaneHint(hint, live, text, noteText);
+    paintLaneHint(hint, live, text, noteText, noteTranscriptStale);
     /* txm-1.0.0: a PURE APPEND (which is what live dictation is) is now taken
        even while the caret is in the box, caret and scroll preserved, so the
        doctor watches their words arrive instead of the box sitting frozen until
@@ -9337,8 +9515,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if (rvBtn) {
         var rvRun = false; try { rvRun = !!(_genRun && _genRun.active); } catch (eRvRun) { rvRun = false; }
         var rvRefusal = noteLooksLikeRefusal(noteText);
-        var rvBlocked = rvRun || !noteText.trim() || rvRefusal;
-        var rvWhy = rvRun ? 'Your note is still generating - review opens when it is ready.' : (rvRefusal ? NEXTGATE_REFUSAL_WHY : 'Generate a note first.');
+        var rvBlocked = rvRun || !noteText.trim() || rvRefusal || noteTranscriptStale;
+        var rvWhy = rvRun ? 'Your note is still generating - review opens when it is ready.' : (rvRefusal ? NEXTGATE_REFUSAL_WHY : (noteTranscriptStale ? NOTE_TRANSCRIPT_STALE_WHY : 'Generate a note first.'));
         setLaneAttr(rvBtn, 'aria-disabled', rvBlocked ? 'true' : 'false');
         if (rvBlocked) setLaneAttr(rvBtn, 'title', rvWhy); else if (rvBtn.hasAttribute('title')) rvBtn.removeAttribute('title');
         if (rvBtn.classList.contains('dim') !== rvBlocked) rvBtn.classList.toggle('dim', rvBlocked);
@@ -9376,10 +9554,34 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if(_laneRaf!=null){ if(window.cancelAnimationFrame) window.cancelAnimationFrame(_laneRaf); else clearTimeout(_laneRaf); _laneRaf=null; }
     } catch (e2) {}
   }
+  function laneUnifiedReviewClosed() {
+    /* Only the Easy Next action owns this marker. A sheet opened directly from
+       the advanced workspace leaves it false and therefore keeps that user's
+       workspace exactly as they arranged it. */
+    if (!_reviewStepOpen) return false;
+    var advOpen = false;
+    try { advOpen = !!(document.body && document.body.classList.contains('ez3adv')); } catch (eAdv) {}
+    if (advOpen) {
+      var adv = $('ez3Adv');
+      if (!adv || typeof adv.click !== 'function') return false;
+      var priorQuiet = window.__mlsAdvQuietOpen;
+      try { window.__mlsAdvQuietOpen = true; adv.click(); }
+      catch (eClick) { return false; }
+      finally { window.__mlsAdvQuietOpen = priorQuiet; }
+      try { if (document.body.classList.contains('ez3adv')) return false; } catch (eStillOpen) { return false; }
+    }
+    setReviewStepOpen(false);
+    syncTopLane(_primaryLane || document.querySelector('.ez3fl-record'));
+    setTimeout(function () {
+      try { var next = $('ez3flReview'); if (next && !next.hidden) next.focus({ preventScroll: true }); } catch (eFocus) {}
+    }, 0);
+    return true;
+  }
   function laneSignal(ev) {
     try {
       var t = ev && ev.target;
       if (!t || !t.closest || !t.closest('#mlsEz3,#captureCard,#noteCard,#mlsAsstPanel,#mlsDaDock,#mlsCopVoiceBtn,#mlsAsstFab')) return;
+      if (ev.type === 'input' && ev.isTrusted === true && (t.id === 'noteBox' || t.id === 'ez3flNote')) _noteManualEditPending = true;
       scheduleLaneSync();
     } catch (e) {}
   }
@@ -9389,7 +9591,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     try { var fb = $('mlsDayHistBtn'); if (fb && fb.style.getPropertyValue('display') !== 'none') fb.style.setProperty('display', 'none', 'important'); } catch (e) {}
     var body = $('mlsEz3Body'); if (!body) return;
     var wrap = body.querySelector('#ez3Wrap');
-    var staff = onStaffScreen(body);
+    var staff = onStaffScreen(body), doctorVisit = doctorVisitLaneReady();
     /* fl-1.7.0 (owner 2026-07-16): ONE transcript box, and the TOP lane is
        the keeper — the fl-1.6.1 yield hid .ez3fl-record, which also removed
        the quick-tools row and the primary record CTA. Instead, while this
@@ -9412,7 +9614,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          MOUNTED lane must not claim the top - that claim was hiding the
          engine's transcript card and quick-tools chip, leaving the phone with
          no transcript at all. Mounted is not visible. */
-      var wantOwns = !staff && laneVisible && !(document.body && document.body.classList.contains('mls-phone'));
+      var wantOwns = !staff && doctorVisit && laneVisible && !(document.body && document.body.classList.contains('mls-phone'));
       if (body.classList.contains('ez3fl-top-owns') !== wantOwns) body.classList.toggle('ez3fl-top-owns', wantOwns);
     } catch (e) {}
     /* (0) symmetric cleanup — the engine re-renders #ez3Wrap, not the body, so
@@ -9423,8 +9625,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        parked the canonical node for the doctor return, so anything still in
        the DOM here is a stale duplicate. */
     try {
-      var kill = staff ? '.ez3fl-staffLink,.ez3fl-record' : '.ez3fl-back,.ez3fl-staffbadge';
+      var kill = (staff || !doctorVisit) ? '.ez3fl-staffLink,.ez3fl-record' : '.ez3fl-back,.ez3fl-staffbadge';
       body.querySelectorAll(kill).forEach(function (n) { n.remove(); });
+      if (!doctorVisit) {
+        _primaryLane = null;
+        syncTopGenerationOwnership(null, null);
+        syncTopNextOwnership(null, null, null);
+      }
     } catch (e) {}
     /* (1) doctor screen: quiet staff entry under the actions row */
     if (!staff) {
@@ -9442,7 +9649,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       for (var laneIndex = 0; laneIndex < mountedLanes.length; laneIndex++) {
         if (mountedLanes[laneIndex] !== mountedLane) mountedLanes[laneIndex].remove();
       }
-      if (!mountedLane) {
+      if (!doctorVisit) {
+        /* Home/Choose owns its own single next action. Shared transcript bytes
+           may remain safely stored, but they do not turn either screen into a
+           visit or authorize the enhancement lane to add clinical actions. */
+      } else if (!mountedLane) {
         var row2 = wrap ? wrap.querySelector('.ez3-row2') : null;
         if (wrap && row2) {
           var nmEl = document.querySelector('.mlsctx-name');
@@ -9503,8 +9714,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           rec.appendChild(failRow);
           var txWrap = document.createElement('div');
           txWrap.className = 'ez3fl-transcript';
-          txWrap.innerHTML = '<div class="ez3fl-txhead"><label for="ez3flTranscript">Visit transcript</label><span>Type, paste, pause, and resume without losing anything</span></div>' +
-            '<textarea class="ez3fl-tx" id="ez3flTranscript" placeholder="The visit conversation appears here as you speak. You can also type or paste text."></textarea>' +
+          txWrap.innerHTML = '<div class="ez3fl-txhead"><label for="ez3flTranscript">Visit transcript or doctor dictation</label><span>Record the visit, dictate your post-visit summary, or type/paste notes here.</span></div>' +
+            '<textarea class="ez3fl-tx" id="ez3flTranscript" placeholder="Record the visit, dictate your post-visit summary, or type/paste notes here."></textarea>' +
             '<div class="ez3fl-txmeta"><span id="ez3flCount">0 words captured</span><span>Every segment is combined into one note.</span></div>';
           rec.appendChild(txWrap);
           var topTx = txWrap.querySelector('#ez3flTranscript');
@@ -9823,7 +10034,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         var anchor = wrapEl ? wrapEl.querySelector('.ez3-row2') : null;
         var have = !!(body && body.querySelector('.ez3fl-record'));
         if (have) _fastBlocked = false;
-        if (!_fastBlocked && anchor && !have && !onStaffScreen(body)) {
+        if (!_fastBlocked && anchor && !have && !onStaffScreen(body) && doctorVisitLaneReady()) {
           if (_deb) { try { clearTimeout(_deb); } catch (e0) {} _deb = null; }
           _fast = true;
           try { run(); } finally { _fast = false; }
@@ -9892,6 +10103,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        the press from the lane that has to explain its outcome. */
     document.addEventListener('click', laneRecordPress, true);
     window.addEventListener('mls:view-changed', laneViewChanged);
+    window.addEventListener('mls:athena-review-closed', laneUnifiedReviewClosed);
     window.addEventListener('mls:generation-started', onLaneGenStarted);
     window.addEventListener('mls:generation-settled', onLaneGenSettled);
     /* Event-driven updates cover normal recording/transcript/note/voice work.
@@ -9953,6 +10165,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       try { document.removeEventListener('input', laneSignal, true); document.removeEventListener('change', laneSignal, true); document.removeEventListener('click', laneSignal, true); } catch (e) {}
       try { document.removeEventListener('click', laneRecordPress, true); } catch (e) {}
       try { window.removeEventListener('mls:view-changed', laneViewChanged); } catch (e) {}
+      try { window.removeEventListener('mls:athena-review-closed', laneUnifiedReviewClosed); } catch (e) {}
       try { window.removeEventListener('mls:generation-started', onLaneGenStarted); } catch (e) {}
       try { window.removeEventListener('mls:generation-settled', onLaneGenSettled); } catch (e) {}
       try { if (window.__mlsGenerationRunState === genRunState) delete window.__mlsGenerationRunState; } catch (e) {}
@@ -20667,8 +20880,15 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
   function forceFreshVisitForNewPatient(keepRecovery) {
     safe(function () {
-      /* newVisit(opts) does opts=opts||{}, so both shapes are safe. */
-      if (typeof window.newVisit === 'function') { window.newVisit(keepRecovery ? { preserveRecovery: true } : {}); }
+      /* This is the switch engine's internal empty-editor pass, not the
+         doctor's explicit New visit intent. visitowner uses the marker to keep
+         the target patient's resumable in-tab draft eligible for its queued
+         switch-back restore. preserveRecovery keeps its existing meaning. */
+      if (typeof window.newVisit === 'function') {
+        var resetOptions = { patientSwitchReset: true };
+        if (keepRecovery) resetOptions.preserveRecovery = true;
+        window.newVisit(resetOptions);
+      }
     });
     safe(function () {
       if (typeof window.prefillContextFromProfile === 'function') { window.prefillContextFromProfile(); }
@@ -22124,6 +22344,116 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   function captureBusy() { return isRecording() || /^(starting|recording|stopping)$/.test(directCaptureStatus()); }
   function noteText() { var n = $('noteBox'); return n ? (n.value || '') : ''; }
+  /* WHAT IS ACTUALLY THERE TO CONTINUE — read once, in one tick, so the offer
+     and the sentence under it can never describe different things.
+
+     A PARKED PHASE IS NOT A LIVE VISIT. stopRecordingOnly parks S.phase at
+     'stopped', and a patient switch through lockAndStartPatient clears
+     editing/genClickedAt but NOT phase/recStart, so both outlive the visit
+     that set them. Reading "S.phase !== 'idle' || S.recStart > 0" as live
+     therefore offered "Continue visit" on a brand-new, entirely empty visit —
+     and Home then had no Start Recording door at all. Only capture running
+     right now, or a generation this visit asked for, counts as live; a paused
+     recording is a stopped phase WITH a transcript, which `source` already
+     sees. */
+  function homeVisitContent() {
+    var tx = $('transcript');
+    return {
+      source: !!(tx && String(tx.value || '').trim()),
+      note: !!String(noteText() || '').trim(),
+      live: captureBusy() || S.phase === 'rec' || S.genClickedAt > 0
+    };
+  }
+  /* Name what the doctor is returning TO. "the existing note and transcript"
+     was printed over a visit that had only one of them, or neither. */
+  function continueDetail(c) {
+    if (c.source && c.note) return 'Return to this visit’s note and transcript';
+    if (c.note) return 'Return to this visit’s note';
+    if (c.source) return 'Return to this visit’s transcript';
+    return 'Return to this visit';
+  }
+  /* Home may resume an existing visit only when the canonical active patient
+     still owns Easy's exact visit lock. Shared editor bytes alone are never
+     enough: they can outlive a patient switch. This reads state only. */
+  function homeOwnsContinuableVisit(p) {
+    try {
+      var active = canonicalActivePatient();
+      if (!p || p.id == null || !active || active.id == null || String(active.id) !== String(p.id)) return false;
+      /* S.locked.id is the appointment id for scheduled visits and the patient
+         id for ad-hoc visits; visitBindingOwnsPatient is the shared exact
+         ownership check for both shapes. */
+      if (!S.appt || !S.locked || !visitBindingOwnsPatient(p.id)) return false;
+      if (!nameMatch(S.locked.name, p.name) || dobConflicts(S.locked.dob, p.dob) || mrnConflicts(S.locked, p)) return false;
+      var c = homeVisitContent();
+      return c.source || c.note || c.live;
+    } catch (e) { return false; }
+  }
+  function activePatientHomeAction(p, detail, extraClass) {
+    var resume = homeOwnsContinuableVisit(p);
+    /* data-rec="0" ON THE CONTINUE FORM. The recording-verdict lane watches
+       #ez3ActiveGo (REC_START_SEL) and arms on every press it is not told to
+       ignore, so a press that only navigates back into the open visit painted
+       the red "Recording did not start and MLS was not told why" refusal a
+       second later. recPressWanted reads exactly this attribute. */
+    var hero = '<button type="button" class="ez3-big' + (extraClass ? ' ' + extraClass : '') + '" id="ez3ActiveGo" data-rec="' + (resume ? '0' : '1') + '" data-continue="' + (resume ? '1' : '0') + '" aria-label="' + (resume ? 'Continue visit' : 'Start recording') + '">' +
+      (resume ? '➡ Continue visit<small>' + continueDetail(homeVisitContent()) + '</small>' : '🎙 Start Recording — ' + esc(p.name) + '<small>' + detail + '</small>') + '</button>';
+    /* typedoor-1.0.0 (2026-09-11) — THE POST-VISIT DICTATION DOOR.
+       MEASURED on b1230: with an empty visit for the selected patient, Home
+       offered Start Recording, Draft op notes and View completed notes, and
+       NOTHING ELSE. The visit room has the "Paste a transcript" chip that the
+       owner's post-visit dictation workflow depends on, but the only way into
+       that room from Home started a microphone. A doctor who has already seen
+       the patient and wants to type what happened had to press Record and then
+       stop it, or call an internal API.
+
+       So Home gets a SECOND door for exactly that shape: the visit is empty,
+       there is nothing to continue, and the doctor wants to write rather than
+       record. It is only rendered on the record form - when the hero already
+       says "Continue visit" the room is one press away and a second door
+       beside it would be two ways to do one thing.
+
+       IT CARRIES data-rec="0". REC_START_SEL does not list this id, so the
+       recording-verdict lane would ignore it either way, but the attribute is
+       written anyway because that lane's predicate (recPressWanted) reads
+       exactly this attribute and a future entry in that selector must not be
+       able to arm a red "recording did not start" over a press that never
+       asked for a microphone. It never generates either - it opens the room
+       and the notes box, and Generate stays the doctor's own separate press. */
+    if (resume) return hero;
+    return hero +
+      '<button type="button" class="ez3-alt" id="ez3ActiveNotes" data-rec="0" aria-label="Type or paste visit notes">' +
+      '📋 Type or paste visit notes<small>Already seen ' + esc(p.name) + '? Open the visit and write it up — no recording.</small></button>';
+  }
+  /* typedoor-1.0.0: the notes box, asked for by name.
+     The dialog is owned by the visit-control continuity module, which also
+     installs the document-level listener that turns a press on the room's
+     "Paste a transcript" chip into that same dialog. Call the owner directly
+     when it is there; press its chip when it is there instead; and if neither
+     is, put the doctor in the transcript box itself rather than ending the
+     press in silence. Nothing here records, generates, signs or sends. */
+  function openTypeOrPasteNotes() {
+    var c = null;
+    try { c = window.__mlsVisitControlContinuity; } catch (e0) {}
+    if (c && isFn(c.openPasteTranscript)) { try { c.openPasteTranscript(); return true; } catch (e1) {} }
+    var chip = $('ez3flPaste') || $('ez3QPaste');
+    if (chip && isFn(chip.click)) { try { chip.click(); return true; } catch (e2) {} }
+    var rw = null;
+    try { rw = window.__mlsRevWork; } catch (e3) {}
+    try { if (rw && isFn(rw.revealTranscript) && rw.revealTranscript()) return true; } catch (e4) {}
+    /* Same scroll rule as the room's own paste chip: the revealer first, then
+       the smallest move that puts the box on screen. */
+    var box = $('ez3flTranscript') || $('ez3Transcript') || $('transcript');
+    if (box) {
+      try {
+        if (rw && isFn(rw.bring)) rw.bring(box);
+        else box.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        box.focus();
+        return true;
+      } catch (e5) {}
+    }
+    toast('The visit is open. Type or paste the visit in the transcript box below, then press Generate note.');
+    return false;
+  }
   function signBtn() { return $('signBtn'); }
   function signReady() { var b = signBtn(); return !!(b && !b.disabled); }
 
@@ -22145,7 +22475,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function genBtnResolve() { var g = $('genBtn'); if (g && !g.disabled) return g; return byTextGuarded(/generate note/i); }
   function styleChipHosts() {
     var out = [], card = $('captureCard'); if (!card) return out;
-    ['SOAP', 'APSO', 'Narrative', 'Problem-based', 'H&P', 'Concise', 'Standard', 'Detailed'].forEach(function (t) {
+    ['Concise', 'Standard', 'Detailed'].forEach(function (t) {
       var b = [].slice.call(card.querySelectorAll('button')).find(function (x) { return (x.textContent || '').trim() === t; });
       if (b) out.push({ label: t, el: b });
     });
@@ -22376,6 +22706,44 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     '#captureCard,#noteCard,#emrCard,#outcomesCard{display:none!important;}',
     'body.ez3adv #noteCard,body.ez3adv #emrCard,body.ez3adv #outcomesCard{display:block!important;}',
     'body.ez3adv #noteCard button[onclick*="generateNote"],body.ez3adv #noteCard button[onclick*="regenerateNote"],body.ez3adv #noteCard .ne-regen{display:none!important;}',
+    /* onenote-1.2.0: ONE NOTE ON THE SCREEN - AND NEVER ZERO.
+       The rule above shows #noteCard while the review workspace is open, and
+       revwork-1.2.0 ADOPTS the app's own #noteBox (and its one .mls-fp-fmt
+       formatted view) into #mlsRevSlot inside it, so the guided flow's
+       #ez3Note - a two-way mirror of that same note - is a second copy and
+       should yield.
+
+       WHY THE GUARD MOVED (owner-measured on the booted page, 2026-09-11,
+       four body states, counting every .mls-fp-fmt / #ez3Note / #noteBox with
+       offsetParent !== null and a non-zero height):
+
+           vfocus ON  + adv CLOSED   2 copies   <- the defect
+           vfocus ON  + adv OPEN     2 copies   <- the defect the owner saw
+           vfocus OFF + adv OPEN     1 copy
+           vfocus OFF + adv CLOSED   1 copy
+
+       onenote-1.1.0 wrote this yield as `body.ez3adv:not(.mls-vfocus)`, on the
+       reasoning that visit-focus already folds #noteCard's own renderings
+       (#noteEmpty, .mlsf-bar, .mlsf-note, .mls-opaddword) so the workspace
+       shows no note. That reasoning was true of those four selectors and false
+       of the card: feat_mls_visit_focus.js stamps body.mls-vfocus on EVERY
+       shipping shell (this same file loads it on idle), so the :not() never
+       matched anywhere, and revwork's adoption moves #noteBox and its
+       .mls-fp-fmt OUT of the #noteCard-scoped hides into #mlsRevSlot, where
+       vf-1.2.0's rules no longer reach it and its comment says the lower
+       .mls-fp-fmt is deliberately left alone. Two live copies, in the two
+       states a doctor is actually in.
+
+       The honest guard is not a claim about which modules are loaded - it is
+       whether the workspace IS SHOWING THE NOTE RIGHT NOW. revwork's reconcile
+       measures its own slot (offsetParent + height + real text) and stamps
+       body.mls-revnote, and clears it on release/revert. So the flow's copy
+       yields exactly when the workspace is holding a visible one, and never
+       when it is not - which is what keeps this from ever reading 1 -> 0.
+       Pinned by the booted-page count in tests/review-workspace-proof.js: one
+       visible copy in all four states. The record, Sign and Send controls live
+       OUTSIDE this card on purpose, so nothing actionable moves either way. */
+    'body.mls-revnote .ez3-notecard{display:none!important;}',
     '.ez3-advrow{display:flex;justify-content:center;margin:2px 0 0;}',
     '.ez3-advrow button{background:none;border:0;color:#C9DCD2;font-size:12px;font-weight:700;cursor:pointer;padding:7px 10px;}',
     '.ez3-advrow button:hover{color:#EAF1EE;}',
@@ -23601,6 +23969,45 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     })();
   }
 
+  /* Opening the Doctor screen is navigation, not a new-visit mutation. When
+     the header already proves one patient, adopt that exact identity into the
+     Easy room without calling selectPatient/calStartVisit, clearing editor
+     bytes, changing the canonical binding, recording, or generating. A saved
+     exact binding is reused as display context; a conflicting binding refuses
+     adoption instead of turning shared source text into the wrong visit. */
+  function adoptActiveVisitForDoctorOpen() {
+    if (S.appt && S.locked) return true;
+    var p = canonicalActivePatient();
+    if (!p || p.id == null || !p.name) return false;
+    var b = currentVisitBinding(), bp = b && b.patient, ctx = b && b.visitContext || {};
+    if (b) {
+      if (!bp || String(bp.patientId || bp.id || '') !== String(p.id)) return false;
+      if (!nameMatch(bp.name, p.name) || dobConflicts(bp.dob, p.dob) || mrnConflicts(bp, p)) return false;
+    }
+    var appointmentId = String(ctx.appointmentId || '').trim();
+    var a = {
+      id: String(ctx.sourceId || appointmentId || '').trim() || null,
+      appointmentId: appointmentId,
+      appt_date: String(ctx.visitDate || '').slice(0, 10),
+      provider: String(ctx.provider || ''),
+      name: p.name || '', dob: p.dob || '', mrn: p.mrn || '',
+      _patientId: p.id, _pt: true
+    };
+    S.appt = a;
+    S.locked = { id: p.id, name: a.name, dob: a.dob, key: 'pt|' + String(p.id) };
+    return true;
+  }
+  function generationWarningDuplicatesLane(message) {
+    try {
+      var flow = window.__mlsEz3Flow, reader = flow && flow.genRun && flow.genRun.hint;
+      var settledHint = typeof reader === 'function' ? reader() : null;
+      var settledText = String(settledHint && settledHint.text || '').trim();
+      var warningText = String(message || '').trim();
+      return !!(settledHint && settledHint.state === 'failed' && warningText &&
+        (settledText === warningText || settledText.indexOf(warningText + ' ') === 0));
+    } catch (e) { return false; }
+  }
+
   /* =======================================================================
    *  renderers
    * ===================================================================== */
@@ -23897,8 +24304,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       try { apx = (isFn(window.verifiedActivePatient) && window.verifiedActivePatient()) || null; } catch (e) {}
       if (!apx) { try { apx = (isFn(window.activePatient) && window.activePatient()) || null; } catch (e) {} }
       if (apx && apx.name && apx.id != null) {
-        h += '<button type="button" class="ez3-big" id="ez3ActiveGo">🎙 Start Recording — ' + esc(apx.name) +
-             '<small>' + (apx.dob ? esc(String(apx.dob)) + ' · ' : '') + (function(){var dl=esc(visitDayShort());return dl==='today'?'no appointment today':'no appointment on '+dl;})() + ' — records as an ad-hoc visit</small></button>';
+        h += activePatientHomeAction(apx, (apx.dob ? esc(String(apx.dob)) + ' · ' : '') + (function(){var dl=esc(visitDayShort());return dl==='today'?'no appointment today':'no appointment on '+dl;})() + ' — records as an ad-hoc visit');
       }
       h += emptyTodayHtml();
     } else {
@@ -23934,10 +24340,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         h += '<div style="text-align:center"><span class="ez3-nowtag' + (bpIsNow ? '' : ' next') + '">' +
              (bpIsNow ? 'HAPPENING NOW · ' + esc(t12(bpRow)) : (bpRow ? 'SELECTED PATIENT · ' + esc(t12(bpRow)) : 'SELECTED PATIENT')) +
              '</span></div>' +
-             '<button type="button" class="ez3-big" id="ez3ActiveGo">🎙 Start Recording — ' + esc(bp.name) +
-             '<small>' + (bpRow ? dobLabelPlain(bpRow) + ' · ' + esc(visitType(bpRow))
-                                : dobLabelPlain(bp) + ' · ' + (function () { var dl = visitDayShort(); return dl === 'today' ? 'no appointment today' : 'no appointment on ' + esc(dl); })() + ' — records as an ad-hoc visit') +
-             '</small></button>';
+             activePatientHomeAction(bp, (bpRow ? dobLabelPlain(bpRow) + ' · ' + esc(visitType(bpRow))
+                                : dobLabelPlain(bp) + ' · ' + (function () { var dl = visitDayShort(); return dl === 'today' ? 'no appointment today' : 'no appointment on ' + esc(dl); })() + ' — records as an ad-hoc visit'));
       }
       /* The day is never dropped. When the banner patient leads, NOW/NEXT
          demote to the existing "➡ <name>" switch form — the same visual
@@ -23999,8 +24403,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         var bpWhy = bpAmbiguous
           ? 'a matching appointment is on ' + esc(visitDayShort()) + '’s schedule, but more than one chart shares this name and date of birth — records as an ad-hoc visit until you pick the right chart'
           : 'not on ' + esc(visitDayShort()) + '’s schedule — records as an ad-hoc visit';
-        h += '<button type="button" class="ez3-big ok" id="ez3ActiveGo">🎙 Start Recording — ' + esc(bp.name) +
-             '<small>the patient on your banner · ' + dobLabelPlain(bp) + ' · ' + bpWhy + '</small></button>';
+        h += activePatientHomeAction(bp, 'the patient on your banner · ' + dobLabelPlain(bp) + ' · ' + bpWhy, 'ok');
       }
     }
     /* one obvious action at a time: Choose only makes sense once rows exist */
@@ -24038,12 +24441,40 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     on('ez3ActiveGo', function () {
       var p = bannerPatient();
       if (!p) return;
+      var shownContinue = false;
+      try { shownContinue = $('ez3ActiveGo').getAttribute('data-continue') === '1'; } catch (eC) {}
+      var ownsContinue = homeOwnsContinuableVisit(p);
+      /* If ownership changed after paint, repaint instead of turning a button
+         the doctor read as one action into the other action under their hand. */
+      if (shownContinue !== ownsContinue) { render(); return; }
+      if (ownsContinue) { setEasyMode('doctor', 'doctor', 'home-continue-visit', true); return; }
       /* Prefer the appointment row: lockAndStartPatient builds an _pt row with
          id:null, which throws the Athena appointment id away. That is correct
          only when the patient genuinely has no appointment on this day. */
       var row = bannerRowToday();
       if (row) { lockAndStart(row, { record: true }); return; }
       lockAndStartPatient(p, { record: true });
+    });
+    /* typedoor-1.0.0: the same binding the hero performs, with record:false.
+       One press: the visit opens locked to the banner patient and the notes
+       box opens on top of it. Nothing records and nothing generates. */
+    on('ez3ActiveNotes', function () {
+      var p = bannerPatient();
+      if (!p) return;
+      if (homeOwnsContinuableVisit(p)) {
+        setEasyMode('doctor', 'doctor', 'home-type-or-paste', true);
+        openTypeOrPasteNotes();
+        return;
+      }
+      /* The SAME row preference as the hero: lockAndStartPatient throws the
+         Athena appointment id away, which is only correct when the patient
+         really has no appointment on this day. A refusal (a cross-patient
+         conflict, a visit that could not be opened) returns false and paints
+         its own sentence - do not open a notes box over it. */
+      var row = bannerRowToday();
+      var opened = row ? lockAndStart(row, { record: false }) : lockAndStartPatient(p, { record: false });
+      if (opened === false) return;
+      openTypeOrPasteNotes();
     });
     on('ez3Choose', function () { S.screen = 'choose'; S.expanded = null; S.showCount = 5; S.query = ''; render(); });
     on('ez3Prep', openPrep);
@@ -24473,7 +24904,33 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   /* b432: quick tools are part of the canonical doctor renderer. They used to
      arrive from __mlsEz3Flow on a MutationObserver/timer, which created a
      second transcript/recorder lane and shifted the room after first paint. */
+  /* ===== onechiprow-1.0.0 (2026-09-11) — ONE CHIP ROW, NOT TWO =============
+     MEASURED on b1230: the visit room carried the quick-chip row TWICE - the
+     flow lane's seven visible chips and these seven at zero size behind
+     `#mlsEz3Body.ez3fl-top-owns #ez3QuickTools{display:none!important}`.
+     Hiding the loser was the right call when it was made (the phone lane hides
+     the whole flow lane, so THIS row is the only one there and must stay), but
+     a hidden twin of every control is still a second set of controls in the
+     document: a duplicate for anything that resolves a chip by class, and a
+     second copy of every label for the reach inventory.
+
+     So the row is not RENDERED while the lane's row is on screen, and the CSS
+     rule stays as the belt for the frame between a paint and the lane's next
+     pass. Ownership is read from the same two facts the lane publishes - its
+     body class and a live `.ez3fl-record .ez3fl-quick` - never from a guess,
+     and the 700 ms poll repaints the room when that answer changes, so the
+     moment the lane stops owning the top (the phone lane, a staff round-trip,
+     a lane that failed to mount) these chips come back on their own. */
+  function quickToolsLaneOwns() {
+    try {
+      var body = $('mlsEz3Body');
+      if (!body || !body.classList || !body.classList.contains('ez3fl-top-owns')) return false;
+      return !!body.querySelector('.ez3fl-record .ez3fl-quick');
+    } catch (e) { return false; }
+  }
   function visitQuickToolsHtml() {
+    S._qtLaneOwns = quickToolsLaneOwns();
+    if (S._qtLaneOwns) return '';
     var transcriptReady = S.phase !== 'gen' && S.phase !== 'note';
     /* UI rework slice (owner /goal 2026-07-23: "free the doctor from all the
        buttons"): the seven always-on chips collapse behind ONE Tools chip.
@@ -24614,13 +25071,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       '<button type="button" class="ez3-back" id="ez3HomeTop" title="Go straight to the visit home screen - everything here is saved">🏠 Home</button>' +
       '</div>';
     h += quickStripHtml();
-    if (S.lastWarn) {
+    var generationWarnEcho = S.lastWarn && generationWarningDuplicatesLane(S.lastWarn);
+    if (S.lastWarn && !generationWarnEcho) {
       var calmNotice = /^(?:Athena appointment not linked|Unscheduled visit)\b/.test(S.lastWarn);
       /* wfbindbar-1.0.0: a warning whose stated cure is "re-pull this day"
          carries that cure as a button, instead of sending the doctor away. */
       var bindCureHere = /re-pull this day/i.test(S.lastWarn) && bindCureOffered();
       h += '<div class="' + (calmNotice ? 'ez3-infobar' : 'ez3-warnbar') + '" role="status">' + (calmNotice ? '' : '⚠️ ') + esc(S.lastWarn) +
-        (bindCureHere ? '<button type="button" class="ez3-sm" id="ez3BindNow" title="Sends athenaOne’s Day view to ' + esc(bindCureDay()) + ', re-pulls that day’s schedule, then re-checks this exact appointment. Reads Athena; writes nothing.">🔗 Bind this visit — re-pull this day</button>' : '') +
+        (bindCureHere ? '<button type="button" class="ez3-sm" id="ez3BindNow" title="Sends athenaOne’s Day view to ' + esc(bindCureDay()) + ', re-pulls that day’s schedule, then re-checks this exact appointment. Reads Athena; writes nothing.">🔗 Match this visit to its Athena appointment</button>' : '') +
         '</div>';
     }
     h += '<div class="ez3-card">' +
@@ -24647,10 +25105,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        always editable before generation and mirrors #transcript both ways. */
     if (a && S.phase !== 'gen' && S.phase !== 'note') {
       h += '<div class="ez3-card ez3-transcript-card">' +
-             '<div class="ez3-transcript-head"><label for="ez3Transcript">Visit transcript</label>' +
-               '<span>' + (S.phase === 'rec' ? '🔴 Recording now' : 'Type, paste, or resume recording') + '</span></div>' +
+             '<div class="ez3-transcript-head"><label for="ez3Transcript">Visit transcript or doctor dictation</label>' +
+               '<span>' + (S.phase === 'rec' ? '🔴 Recording now' : 'Record the visit, dictate your post-visit summary, or type/paste notes here.') + '</span></div>' +
              (S.phase === 'rec' ? '<div class="ez3-timer">' + fmtTimer() + '</div>' : '') +
-             '<textarea class="ez3-transcript" id="ez3Transcript" placeholder="The visit conversation appears here. You can also type or paste notes before generating."></textarea>' +
+             '<textarea class="ez3-transcript" id="ez3Transcript" placeholder="Record the visit, dictate your post-visit summary, or type/paste notes here."></textarea>' +
              '<div class="ez3-transcript-meta"><span id="ez3TranscriptCount">0 words captured</span>' +
                '<span><strong>Every recording segment is combined</strong> into one note.</span></div>' +
            '</div>';
@@ -24676,7 +25134,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
            '<p class="ez3-status">MLS is writing the note for ' + esc(nm) + '. It appears here the moment it’s ready.</p>';
     } else if (S.phase === 'note') {
       var signedNow = S.signedAt > 0;
-      h += '<div class="ez3-card">' +
+      /* onenote-1.0.0: .ez3-notecard is the hook the stylesheet uses to yield
+         this copy of the note to #noteCard while the review workspace is open.
+         Nothing else in this branch carries it - the record, Sign and Send
+         controls below stay on screen in both states. */
+      h += '<div class="ez3-card ez3-notecard">' +
              '<textarea class="ez3-note" id="ez3Note" ' + (S.editing ? '' : 'readonly') + '></textarea>' +
              '<div class="ez3-chips" id="ez3StyleChips"></div>' +
              '<div class="ez3-row2" style="margin:10px 0 0">' +
@@ -24685,6 +25147,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
                '<button type="button" class="ez3-sm" id="ez3Copy">📋 Copy for Athena</button>' +
              '</div>' +
            '</div>';
+      /* recmore-1.1.0: THE NOTE SCREEN'S RECORD DOOR IS NOT RENDERED HERE, AND
+         DELIBERATELY SO. recmore-1.0.0 added an "Add more to this recording"
+         chip in this branch, inside a .ez3-row2 - and MEASURED in the booted
+         app it never reached the doctor: feat_mls_visit_focus.js folds every
+         .ez3-row2 child in a locked visit behind "Visit shortcuts", exactly as
+         it folds #ez3Rec2 on the stopped screen. A door nobody can see is not
+         a door, and a second one beside a door that works is the "two controls
+         for one job" defect walkfix-1.0.0 already paid for. The one door is
+         the lane's own record pill (.ez3fl-recbtn -> toggleTopRecording), and
+         syncTopLane now keeps it on screen once a note exists. */
       if (!signedNow && signReady()) {
         h += '<button type="button" class="ez3-big" id="ez3Sign">✔ Review &amp; Sign' +
              '<small>Signs and saves the note in MLS — never signs anything in Athena</small></button>' +
@@ -27011,6 +27483,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if (S.mode === 'doctor' && (S.screen === 'home' || S.screen === 'choose') && portalInviteReady() !== !!S._portalReady) { render(); return; }
       if (S.mode === 'doctor' && S.screen === 'doctor') {
         var before = S.phase; computePhase();
+        /* onechiprow-1.0.0: the room renders its own chip row only while the
+           flow lane is not showing one. That answer can change with no phase
+           change at all - the phone lane hides the lane outright, a staff
+           round-trip removes it - so the room repaints when it flips and the
+           chips can never be missing for longer than one tick. */
+        if (S.phase === before && quickToolsLaneOwns() !== !!S._qtLaneOwns) { render(); return; }
         if (S.phase !== before) render();
         else if (S.phase === 'rec') { var tm = wrap() && wrap().querySelector('.ez3-timer'); if (tm) tm.textContent = '🔴 ' + fmtTimer(); syncTx(); }
         else {
@@ -27223,7 +27701,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     version: VER,
     installed: true,
     open: function (screen) {
-      return setEasyMode('doctor', screen || 'home', 'api-open-doctor', true);
+      var target = screen || 'home';
+      if (target === 'doctor') adoptActiveVisitForDoctorOpen();
+      return setEasyMode('doctor', target, 'api-open-doctor', true);
     },
     close: function () {},   /* kept for compat — the workspace IS the tab */
     resetSession: resetEasySession,
@@ -30093,7 +30573,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function genBtnResolve() { var g = $('genBtn'); if (g && !g.disabled) return g; return byTextGuarded(/generate note/i); }
   function styleChipHosts() {
     var out = [], card = $('captureCard'); if (!card) return out;
-    ['SOAP', 'APSO', 'Narrative', 'Problem-based', 'H&P', 'Concise', 'Standard', 'Detailed'].forEach(function (t) {
+    ['Concise', 'Standard', 'Detailed'].forEach(function (t) {
       var b = [].slice.call(card.querySelectorAll('button')).find(function (x) { return (x.textContent || '').trim() === t; });
       if (b) out.push({ label: t, el: b });
     });
@@ -32329,7 +32809,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function genBtnResolve() { var g = $('genBtn'); if (g && !g.disabled) return g; return byTextGuarded(/generate note/i); }
   function styleChipHosts() {
     var out = [], card = $('captureCard'); if (!card) return out;
-    ['SOAP', 'APSO', 'Narrative', 'Problem-based', 'H&P', 'Concise', 'Standard', 'Detailed'].forEach(function (t) {
+    ['Concise', 'Standard', 'Detailed'].forEach(function (t) {
       var b = [].slice.call(card.querySelectorAll('button')).find(function (x) { return (x.textContent || '').trim() === t; });
       if (b) out.push({ label: t, el: b });
     });
@@ -34266,7 +34746,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function genBtnResolve() { var g = $('genBtn'); if (g && !g.disabled) return g; return byTextGuarded(/generate note/i); }
   function styleChipHosts() {
     var out = [], card = $('captureCard'); if (!card) return out;
-    ['SOAP', 'APSO', 'Narrative', 'Problem-based', 'H&P', 'Concise', 'Standard', 'Detailed'].forEach(function (t) {
+    ['Concise', 'Standard', 'Detailed'].forEach(function (t) {
       var b = [].slice.call(card.querySelectorAll('button')).find(function (x) { return (x.textContent || '').trim() === t; });
       if (b) out.push({ label: t, el: b });
     });
@@ -35940,7 +36420,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function findBtnByText(re) { return byTextGuarded(re); }
   function styleChipHosts() {
     var out = [], card = $('captureCard'); if (!card) return out;
-    ['SOAP', 'APSO', 'Narrative', 'Problem-based', 'H&P', 'Concise', 'Standard', 'Detailed'].forEach(function (t) {
+    ['Concise', 'Standard', 'Detailed'].forEach(function (t) {
       var b = [].slice.call(card.querySelectorAll('button')).find(function (x) { return (x.textContent || '').trim() === t; });
       if (b) out.push({ label: t, el: b });
     });
@@ -42825,10 +43305,34 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function build(){
     var ps=document.getElementById('ptSearch'); if(!ps) return false;
     if(ps.__mlsPick) return true; ps.__mlsPick=1;
-    var host=ps.parentElement; if(getComputedStyle(host).position==='static') host.style.position='relative';
+    var host=ps.parentElement;
     var dd=document.createElement('div'); dd.id='mls-pick-dd';
-    dd.style.cssText='position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:2147481000;background:#1E2B24;border:1px solid rgba(143,216,190,.35);border-radius:12px;box-shadow:0 16px 44px rgba(0,0,0,.45);max-height:320px;overflow:auto;display:none;color:#EAF1EC;font:13px system-ui,-apple-system,"Segoe UI",sans-serif';
-    host.appendChild(dd);
+    /* ===== rowclick-1.0.0 (2026-09-11) — THE PICKER STOPS EATING ROW CLICKS
+       MEASURED on b1230, and again in the harness at 1366x900 with eight
+       patients: with two characters typed, #mls-pick-dd rendered 1120x320 as
+       an ABSOLUTE panel hanging off the search row, directly over the top of
+       #ptList. document.elementFromPoint over the first row's top third
+       resolved to .mls-pick-row, not to the row - and .mls-pick-row's
+       mousedown calls choose(), which writes THAT person's name into the
+       search box. That is exactly the owner's report: two presses at the top
+       of a patient row did nothing, and one of them rewrote the search box
+       with another patient's name. Only the part of the row below the panel
+       selected the patient.
+
+       The panel is not a hint and must stay clickable, so pointer-events:none
+       is not the cure here. It is given its OWN space instead: a normal block
+       between the search row and the list, so it can never be over a row and
+       every pixel of every row belongs to that row. Closed it is display:none
+       and occupies nothing, exactly as before.
+
+       It is a SIBLING of the search row, not a child: .pt-search is a flex
+       row, and an in-flow child would have sat beside the input. */
+    /* 320px of panel in the flow pushed the roster almost off a 900px screen -
+       measured, one row left. It scrolls inside itself, so a shorter panel
+       loses nothing and keeps the list the doctor is reading on screen. */
+    dd.style.cssText='position:static;margin:6px 0 2px;background:#1E2B24;border:1px solid rgba(143,216,190,.35);border-radius:12px;box-shadow:0 16px 44px rgba(0,0,0,.45);max-height:min(220px,30vh);overflow:auto;display:none;color:#EAF1EC;font:13px system-ui,-apple-system,"Segoe UI",sans-serif';
+    if(host && host.parentNode) host.parentNode.insertBefore(dd, host.nextSibling);
+    else if(host) host.appendChild(dd);
     function hide(){ dd.style.display='none'; }
     function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
     function render(q){
@@ -61750,14 +62254,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 }catch(e){}})(); /* xdc-2.0.3: backend hot refreshes evict b419's observer/list owner; every selected date stays in native Easy and exact actions still fail closed */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{var A='feat_mls_portal_request_inbox.js';if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v=20260717prq102';s.setAttribute('data-mls-asset',A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* prq-1.0.0: exact-patient portal request clinician review inbox; no prescribing, pull, extension, or Athena action */
 ;(function(){try{
-  var A='feat_mls_strip_day_couple.js',V='sdc-2.0.2',old=window.__mlsStripDayCouple||null;
+  var A='feat_mls_strip_day_couple.js',V='sdc-2.1.0',old=window.__mlsStripDayCouple||null;
   if(old&&old.installed&&old.version===V)return;
   if(old){try{if(typeof old.revert==='function')old.revert();}catch(e0){}try{delete window.__mlsStripDayCouple;}catch(e1){window.__mlsStripDayCouple=null;}}
   var stale=document.querySelectorAll('script[data-mls-asset="'+A+'"]'),i,node;
   for(i=0;i<stale.length;i++){node=stale[i];if(node&&node.parentNode)node.parentNode.removeChild(node);}
   ['mlsSdcQuick','mlsSdcStyle'].forEach(function(id){var n=document.getElementById(id);if(n&&n.parentNode)n.parentNode.removeChild(n);});
-  var s=document.createElement('script');s.src=A+'?v=20260808sdc202perf1';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);
-}catch(e){}})(); /* sdc-2.0.2: hidden-view switches avoid forced layout; one native Easy quick strip remains */
+  var s=document.createElement('script');s.src=A+'?v=20260910sdc210';s.setAttribute('data-mls-asset',A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);
+}catch(e){}})(); /* sdc-2.1.0: header choice owns the workspace; restored appointment state can only offer a patient switch */
 /* REJECTED_EEV_ROLLBACK_START */
 ;(function(){try{
   var A='feat_mls_exact_encounter_verify.js',old=window.__mlsExactEncounterVerify||null,stale,i,node;
@@ -62216,7 +62720,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var m = NAV.exec(q); if (!m) return null;
     var raw = String(m[1] || '').trim().toLowerCase();
     if (raw === 'templates' || raw === 'template') { try { if (typeof window.openTemplates === 'function') { window.openTemplates(); api.navigated++; return { reply: 'Opened Templates.' }; } } catch (e) {} return null; }
-    if (raw === 'settings' || raw === 'setting') { try { if (typeof window.openSettings === 'function') { window.openSettings(); api.navigated++; return { reply: 'Opened Settings.' }; } } catch (e) {} return null; }
+    if (raw === 'settings' || raw === 'setting') { try { if (typeof window.openSettings === 'function') { window.openSettings({ userInitiated: true }); api.navigated++; return { reply: 'Opened Settings.' }; } } catch (e) {} return null; }
     var v = VIEWS[raw]; if (!v) return null;
     try { if (typeof window.showView === 'function') { window.showView(v); api.navigated++; return { reply: 'Opened ' + raw.charAt(0).toUpperCase() + raw.slice(1) + '.' }; } } catch (e) {}
     return null;
@@ -64388,7 +64892,7 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
   } catch (_) {}
 })();
 
-/* ===== kal-1.0.0 - athenaOne keep-alive watchdog (app-side; ext 3.0.84 is frozen) =====
+/* ===== kal-1.0.1 - athenaOne keep-alive watchdog (app-side; ext 3.0.84 is frozen) =====
    Owner 2026-08-30: "the extensions keep alive doesnt really work well". The
    extension's own keep-alive (ka-3066 synthetic events + ka84 alarm GET) lives
    in an MV3 service worker that Chrome can stop, and a stopped worker keeps no
@@ -64397,13 +64901,13 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
    setTimeout, and every minute asks the extension for its health receipt
    (mlsExtHealth - read-only). Waking the worker to answer ALSO re-arms its own
    alarms, so the probe itself is half the cure. When the receipt shows the
-   native keep-alive tick is STALE (>210s; its healthy period is 180s) and
-   athenaOne is present and NOT signed out, it escalates once per 8 minutes to
-   mlsAppGoHome - a real, serialized Home click in the athena tab that resets
-   the client idle watcher. Never while a pull or recording runs; never when
-   signed out (a login page is the doctor's to handle - MLS says so instead of
-   hammering it). Status + a bounded ledger live at window.__mlsKeepAliveWatch
-   so a probe or a future Settings line can read exactly what happened. */
+   native keep-alive tick is STALE (>210s; its healthy period is 180s), it
+   reports that state without navigating athenaOne. The health request already
+   wakes the extension worker and re-arms its native alarm. A background
+   watchdog must never move a clinician away from an open encounter; Home
+   navigation remains owned by explicit pull/recovery flows. Status + a bounded
+   ledger live at window.__mlsKeepAliveWatch so a probe or a future Settings
+   line can read exactly what happened. */
 ;(function () {
   'use strict';
   try {
@@ -64413,7 +64917,7 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
     window.__mlsKeepAliveWatch = ST;
     function note(entry) { try { entry.at = Date.now(); ST.ledger.push(entry); if (ST.ledger.length > 24) ST.ledger.shift(); } catch (e) {} }
     function busyNow() {
-      try { var s = window.__mlsDayHistoryPull && window.__mlsDayHistoryPull.state; if (s && s.busy) return 'pull'; } catch (e) {}
+      try { var s = window.__mlsDayHistoryPull && window.__mlsDayHistoryPull.state; if (s && (s.running || s.busy)) return 'pull'; } catch (e) {}
       try { if (typeof window.__mlsPtsPullActive === 'function' && window.__mlsPtsPullActive()) return 'pull'; } catch (e) {}
       try { if (typeof isRecording === 'function' && isRecording()) return 'recording'; } catch (e) {}
       return '';
@@ -64442,13 +64946,8 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
       if (age <= 210000) { ST.lastVerdict = 'native-keepalive-healthy'; return; }
       var why = busyNow();
       if (why) { ST.lastVerdict = 'stale-but-' + why + '-running'; return; }
-      if (now - ST.lastGoHomeAt < 480000) { ST.lastVerdict = 'stale-cooling-down'; return; }
-      ST.lastGoHomeAt = now; ST.goHomes++;
-      ST.lastVerdict = 'go-home-sent';
-      note({ act: 'goHome', kaAgeMs: age });
-      ask('mlsAppGoHome', 'mlsAppGoHomeResult', 30000).then(function (r) {
-        note({ act: 'goHome-result', ok: !!(r && r.ok), reason: r && (r.reason || r.error) || '' });
-      });
+      ST.lastVerdict = 'native-keepalive-stale-no-navigation';
+      note({ act: 'health-stale', kaAgeMs: age });
     }
     function tick() { ask('mlsExtHealth', 'mlsExtHealthResult', 12000).then(onHealth); }
     try {
@@ -65227,6 +65726,69 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
     for (var i = 0; i < ADOPT.length; i++) { if (adoptInto(host, ADOPT[i])) n++; }
     return n;
   }
+  /* =======================================================================
+   *  4b. WHO IS SHOWING THE NOTE   (onenote-1.2.0, owner-measured 2026-09-11)
+   * -----------------------------------------------------------------------
+   * The guided flow renders its own copy of the note (#ez3Note inside
+   * .ez3-notecard) and this panel holds the app's own copy, so exactly one of
+   * them has to yield. The stylesheet used to decide that by naming MODULES -
+   * "yield while body.ez3adv and visit-focus is not loaded" - and measured on
+   * the booted page that selector never matched: visit-focus is on every
+   * shipping shell, so BOTH copies were on screen in both of the states a
+   * doctor works in.
+   *
+   * This is the fact the rule actually needs, and only this module can answer
+   * it: IS THE WORKSPACE SHOWING THE NOTE RIGHT NOW. Not "is the panel built",
+   * not "is the card displayed" - is there, inside #mlsRevSlot, a formatted
+   * view or a note box that has a layout box, a non-zero height and real text
+   * in it. Everything that can hide it - the unconditional #noteCard hide, the
+   * body.ez3adv reveal, visit-focus's mls-note-live reveal, the formatter's own
+   * inline display flip - is already accounted for by asking the browser.
+   *
+   * Stamped on every reconcile, cleared the moment the panel gives the note
+   * back (releaseAdopted) or the module reverts, so the flow's copy can never
+   * be hidden by a class left behind after the thing it named is gone.
+   * ===================================================================== */
+  var REVNOTE_CLASS = 'mls-revnote';
+  function nodeShown(el) {
+    return safe(function () {
+      if (!el || el.offsetParent === null) return false;
+      var r = isFn(el.getBoundingClientRect) ? el.getBoundingClientRect() : null;
+      return !!(r && r.height > 0);
+    }, false);
+  }
+  /* A copy the doctor can READ. An empty box or an empty formatted panel is
+     not a second copy of anything, and treating it as one is exactly how the
+     previous rule could have taken the last note off the screen. */
+  function slotHasVisibleNote() {
+    return safe(function () {
+      var slot = $(ID.slot);
+      if (!slot || !isFn(slot.querySelectorAll)) return false;
+      var nodes = slot.querySelectorAll('.mls-fp-fmt,#noteBox');
+      for (var i = 0; i < nodes.length; i++) {
+        var el = nodes[i];
+        if (!nodeShown(el)) continue;
+        var txt = '';
+        if (el.tagName === 'TEXTAREA') txt = String(el.value || '');
+        else {
+          var b = isFn(el.querySelector) ? el.querySelector('.fmt-body') : null;
+          txt = String((b ? b.textContent : el.textContent) || '');
+        }
+        if (txt.trim()) return true;
+      }
+      return false;
+    }, false);
+  }
+  function markRevNote() {
+    var on = slotHasVisibleNote();
+    safe(function () { if (document.body) document.body.classList.toggle(REVNOTE_CLASS, on); });
+    return on;
+  }
+  function clearRevNote() {
+    safe(function () { if (document.body) document.body.classList.toggle(REVNOTE_CLASS, false); });
+    return true;
+  }
+
   /* THE OTHER HALF OF EVERY MOVE. revert() (and a rebuild of the panel) must
      put the app's own controls back in the card, or a hot reload of this one
      module would take the doctor's note and his whole action row with it. */
@@ -65248,6 +65810,9 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
       }(_adopted[i]));
     }
     _adopted = [];
+    /* onenote-1.2.0: the note has just gone back to #noteCard, so the flow's
+       copy must stop yielding to a slot that no longer holds one. */
+    clearRevNote();
     return true;
   }
 
@@ -65958,6 +66523,7 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
     unhideFlow();
     relabelAdv();
     syncPanel();
+    markRevNote();                             /* onenote-1.2.0 */
     dedupeNextDoor();                          /* reviewfix-1.0.0 */
     enforceEdit();                             /* walkfix-1.0.0 (b1184) */
     watchWrap();
@@ -66122,6 +66688,10 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
     adopt: adoptAll,
     release: releaseAdopted,
     adopted: function () { return _adopted.map(function (a) { return a.key; }); },
+    /* onenote-1.2.0: the one-note seam, readable by a suite */
+    REVNOTE_CLASS: REVNOTE_CLASS,
+    slotHasVisibleNote: slotHasVisibleNote,
+    markRevNote: markRevNote,
     nextDoors: nextDoors,
     dedupeNextDoor: dedupeNextDoor,
     build: buildPanel,
@@ -66153,6 +66723,7 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
          last-step action row; removing the panel without releasing them would
          take the doctor's note and every note action out of the document. */
       safe(releaseAdopted);
+      safe(clearRevNote);                      /* onenote-1.2.0 */
       safe(function () { var r = document.getElementById(ID.root); if (r && r.parentNode) r.parentNode.removeChild(r); });
       _iv = _deb = _bodyObs = _wrapObs = _noteObs = null;
       _wrapWatched = _noteWatched = null;
@@ -66210,12 +66781,21 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
  * carried over byte-for-byte from whoever painted it, so a repaint can never
  * rename a patient, drop their appointment time, or double-escape a name.
  *
- * WHEN THE UP-NOW PATIENT IS NOT THE ACTIVE PATIENT IT REPAINTS NOTHING. That
- * case already has an honest owner - the schedule anchor's "Up now on the
- * schedule: <name>. You are working in a different chart, so nothing was
- * switched." strip, and today's lateness strip - and a second sentence about
- * it is precisely the second banner this must not add. Standing down is the
- * whole behaviour there.
+ * WHEN THE UP-NOW PATIENT IS NOT THE ACTIVE PATIENT (upnowtail-1.0.1). This
+ * used to repaint nothing at all, and that was the one hole left in the very
+ * defect this module exists to close: with a different chart open, the
+ * load-time "loaded &amp; ready. Hit Start recording." sentence simply stayed
+ * on the screen, now describing a patient who was not open. It is split in
+ * two. When both names are decidable and they are DIFFERENT people, the same
+ * tail is replaced with the truth and the next press - "not the chart you have
+ * open - open this patient to work on their visit." That is still one sentence
+ * in the one banner, never a second banner: the schedule anchor's own "You are
+ * working in a different chart" strip is a separate surface and is untouched.
+ * When nothing is known - no active chart at all, which is exactly the
+ * condition the shell's _calLoadNextUp paints the ready sentence under, or a
+ * single-token name this module refuses to reason about - it still stands down
+ * and leaves today's surface alone, because a guess would only be a newer lie
+ * in place of the old one.
  *
  * REPAINTS ON THE EVENTS THE FLOW LANE ALREADY EMITS. The engine's
  * mls:generation-started / -settled / -refused, mls:active-patient-changed,
@@ -66256,7 +66836,13 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
     generating: 'generating your note - your transcript is safe.',
     transcript: 'transcript captured - Generate one note.',
     note: 'note ready - review, then send to Athena.',
-    sent: 'in Athena - this note is written and verified.'
+    sent: 'in Athena - this note is written and verified.',
+    /* upnowtail-1.0.1: the state that used to have NO sentence, which is why
+       the stale "loaded &amp; ready. Hit Start recording." survived on a screen
+       where a different chart was open. It is the one state whose sentence is
+       about the banner's patient rather than the open visit, so it names the
+       next press and nothing else. */
+    away: 'not the chart you have open - open this patient to work on their visit.'
   };
   function upNowUnescape(s) {
     return String(s == null ? '' : s)
@@ -66282,6 +66868,12 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
   function upNowKeyTokens(v) {
     return upNowNormName(v).split(' ').filter(function (x) { return x.length > 1; }).sort();
   }
+  /* upnowtail-1.0.1: "can this name decide anything at all". A blank chart and
+     a one-token name are both refused by upNowSamePerson, but they are not the
+     same fact: the first is an ANSWER (nothing is open), the second is an
+     inability to tell. Only a name this returns true for may be used to say
+     out loud that a DIFFERENT patient is open. */
+  function upNowNameKnown(v) { return upNowKeyTokens(v).length >= 2; }
   function upNowSamePerson(a, b) {
     var x = upNowKeyTokens(a), y = upNowKeyTokens(b);
     /* A single-token name on either side is refused outright - even when the
@@ -66319,7 +66911,24 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
      landed the doctor's only remaining question is whether it landed. */
   function upNowVisitState(ctx) {
     ctx = ctx || {};
-    if (!upNowSamePerson(ctx.upName, ctx.activeName)) return 'elsewhere';
+    if (!upNowSamePerson(ctx.upName, ctx.activeName)) {
+      /* upnowtail-1.0.1: THE ONE STATE WITH NO SENTENCE WAS THE ONE THE OWNER
+         SAW GO STALE. 'elsewhere' painted nothing, so the load-time "loaded
+         &amp; ready. Hit Start recording." stayed on screen over a chart that
+         was not this patient at all - the same class of lie this module exists
+         to end, in the only state it had left uncovered.
+
+         It is split in two, because only one of the two can be stated
+         truthfully. When BOTH names are decidable and they are different
+         people, the banner can say so and offer the next press ('away'). When
+         the active chart is blank - which is exactly the condition the shell's
+         own _calLoadNextUp paints "loaded &amp; ready" under - or when either
+         name is a single token this module refuses to reason about, nothing
+         here is known, so 'elsewhere' keeps standing down and today's surface
+         keeps its sentence. A guess would be a newer lie in place of the old
+         one. */
+      return (upNowNameKnown(ctx.upName) && upNowNameKnown(ctx.activeName)) ? 'away' : 'elsewhere';
+    }
     if (ctx.recording) return 'recording';
     if (ctx.generating) return 'generating';
     if (ctx.sent) return 'sent';
@@ -66492,3 +67101,303 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
   else boot();
 })();
 /* ===== upnowstate-1.0.0 module end ====================================== */
+
+/* ===== reviewnote-1.1.0 — "The note" tab lands ON the note (2026-09-11) ====
+ * MEASURED on b1230: the Review dock paints a segmented row - Orders | The
+ * note | Billing - and pressing "The note" did not show a note anywhere on the
+ * Review screen. It pressed the rail's Visit tab and dropped the doctor back
+ * into the visit room at the Review & Sign stage, with the note itself
+ * somewhere below the fold. The label promised a note; the press delivered a
+ * room. A doctor with no training reads that as a broken tab.
+ *
+ * WHY 1.1.0 EXISTS - 1.0.0 LANDED ON A WRAPPER THAT PAINTS NO NOTE.
+ * Re-measured in headless Chrome on the real shell (1366x900, synthetic note,
+ * the guided room open at Review & Sign), 1.0.0 picked #ez3flNoteWrap because
+ * it had width and height - and #ez3flNoteWrap paints NO note: the stylesheet
+ * two thousand lines up hides its own label, textarea and formatted panel
+ * ('never render a second note/editor'), so the only thing inside it that the
+ * browser actually draws is the 90px "Next: Review & send to Athena" row. The
+ * note's words were in #ez3Note at y1205 of a 900px viewport - off screen -
+ * and the module still counted the press as a landing. Size is not the note.
+ *
+ * So 1.1.0 measures the PROPERTY the label promises: the surface it lands on
+ * must be PAINTING THE NOTE'S OWN WORDS (a hidden child paints nothing, and a
+ * textarea paints its value, not its markup), and the press is only counted as
+ * a landing once those words are really inside the viewport. Anything else
+ * keeps walking, and an empty visit still gets its one plain sentence.
+ *
+ * WHO OWNS WHAT, so this block does not take anything that is not its own.
+ * The segment, its label and its navigation belong to feat_mls_calm_shell.js
+ * (DEST.review carries `extra:['nav_visit','nav_history']` with
+ * `as:{nav_visit:'The note'}`), and that file is frozen to other lanes and
+ * pinned by review-is-a-review-not-just-orders. So NOTHING here relabels the
+ * tab, re-routes it, blocks it, or stops its event: the shell still clicks
+ * #nav_visit and still navigates exactly as it does today. This block only
+ * finishes the journey the label already promised - once the room is up, it
+ * puts the note on screen, with the Formatted view showing, so the tab is
+ * true as written.
+ *
+ * NO NEW TIMER THAT CAN RUN FOREVER. The landing is a bounded walk of at most
+ * ten 180 ms steps, armed only by a real press on that one segment, and it
+ * stops the moment it succeeds. A hidden tab freezes those steps, which is
+ * correct: nobody is looking at a room they cannot see, and the next press
+ * arms a fresh walk.
+ *
+ * Reversible: window.__mlsReviewNoteLanding.revert().
+ * ========================================================================= */
+(function () {
+  'use strict';
+  if (window.__mlsReviewNoteLanding && window.__mlsReviewNoteLanding.installed) return;
+  var VERSION = 'reviewnote-1.1.0';
+  var MAX_STEPS = 10, STEP_MS = 180;
+  var NODE_BUDGET = 4000;         /* ONE bounded read of the room per press - shared
+                                     across every candidate and every descent step, so
+                                     resolving the note can never become a crawl */
+  var RUN_WORDS = 5;              /* words in a row that prove it is THE note */
+  var MIN_ON_SCREEN = 80;         /* px of the note that must really be visible */
+  var walkTimer = null, lands = 0, presses = 0, offs = 0, moves = 0;
+
+  function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
+  function $(id) { return safe(function () { return document.getElementById(id); }, null); }
+  function txt(n) { return n ? String(n.textContent || '').replace(/\s+/g, ' ').trim() : ''; }
+  function shown(n) {
+    if (!n) return false;
+    return safe(function () {
+      var r = n.getBoundingClientRect();
+      if (!(r.width > 0 && r.height > 0)) return false;
+      var cs = getComputedStyle(n);
+      return cs.display !== 'none' && cs.visibility !== 'hidden';
+    }, false);
+  }
+
+  /* THE ONE CONTROL THIS BLOCK ANSWERS TO. Matched on the segment's own text
+     inside the dock's own bar, so a segment the shell renames, moves or drops
+     simply stops arming this and nothing else changes. */
+  function theNoteSegment(target) {
+    if (!target || !target.closest) return null;
+    var seg = safe(function () { return target.closest('#mlsRightNow .segbtn'); }, null);
+    if (!seg) return null;
+    return /^the note$/i.test(txt(seg)) ? seg : null;
+  }
+
+  /* ---- THE NOTE ITSELF, AND WHAT COUNTS AS SHOWING IT ------------------ */
+
+  /* The note as the app holds it. #noteBox is the model of record and every
+     visible surface mirrors it; the guided lane's own boxes are read too so a
+     build that has not written back yet is still measurable. */
+  function noteText() {
+    var ids = ['noteBox', 'ez3Note', 'ez3flNote'], v = '';
+    for (var i = 0; i < ids.length; i++) {
+      var n = $(ids[i]);
+      v = n ? String(n.value || '') : '';
+      if (v.replace(/\s+/g, ' ').trim()) return v;
+    }
+    return '';
+  }
+  function norm(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim(); }
+  /* BOTH SIDES of the comparison are reduced the SAME way - punctuation gone,
+     one- and two-letter joining words gone - so a surface that renders "a" or
+     "of" differently from the box the note is stored in still matches, and a
+     run can never fail on a word the renderer dropped. */
+  function keyWords(s) { return norm(s).split(' ').filter(function (w) { return w.length > 2; }); }
+
+  /* Short runs of the note's OWN consecutive words. Finding one of these on
+     the screen means the doctor is looking at the note - not at a heading that
+     happens to contain the word "note", and not at a box whose note child the
+     stylesheet is hiding. Several runs, taken across the whole note, so a
+     surface that renders only part of it (the Formatted view splits headings
+     from bodies) still matches. */
+  function noteRuns() {
+    var words = keyWords(noteText());
+    var runs = [];
+    for (var i = 0; i + RUN_WORDS <= words.length && runs.length < 8; i += RUN_WORDS) {
+      runs.push(words.slice(i, i + RUN_WORDS).join(' '));
+    }
+    if (!runs.length && words.length) runs.push(words.join(' '));
+    return runs;
+  }
+
+  /* The text the BROWSER IS REALLY DRAWING inside this element. A display:none
+     or visibility:hidden child draws nothing and must not count; a textarea
+     draws its value, not its markup. This is the whole difference between
+     1.0.0 and 1.1.0. */
+  function paintedText(el, budget, depth) {
+    if (!el || depth > 14 || budget.n <= 0) return '';
+    budget.n--;
+    if (!shown(el)) return '';
+    var tag = safe(function () { return String(el.tagName || '').toLowerCase(); }, '');
+    if (tag === 'textarea' || tag === 'input') return String(el.value || '');
+    var parts = [];
+    safe(function () {
+      var kids = el.childNodes || [];
+      for (var i = 0; i < kids.length && budget.n > 0; i++) {
+        var n = kids[i];
+        if (n.nodeType === 3) { parts.push(String(n.nodeValue || '')); continue; }
+        if (n.nodeType === 1) parts.push(paintedText(n, budget, depth + 1));
+      }
+    });
+    return parts.join(' ');
+  }
+  function paintsNote(el, runs, budget) {
+    if (!el || !runs.length || !shown(el) || budget.n <= 0) return false;
+    var seen = keyWords(paintedText(el, budget, 0)).join(' ');
+    if (!seen) return false;
+    for (var i = 0; i < runs.length; i++) { if (seen.indexOf(runs[i]) >= 0) return true; }
+    return false;
+  }
+
+  /* The smallest element that still paints the note, so the page moves to the
+     words and not to a card that happens to contain them a thousand px down. */
+  function carrierIn(root, runs, budget) {
+    if (!paintsNote(root, runs, budget)) return null;
+    var cur = root;
+    for (var guard = 0; guard < 12; guard++) {
+      var next = null, kids = safe(function () { return cur.children || []; }, []);
+      for (var i = 0; i < kids.length; i++) { if (paintsNote(kids[i], runs, budget)) { next = kids[i]; break; } }
+      if (!next) break;
+      cur = next;
+    }
+    return cur;
+  }
+
+  /* The note, wherever this build is painting it. In the order a doctor's eye
+     wants it: the guided flow's own note area, the engine note ladder that
+     visit-focus leaves as the one visible copy, the Formatted view, the review
+     panel's slot, then the note card itself. A candidate that paints no note
+     is skipped however big it is. */
+  function noteSurface() {
+    var runs = noteRuns();
+    if (!runs.length) return null;
+    var budget = { n: NODE_BUDGET };
+    var cands = [];
+    safe(function () { cands.push($('ez3flNoteWrap')); });
+    safe(function () { cands.push($('ez3Note')); });
+    safe(function () {
+      var fmt = document.querySelectorAll('.mlsf-note');
+      for (var i = 0; i < fmt.length; i++) cands.push(fmt[i]);
+    });
+    safe(function () { cands.push($('mlsRevSlot')); });
+    safe(function () { cands.push($('noteBox')); });
+    safe(function () { cands.push($('noteCard')); });
+    for (var i = 0; i < cands.length; i++) {
+      var hit = cands[i] ? carrierIn(cands[i], runs, budget) : null;
+      if (hit) return hit;
+    }
+    return null;
+  }
+  function noteHasWords() { return !!noteRuns().length; }
+
+  /* Really on the screen: enough of it inside the viewport for a doctor to
+     read that this is the note. A rect that merely exists is not a landing. */
+  function inView(el) {
+    return safe(function () {
+      var r = el.getBoundingClientRect();
+      var vh = window.innerHeight || (document.documentElement && document.documentElement.clientHeight) || 0;
+      if (!vh || !(r.height > 0)) return false;
+      var band = Math.min(r.bottom, vh) - Math.max(r.top, 0);
+      return band >= Math.min(r.height, MIN_ON_SCREEN);
+    }, false);
+  }
+  function visitRoomUp() {
+    var v = $('visitView');
+    if (!v) return false;
+    return safe(function () { return getComputedStyle(v).display !== 'none'; }, false);
+  }
+  /* THE SMALLEST MOVE THAT REVEALS IT - the same scroll rule the rest of this
+     bundle obeys. A note already fully on screen does not move the page, and a
+     note taller than the screen is aligned to its start so the doctor reads it
+     from the top instead of from the middle. */
+  function bring(el) {
+    if (!el || typeof el.scrollIntoView !== 'function') return false;
+    var needed = true, tall = false;
+    safe(function () {
+      var r = el.getBoundingClientRect();
+      var vh = window.innerHeight || (document.documentElement && document.documentElement.clientHeight) || 0;
+      if (!vh) return;
+      tall = r.height > vh * 0.9;
+      if (r.height > 0 && r.top >= 0 && r.bottom <= vh) needed = false;
+      else if (tall && r.top >= 0 && r.top < vh * 0.4) needed = false;
+    });
+    if (!needed) return true;
+    /* first move of a press is smooth; a correction after it is instant, so a
+       correction can never fight an animation that is still running */
+    var how = { block: tall ? 'start' : 'center', behavior: moves ? 'auto' : 'smooth' };
+    safe(function () { el.scrollIntoView(how); });
+    moves++;
+    return true;
+  }
+
+  function stopWalk() { safe(function () { if (walkTimer) clearTimeout(walkTimer); }); walkTimer = null; }
+
+  function step(n) {
+    walkTimer = null;
+    if (offs) return;
+    if (visitRoomUp()) {
+      /* The Formatted view is the note a doctor reads; ask its owner to bring
+         itself up to date before the page moves to it. */
+      safe(function () {
+        var f = window.__mlsFormat;
+        if (f && f.enabled !== false && typeof f.rerender === 'function') f.rerender();
+      });
+      var surface = noteSurface();
+      if (surface) {
+        bring(surface);
+        /* A LANDING IS A MEASUREMENT, NOT A CALL. Only the note actually being
+           on the screen ends the press; otherwise the walk takes another step
+           and corrects, which is what a smooth scroll still in flight needs. */
+        if (inView(surface)) { lands++; return; }
+      }
+      if (n >= 3 && !noteHasWords()) {
+        /* Not a failure - an empty visit. Say the next step instead of
+           leaving the doctor looking at a room with no note in it. */
+        safe(function () {
+          if (typeof window.toast === 'function') {
+            window.toast('There is no note for this visit yet. Record or type the visit, then press Generate note.');
+          }
+        });
+        return;
+      }
+    }
+    if (n + 1 >= MAX_STEPS) return;
+    walkTimer = setTimeout(function () { step(n + 1); }, STEP_MS);
+  }
+
+  function onPress(ev) {
+    if (offs) return;
+    var seg = theNoteSegment(ev && ev.target);
+    if (!seg) return;
+    presses++;
+    moves = 0;
+    stopWalk();
+    /* Deliberately NOT preventDefault / stopPropagation: the shell's own
+       handler is the navigation and it must still run. */
+    walkTimer = setTimeout(function () { step(0); }, STEP_MS);
+  }
+
+  document.addEventListener('click', onPress, true);
+
+  window.__mlsReviewNoteLanding = {
+    installed: true,
+    version: VERSION,
+    /* read-only seams for the suites */
+    segmentFor: theNoteSegment,
+    noteSurface: noteSurface,
+    /* what a suite (or the owner, from the console) can check without trusting
+       this block's own bookkeeping: the surface it would land on, and whether
+       the note's words are really on the screen right now */
+    showsNote: function () {
+      var s = noteSurface();
+      return { surface: s ? (s.id ? '#' + s.id : String(s.tagName || '').toLowerCase()) : '', onScreen: !!(s && inView(s)) };
+    },
+    land: function () { stopWalk(); moves = 0; step(0); return true; },
+    counts: function () { return { presses: presses, lands: lands }; },
+    revert: function () {
+      offs = 1;
+      stopWalk();
+      safe(function () { document.removeEventListener('click', onPress, true); });
+      window.__mlsReviewNoteLanding.installed = false;
+      return true;
+    }
+  };
+})();
+/* ===== reviewnote-1.1.0 module end ====================================== */

@@ -48,7 +48,14 @@ const canonicalText = [
   '', 'ASSESSMENT:', 'Lumbar radicular pain, improving.',
   '', 'PLAN:', 'Continue home exercise and follow up in four weeks.'
 ].join('\n');
-const displayText = 'Alternate clinician-facing narrative that is intentionally not the five-field Athena payload.';
+const displayText = [
+  'HPI:', 'Reviewed display history differs from the model sidecar.',
+  '', 'ROS:', 'Reviewed display documents pertinent symptom review.',
+  '', 'EXAM:', 'Reviewed display documents the focused examination.',
+  '', 'ASSESSMENT:', 'Reviewed display assessment remains under evaluation.',
+  '', 'PLAN:', 'Reviewed display plan continues documented follow-up.'
+].join('\n');
+const narrativeDisplayText = 'Alternate clinician-facing narrative that is intentionally not the five-field Athena payload.';
 
 function harness(source, file) {
   const values = {
@@ -148,6 +155,17 @@ for (const file of shells) {
   api.set(s.currentAthenaNote, 'generated');
   eq((s.currentAthenaNote.match(/COMMENT: Patient understood the plan\./g) || []).length, 1, file + ': resetting the sidecar duplicated the visit comment');
   eq(api.write().ok, true, file + ': freshly bound sidecar was not writable');
+
+  /* Fixed-format generated SOAP is routed from the note the clinician reviewed.
+     A legacy narrative display cannot borrow a separately valid sidecar. */
+  s.currentSoap = narrativeDisplayText;
+  values.noteBox = narrativeDisplayText;
+  s.currentNoteProvenance = 'generated_soap';
+  api.set(canonicalText, 'generated');
+  eq(api.write().ok, false, file + ': generated_soap narrative display borrowed a valid sidecar');
+  s.currentSoap = displayText;
+  values.noteBox = displayText;
+  api.set(canonicalText, 'generated');
 
   values.noteBox = canonicalText + '\n\nCOMMENT:\nPatient understood the plan.';
   s.currentSoap = values.noteBox;

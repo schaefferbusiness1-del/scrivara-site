@@ -408,7 +408,7 @@ async function runtime() {
     const set = await page.evaluate(async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       const C = window.__clunky;
-      try { openSettings(); } catch (e) {}
+      try { openSettings({ userInitiated: true }); } catch (e) {}
       await sleep(1600);
       const out = { titles: 0, foot: {}, railHead: C.shown('.mls-set-rail-head') };
       /* 135: one "⚙️ Settings" on screen, not two. */
@@ -784,11 +784,40 @@ async function runtime() {
       const card = document.getElementById('mlsAthenaUnifiedConfirm');
       out.opened = !!card;
       if (!card) return out;
-      /* 26: engineering vocabulary is not in the doctor's half of the sheet. */
-      out.jargon = ['manifest', 'auto-chain', 'catalog-bound', 'MLS patient ID']
+      /* 26: engineering vocabulary is not in the doctor's half of the sheet.
+         WIDENED 2026-09-11 (rowfix/T1 wording lane). The instrument is
+         card.innerText, which is layout-aware: it is exactly the text a doctor
+         can READ - a closed <details> contributes nothing, and an attribute,
+         an id, a reason code, a data-* value or a comment can never reach it.
+         That is why these words can be banned by name without scoping: the gate
+         cannot see an internal string, so a reason code like
+         note-section-payload-mismatch or an attribute like data-mls-copy-payload
+         stays exactly as it is. Add a word here only when it is a word the
+         doctor should never read, never merely because it appears in the file. */
+      out.jargon = ['manifest', 'auto-chain', 'catalog-bound', 'MLS patient ID',
+        'payload', 'receipt', 'token', 'binding', 'probe', 'catalog', 'lane',
+        /* plainwords-1.1.0 (2026-09-11): 'binding' above never caught the one
+           form the sheet still shipped - the bare past participle, in the
+           status footer ("appointment id is bound"), the exact-visit refusal
+           ("a bound encounter ID and URL") and the error-report tooltip. Those
+           three are reworded; these two names keep them from coming back. */
+        'is bound', 'bound encounter']
         .filter((k) => (card.innerText || '').indexOf(k) >= 0);
-      /* 21: nothing in the sheet ships open. */
-      out.openFolds = Array.prototype.slice.call(card.querySelectorAll('details')).filter((d) => d.open).length;
+      /* 21: nothing in the sheet ships open - EXCEPT the one drawer that holds
+         work the doctor still owes. rowfix-1.0.0 (2026-09-11): every row in it
+         now carries its own one-press next move, so it is a to-do list rather
+         than the wall of red labels item 21 was written against, and it opens
+         only when it has a row. It marks itself data-mls-fix-drawer="1"; every
+         other disclosure in the sheet still ships shut and is still counted. */
+      out.openFolds = Array.prototype.slice.call(card.querySelectorAll('details'))
+        .filter((d) => d.open && d.getAttribute('data-mls-fix-drawer') !== '1').length;
+      out.fixDrawer = (function () {
+        const d = card.querySelector('details[data-mls-fix-drawer="1"]');
+        if (!d) return { present: false };
+        return { present: true, open: !!d.open,
+          rows: d.querySelectorAll('section[data-manifest-row]').length,
+          controls: d.querySelectorAll('[data-mls-row-fix] button,[data-mls-copy-payload]').length };
+      })();
       /* 23: the fix strip always offers the one thing to try next. */
       out.recheck = !!document.getElementById('mlsClunkyAthenaRecheck');
       /* 3: a disabled Confirm brings its reason with it. */
@@ -867,11 +896,21 @@ async function runtime() {
       /* CLUNKY 3 (2026-09-02): the shipped geometry, so a future reader can see
          what "the reason travels with the button" measures now. */
       probePos: ath.probePos, whyPos: ath.whyPos, goHit: ath.goHit, geom: ath.geom,
-      reason: ath.reason, detailsOpen: ath.detailsOpen, probeRole: ath.probeRole };
+      reason: ath.reason, detailsOpen: ath.detailsOpen, probeRole: ath.probeRole, fixDrawer: ath.fixDrawer };
     ok(ath.api && ath.opened, 'the Athena review sheet did not open, so nothing below was measured');
     eq(ath.jargon && ath.jargon.length, 0,
       `the review sheet still reads: ${(ath.jargon || []).join(', ')} (CLUNKY 26)`);
     eq(ath.openFolds, 0, `${ath.openFolds} disclosures in the review sheet ship OPEN (CLUNKY 21)`);
+    /* rowfix-1.0.0 (2026-09-11): the one drawer allowed to ship open earns it
+       by being actionable. If it is on screen it is open, and every row in it
+       carries a control the doctor can press - a BLOCKED / MANUAL / NOT SENT
+       label with nothing beside it is the defect this pin exists to catch. */
+    if (ath.fixDrawer && ath.fixDrawer.present) {
+      ok(ath.fixDrawer.open,
+        'the "finish this in Athena" drawer shipped SHUT - the rows the doctor still owes are behind a fold (rowfix-1.0.0)');
+      ok(ath.fixDrawer.controls >= ath.fixDrawer.rows,
+        `${ath.fixDrawer.rows} rows in the drawer carry ${ath.fixDrawer.controls} controls - a row that names a refusal and offers nothing to press (rowfix-1.0.0)`);
+    }
     ok(ath.recheck, 'the fix strip has no permanent "Check Athena again", so the instruction points at nothing (CLUNKY 23)');
     ok(ath.why && ath.why.indexOf('mlsAthenaUnifiedProbe') >= 0,
       'a disabled Confirm & Send is shown with its reason left below the fold (CLUNKY 3)');
@@ -1715,7 +1754,7 @@ async function runtime() {
       try { closeSetup(); } catch (e) {}
       await sleep(400);
       /* 78: one statement about updating, and it is the true one */
-      try { openSettings(); } catch (e) {}
+      try { openSettings({ userInitiated: true }); } catch (e) {}
       await sleep(1400);
       const tabs = Array.prototype.slice.call(document.querySelectorAll('#settingsTabBar .set-tab'));
       /* BY GROUP KEY, NOT BY LABEL. t2settings-1.0.0 renamed this tab to

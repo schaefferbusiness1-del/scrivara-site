@@ -152,7 +152,23 @@ const HEAD_REGIONS = [
     'THE UP-FRONT/LABEL MODULE REACHED FOR A WRITE, A PROBE OR A TOKEN - it may only read the checked set and paint');
   eq((MOD.match(/bridge\(/g) || []).length, 1, 'the module talks to the bridge for something other than its one read-only capability ping');
   ok(MOD.indexOf("bridge('mlsPing', null, 'mlsPong', 3500)") > 0, 'the capability probe is not the read-only ping');
-  eq(/\.disabled\s*=/.test(MOD), false, 'the module enables or disables Confirm - only unifiedPrimaryPlan / unifiedSyncPrimaryButton may');
+  /* owner decision D5 (2026-09-10): THE LAW IS A DIRECTION, NOT A SPELLING.
+     What this line protects is that only unifiedPrimaryPlan /
+     unifiedSyncPrimaryButton may ENABLE Confirm. This module may always take
+     the button away - a halted or uncertain sheet and a run already in flight
+     are both disabled from here, and those two lines have been in it since
+     wfnext-1.0.0 - so a blanket ban on `.disabled =` read two lines that KEEP
+     the law as if they broke it. Pin the direction: nothing in this module may
+     set disabled to anything but true, remove the disabled attribute, or write
+     aria-disabled "false". The disable lines stay exactly where they are. */
+  const ENABLES = (MOD.match(/\.disabled\s*=\s*[^;]+;/g) || []).filter(line => !/^\.disabled\s*=\s*true\s*;$/.test(line.trim()));
+  eq(ENABLES.length, 0, 'the module enables Confirm - only unifiedPrimaryPlan / unifiedSyncPrimaryButton may: ' + ENABLES.join(' | '));
+  eq(/removeAttribute\((['"])disabled\1\)/.test(MOD), false,
+    'the module removes the disabled attribute - only unifiedPrimaryPlan / unifiedSyncPrimaryButton may enable Confirm');
+  eq(/aria-disabled['"]\s*,\s*['"]false['"]/.test(MOD), false,
+    'the module announces Confirm as enabled - only unifiedPrimaryPlan / unifiedSyncPrimaryButton may');
+  ok((MOD.match(/\.disabled\s*=\s*true\s*;/g) || []).length >= 2,
+    'the module lost the disable lines that take Confirm away on a halted sheet or a run in flight');
   /* the queue is fed by the authorization, and the batch attributes are painted
      from a sync, never from inside a click handler */
   const QUEUE = FLOW.slice(FLOW.indexOf('  function runUnifiedBatchSend(state, btn) {'), FLOW.indexOf('  function reopenOptions(opts, manifest) {'));
@@ -518,7 +534,13 @@ function fireChange(box) { ((box.handlers && box.handlers.change) || []).forEach
     const prog = h.progressHtml();
     eq((prog.match(/data-mls-prog-row=/g) || []).length, 1,
       'the run panel queued a section nobody pressed for');
-    ok(prog.indexOf('1 written, 0 not sent, 2 still to go') > 0,
+    /* 2026-09-10: re-aimed to the PROPERTY. The shipped footer has said
+       "1 section written, 0 not sent, 2 still to go" since b1229 - it names
+       the unit and pluralises it - and this literal pinned the spelling
+       without it. The pin was never reached because the suite aborted on an
+       earlier check, so a stale literal sat here looking green. What matters
+       is the three counts and their order. */
+    ok(/\b1 sections? written, 0 not sent, 2 still to go\b/.test(prog),
       'the footer does not count the checked sections this press did not reach: ' + prog);
     eq(/data-mls-prog-pct="100"/.test(prog), false,
       'the bar filled to 100% with two checked sections unwritten');

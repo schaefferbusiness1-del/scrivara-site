@@ -17,7 +17,7 @@
  *       He unchecked five of six sections and pressed Confirm for the one he
  *       wanted ("Write reviewed Assessment & Plan (combined)"), which went
  *       VERIFIED. The receipt then listed the five he had deliberately left
- *       alone as "NOT ATTEMPTED - Ready, but not attempted in this receipt."
+ *       alone as "NOT ATTEMPTED - Ready, but not attempted in this review."
  *       and totalled them into "Not written - 5 of 6". An unchecked row is a
  *       row the doctor chose not to send. It reads NOT SELECTED, in his own
  *       terms, and it is in neither number: "Not written - N of M" counts only
@@ -104,9 +104,13 @@ const HEAD_REGIONS = [
     ok(AUTO_CHAIN.indexOf(got) > 0,
       'tests/write-auto-chain.test.js does not carry this region\'s current digest - the pins have drifted apart: ' + name);
   });
-  /* and this lane never reaches for the app's own visit binding */
-  eq(FLOW.indexOf('_athenaSetVisitBinding'), -1,
-    'THE WRITE FLOW NOW SETS THE APP\'S VISIT BINDING - a sheet may read a binding, never assign one');
+  /* One narrow bridge carries an explicit, resolved Bind choice into the app's
+     save owner. It must remain fingerprint-, patient-, and readback-gated. */
+  eq((FLOW.match(/_athenaSetVisitBinding/g) || []).length, 1,
+    'the write flow has more than one path that can assign the app visit binding');
+  const bindBridge = FLOW.slice(FLOW.indexOf('function wfbindCommitCanonical('), FLOW.indexOf('function wfbindFinish('));
+  ok(bindBridge.indexOf('editorFingerprint') >= 0 && bindBridge.indexOf('p1SamePatient') >= 0 && bindBridge.indexOf('_athenaGetVisitBinding') >= 0,
+    'the explicit Bind bridge lost stale-note, exact-patient, or canonical-readback protection');
 }
 
 /* ------------------------------------------------------------------ fixtures */
@@ -381,7 +385,7 @@ function whatHappenedRow(html, label) {
     ok(rec.indexOf('NOT SELECTED') > 0, 'the receipt does not paint NOT SELECTED for a row the doctor unchecked');
     eq((rec.match(/NOT SELECTED/g) || []).length, 2, 'the receipt did not paint NOT SELECTED once per unchecked row');
     eq(rec.indexOf('NOT ATTEMPTED'), -1, 'THE MEASURED DEFECT: a row the doctor unchecked is still reported NOT ATTEMPTED');
-    eq(rec.indexOf('Ready, but not attempted in this receipt.'), -1,
+    eq(rec.indexOf('Ready, but not attempted in this review.'), -1,
       'the unchecked rows still carry the "not attempted in this receipt" sentence');
     eq(rec.indexOf('Not written'), -1,
       'THE MEASURED DEFECT: rows the doctor never selected were totalled into "Not written - N of M"');
@@ -439,7 +443,7 @@ function whatHappenedRow(html, label) {
     const phantom = { id: 'row-no-checkbox', capability: 'ready', action: 'save_draft', reason: '' };
     eq(seam.rowState(state, phantom).status, 'not attempted',
       'a row with no include checkbox was called NOT SELECTED - only a real, unticked control may say that');
-    eq(seam.rowState(state, phantom).message, 'Ready, but not attempted in this receipt.',
+    eq(seam.rowState(state, phantom).message, 'Ready, but not attempted in this review.',
       'the no-checkbox fallback sentence changed');
     eq(seam.rowState(state, { id: 'row-manual', capability: 'manual', reason: 'Do this in Athena yourself.' }).status, 'manual',
       'a MANUAL row was swept into the new status');

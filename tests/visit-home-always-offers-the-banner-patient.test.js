@@ -119,9 +119,21 @@ function callBlock(input, at) {
    identity. Stubbing it would have made the suite agree with itself instead of
    with the app. All four helpers live inside the same canonical Easy owner
    region this harness already bounds. */
+/* contharness-1.0.0 (2026-09-10): renderHome stopped emitting the banner
+   patient's button inline and now calls activePatientHomeAction /
+   homeOwnsContinuableVisit, and this lift list did not follow, so every run
+   died with "ReferenceError: activePatientHomeAction is not defined" inside
+   the FIRST render - a dead suite sitting in the release gate. Both are lifted
+   REAL: the control this whole file reasons about is the one they render.
+   homeOwnsContinuableVisit reads workspace state that this harness does not
+   model ($/noteText/captureBusy/S.appt), and it is written defensively for
+   exactly that reason - its try/catch resolves to false here, so every offer
+   below renders in its Start Recording form. That is this suite's subject:
+   WHICH patient is offered. Whether an owned draft turns the same control into
+   "Continue visit" is executed in visit-navigation-intent-runtime. */
 const REAL = ['normTokens', 'nameMatch', 'rowKey', 'apptDay', 'bannerPatient',
   'safe', 'dobOf', 'dobKey', 'mrnKey', 'dobConflicts', 'mrnConflicts', 'positiveIdentityEvidence',
-  'dayRowForPatient', 'bannerLeads', 'renderHome'];
+  'dayRowForPatient', 'bannerLeads', 'homeOwnsContinuableVisit', 'activePatientHomeAction', 'renderHome'];
 
 const DULIN = { id: 'appt-dulin', name: 'John F Dulin', dob: '05/06/1945', provider: 'Dr Example', appt_date: '2026-07-30', start_local: '7:30 AM', reason: 'Follow-up' };
 const SALIMI = { id: 'appt-salimi', name: 'Atoussa Salimi', dob: '11/05/1968', provider: 'Dr Example', appt_date: '2026-07-30', start_local: '9:00 AM', reason: 'Injection' };
@@ -263,10 +275,32 @@ function buttonIds(html) {
     'when the banner patient IS the happening-now row, the hero must say so and carry their time');
 
   /* and must not be rendered a second time under the schedule's own heading */
-  const adamButtons = (html.match(/>[^<]*Adam[^<]*</g) || []).length;
+  /* RE-AIMED DELIBERATELY, typedoor-1.0.0 (2026-09-11). The counted PROXY moved;
+     the PROPERTY did not, and it is now pinned harder than it was.
+     The hero now carries ONE secondary door, "Type or paste visit notes"
+     (#ez3ActiveNotes), whose own sub-line names the banner patient - "Already
+     seen Adam? Open the visit and write it up". MEASURED, the two mentions this
+     count found are ">🎙 Start Recording — Adam<" and that sub-line: both belong
+     to the SAME hero block, and the schedule still renders Adam's row exactly
+     zero times. A bare name count cannot tell a hero's own second line from a
+     duplicate schedule row, so the door element is excised before the count and
+     the two facts that make the exclusion safe are asserted first - there is
+     exactly ONE such door, and it is NOT a record offer (data-rec="0", which
+     recordOffers above independently confirms by still returning one name). A
+     genuine duplicate row would still red this line, because it would be a
+     third mention outside the door. */
+  const typeDoors = (html.match(/id="ez3ActiveNotes"/g) || []).length;
+  assert.strictEqual(typeDoors, 1,
+    'the secondary "type or paste visit notes" door must be rendered exactly once on the ' +
+    'record form - found ' + typeDoors);
+  assert(/<button[^>]*id="ez3ActiveNotes"[^>]*data-rec="0"/.test(html),
+    'the secondary door lost data-rec="0" - it would be counted as a recording offer');
+  const htmlNoDoor = html.replace(/<button[^>]*id="ez3ActiveNotes"[\s\S]*?<\/button>/g, '');
+  const adamButtons = (htmlNoDoor.match(/>[^<]*Adam[^<]*</g) || []).length;
   assert.strictEqual(adamButtons, 1,
     'the banner patient\'s row was rendered twice — once as the hero and once as the ' +
-    'schedule row. Found ' + adamButtons + ' mentions in element text.');
+    'schedule row. Found ' + adamButtons + ' mentions in element text (the hero\'s own ' +
+    'secondary door is excluded and separately pinned above).');
   assert(html.includes('➡ Atoussa Salimi'), 'the rest of the day must still be reachable');
 }
 
@@ -506,10 +540,66 @@ function buttonIds(html) {
   }
 }
 
+/* ---- 8. THE SECOND DOOR IS NOT A SECOND RECORD OFFER ------------------
+ * typedoor-1.0.0 (2026-09-11). Home now carries a quieter second door beside
+ * the hero on the empty-visit shape - "Type or paste visit notes" - because
+ * MEASURED on b1230 there was NO doctor-visible way into the visit room that
+ * did not start a microphone, while the room itself carries the paste chip the
+ * owner's post-visit dictation workflow depends on.
+ *
+ * This suite exists to keep ONE record offer on the screen, so the new door is
+ * pinned here from that side: whatever else it does, it must never read as a
+ * second "Start Recording", must never be able to arm the recording-verdict
+ * lane, and must never appear more than once. The door's own behaviour (which
+ * patient it binds, that it records nothing and generates nothing, that a
+ * refusal is respected) is proved by executing the handler in
+ * visit-navigation-intent-runtime.
+ *
+ * The presence pin reads the CANONICAL source, 1p-mls-connect.js: production
+ * is derived from it, and this suite deliberately executes the derived bundle
+ * so the two cannot silently disagree about the offer count. */
+{
+  const P1 = fs.readFileSync(path.join(root, '1p-mls-connect.js'), 'utf8');
+  assert(P1.indexOf('id="ez3ActiveNotes"') > 0,
+    'the canonical source lost the second Home door. With an empty visit the only ' +
+    'way into the room is Start Recording again, and a doctor who has already seen ' +
+    'the patient has no way to type the visit up.');
+  assert(/id="ez3ActiveNotes"[^>]*data-rec="0"/.test(P1),
+    'the second door lost data-rec="0" in the canonical source - recPressWanted reads ' +
+    'exactly that attribute');
+  assert(P1.indexOf('🎙 Start Recording — ') > 0,
+    'control: the record verb this suite counts is gone from the canonical source too, ' +
+    'so the offer count above would be vacuous after the next derive');
+
+  /* Rendered, on every shape this suite already walks: the door never joins the
+     record offers, and it is never rendered twice. Vacuously true on a bundle
+     that does not carry it yet, and load-bearing on one that does. */
+  const doorShapes = [
+    { label: 'empty day, banner only', rows: [], tc: { cur: null, nxt: null }, next: null },
+    { label: 'banner leads a full day', rows: [ADAM_ROW], tc: { cur: ADAM_ROW, nxt: null }, next: ADAM_ROW }
+  ];
+  for (const shape of doorShapes) {
+    for (const chosen of [true, false]) {
+      const html = render({ rows: shape.rows, tc: Object.assign({ lateMin: 0, waiting: 0, rows: shape.rows }, shape.tc), banner: ADAM, chosenThisSession: chosen, next: shape.next });
+      const doors = (html.match(/id="ez3ActiveNotes"/g) || []).length;
+      const where = `${shape.label} / chosenThisSession=${chosen}`;
+      assert(doors <= 1, `${where}: the second Home door is rendered ${doors} times`);
+      if (!doors) continue;
+      const door = html.slice(html.indexOf('id="ez3ActiveNotes"'));
+      assert(!/🎙 Start Recording — /.test(door.slice(0, door.indexOf('</button>') + 9)),
+        `${where}: the second door reads as a Start Recording offer`);
+      assert(/id="ez3ActiveNotes"[^>]*data-rec="0"/.test(html),
+        `${where}: the second door is rendered without data-rec="0"`);
+      assert(recordOffers(html).length <= 2,
+        `${where}: the second door pushed the screen past two record offers`);
+    }
+  }
+}
+
 console.log('PASS the visit home always offers the banner patient: with a patient on the banner ' +
   'and a full day of appointments the record offer is theirs and is the only one (the reported ' +
   'defect), a scheduled banner patient is never rendered twice, an empty banner leaves the ' +
   'documented "whoever is up now" flow untouched, a selection merely restored from a previous ' +
   'day stays reachable without out-ranking the day, and across 12 day-shape/selection ' +
   'combinations the banner patient always has exactly one reachable offer and no two offers ' +
-  'ever name two different people');
+  'ever name two different people, while the second door into the visit never reads as a record offer and never arms the recording-verdict lane');

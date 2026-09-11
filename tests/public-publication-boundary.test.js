@@ -26,6 +26,10 @@ const PUBLIC_HTML = [
   'index.html',
   'intake.html',
   'lawyers.html',
+  /* 2026-09-11, lane opnote-svc-1.0.0: the client-surgeon op-note page. It is
+     reachable only with a scoped link, which is exactly why it is published
+     DELIBERATELY here rather than allowed to ship because a file exists. */
+  'opnotes.html',
   'patient-portal.html',
   'phone-setup.html',
   'phone.html',
@@ -876,7 +880,7 @@ async function verifyServiceWorkerRuntime() {
   let activateWork;
   handlers.activate({ waitUntil(promise) { activateWork = Promise.resolve(promise); } });
   await activateWork;
-  assert.deepStrictEqual(await cacheApi.keys(), ['mls-v229'], 'activation must remove every superseded MLS cache');
+   assert.deepStrictEqual(await cacheApi.keys(), ['mls-v251'], 'activation must remove every superseded MLS cache');
 
   networkOffline = true;
   for (const sensitiveUrl of [
@@ -962,3 +966,9 @@ verifyServiceWorkerRuntime().then(() => {
   console.error(error && error.stack ? error.stack : error);
   process.exit(1);
 });
+
+
+
+
+
+

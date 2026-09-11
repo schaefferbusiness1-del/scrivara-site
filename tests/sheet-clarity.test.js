@@ -96,13 +96,61 @@ const HEAD_REGIONS = [
      tests/write-generality-proof.js. */
   ['probe ladder (probeUnifiedRow: every refusal, auto-open, day-mismatch gate)',
     '  function probeUnifiedRow(state, rowId) {', '  /* wfsum-1.0.0 (owner 2026-08-26, watching his own writes land while the sheet',
-    '274310df634a2e6272669a49296dd43f757506dd1622c1fc7699cca775e2e831'],
+    '9f9cf42a359b1eb30c5aac95f3c168a87c7f3799bbc2e12b230bf17da7f8a572'],
+  /* MOVED DELIBERATELY, savetruth-1.0.0 (2026-09-10). The five plain-English
+     entries 999ba30f added for the section-persistence codes could never
+     render: nativePersistenceFailureMessage's regex covers exactly those
+     codes and it was consulted FIRST, so a pre-read refusal like
+     section-persistence-frame-changed (attempted false) told the doctor "MLS
+     could not prove..." instead of its own cure. ONE expression changed: the
+     WFCLAR table now wins for a code it has a sentence for, and the generic
+     sentence stays the fallback for every code it does not. The pre-existing
+     rule is untouched - an ATTEMPTED outcome still keeps the extension's exact
+     words and its uncertain status - and no gate, token, payload or receipt
+     STATUS changed; this region decides only which sentence is shown. Proven
+     in tests/native-persistence-clarity-proof.js.
+     MOVED DELIBERATELY A SECOND TIME, plainwords-1.0.0 (2026-09-11). A wording
+     pass only. TWO string literals in this region changed, both of them
+     sentences a doctor reads off the receipt, and NOTHING else: "Athena did
+     not return a verified exact-field insertion receipt." became "Athena did
+     not confirm that the text landed in the exact field.", and the place_order
+     refusal's "this manifest is halted." became "this review is halted.". The
+     diff against b1230 (ef4e793c) is two changed lines, both inside a string;
+     every status assignment, every predicate, every verified/uncertain/halt
+     decision and every response field this region reads is byte-identical -
+     which is why regions 1, 2 and 5 and BOTH closed allowlists did not move.
+     Proven in tests/write-row-controls-proof.js section 4. */
   ['receipt mint (resultToUnifiedReceipt: verified / uncertain / halt)',
     '  function resultToUnifiedReceipt(state, row, resp, probe) {', '  /* ===== wfprog-1.0.0 (owner 2026-08-27:',
-    '82451a857daa88c986222abdca94ea4bdf504207cf11a6ac894bc25a52824de9'],
+    '9022a4feef6efa16f7523ded47e4411321ac41093176e6767fa8be3bb15c28bb'],
+  /* MOVED DELIBERATELY, savetruth-1.0.0 (2026-09-10). The pill had no painter
+     for the running=true transition: sheetclarStateBase has always DERIVED
+     SENDING / WRITING DRAFT from state.running, but nothing repainted it here,
+     so during a batch the pill still read CHECKING with "Nothing new is being
+     sent during this check." while the button read "Writing 1 of 3..." and the
+     write was already on the wire. ONE line was added, immediately after
+     state.running = true and before the bridge post: a guarded
+     paintSheetclarState(state, ''). It paints a surface that already exists -
+     it derives nothing new, enables no control, and cannot send. Every gate,
+     latch, bound, token, payload and receipt path is byte-identical. Proven in
+     tests/write-ui-proof.js (the restored positive SENDING pin).
+     MOVED DELIBERATELY A SECOND TIME, plainwords-1.0.0 (2026-09-11). A wording
+     pass only. THREE string literals in this region changed, all three of them
+     refusal sentences a doctor reads, and NOTHING else: "not bound to a fresh
+     exact Athena check" became "not tied to a fresh exact Athena check", "The
+     confirmation binding changed." became "The confirmation changed.", and
+     "This manifest is halted because" became "This review is halted because".
+     The diff against b1230 (ef4e793c) is three changed lines, each one a
+     string inside an unchanged `if` - the guard expressions themselves are
+     character-for-character the same, so the same conditions still refuse the
+     same presses. state.running, go.disabled, the one-use authorization, the
+     preview/row/order-id attribute checks and the halt latch are all
+     byte-identical. Proven in tests/write-row-controls-proof.js section 4,
+     which asserts the halt still fires off state.halted and both verdicts are
+     still minted. */
   ['execute (executeUnifiedSelection: the only code that writes)',
     '  function executeUnifiedSelection(state) {', '  /* bx-1.0.0 - batch send (owner 2026-08-26:',
-    'ec12f88d20f2cc1639b79c26cb7d3ca490e7e9479b3ac014a5f3c0e419baedbb'],
+    '7977e3716cd6c6423ce1c076e9d4a3323fe76d74c2e7dc6ca924fb0c27b25468'],
   /* MOVED DELIBERATELY, wfnext-1.0.0 (2026-09-01) - owner ruling 23:05,
      verbatim: "nothing here should be blocked or manual or not attempted once
      its run". MEASURED 22:50-22:56 on his own tab: one trusted press, six
@@ -134,7 +182,7 @@ const HEAD_REGIONS = [
      tests/paintwait-queue-proof.js. */
   ['batch queue (runUnifiedBatchSend: per-row probe/execute/receipt sequencing)',
     '  function runUnifiedBatchSend(state, btn) {', '  function reopenOptions(opts, manifest) {',
-    '265db89e13cded73072959ead3170c88a7e834a8e843a7f753d9f56e12060493'],
+    '2ef699c2125f1056f571000de8766a21b029372940518ad2967aa546a526ac58'],
   ['closed allowlist ATHENA_EXECUTABLE_ACTIONS', '  var ATHENA_EXECUTABLE_ACTIONS = ', '\n',
     '27406852d9632ee5db6a143ac989eafa0308ac6e4a84326c731076941f2538a5'],
   ['closed allowlist OPBATCH_ACTIONS', '  var OPBATCH_ACTIONS = ', '\n',

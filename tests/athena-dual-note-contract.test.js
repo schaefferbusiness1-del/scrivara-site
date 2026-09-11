@@ -47,7 +47,7 @@ function canonicalBlock(source, file) {
 }
 
 function loadCanonical(source, file) {
-  const sandbox = {};
+  const sandbox = { window: {} };
   vm.runInNewContext(canonicalBlock(source, file) +
     '\nthis.__canonical={validate:_mlsValidateAthenaNote,quality:_mlsAthenaNoteQualityError};', sandbox, { filename: file });
   return sandbox.__canonical;
@@ -169,16 +169,15 @@ function runPlan(source, file, setup) {
   for (const [file, source] of sources) {
     eq(canonicalBlock(source, file), firstCanonical, file + ': canonical Athena contract drifted from the canonical 1p lane');
     ok(source.includes('"athena_note": "<the SAME visit as plain text in EXACTLY five flat top-level sections'), file + ': generation prompt does not require athena_note');
-    const displayValidation = source.indexOf('_mlsValidateStructuredNoteResult(result);');
-    /* re-pinned to autodraft-1.1.0: the fallback strips the marked carried
-       appendix (display-only) before validating; the sidecar is preferred
-       exactly as before and never cleaned. */
+    const displayValidation = source.indexOf('_mlsValidateStructuredNoteResult(result,generationDraftTuning);');
+    /* Fixed SOAP uses the clinician-reviewed display. Legacy alternate formats
+       retain their separately generated canonical sidecar. */
     const fallbackExpr = "result.athena_note==null?(typeof _autoDraftStripCarried==='function'?_autoDraftStripCarried(result.note):result.note):result.athena_note";
-    const athenaValidation = source.indexOf('_mlsValidateAthenaNote(' + fallbackExpr + ');', displayValidation);
-    ok(athenaValidation > displayValidation, file + ': athena_note fallback was not validated after the display note contract');
-    ok(source.includes(fallbackExpr), file + ': present athena_note was not preferred over the legacy display-note fallback');
-    const canonicalCapture = source.indexOf("_mlsSetAthenaNote(canonicalAthenaNote.text,'generated');", source.indexOf('const canonicalAthenaNote='));
-    ok(canonicalCapture > source.indexOf('const canonicalAthenaNote='), file + ': canonical sidecar is not captured after validation');
+    const athenaValidation = source.indexOf("generationStyle==='soap'?_mlsAthenaCanonicalFromStandardNote(result.note):_mlsValidateAthenaNote(" + fallbackExpr + ');', displayValidation);
+    ok(athenaValidation > displayValidation, file + ': reviewed display/canonical fallback was not validated after the display note contract');
+    ok(source.includes(fallbackExpr), file + ': alternate-format sidecar fallback disappeared');
+    const canonicalCapture = source.indexOf("_mlsSetAthenaNote(generationStyle==='soap'?_mlsAthenaCanonicalFromStandardNote(currentSoap).text:canonicalAthenaNote.text,'generated');", source.indexOf('const canonicalAthenaNote='));
+    ok(canonicalCapture > source.indexOf('const canonicalAthenaNote='), file + ': final reviewed display/canonical sidecar is not captured after validation');
     const settledComment = source.lastIndexOf('applyVisitCommentToNote();', canonicalCapture);
     ok(settledComment > source.indexOf('const canonicalAthenaNote=') && settledComment < canonicalCapture, file + ': canonical sidecar was captured before deterministic display/comment mutations settled');
     ok(source.includes('athena_note:Object.prototype.hasOwnProperty.call(obj,\'athena_note\')?obj.athena_note:undefined'), file + ': parseGenJSON does not preserve the exact athena_note property');

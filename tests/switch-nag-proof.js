@@ -110,8 +110,8 @@ ok(follow.includes('if (isFn(window.setActivePtId)) window.setActivePtId(S(p.id)
    follow.includes('function onVisibility()'),
   'the athenaOne follow no longer switches the active patient from an arrival/visibility handler');
 const strip = read('feat_mls_strip_day_couple.js');
-ok(strip.includes('window.selectPatient(p.id)') && strip.includes('alignHeaderToWorkspace(); }, 300);'),
-  'the day-strip header alignment no longer switches the active patient from a timer');
+ok(!strip.includes('window.selectPatient(p.id)') && strip.includes('anchor.offer(text(p.name), text(p.id))') && strip.includes('alignHeaderToWorkspace(); }, 300);'),
+  'the day-strip timer can replace the active patient instead of offering an explicit switch');
 const upnow = read('feat_mls_upnow_activeselect.js');
 ok(upnow.includes("maybeSelect('retry-' + pollTries);") && upnow.includes('window.selectPatient(p.id);'),
   'the up-now anchor no longer re-checks the active patient from its retry ladder');

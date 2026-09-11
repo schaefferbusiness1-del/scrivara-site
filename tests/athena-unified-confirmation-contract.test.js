@@ -37,7 +37,7 @@ assert(/mode:\s*'execute'/.test(unified), 'the single confirmation entrypoint mu
 assert(/setAttribute\('data-mls-athena-action',\s*row\.action\)/.test(unified));
 assert(/setAttribute\('data-mls-preview-hash',\s*state\.manifest\.previewHash\)/.test(unified));
 assert(/Only reviewed note write and Save Draft can be confirmed here/i.test(unified), 'capability-off UI must disclose the two allowed note lanes');
-assert(/Reviewed note writes, Save Draft, billing staging, Sign &amp; Save, and each supported catalog-bound order run only after their own explicit confirmation/i.test(unified), 'capability-on UI must disclose the separately confirmed final-action and supported-order lanes');
+assert(/Only reviewed note write or Save Draft can be selected and confirmed; complete final actions in Athena/i.test(unified), 'UI must keep the confirmable lane limited to reviewed note write and Save Draft');
 /* wf3 (owner 2026-08-04, one-click rebuild): the READY row is PRE-selected and
    probed on open — "Select one" is no longer the doctor's job, so the
    one-action boundary is disclosed as what each click RUNS instead. */
@@ -45,10 +45,13 @@ assert(/One READY note row is pre-selected/i.test(unified), 'UI must disclose th
 assert(/One READY row is pre-selected and checked read-only/i.test(unified), 'capability-on UI must disclose the pre-selected single typed row');
 assert(/runs exactly that one action/i.test(unified), 'UI must disclose the one-action trusted-click boundary');
 assert(/never retries or auto-chains|never auto-chain/i.test(unified), 'UI must disclose fail-closed no-chain behavior');
-assert(/complete Sign & Save directly in Athena/i.test(unified), 'capability-off Sign must remain visibly manual');
+assert(/complete final actions in Athena/i.test(unified), 'final actions must remain visibly manual');
 assert(/Sign &amp; Save unlocks only after a verified note write/i.test(unified), 'capability-on Sign must disclose its verified-write prerequisite');
-assert(/athenaFinalActionsV1 === true/.test(flow), 'final-action rows are not gated by the extension capability');
+assert(/function athenaFinalActionsReady\(\) \{ return false; \}/.test(flow), 'final-action capability must remain disabled; only note write and Save Draft are confirmable');
 assert(!/probeUnifiedRow\([^)]*sign[^)]*\)[^]{0,300}executeUnifiedSelection/.test(unified), 'Sign must not auto-chain after a new note write');
+assert(/id=\"mlsAthenaUnifiedReturnToNote\"/.test(unified), 'canonical-source issue state must return the doctor to the retained note');
+assert(!/id=\"mlsAthenaUnifiedGenerateSections\"/.test(unified), 'Send review must not render an AI Generate/Regenerate action');
+assert(!/data-mls-generate-canonical=/.test(unified), 'Send review must not expose a generation trigger');
 
 const render = between(unified, 'function renderUnifiedConfirmation(state)', 'function openUnifiedConfirmation(opts)');
 assert(render.includes("document.getElementById('athenaReceipt')"), 'opening unified review must remove the legacy receipt');
@@ -72,11 +75,12 @@ assert(!/startAthenaAction\(['"]stage_billing['"]/.test(superbill), 'Superbill m
   const probeFn = between(unified, 'function probeUnifiedRow(state, rowId)', 'function receiptStateForRow(state, row)');
   assert(/AUTO_OPEN_REASONS\[probeReason\] === 1 && !state\.autoOpened/.test(probeFn), 'unified probe must auto-open only on whitelisted not-open reasons, once per review');
   assert(probeFn.includes('state.autoOpened = true;'), 'the auto-open once-flag must be consumed before dispatch');
-  assert(probeFn.includes('navigateAndSearchOpenTarget(state.manifest.patient, state.manifest.visit)'), 'auto-open must navigate to the frozen encounter day before the identity-frozen SearchOpen helper');
+  assert(/navigateAndSearchOpenTarget\(state\.manifest\.patient, state\.manifest\.visit, function \(\) \{[\s\S]*?!state\.closed && unifiedAthenaState === state && generation === state\.probeGeneration/.test(probeFn),
+    'auto-open must navigate to the frozen encounter day only while this open review and probe generation still own the chain');
   assert(/probeUnifiedRow\(state, row\.id\);/.test(probeFn), 'a successful auto-open must re-probe the same row');
   assert(probeFn.includes('press Check Athena again. Nothing was changed.'), 'a failed auto-open must fail closed with the manual instruction');
   assert(!/executeUnifiedSelection/.test(between(probeFn, 'AUTO_OPEN_REASONS[probeReason]', 'wf2-1.9.0')), 'auto-open must never chain into an execute');
   assert(unified.includes('autoOpened: false'), 'the unified state must initialize the once-per-review auto-open flag');
 }
 
-console.log('PASS unified Athena confirmation: one page/button, capability-off manual fallback, capability-on separately confirmed final actions, trusted hash binding, bounded auto-open, and no auto-chain');
+console.log('PASS unified Athena confirmation: one page/button, manual final-action fallback, note/save-only confirmation, trusted hash binding, bounded auto-open, and no auto-chain');

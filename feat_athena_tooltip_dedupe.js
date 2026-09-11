@@ -813,6 +813,10 @@
 
   function settingsGroupFor(section) {
     var heading = settingsHeading(section);
+    /* The draft-tuning fork is injected after the base Settings markup. Its
+       friendly heading is product copy, not a routing contract; stable id keeps
+       the section in Notes & AI when that copy changes. */
+    if (section && section.id === 'mlsDraftTuningSection') return 'notes';
     if (/Account & access|Security & privacy/i.test(heading)) return 'account';
     if (/Practice & provider/i.test(heading)) return 'practice';
     if (/Note defaults|AI personalization|AI draft tuning|Provider preferences/i.test(heading)) return 'notes';
@@ -1867,10 +1871,10 @@
   }
 
   function openPasteTranscript() {
-    var ui = popup('Paste a transcript', 'Paste or type the visit conversation here. It stays attached to the current visit; nothing is generated until you choose Generate note.');
+    var ui = popup('Type or paste visit notes', 'Paste a visit transcript or type your post-visit doctor dictation here. It stays attached to the current visit; nothing is generated until you choose Generate note.');
     var ta = document.createElement('textarea');
     ta.className = 'mls-qtp-textarea';
-    ta.setAttribute('aria-label', 'Visit transcript');
+    ta.setAttribute('aria-label', 'Visit transcript or post-visit doctor dictation');
     var top = byId('ez3flTranscript'), real = byId('transcript');
     ta.value = (top && top.value) || (real && real.value) || '';
     ui.body.appendChild(ta);
@@ -1878,7 +1882,7 @@
     note.textContent = 'This only updates the transcript. It does not draft, sign, or send anything.';
     ui.body.appendChild(note);
     ui.foot.appendChild(button('Cancel', '', closePopup));
-    ui.foot.appendChild(button('Use this transcript', 'primary', function () {
+    ui.foot.appendChild(button('Use these visit notes', 'primary', function () {
       var value = ta.value;
       real = byId('transcript'); top = byId('ez3flTranscript');
       if (real) { real.value = value; dispatchInput(real); }

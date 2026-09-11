@@ -682,9 +682,10 @@
       return { kind: kind, name: name, type: type, text: text };
     });
   }
-  function exampleImporter(id, profile) {
+  function exampleImporter(id, profile, options) {
     id = familyId(id);
     if (!isProfileFamily(id)) return null;
+    options = options && typeof options === 'object' && !Array.isArray(options) ? options : {};
     var targetId = profileId(profile, ''), previewState = null, originScope = storageScope();
     function requireOrigin() { if (!scopeCurrent(originScope)) { previewState = null; throw scopeError(); } }
     function sanitizeDerived(value) {
@@ -735,6 +736,16 @@
         var editor = profileEditor(id, originScope);
         var changes = { templateText: previewState.templateText, instructions: previewState.instructions };
         if (previewState.name) changes.label = previewState.name;
+        /* A first imported example should keep its headings and structure by
+           default. Guide is intentionally loose, so inheriting it from a
+           neighboring/default profile makes an upload look ignored. Callers
+           may preserve an explicit choice; replacing an existing template
+           always keeps its saved mode. */
+        var existing = editor && editor.list().filter(function (row) { return row.id === targetId; })[0];
+        if (existing && !String(existing.templateText || '').trim()) {
+          if (enumValue('templateMode', options.templateMode, '')) changes.templateMode = String(options.templateMode);
+          else if (options.preserveTemplateMode !== true) changes.templateMode = SECTION_TEMPLATE_DEFAULT;
+        }
         var applied = editor && editor.update(targetId, changes);
         if (applied) previewState = null;
         return applied || false;
@@ -793,7 +804,7 @@
         if (!Object.prototype.hasOwnProperty.call(input, 'templateText')) input.templateText = '';
         if (!Object.prototype.hasOwnProperty.call(input, 'instructions')) input.instructions = '';
         if (!input.sectionMode) input.sectionMode = (activeSectionProfile(id, profiles, ctx.family.activeProfile) || {}).sectionMode;
-        if (!input.templateMode) input.templateMode = (activeSectionProfile(id, profiles, ctx.family.activeProfile) || {}).templateMode;
+        if (!input.templateMode) input.templateMode = SECTION_TEMPLATE_DEFAULT;
         profiles.push(input);
         return persist(ctx, profiles, candidateId);
       },
@@ -1082,6 +1093,8 @@
   var modalWasOpen = false;
   var sectionImportSession = null;
   var sectionImportEpoch = 0;
+  var templateModeExplicit = Object.create(null);
+  function templateModeKey(family, profile) { return familyId(family) + '::' + String(profile || ''); }
   function q(id) { return document.getElementById(id); }
   function optionHtml(rows) {
     return rows.map(function (row) { return '<option value="' + row[0] + '">' + row[1] + '</option>'; }).join('');
@@ -1183,9 +1196,24 @@
     var templateText = cleanTemplate(q('mlsDtSectionImportTemplatePreview').value, MAX_SECTION_TEMPLATE);
     if (!templateText) { sectionImportStatus('The reusable template preview is empty.', true); return; }
     var name = cleanReusableText(q('mlsDtSectionImportNamePreview').value, 80);
+    var priorTemplate = cleanTemplate((q('mlsDtSectionTemplateText') || {}).value, MAX_SECTION_TEMPLATE);
+    var selectedProfileId = String((q('mlsDtSectionProfile') || {}).value || '');
+    var modeWasExplicit = !!templateModeExplicit[templateModeKey(activeFamily, selectedProfileId)];
+    var currentComments = cleanReusableText((q('mlsDtInstructions') || {}).value, MAX_INSTRUCTIONS);
+    var derivedComments = cleanReusableText((q('mlsDtSectionImportCommentsPreview') || {}).value, MAX_INSTRUCTIONS);
+    var combinedComments = currentComments;
+    if (derivedComments && currentComments.toLowerCase().indexOf(derivedComments.toLowerCase()) < 0) {
+      var proposedComments = [currentComments, derivedComments].filter(Boolean).join(' | ');
+      if (proposedComments.length > MAX_INSTRUCTIONS) {
+        sectionImportStatus('The existing format comments plus the preview exceed ' + MAX_INSTRUCTIONS + ' characters. Shorten one of them before applying; MLS did not replace or cut off either one.', true);
+        return;
+      }
+      combinedComments = proposedComments;
+    }
     if (name) q('mlsDtSectionName').value = name;
+    if (!priorTemplate && !modeWasExplicit && q('mlsDtSectionTemplate')) q('mlsDtSectionTemplate').value = SECTION_TEMPLATE_DEFAULT;
     q('mlsDtSectionTemplateText').value = templateText;
-    q('mlsDtInstructions').value = cleanReusableText(q('mlsDtSectionImportCommentsPreview').value, MAX_INSTRUCTIONS);
+    q('mlsDtInstructions').value = combinedComments;
     /* tplauto-1.0.0: an uploaded example that produced a template also
        produces the rule that picks it - but only into an EMPTY field. */
     var whenBox = q('mlsDtSectionWhen');
@@ -1200,9 +1228,16 @@
       }
     }
     captureUi(activeFamily);
+    var appliedLabel = String((q('mlsDtSectionName') || {}).value || 'selected format').trim();
+    var appliedStatus = q('mlsDtAppliedStatus');
+    var appliedMode = String((q('mlsDtSectionTemplate') || {}).value || SECTION_TEMPLATE_DEFAULT);
+    var appliedModeText = appliedMode === 'guide' ? 'Uses the template as a loose guide and may rewrite nonessential wording.' :
+      (appliedMode === 'strict' ? 'Keeps template headings, order, and standard wording.' : 'Keeps template headings and structure.');
+    if (appliedStatus) appliedStatus.textContent = 'Preview applied to ' + (FAMILY_LABELS[activeFamily] || 'this output') + ' → ' + appliedLabel + '. ' + appliedModeText + ' Save Settings to use it for future drafts.';
     resetSectionImport(true);
+    paintEffectiveSummary();
     paintCount();
-    try { if (typeof window.toast === 'function') window.toast('Template preview applied to this saved format. Save Settings when you are finished.', 'ok'); } catch (e) {}
+    try { if (typeof window.toast === 'function') window.toast('Template preview applied to ' + (FAMILY_LABELS[activeFamily] || 'this output') + '. Save Settings when you are finished.', 'ok'); } catch (e) {}
   }
   /* ==== tplauto-1.0.0 =====================================================
      Owner 2026-08-27, looking at this very field: "this should be able to
@@ -1324,21 +1359,15 @@
       'box-sizing:border-box;white-space:normal;padding:8px 10px;line-height:1.3}';
     try { (document.head || document.documentElement).appendChild(style); } catch (e) {}
     sec.innerHTML =
-      '<p class="set-head">🤖 AI draft tuning</p>' +
-      '<p class="set-desc">Set the writing defaults for every kind of AI draft. Every draft type supports multiple saved formats, conditional “use when” rules, reusable templates, AI prompt comments, and example import; MLS can choose the matching format from today\'s transcript, and you can still override it for one visit. These settings follow your account. Patient facts never belong here, and no setting can relax clinical, coding, legal, identity, or review safeguards.</p>' +
-      '<div class="field"><label for="mlsDtFamily">Draft type</label><select class="sf-select" id="mlsDtFamily"></select></div>' +
-      '<div class="set-grid2">' +
-        '<div class="field"><label for="mlsDtLength">Detail</label><select class="sf-select" id="mlsDtLength">' + optionHtml([['concise','Concise'],['standard','Standard'],['detailed','Detailed']]) + '</select></div>' +
-        '<div class="field"><label for="mlsDtTone">Tone</label><select class="sf-select" id="mlsDtTone">' + optionHtml([['clinical_neutral','Clinical neutral'],['patient_plain','Patient-friendly plain language'],['warm_patient','Warm patient-facing'],['payer_formal','Payer formal'],['legal_neutral','Legal neutral'],['operational_concise','Operational concise']]) + '</select></div>' +
-        '<div class="field"><label for="mlsDtStructure">Structure</label><select class="sf-select" id="mlsDtStructure">' + optionHtml([['default','Best structure for this draft'],['fixed_headings','Fixed headings'],['problem_grouped','Group by problem'],['template_faithful','Follow the chosen template']]) + '</select></div>' +
-        '<div class="field" id="mlsDtExtraHost"><label for="mlsDtExtra" id="mlsDtExtraLabel">Draft option</label><select class="sf-select" id="mlsDtExtra"></select></div>' +
-        '<div class="field" id="mlsDtSectionProfileHost"><label for="mlsDtSectionProfile">Saved format</label><div class="row"><select class="sf-select" id="mlsDtSectionProfile"></select><button type="button" class="btn-ghost" id="mlsDtSectionAdd">+ Add format</button><button type="button" class="btn-ghost" id="mlsDtSectionDelete">Remove</button></div><p class="mini" id="mlsDtSectionProfileStatus" role="status">Up to 8 reusable formats per section.</p></div>' +
-        '<div class="field" id="mlsDtSectionNameHost"><label for="mlsDtSectionName">Format name</label><input type="text" class="mls-dt-short-field" id="mlsDtSectionName" maxlength="80" placeholder="e.g. Routine follow-up"></div>' +
-        '<div class="field" id="mlsDtSectionWhenHost"><label for="mlsDtSectionWhen">Use automatically when</label><input type="text" class="mls-dt-short-field" id="mlsDtSectionWhen" maxlength="180" placeholder="e.g. stable routine follow-up"><button type="button" class="btn-ghost" id="mlsDtSectionWhenSuggest" style="margin-top:6px" title="Read the template for this saved format and propose the words that should pick it">Suggest from this template</button><p class="mini" id="mlsDtSectionWhenWhy" role="status" style="display:none;color:#8A5A00"></p><p class="mini">MLS checks only today\'s transcript. Leave this blank to use the format only as the account default or when you choose it for one visit.</p></div>' +
-        '<div class="field" id="mlsDtSectionModeHost"><label for="mlsDtSectionMode" id="mlsDtSectionModeLabel">Section format</label><select class="sf-select" id="mlsDtSectionMode"></select></div>' +
-        '<div class="field" id="mlsDtSectionTemplateHost"><label for="mlsDtSectionTemplate">Saved-template handling</label><select class="sf-select" id="mlsDtSectionTemplate">' + optionHtml([['strict','Follow saved template strictly'],['adapt','Adapt only supported fields'],['guide','Use saved template as a guide']]) + '</select></div>' +
-      '</div>' +
+      '<p class="set-head">🤖 AI output formats</p>' +
+      '<p class="set-desc">Choose an output, then review the saved format and template that will shape it. Uploading an example creates an editable preview; nothing is kept until you apply it and save Settings.</p>' +
+      '<div class="field"><label for="mlsDtFamily">Output type</label><select class="sf-select" id="mlsDtFamily"></select></div>' +
+      '<div id="mlsDtEffectiveSummary" role="status" style="margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--soft,#f8fafc);font-size:13px;line-height:1.45"></div>' +
+      '<button type="button" class="btn-ghost" id="mlsDtProcedureTemplatesLink" style="display:none;margin:-4px 0 12px">Open procedure template library</button>' +
+      '<div class="field" id="mlsDtSectionProfileHost"><label for="mlsDtSectionProfile">Format used by this output</label><div class="row"><select class="sf-select" id="mlsDtSectionProfile"></select><button type="button" class="btn-ghost" id="mlsDtSectionAdd">+ Add format</button><button type="button" class="btn-ghost" id="mlsDtSectionDelete">Remove</button></div><p class="mini" id="mlsDtSectionProfileStatus" role="status">Up to 8 reusable formats per output.</p></div>' +
+      '<div class="field" id="mlsDtSectionNameHost"><label for="mlsDtSectionName">Format name</label><input type="text" class="mls-dt-short-field" id="mlsDtSectionName" maxlength="80" placeholder="e.g. Routine follow-up"></div>' +
       '<div class="field" id="mlsDtSectionTemplateTextHost"><label for="mlsDtSectionTemplateText">Template / outline for this saved format</label><textarea class="note-box mls-dt-template-field" id="mlsDtSectionTemplateText" maxlength="2000" placeholder="Enter the headings, order, labels, or example structure MLS should follow. Do not put patient facts here." style="min-height:150px;height:150px;box-sizing:border-box"></textarea><p class="mini">The AI treats this as a format scaffold, never as evidence about the patient. 2,000 characters maximum.</p></div>' +
+      '<pre id="mlsDtEffectivePreview" aria-label="Effective template preview" style="display:none;white-space:pre-wrap;max-height:150px;overflow:auto;margin:0 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fbfcfe;font:12px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace"></pre>' +
       '<div class="field" id="mlsDtSectionImportHost"><button type="button" class="btn-ghost" id="mlsDtSectionImportOpen" aria-controls="mlsDtSectionImportPanel" aria-describedby="mlsDtSectionImportScope" aria-expanded="false">Upload or paste an example for this saved format</button><p class="mini" id="mlsDtSectionImportScope">Applies only to the selected draft type and saved format. Procedure/op-note templates stay in Op Notes.</p><div id="mlsDtSectionImportPanel" hidden style="display:none;margin-top:10px;padding:12px;border:1px solid var(--line);border-radius:10px">' +
         '<p class="mini" style="margin-top:0">Paste an example draft, or choose a document file or image (text, Word, PDF, PNG, JPEG, WebP, or GIF). Your example is processed through MLS\'s authenticated AI services. For images or scanned PDFs, MLS first performs temporary OCR. MLS removes common patient identifiers and embedded instructions from the reusable result, but review the preview before saving. The original example is used transiently, then cleared from this importer and is not saved in your draft-tuning settings. Only the reusable format fields are saved when you choose Apply and Save Settings.</p>' +
         '<input type="file" id="mlsDtSectionImportFile" accept=".txt,.text,.md,.markdown,.rtf,.doc,.docx,.pdf,.png,.jpg,.jpeg,.webp,.gif,text/plain,text/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg,image/webp,image/gif">' +
@@ -1352,8 +1381,22 @@
           '<button type="button" class="btn-green" id="mlsDtSectionImportApply">Apply preview to this saved format</button>' +
         '</div>' +
       '</div></div>' +
-      '<div class="field"><label for="mlsDtInstructions" id="mlsDtInstructionsLabel">AI prompt comments for this saved format</label><textarea id="mlsDtInstructions" class="note-box mls-dt-comments-field" maxlength="600" placeholder="Non-patient writing preferences only…" style="min-height:96px;height:96px;box-sizing:border-box"></textarea><p class="mini" id="mlsDtCount">0 / 600</p></div>' +
-      '<div class="field" id="mlsDtFamilyInstructionsHost"><label for="mlsDtFamilyInstructions">Standing instructions for this draft type</label><textarea id="mlsDtFamilyInstructions" class="note-box mls-dt-comments-field" maxlength="600" placeholder="Account-wide non-patient writing preferences only…" style="min-height:96px;height:96px;box-sizing:border-box"></textarea><p class="mini">Applied in addition to the selected saved format for this draft type.</p></div>' +
+      '<div class="field" id="mlsDtSectionTemplateHost"><label for="mlsDtSectionTemplate">How closely to follow this template</label><select class="sf-select" id="mlsDtSectionTemplate">' + optionHtml([['strict','Strict — keep its headings, order, and standard wording'],['adapt','Follow template (recommended) — keep its structure'],['guide','Guide only — headings and layout may change']]) + '</select><p class="mini" id="mlsDtTemplateModeHelp"></p></div>' +
+      '<p class="mini" id="mlsDtAppliedStatus" role="status" style="margin:8px 0 12px;color:var(--muted)"></p>' +
+      '<details id="mlsDtAdvanced" style="margin-top:10px;border:1px solid var(--line);border-radius:10px;padding:10px 12px">' +
+        '<summary style="cursor:pointer;font-weight:700">Advanced style and automatic routing</summary>' +
+        '<p class="mini">These controls refine the selected format. The template and safety rules remain authoritative.</p>' +
+        '<div class="set-grid2">' +
+          '<div class="field"><label for="mlsDtLength">Detail</label><select class="sf-select" id="mlsDtLength">' + optionHtml([['concise','Concise'],['standard','Standard'],['detailed','Detailed']]) + '</select></div>' +
+          '<div class="field"><label for="mlsDtTone">Tone</label><select class="sf-select" id="mlsDtTone">' + optionHtml([['clinical_neutral','Clinical neutral'],['patient_plain','Patient-friendly plain language'],['warm_patient','Warm patient-facing'],['payer_formal','Payer formal'],['legal_neutral','Legal neutral'],['operational_concise','Operational concise']]) + '</select></div>' +
+          '<div class="field"><label for="mlsDtStructure">Overall structure</label><select class="sf-select" id="mlsDtStructure">' + optionHtml([['default','Best structure for this draft'],['fixed_headings','Fixed headings'],['problem_grouped','Group by problem'],['template_faithful','Follow the chosen template']]) + '</select></div>' +
+          '<div class="field" id="mlsDtExtraHost"><label for="mlsDtExtra" id="mlsDtExtraLabel">Draft option</label><select class="sf-select" id="mlsDtExtra"></select></div>' +
+          '<div class="field" id="mlsDtSectionWhenHost"><label for="mlsDtSectionWhen">Use automatically when</label><input type="text" class="mls-dt-short-field" id="mlsDtSectionWhen" maxlength="180" placeholder="e.g. stable routine follow-up"><button type="button" class="btn-ghost" id="mlsDtSectionWhenSuggest" style="margin-top:6px" title="Read the template for this saved format and propose the words that should pick it">Suggest from this template</button><p class="mini" id="mlsDtSectionWhenWhy" role="status" style="display:none;color:#8A5A00"></p><p class="mini">Leave blank to keep this as the account default or choose it for one visit.</p></div>' +
+          '<div class="field" id="mlsDtSectionModeHost"><label for="mlsDtSectionMode" id="mlsDtSectionModeLabel">Section format</label><select class="sf-select" id="mlsDtSectionMode"></select></div>' +
+        '</div>' +
+        '<div class="field"><label for="mlsDtInstructions" id="mlsDtInstructionsLabel">AI prompt comments for this saved format</label><textarea id="mlsDtInstructions" class="note-box mls-dt-comments-field" maxlength="600" placeholder="Non-patient writing preferences only…" style="min-height:96px;height:96px;box-sizing:border-box"></textarea><p class="mini" id="mlsDtCount">0 / 600</p></div>' +
+        '<div class="field" id="mlsDtFamilyInstructionsHost"><label for="mlsDtFamilyInstructions">Standing instructions for this output type</label><textarea id="mlsDtFamilyInstructions" class="note-box mls-dt-comments-field" maxlength="600" placeholder="Account-wide non-patient writing preferences only…" style="min-height:96px;height:96px;box-sizing:border-box"></textarea><p class="mini">Applied in addition to the selected saved format for this output type.</p></div>' +
+      '</details>' +
       '<div class="field" id="mlsDtResetField"><div class="row"><button type="button" class="btn-ghost" id="mlsDtReset" aria-describedby="mlsDtResetStatus">Reset this draft type</button><span class="mini" id="mlsDtResetStatus" role="status"></span></div></div>';
     var family = sec.querySelector('#mlsDtFamily');
     FAMILY_IDS.forEach(function (id) {
@@ -1369,17 +1412,28 @@
       resetSectionImport(true);
       captureUi(activeFamily);
       activeFamily = familyId(family.value);
+      var appliedStatus = q('mlsDtAppliedStatus'); if (appliedStatus) appliedStatus.textContent = '';
       loadUi(activeFamily);
     });
+    var procedureTemplatesLink = q('mlsDtProcedureTemplatesLink');
+    if (procedureTemplatesLink) procedureTemplatesLink.addEventListener('click', function () {
+      try { if (typeof window.openTemplates === 'function') window.openTemplates(); }
+      catch (e) { try { if (typeof window.toast === 'function') window.toast('The procedure template library could not be opened.', 'err'); } catch (e2) {} }
+    });
     ['mlsDtLength', 'mlsDtTone', 'mlsDtStructure', 'mlsDtExtra', 'mlsDtSectionName', 'mlsDtSectionMode', 'mlsDtSectionTemplate', 'mlsDtSectionTemplateText', 'mlsDtSectionWhen', 'mlsDtInstructions', 'mlsDtFamilyInstructions'].forEach(function (id) {
-      var el = q(id); if (el) el.addEventListener('input', function () { captureUi(activeFamily); paintCount(); });
-      if (el) el.addEventListener('change', function () { captureUi(activeFamily); paintCount(); });
+      function changed() {
+        if (id === 'mlsDtSectionTemplate') templateModeExplicit[templateModeKey(activeFamily, (q('mlsDtSectionProfile') || {}).value)] = true;
+        captureUi(activeFamily); paintEffectiveSummary(); paintCount();
+      }
+      var el = q(id); if (el) el.addEventListener('input', changed);
+      if (el) el.addEventListener('change', changed);
     });
     var whenSuggestButton = q('mlsDtSectionWhenSuggest');
     if (whenSuggestButton) whenSuggestButton.addEventListener('click', suggestWhenNow);
     q('mlsDtSectionProfile').addEventListener('change', function () {
       var selector = q('mlsDtSectionProfile'), profile = selector.value;
       resetSectionImport(true);
+      var appliedStatus = q('mlsDtAppliedStatus'); if (appliedStatus) appliedStatus.textContent = '';
       /* A change event fires after the select value has moved. Capture the
          visible fields against the profile they came from, not against the
          newly selected row, or switching Plan A -> Plan B overwrites Plan B
@@ -1407,7 +1461,7 @@
         label: 'New ' + activeFamily.toUpperCase() + ' format',
         when: '',
         sectionMode: current.sectionMode,
-        templateMode: current.templateMode,
+        templateMode: SECTION_TEMPLATE_DEFAULT,
         templateText: '',
         instructions: ''
       });
@@ -1457,6 +1511,58 @@
     sel.innerHTML = optionHtml(ex.choices);
     sel.setAttribute('data-key', ex.key);
     sel.value = value || ex.choices[0][0];
+  }
+  function templateModeHelp(mode, hasTemplate) {
+    if (!hasTemplate) return 'Add or import a template before choosing how closely MLS should follow it.';
+    if (mode === 'strict') return 'Strict keeps the template\'s headings, order, and standard wording, while leaving unsupported clinical facts unfilled.';
+    if (mode === 'guide') return 'Guide uses the template for ideas only. It does not preserve the template\'s headings, order, or layout.';
+    return 'Follow template is recommended for uploaded templates. It keeps the template\'s headings and order while filling only fields supported by the visit.';
+  }
+  function paintEffectiveSummary() {
+    var summary = q('mlsDtEffectiveSummary'), preview = q('mlsDtEffectivePreview');
+    if (!summary) return;
+    var id = familyId(activeFamily), family = working && working.families ? working.families[id] : null;
+    var procedureLink = q('mlsDtProcedureTemplatesLink');
+    if (procedureLink) procedureLink.style.display = id === 'opnote' ? '' : 'none';
+    family = sanitizeFamily(id, family || familyDefaults(id));
+    var profiles = isProfileFamily(id) ? visibleSectionProfiles(id, family.profiles) : [];
+    var select = q('mlsDtSectionProfile');
+    var selected = profiles.length ? activeSectionProfile(id, profiles, (select && select.value) || family.activeProfile) : null;
+    var templateBox = q('mlsDtSectionTemplateText');
+    var templateText = selected ? cleanTemplate(templateBox ? templateBox.value : selected.templateText, MAX_SECTION_TEMPLATE) : '';
+    var modeSelect = q('mlsDtSectionTemplate');
+    var mode = String((modeSelect && modeSelect.value) || (selected && selected.templateMode) || SECTION_TEMPLATE_DEFAULT);
+    var modeHelp = q('mlsDtTemplateModeHelp');
+    if (modeSelect) {
+      modeSelect.disabled = !templateText;
+      modeSelect.setAttribute('aria-disabled', templateText ? 'false' : 'true');
+    }
+    if (modeHelp) modeHelp.textContent = templateModeHelp(mode, !!templateText);
+    var label = FAMILY_LABELS[id] || 'Selected output';
+    if (!selected) {
+      summary.textContent = label + ' uses its saved account defaults. No reusable format is selected for this output.';
+      if (preview) { preview.textContent = ''; preview.style.display = 'none'; }
+      return;
+    }
+    var profileLabel = String(selected.label || selected.id || 'Saved format');
+    var routing = profiles.length > 1
+      ? ' It is the account default; another saved format can be chosen only when its Use automatically when rule matches or you pick it for one visit.'
+      : ' It is the only saved format for this output.';
+    var modeSentence = mode === 'guide' ? ' It uses the template for ideas only and does not preserve its headings, order, or layout.' :
+      (mode === 'strict' ? ' It keeps template headings, order, and standard wording.' : ' It keeps template headings and structure while filling supported content.');
+    var templateSentence = templateText
+      ? ' This Settings format has a ' + templateText.length + '-character template.' + modeSentence
+      : ' This Settings format has no template, so template fidelity is inactive; its format and comments can still guide the draft.';
+    var procedureSentence = id === 'opnote'
+      ? ' Patient-specific procedure templates are selected separately in Op Notes and remain unchanged.' : '';
+    var fieldSentence = id === 'soap'
+      ? ' Visit notes always keep the five fields HPI, ROS, Exam, Assessment, and Plan.'
+      : (SECTION_FAMILIES.indexOf(id) >= 0 ? ' This customizes only the matching ' + label + ' field inside that five-field visit note.' : '');
+    summary.textContent = label + ' will use Settings format “' + profileLabel + '”.' + templateSentence + routing + fieldSentence + procedureSentence;
+    if (preview) {
+      preview.textContent = templateText ? templateText.slice(0, 600) : '';
+      preview.style.display = templateText ? '' : 'none';
+    }
   }
   function fillSectionControls(id, value, templateMode, activeProfile, profiles) {
     var profileHost = q('mlsDtSectionProfileHost'), profile = q('mlsDtSectionProfile'), whenHost = q('mlsDtSectionWhenHost'), when = q('mlsDtSectionWhen');
@@ -1509,6 +1615,7 @@
        mode the drafts are not using. */
     if (id === 'opnote') template.value = opnoteRoomTemplateMode();
     paintProfileButtons(profiles);
+    paintEffectiveSummary();
   }
   function paintProfileButtons(profiles) {
     var add = q('mlsDtSectionAdd'), remove = q('mlsDtSectionDelete'), status = q('mlsDtSectionProfileStatus');
@@ -1576,6 +1683,7 @@
       q('mlsDtInstructions').value = active.instructions || '';
     }
     fillSectionControls(id, p.sectionMode, p.templateMode, p.activeProfile, p.profiles);
+    paintEffectiveSummary();
     if (isProfileFamily(id) && active) offerWhenSuggestion(id, active);
     paintCount();
     paintResetState();
@@ -1639,6 +1747,7 @@
     workingScopeInvalid = false;
     working = readForScope(workingScope);
     if (!working) { workingScopeInvalid = true; return false; }
+    templateModeExplicit = Object.create(null);
     activeFamily = 'soap';
     mountSettings();
     loadUi(activeFamily);
@@ -1703,6 +1812,7 @@
     working = null;
     workingScope = null;
     workingScopeInvalid = false;
+    templateModeExplicit = Object.create(null);
     activeFamily = 'soap';
   }
   function onSessionBoundary() {

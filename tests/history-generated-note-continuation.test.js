@@ -32,6 +32,7 @@ for (const rel of shells) {
     setActivePtId(id) { calls.push(['patient', id]); if (allowSwitch) activeId = String(id); },
     showView(view) { calls.push(['view', view]); },
     loadRecordIntoEditor(note) { calls.push(['load', note.id, note.appointmentId]); },
+    window: { __mlsEasyV32: { open(screen) { calls.push(['easy', screen]); } } },
     renderPatientBar() { calls.push(['bar']); },
     toast(message) { calls.push(['toast', message]); },
     document: { getElementById(id) { return id === 'noteCard' ? noteCard : null; } }
@@ -48,13 +49,16 @@ for (const rel of shells) {
   const refusedAt = calls.length;
   assert.strictEqual(context._mlsContinueSavedRecord(generated), false, rel + ': refused patient switch reported a successful continuation');
   assert.deepStrictEqual(calls.slice(refusedAt), [['patient', patient.id]], rel + ': refused switch mutated the current Visit draft');
+  assert.strictEqual(calls.filter(x => x[0] === 'easy').length, 0, rel + ': refused switch entered the Easy visit room');
 
   allowSwitch = true;
   assert.strictEqual(context._mlsContinueSavedRecord(generated), true, rel + ': generated note did not continue');
-  assert.deepStrictEqual(calls.slice(refusedAt + 1, refusedAt + 5), [
-    ['patient', patient.id], ['view', 'visit'], ['load', generated.id, generated.appointmentId], ['bar']
+  assert.deepStrictEqual(calls.slice(refusedAt + 1, refusedAt + 6), [
+    ['patient', patient.id], ['view', 'visit'], ['load', generated.id, generated.appointmentId], ['easy', 'doctor'], ['bar']
   ], rel + ': continuation did not restore patient, route, and exact saved record in order');
-  assert.strictEqual(calls.filter(x => x[0] === 'scroll').length, 1, rel + ': continuation has more than one scroll owner');
+  assert.strictEqual(calls.filter(x => x[0] === 'easy').length, 1, rel + ': successful continuation did not enter the existing Easy doctor room exactly once');
+  assert.strictEqual(calls.filter(x => x[0] === 'scroll').length, 0, rel + ': continuation jumped to the hidden Advanced note card');
+  assert(source.includes('onclick="reopenViewed()" style="flex:1">↩ Continue this draft</button>'), rel + ': legacy saved-note modal uses a different name for the shared continuation action');
 
   const before = calls.length;
   assert.strictEqual(context._mlsSavedRecordCanReopen({ id: 'chart-receipt', patientId: patient.id, cc: 'Athena chart import', text: 'clinical history' }), false,
@@ -73,4 +77,4 @@ assert(detail.includes('editorPatient && canContinueInVisitEditor(note) && isFn(
 assert(detail.includes('if (window._mlsContinueSavedRecord(note)) closeModal(false);'), 'rich detail closes before a refused patient switch can be reported');
 assert(!/function canContinueInVisitEditor[\s\S]*?note\.text/.test(detail), 'arbitrary clinical-history text can qualify as an editable Visit draft');
 
-console.log('PASS History generated-note continuation: exact patient and appointment restore, clinical-history exclusion, and one scroll owner');
+console.log('PASS History generated-note continuation: exact patient and appointment restore, clinical-history exclusion, and zero surprise scrolls');

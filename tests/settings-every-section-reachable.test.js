@@ -56,6 +56,12 @@ assert.deepStrictEqual(orphans, [],
   'these Settings sections are reachable from NO tab — the organizer only shows a section whose group equals the selected key, so an unmapped heading is invisible with no error: ' +
   JSON.stringify(orphans) + '. Add a pattern to settingsGroupFor (and a group to SETTINGS_GROUPS if it deserves its own tab).');
 
+/* The draft-tuning fork is injected after the base HTML, so its friendly heading
+   is intentionally not the routing contract. The real classifier must route its
+   stable id into the existing Notes & AI group. */
+assert.strictEqual(sandbox.groupFor({ id: 'mlsDraftTuningSection', heading: '🤖 AI output formats' }), 'notes',
+  'injected draft-tuning section is not reachable from the Notes & AI tab by stable id');
+
 /* the owner asked for the avatar in Settings, "easily found" — so it must have its own
    tab rather than being buried inside another section's pane */
 assert.strictEqual(sandbox.groupFor({ heading: '🧑‍⚕️ Patient check-in avatar' }), 'avatar',

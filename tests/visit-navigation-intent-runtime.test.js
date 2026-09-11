@@ -15,6 +15,186 @@ function between(start, end) {
 const canonical = between('  function withAdvancedWorkspace(fn)', '  function wireVisitQuickTools()');
 assert(!/installAutoAdvance|__ez3AutoGenWrap|ez3AutoGenerate|window\.stopCapture\s*=/.test(canonical),
   'a low-level Stop still installs deferred automatic generation');
+
+/* The enhancement lane and the Easy renderer must agree on whether a visit
+ * exists. Shared transcript bytes alone never authorize clinical controls on
+ * Home/Choose, while an explicit Doctor open can adopt the exact active
+ * patient and an already-frozen visit without mutating either. */
+{
+  const laneReady = between('  function doctorVisitLaneReady()', '  function clickTopVoiceControl(');
+  let easyState = { mode: 'doctor', screen: 'home', locked: null };
+  const laneCtx = { window: { __mlsEasyV32: { state: () => easyState } } };
+  vm.createContext(laneCtx);
+  vm.runInContext(laneReady + '\nthis.ready=doctorVisitLaneReady;', laneCtx);
+  assert.strictEqual(laneCtx.ready(), false, 'Home accepted a source-only enhancement lane');
+  easyState = { mode: 'doctor', screen: 'doctor', locked: null };
+  assert.strictEqual(laneCtx.ready(), false, 'Doctor screen without a patient lock accepted the lane');
+  easyState = { mode: 'doctor', screen: 'doctor', locked: { id: 'fixture-patient-one' } };
+  assert.strictEqual(laneCtx.ready(), true, 'an exact active Doctor visit lost its enhancement lane');
+  easyState = { mode: 'doctor', screen: 'choose', locked: { id: 'fixture-patient-one' } };
+  assert.strictEqual(laneCtx.ready(), false, 'Choose retained the prior visit lane');
+}
+{
+  const adopt = between('  function adoptActiveVisitForDoctorOpen()', '  function generationWarningDuplicatesLane(');
+  const patient = { id: 'fixture-patient-one', name: 'Synthetic Patient', dob: '2000-01-02', mrn: 'MRN-1' };
+  const binding = { id: 'binding-one', patient: { patientId: patient.id, name: patient.name, dob: patient.dob, mrn: patient.mrn },
+    visitContext: { sourceId: 'source-row-one', appointmentId: 'appointment-one', visitDate: '2026-09-10', provider: 'Synthetic Doctor' } };
+  const S = { appt: null, locked: null, phase: 'note', editing: true, genClickedAt: 44, signedAt: 55, lastWarn: 'kept' };
+  const ctx = {
+    S, canonicalActivePatient: () => patient, currentVisitBinding: () => binding,
+    nameMatch: (a, b) => String(a) === String(b), dobConflicts: (a, b) => !!a && !!b && a !== b,
+    mrnConflicts: (a, b) => !!a.mrn && !!b.mrn && a.mrn !== b.mrn
+  };
+  vm.createContext(ctx);
+  vm.runInContext(adopt + '\nthis.adopt=adoptActiveVisitForDoctorOpen;', ctx);
+  assert.strictEqual(ctx.adopt(), true, 'exact active saved visit was not adopted');
+  assert.strictEqual(S.appt.appointmentId, 'appointment-one', 'adoption lost the exact saved appointment');
+  assert.strictEqual(S.appt.appt_date, '2026-09-10', 'adoption lost the exact saved visit date');
+  assert.strictEqual(S.appt.provider, 'Synthetic Doctor', 'adoption lost the exact saved provider');
+  assert.strictEqual(S.locked.id, patient.id, 'adoption changed the active patient');
+  assert.deepStrictEqual({ phase: S.phase, editing: S.editing, genClickedAt: S.genClickedAt, signedAt: S.signedAt, lastWarn: S.lastWarn },
+    { phase: 'note', editing: true, genClickedAt: 44, signedAt: 55, lastWarn: 'kept' },
+    'navigation reset existing draft/visit state');
+  S.appt = null; S.locked = null;
+  binding.patient.patientId = 'different-patient';
+  assert.strictEqual(ctx.adopt(), false, 'conflicting saved binding was silently adopted');
+  assert.strictEqual(S.appt, null, 'refused adoption changed the workspace');
+}
+{
+  const helpers = between("  function noteText() { var n = $('noteBox');", '  function signBtn()');
+  const clickWire = between("    on('ez3ActiveGo', function () {", "    on('ez3Choose', function () {");
+  const patient = { id: 'fixture-patient-one', name: 'Synthetic Patient', dob: '2000-01-02', mrn: 'MRN-1' };
+  const visit = { id: 'appointment-one', _patientId: patient.id, name: patient.name, dob: patient.dob, mrn: patient.mrn };
+  const S = { appt: visit, locked: { id: visit.id, name: patient.name, dob: patient.dob, mrn: patient.mrn }, phase: 'note', recStart: 0, genClickedAt: 0 };
+  const fields = { transcript: { value: 'Exact retained synthetic source.' }, noteBox: { value: 'Exact retained synthetic note.' },
+    ez3ActiveGo: { getAttribute: key => key === 'data-continue' ? '1' : '' } };
+  let active = patient, modeCalls = 0, recordCalls = 0, renderCalls = 0, capturing = false;
+  const originalVisit = JSON.stringify(visit), originalSource = fields.transcript.value, originalNote = fields.noteBox.value;
+  const ctx = {
+    S, String, $: id => fields[id] || null, canonicalActivePatient: () => active,
+    visitBindingOwnsPatient: id => String(id) === String(patient.id) && String(S.appt._patientId) === String(id),
+    nameMatch: (a, b) => String(a) === String(b), dobConflicts: (a, b) => !!a && !!b && a !== b,
+    mrnConflicts: (a, b) => !!a.mrn && !!b.mrn && a.mrn !== b.mrn,
+    captureBusy: () => capturing, esc: value => String(value), bannerPatient: () => active,
+    on(id, fn) { if (id === 'ez3ActiveGo') ctx.click = fn; },
+    setEasyMode(mode, screen, reason) { assert.deepStrictEqual([mode, screen, reason], ['doctor', 'doctor', 'home-continue-visit']); modeCalls++; },
+    render() { renderCalls++; }, bannerRowToday: () => { throw new Error('continuation resolved a new appointment'); },
+    lockAndStart() { recordCalls++; }, lockAndStartPatient() { recordCalls++; }
+  };
+  vm.createContext(ctx);
+  vm.runInContext(helpers + '\nthis.owns=homeOwnsContinuableVisit;this.action=activePatientHomeAction;', ctx);
+  assert.strictEqual(ctx.owns(patient), true, 'exact owned draft did not become continuable');
+  const html = ctx.action(patient, 'new visit detail', '');
+  assert(/>➡ Continue visit</.test(html), 'owned draft still rendered Start recording');
+  assert(/aria-label="Continue visit"/.test(html) && !/aria-label="[^"]*Synthetic Patient/.test(html), 'Continue visit accessible name includes a patient name');
+  assert(/<small>Return to this visit’s note and transcript<\/small>/.test(html),
+    'the Continue sub-label does not name what is actually there to return to. Markup: ' + html);
+  assert(/ data-rec="0"/.test(html),
+    'the Continue press is stamped as a recording press. The verdict lane watches #ez3ActiveGo, so it arms on this ' +
+    'press and paints "Recording did not start and MLS was not told why" over a visit nobody asked to record. Markup: ' + html);
+  vm.runInContext(clickWire, ctx);
+  ctx.click();
+  assert.strictEqual(modeCalls, 1, 'Continue visit did not navigate to the existing Doctor room');
+  assert.strictEqual(recordCalls, 0, 'Continue visit started recording or rebuilt the visit');
+  assert.strictEqual(renderCalls, 0, 'stable Continue visit needed an extra repaint');
+  assert.strictEqual(JSON.stringify(S.appt), originalVisit, 'Continue visit changed the visit binding');
+  assert.strictEqual(fields.transcript.value, originalSource, 'Continue visit changed the source');
+  assert.strictEqual(fields.noteBox.value, originalNote, 'Continue visit changed the note');
+
+  fields.transcript.value = ''; fields.noteBox.value = ''; S.phase = 'idle';
+  assert.strictEqual(ctx.owns(patient), false, 'a new empty visit was promoted to Continue');
+  assert(/Start Recording/.test(ctx.action(patient, 'new visit detail', '')), 'a new empty visit lost Start recording');
+  fields.transcript.value = 'Stale bytes from the prior patient.';
+  active = { id: 'fixture-patient-two', name: 'Other Patient', dob: '2001-03-04', mrn: 'MRN-2' };
+  assert.strictEqual(ctx.owns(active), false, 'stale other-patient source promoted Continue visit');
+
+  /* A PARKED PHASE IS NOT A LIVE VISIT.
+     stopRecordingOnly parks S.phase at 'stopped' and clears nothing else, and
+     a patient switch through lockAndStartPatient resets editing/genClickedAt
+     but NOT phase/recStart. Both therefore outlive the visit that set them, so
+     reading them as "live" offered "Continue visit" on an ENTIRELY EMPTY new
+     visit - and Home was then left with no Start Recording door at all. */
+  active = patient;
+  fields.transcript.value = ''; fields.noteBox.value = '';
+  S.phase = 'stopped'; S.recStart = 1757000000000; S.genClickedAt = 0;
+  assert.strictEqual(ctx.owns(patient), false,
+    'a parked stopped phase with empty editors was offered as a visit to continue - there is nothing there to return to');
+  const startMarkup = ctx.action(patient, 'no appointment today', '');
+  assert(/🎙 Start Recording/.test(startMarkup),
+    'an empty visit on a parked phase lost its Start Recording door. Markup: ' + startMarkup);
+  assert(/ data-rec="1"/.test(startMarkup),
+    'the Start Recording form must still be stamped as a recording press. Markup: ' + startMarkup);
+
+  /* and the sub-label names what actually exists, in each shape */
+  fields.transcript.value = 'A synthetic spoken line from this visit.';
+  assert.strictEqual(ctx.owns(patient), true, 'a stopped visit that already holds a transcript lost its Continue offer');
+  const sourceOnly = ctx.action(patient, 'no appointment today', '');
+  assert(/<small>Return to this visit’s transcript<\/small>/.test(sourceOnly),
+    'a transcript-only visit was described as having a note. Markup: ' + sourceOnly);
+  fields.transcript.value = ''; fields.noteBox.value = 'A synthetic drafted note.';
+  assert.strictEqual(ctx.owns(patient), true, 'a stopped visit that already holds a note lost its Continue offer');
+  assert(/<small>Return to this visit’s note<\/small>/.test(ctx.action(patient, 'no appointment today', '')),
+    'a note-only visit was described as having a transcript');
+  fields.noteBox.value = '';
+  capturing = true;
+  assert.strictEqual(ctx.owns(patient), true, 'a running capture with empty editors is a live visit and must stay continuable');
+  assert(/<small>Return to this visit<\/small>/.test(ctx.action(patient, 'no appointment today', '')),
+    'a live but still-empty visit claimed content it does not have');
+  capturing = false;
+
+  /* THE RECORDING-VERDICT LANE MUST NOT ARM ON A CONTINUE PRESS.
+     #ez3ActiveGo is in REC_START_SEL, and recPressWanted arms on anything not
+     stamped data-rec="0", so before this stamp every Continue press armed
+     _recArmed and the sheet painted the red "Recording did not start and MLS
+     was not told why" refusal 1.2 s later. Executed, not grepped: the lane's
+     own listener is run against the markup the renderer actually emits. */
+  const lane = between('  var _recFail = null;      /* { why, kind, at }', '  /* ===== recvis-1.0.0 end');
+  const laneCtx = { document: { querySelectorAll: () => [] }, window: {}, console,
+    recordingNow: () => false, verifiedActivePatient: () => patient, scheduleLaneSync() {} };
+  vm.createContext(laneCtx);
+  vm.runInContext(lane + '\nthis.press=laneRecordPress;this.wanted=recPressWanted;this.sel=REC_START_SEL;', laneCtx);
+  function pressEventFor(markup) {
+    const tag = (markup.match(/^<button[^>]*>/) || [''])[0];
+    const attrs = {};
+    const re = /([a-zA-Z-]+)="([^"]*)"/g;
+    let m;
+    while ((m = re.exec(tag))) attrs[m[1]] = m[2];
+    const el = { getAttribute: key => (Object.prototype.hasOwnProperty.call(attrs, key) ? attrs[key] : null) };
+    return { target: { closest: sel => (String(sel).split(',').indexOf('#' + attrs.id) >= 0 ? el : null) } };
+  }
+  fields.transcript.value = 'A synthetic spoken line from this visit.';
+  const continueMarkup = ctx.action(patient, 'no appointment today', '');
+  assert(/➡ Continue visit/.test(continueMarkup), 'the Continue markup under test is not a Continue offer');
+  laneCtx._recArmed = null;
+  laneCtx.press(pressEventFor(continueMarkup));
+  assert.strictEqual(laneCtx._recArmed, null,
+    'pressing Continue visit armed the recording-verdict lane. Nothing on the Continue path ever disarms it, so the ' +
+    'sheet paints "Recording did not start and MLS was not told why" over a visit nobody asked to record.');
+  laneCtx.press(pressEventFor(startMarkup));
+  assert(laneCtx._recArmed && laneCtx._recArmed.at > 0,
+    'POSITIVE CONTROL: a real Start Recording press no longer arms the lane, so the assertion above proves nothing - ' +
+    'either #ez3ActiveGo left REC_START_SEL or the press listener stopped reading these buttons');
+  assert.strictEqual(laneCtx.wanted(pressEventFor(continueMarkup).target.closest(laneCtx.sel)), false,
+    'recPressWanted does not honour the data-rec="0" stamp the Continue form emits');
+  assert.strictEqual(laneCtx.wanted(pressEventFor(startMarkup).target.closest(laneCtx.sel)), true,
+    'recPressWanted stopped treating the Start Recording form as a recording press');
+}
+{
+  const warningHelper = between('  function generationWarningDuplicatesLane(message)', '  /* =======================================================================\n   *  renderers');
+  let hint = { state: 'failed', text: 'Generation could not finish. Your prior draft was retained. [draft_quality_failed]' };
+  const ctx = { window: { __mlsEz3Flow: { genRun: { hint: () => hint } } } };
+  vm.createContext(ctx);
+  vm.runInContext(warningHelper + '\nthis.duplicate=generationWarningDuplicatesLane;', ctx);
+  assert.strictEqual(ctx.duplicate('Generation could not finish. Your prior draft was retained.'), true,
+    'the same generation error with a diagnostic suffix still rendered twice');
+  hint = { state: 'failed', text: 'A different failure.' };
+  assert.strictEqual(ctx.duplicate('Generation could not finish. Your prior draft was retained.'), false,
+    'a distinct warning was incorrectly suppressed');
+}
+assert(source.includes("var kill = (staff || !doctorVisit) ? '.ez3fl-staffLink,.ez3fl-record'"),
+  'Home/Choose does not remove a previously mounted enhancement lane');
+assert(source.includes('!onStaffScreen(body) && doctorVisitLaneReady()'),
+  'the fast remount path can recreate the lane on Home/Choose');
 const stop = between('  function stopRecordingOnly(fromLane)', '  /* The top lane must not call');
 for (const scenario of ['pause', 'resume', 'next-patient', 'next-visit']) {
   let capturing = true, stops = 0, generations = 0;
@@ -93,6 +273,10 @@ function setup(options = {}) {
     currentNoteId: 'fixture-note-one', _mlsConsentEpoch: 1,
     currentVisitAthenaBinding: { patient: { id: 'fixture-patient-one' }, visitContext: { appointmentId: 'fixture-slot-one' } },
     CustomEvent: function (type, options) { this.type = type; this.detail = options.detail; },
+    verifiedActivePatient: () => ({ id: patientId }),
+    genTranscriptText: () => elements.transcript.value,
+    noteRecordIdentity: () => 'fixture-note-one',
+    noteTranscriptOutdated: () => false,
     noteLooksLikeRefusal: t => /^I cannot/.test(t), NEXTGATE_REFUSAL_WHY: 'Generate again before reviewing.',
     flowToast: (message, kind) => messages.push({ message, kind }), REVIEW_FIXED_FURNITURE: [],
     setTimeout(fn, delay) { const id = ++nextTimer; timers.set(id, { fn, at: time + delay }); return id; },
@@ -183,4 +367,274 @@ for (const note of ['', 'I cannot generate this note.']) {
   assert.strictEqual(h.counts().doorClicks, 0, 'empty/refusal note reached the review door');
   assert.strictEqual(h.messages.length, 1, 'empty/refusal gate stopped explaining its refusal');
 }
-console.log('PASS visit navigation intent: Pause stays paused; review acts once for the original visit, cancels stale work, preserves deliberate scrolling, and reports real sheet receipts');
+
+/* Closing the unified sheet must unwind the Easy-only review workspace. The
+ * marker is deliberately false for a clinician who opened Review from the
+ * advanced workspace, so that path must remain exactly where it was. */
+const closeReturn = between('  function laneUnifiedReviewClosed()', '  function laneSignal(');
+function setupCloseReturn(easyOwned) {
+  const flags = new Set(['ez3adv']);
+  const calls = { adv: 0, sync: 0, focus: 0, generated: 0 };
+  const elements = {
+    noteBox: { value: 'Exact saved synthetic note bytes.' },
+    ez3Adv: { click() { calls.adv++; flags.delete('ez3adv'); } },
+    ez3flReview: { hidden: false, focus(opts) { assert.strictEqual(opts.preventScroll, true); calls.focus++; } }
+  };
+  const ctx = {
+    _reviewStepOpen: easyOwned,
+    _primaryLane: { id: 'fixture-lane' },
+    window: { __mlsAdvQuietOpen: false },
+    document: {
+      body: { classList: { contains: value => flags.has(value) } },
+      querySelector() { return null; }
+    },
+    $: id => elements[id] || null,
+    setReviewStepOpen(value) { ctx._reviewStepOpen = !!value; },
+    syncTopLane(rec) { assert.strictEqual(rec, ctx._primaryLane); calls.sync++; },
+    setTimeout(fn) { fn(); }
+  };
+  vm.createContext(ctx);
+  vm.runInContext(closeReturn, ctx);
+  return { ctx, flags, calls, note: elements.noteBox.value };
+}
+{
+  const h = setupCloseReturn(true);
+  assert.strictEqual(h.ctx.laneUnifiedReviewClosed(), true, 'Easy-owned review did not return to its note screen');
+  assert.deepStrictEqual(h.calls, { adv: 1, sync: 1, focus: 1, generated: 0 });
+  assert.strictEqual(h.ctx._reviewStepOpen, false, 'Easy review ownership marker survived close');
+  assert.strictEqual(h.flags.has('ez3adv'), false, 'advanced workspace remained over the Easy note');
+  assert.strictEqual(h.note, 'Exact saved synthetic note bytes.', 'closing review changed the note');
+}
+{
+  const h = setupCloseReturn(false);
+  assert.strictEqual(h.ctx.laneUnifiedReviewClosed(), false, 'direct advanced review was claimed by Easy');
+  assert.deepStrictEqual(h.calls, { adv: 0, sync: 0, focus: 0, generated: 0 });
+  assert.strictEqual(h.flags.has('ez3adv'), true, 'direct advanced workspace was closed');
+}
+assert(/addEventListener\('mls:athena-review-closed', laneUnifiedReviewClosed\)/.test(source),
+  'Easy return is not wired to unified review close');
+assert(/removeEventListener\('mls:athena-review-closed', laneUnifiedReviewClosed\)/.test(source),
+  'Easy return listener is not removed during shell rollback');
+for (const file of ['1p-feat_mls_writeflow.js', 'feat_mls_writeflow.js']) {
+  const wfSource = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
+  const start = wfSource.indexOf('  function closeUnifiedConfirmation()');
+  const end = wfSource.indexOf('  /* sheetux-1.0.0', start);
+  assert(start >= 0 && end > start, file + ': unified close function missing');
+  let removed = false;
+  const events = [];
+  const closeCtx = {
+    unifiedAthenaState: { returnFocus: { id: 'ez3flReview' }, manifest: { rows: [] }, a11yKeyHandler: null },
+    destinationTeacher: () => null,
+    wfautoCancel() {},
+    unifiedVisibleFocusTarget: () => false,
+    setTimeout() { throw new Error('hidden old focus should not win after Easy closes its workspace'); },
+    CustomEvent: function (type, options) { this.type = type; this.detail = options.detail; },
+    document: { getElementById: () => ({ remove() { removed = true; } }) },
+    window: { dispatchEvent(ev) { assert.strictEqual(removed, true, 'close event preceded sheet removal'); events.push(ev); } }
+  };
+  vm.createContext(closeCtx);
+  vm.runInContext(wfSource.slice(start, end) + '\ncloseUnifiedConfirmation();', closeCtx);
+  assert.strictEqual(events.length, 1, file + ': unified close emitted no single lifecycle event');
+  assert.strictEqual(events[0].type, 'mls:athena-review-closed');
+  assert.strictEqual(events[0].detail.returnFocusId, 'ez3flReview');
+  assert.strictEqual(closeCtx.unifiedAthenaState, null, file + ': unified state survived close');
+}
+
+/* ==========================================================================
+ * typedoor-1.0.0 (2026-09-11) - HOME HAS A DOOR THAT DOES NOT RECORD
+ *
+ * MEASURED on b1230, on the owner's own tab: with an EMPTY visit for the
+ * selected patient, the Home screen offered "Start Recording - <name>",
+ * "Draft op notes" and "View completed notes" and nothing else. The visit room
+ * has the "Paste a transcript" chip the owner's post-visit dictation workflow
+ * depends on, but every doctor-visible way INTO that room started a microphone.
+ * Reaching the room without recording took an internal call
+ * (window.__mlsEasyV3.open('doctor')), which is not a door.
+ *
+ * The property pinned here is not "a button exists". It is:
+ *   - the banner patient still gets EXACTLY ONE record offer (the hero), and
+ *   - there is a second, quieter door that opens the SAME visit for the SAME
+ *     patient and records nothing, generates nothing, and cannot arm the
+ *     recording-verdict lane, and
+ *   - a refused activation does not get a notes box opened over its refusal.
+ * ======================================================================== */
+{
+  const homeAction = between('  function activePatientHomeAction(p, detail, extraClass)',
+    '  /* typedoor-1.0.0: the notes box');
+  function renderHomeAction(resume) {
+    const ctx = {
+      homeOwnsContinuableVisit: () => resume,
+      homeVisitContent: () => ({ source: true, note: false, live: false }),
+      continueDetail: () => 'Return to this visit',
+      esc: (s) => String(s == null ? '' : s)
+    };
+    vm.createContext(ctx);
+    vm.runInContext(homeAction + '\nthis.out = activePatientHomeAction({ id: "syn-1", name: "Synthetic Patient" }, "DOB 1970-01-01");', ctx);
+    return ctx.out;
+  }
+
+  const record = renderHomeAction(false);
+  const continueForm = renderHomeAction(true);
+
+  /* ONE record offer, on the record form and on the continue form alike. */
+  for (const [label, html] of [['record form', record], ['continue form', continueForm]]) {
+    assert.strictEqual((html.match(/Start Recording/g) || []).length, label === 'record form' ? 1 : 0,
+      label + ': the banner patient no longer has exactly one Start Recording offer');
+    assert.strictEqual((html.match(/id="ez3ActiveGo"/g) || []).length, 1,
+      label + ': the hero is not rendered exactly once');
+  }
+
+  /* The second door exists on the empty-visit shape only. */
+  assert.ok(/id="ez3ActiveNotes"/.test(record),
+    'Home lost its second door. With an empty visit the only way into the room ' +
+    'is Start Recording again, and post-visit dictation has no entry.');
+  assert.ok(!/ez3ActiveNotes/.test(continueForm),
+    'the second door is also rendered on the continue form - the room is already ' +
+    'one press away there, so that is two ways to do one thing');
+  assert.ok(/id="ez3ActiveNotes"[^>]*data-rec="0"/.test(record),
+    'the notes door does not carry data-rec="0". recPressWanted reads exactly that ' +
+    'attribute, so without it an entry in REC_START_SEL could paint "recording did ' +
+    'not start" over a press that never asked for a microphone.');
+  /* It must not read as a second record offer, in words or in class. */
+  const doorHtml = record.slice(record.indexOf('id="ez3ActiveNotes"'));
+  assert.ok(!/Start Recording|Generate/i.test(doorHtml),
+    'the second door names recording or generation - it does neither');
+  assert.ok(/class="ez3-alt"/.test(record),
+    'the second door wears the hero class, so the screen would carry two bold primary actions');
+
+  /* The recording-verdict lane can never arm on it. */
+  const recSel = /var REC_START_SEL = '([^']+)'/.exec(source);
+  assert.ok(recSel, 'REC_START_SEL is gone from the recording-verdict lane');
+  assert.ok(recSel[1].indexOf('ez3ActiveNotes') < 0,
+    'the notes door was added to REC_START_SEL. It starts no recording, so the lane ' +
+    'would judge a press that never asked for a microphone.');
+}
+
+/* The handler: the same binding as the hero, with record:false, and a refusal
+ * is respected rather than papered over with a dialog. */
+{
+  const handler = between("    on('ez3ActiveNotes', function () {", "    on('ez3Choose', function ()");
+  function press(opts) {
+    const calls = { lock: [], lockPt: [], mode: [], notes: 0, render: 0 };
+    const ctx = {
+      captured: null,
+      on(id, fn) { assert.strictEqual(id, 'ez3ActiveNotes'); ctx.captured = fn; },
+      bannerPatient: () => opts.patient,
+      homeOwnsContinuableVisit: () => !!opts.owns,
+      bannerRowToday: () => opts.row || null,
+      setEasyMode(mode, screen, why, flag) { calls.mode.push([mode, screen, why, flag]); return true; },
+      lockAndStart(a, o) { calls.lock.push([a, o]); return opts.lockResult === undefined ? true : opts.lockResult; },
+      lockAndStartPatient(p, o) { calls.lockPt.push([p, o]); return undefined; },
+      openTypeOrPasteNotes() { calls.notes++; return true; },
+      render() { calls.render++; }
+    };
+    vm.createContext(ctx);
+    vm.runInContext(handler, ctx);
+    ctx.captured();
+    return calls;
+  }
+  const patient = { id: 'syn-1', name: 'Synthetic Patient' };
+
+  const scheduled = press({ patient, row: { id: 'appt-1', name: 'Synthetic Patient' } });
+  assert.strictEqual(scheduled.lock.length, 1, 'the notes door did not bind through the appointment row');
+  assert.strictEqual(scheduled.lock[0][1].record, false, 'the notes door started a recording');
+  assert.ok(!scheduled.lock[0][1].generate, 'the notes door generated a note');
+  assert.strictEqual(scheduled.lockPt.length, 0, 'a scheduled patient was bound as an ad-hoc visit, losing the Athena appointment id');
+  assert.strictEqual(scheduled.notes, 1, 'the notes box was not opened');
+
+  const adhoc = press({ patient, row: null });
+  assert.strictEqual(adhoc.lockPt.length, 1, 'a patient with no appointment lost the ad-hoc path');
+  assert.strictEqual(adhoc.lockPt[0][1].record, false, 'the ad-hoc notes door started a recording');
+  assert.strictEqual(adhoc.notes, 1, 'the ad-hoc notes box was not opened');
+
+  const refused = press({ patient, row: { id: 'appt-1' }, lockResult: false });
+  assert.strictEqual(refused.notes, 0,
+    'a REFUSED activation still opened the notes box. The refusal sentence is the ' +
+    'only thing the doctor has; a dialog over it hides the reason nothing started.');
+
+  const resume = press({ patient, owns: true });
+  assert.strictEqual(resume.lock.length + resume.lockPt.length, 0,
+    'an already-open visit was re-activated instead of re-entered');
+  assert.strictEqual(resume.mode.length, 1, 'the open visit was not re-entered');
+  assert.deepStrictEqual(resume.mode[0].slice(0, 2), ['doctor', 'doctor'], 'the notes door opened the wrong screen');
+  assert.strictEqual(resume.notes, 1, 're-entering an open visit did not open the notes box');
+}
+
+/* The opener itself: it asks the dialog owner, then the room chip, then the
+ * transcript - and it never touches a recorder or a generator. */
+{
+  const opener = between('  function openTypeOrPasteNotes()', '  function signBtn()');
+  assert.ok(/__mlsVisitControlContinuity/.test(opener) && /openPasteTranscript/.test(opener),
+    'the notes door no longer calls the module that owns the "Type or paste visit notes" dialog');
+  for (const banned of ['captureBtn', 'genBtnResolve', 'ez3StampGenClick', 'requestSend', 'signBtn()']) {
+    assert.ok(opener.indexOf(banned) < 0,
+      'the notes door reaches ' + banned + '. It opens a box for typing and nothing else.');
+  }
+}
+
+/* ==========================================================================
+ * onechiprow-1.0.0 (2026-09-11) - ONE QUICK-CHIP ROW IN THE ROOM, NOT TWO
+ *
+ * MEASURED on b1230: the visit room held the quick-chip row twice - the flow
+ * lane's seven visible chips and the room's own seven at zero size behind
+ * `#mlsEz3Body.ez3fl-top-owns #ez3QuickTools{display:none!important}`. A hidden
+ * twin of every control is still a second set of controls in the document.
+ *
+ * The room now RENDERS its row only while the lane is not showing one, the CSS
+ * rule stays as the belt for the frame between a paint and the lane's next
+ * pass, and the 700ms poll repaints the room when that answer flips so the
+ * chips can never be missing on a surface where the lane is not there.
+ * ======================================================================== */
+{
+  const quick = between('  function quickToolsLaneOwns()', '  function clickCanonicalControl(');
+  function chipRow(owns) {
+    const body = {
+      classList: { contains: (c) => c === 'ez3fl-top-owns' && owns },
+      querySelector: (sel) => (owns && sel === '.ez3fl-record .ez3fl-quick') ? { id: 'lane-row' } : null
+    };
+    const ctx = {
+      S: { phase: 'idle' },
+      $: (id) => (id === 'mlsEz3Body' ? body : null),
+      uns: (k) => k,
+      localStorage: { getItem: () => '1' }
+    };
+    vm.createContext(ctx);
+    vm.runInContext(quick + '\nthis.out = visitQuickToolsHtml();', ctx);
+    return { html: ctx.out, state: ctx.S };
+  }
+
+  const laneOwns = chipRow(true);
+  assert.strictEqual(laneOwns.html, '',
+    'the room still renders its own chip row while the flow lane is showing one - ' +
+    'seven visible chips and seven hidden twins, exactly the b1230 measurement');
+  assert.strictEqual(laneOwns.state._qtLaneOwns, true, 'the room did not record who owns the chip row');
+
+  const roomOwns = chipRow(false);
+  assert.ok(/id="ez3QuickTools"/.test(roomOwns.html),
+    'the room lost its chip row even with no lane on screen. On the phone the lane is ' +
+    'hidden outright, so this row is the only one there.');
+  assert.strictEqual(roomOwns.state._qtLaneOwns, false, 'the room did not record that it owns the chip row');
+  for (const id of ['ez3QToolsToggle', 'ez3QAssistant', 'ez3QDictate', 'ez3QPaste', 'ez3QPhone', 'ez3QAvs', 'ez3QOrders']) {
+    assert.ok(roomOwns.html.indexOf('id="' + id + '"') > 0, 'the room chip row lost ' + id);
+  }
+  /* exactly one row, not one row plus a stray */
+  assert.strictEqual((roomOwns.html.match(/class="ez3fl-quick"/g) || []).length, 1,
+    'the room emits more than one chip row of its own');
+
+  /* Ownership is read from what the lane publishes, never guessed. */
+  assert.ok(/ez3fl-top-owns/.test(quick) && /\.ez3fl-record \.ez3fl-quick/.test(quick),
+    'chip-row ownership is no longer read from the lane\'s own two facts');
+  /* The belt is still there for the frame between a paint and the lane's pass. */
+  assert.ok(source.indexOf("'#mlsEz3Body.ez3fl-top-owns #ez3QuickTools{display:none!important}'") > 0,
+    'the CSS belt that hides a room row painted one frame before the lane claims the top is gone');
+  /* And the room comes back on its own when the lane stops owning the top. */
+  assert.ok(source.indexOf('if (S.phase === before && quickToolsLaneOwns() !== !!S._qtLaneOwns) { render(); return; }') > 0,
+    'nothing repaints the room when chip-row ownership flips, so a surface the lane ' +
+    'does not serve (the phone) could sit with no chips at all');
+  /* The tour must point at whichever row is really on screen. */
+  assert.ok(/target: \['#ez3QDictate', '#ez3flDictate', '#ez3QuickTools', '\.ez3fl-quick'\]/.test(source),
+    'the guided tour still names only the room chip row, so it points at nothing ' +
+    'whenever the flow lane owns the top');
+}
+
+console.log('PASS visit navigation intent: Pause stays paused; review acts once for the original visit, cancels stale work, preserves deliberate scrolling, reports real sheet receipts, closes back to its owning Easy note, offers a second Home door that opens the visit without a microphone, and renders exactly one quick-chip row in the room');
