@@ -8,7 +8,8 @@ const path = require('path');
 const root = path.resolve(__dirname, '..');
 const background = fs.readFileSync(path.join(root, 'background.js'), 'utf8');
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
-assert.strictEqual(manifest.version, '3.0.116', 'regression must exercise the 3.0.116 candidate');
+// 3.0.117 (2026-09-11): candidate pin moved with the release
+assert.strictEqual(manifest.version, '3.0.117', 'regression must exercise the 3.0.117 candidate');
 const coreSha = (manifest.version_name.match(/core-sha256:([0-9a-f]{64})/) || [])[1];
 assert(coreSha, 'candidate manifest is missing its core hash');
 const computedCoreSha = execFileSync(process.execPath, [path.join(root, 'scripts', 'extension-core-digest.js')], { encoding: 'utf8' }).trim();

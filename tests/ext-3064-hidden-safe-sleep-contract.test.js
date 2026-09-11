@@ -11,8 +11,9 @@
  *
  * The contract, EXECUTED rather than grepped where it can be:
  *  1. The mls-hs-1.0.0 body is present in background.js and content.js at the
- *     counts the two patch scripts applied (9 helper + 32 inline in background,
- *     2 helper + 11 inline in content).
+ *     counts the two patch scripts applied (10 helper + 32 inline in background
+ *     from 3.0.117 - __svSleep is the tenth - and 2 helper + 11 inline in
+ *     content).
  *  2. No injected driver still carries a bare page-side wait of the three
  *     shapes the transform covers.
  *  3. The body itself, lifted from background.js and RUN in node with a mocked
@@ -33,7 +34,8 @@ const eq = (a, b, m) => { assert.strictEqual(a, b, m); checks++; };
 
 /* 1. counts */
 const count = (s, needle) => s.split(needle).length - 1;
-eq(count(bg, 'mls-hs-1.0.0'), 41, 'background.js must carry exactly 41 mls-hs-1.0.0 sleeps (9 helpers + 32 inline)');
+/* 3.0.117: 41 -> 42. searchverify-1.0.0 added __svSleep, the hidden-tab-safe settle the global-search fill waits on between typing and reading the field back; it is a compliant tenth helper, so the ceiling moves with it. */
+eq(count(bg, 'mls-hs-1.0.0'), 42, 'background.js must carry exactly 42 mls-hs-1.0.0 sleeps (10 helpers + 32 inline)');
 eq(count(cs, 'mls-hs-1.0.0'), 13, 'content.js must carry exactly 13 mls-hs-1.0.0 sleeps (2 helpers + 11 inline)');
 
 /* 2. no bare page-side wait remains inside the injected drivers */

@@ -494,7 +494,11 @@ check(syntax.status === 0, 'node --check exit ' + syntax.status + (syntax.status
 /* 7. Suites, pointed at the spliced copy.                             */
 /* ------------------------------------------------------------------ */
 console.log('7. suites against the spliced copy');
-var repoRoot = path.dirname(BASE);
+/* The repo root is THIS script's parent, not the baseline's directory: the
+   baseline is routinely a copy extracted with `git show <sha>:background.js`
+   into a temp dir, because this worktree has two writers and the tracked
+   background.js may already carry the splice. $BACKGROUND_REPO overrides. */
+var repoRoot = process.env.BACKGROUND_REPO ? path.resolve(process.env.BACKGROUND_REPO) : path.resolve(__dirname, '..');
 var tracked = path.join(repoRoot, 'background.js');
 var shim = path.join(os.tmpdir(), 'mls-bg-30117-shim.js');
 fs.writeFileSync(shim, [
@@ -552,7 +556,7 @@ var PIN_MOVED = [
 ];
 
 var env = Object.assign({}, process.env, { BACKGROUND_JS: OUT, BACKGROUND_TRACKED: tracked });
-var baseEnv = Object.assign({}, process.env);
+var baseEnv = Object.assign({}, process.env, { BACKGROUND_JS: BASE, BACKGROUND_TRACKED: tracked });
 if (process.env.PLAYWRIGHT_NODE_PATH) { env.NODE_PATH = process.env.PLAYWRIGHT_NODE_PATH; baseEnv.NODE_PATH = process.env.PLAYWRIGHT_NODE_PATH; }
 var suiteResults = [];
 SUITES.forEach(function (suite) {
@@ -562,9 +566,12 @@ SUITES.forEach(function (suite) {
   var baseStatus = null;
   if (r.status !== 0) {
     /* A RED SUITE MAY NEVER HAVE RUN, and the red count is never what it looks
-       like: every red is re-run against the UNTOUCHED baseline before it is
-       attributed to this splice. */
-    var rb = cp.spawnSync(process.execPath, [suite], { cwd: repoRoot, env: baseEnv, encoding: 'utf8', timeout: 600000 });
+       like: every red is re-run against the BASELINE before it is attributed to
+       this splice. The baseline run goes through the SAME preload, pointed at
+       the baseline file - the tracked background.js may already carry this
+       splice (this worktree has two writers), so "just run the suite" is not a
+       baseline. */
+    var rb = cp.spawnSync(process.execPath, ['--require', shim, suite], { cwd: repoRoot, env: baseEnv, encoding: 'utf8', timeout: 600000 });
     baseStatus = rb.status;
   }
   suiteResults.push({ suite: suite, status: r.status, baseline: baseStatus, tail: stdoutTail.slice(0, 200) });
@@ -590,7 +597,7 @@ Object.keys(CONTRACT_MOVED).forEach(function (suite) {
 PIN_MOVED.forEach(function (suite) {
   var r = suiteResults.filter(function (x) { return x.suite === suite; })[0];
   check(!!r && r.status === 0, 'moved pin is GREEN against the draft: ' + suite + (r ? ' (exit ' + r.status + ')' : ' (not run)'));
-  var rb = cp.spawnSync(process.execPath, [suite], { cwd: repoRoot, env: baseEnv, encoding: 'utf8', timeout: 600000 });
+  var rb = cp.spawnSync(process.execPath, ['--require', shim, suite], { cwd: repoRoot, env: baseEnv, encoding: 'utf8', timeout: 600000 });
   var tail = String(rb.stdout || '').trim().split('\n').slice(-1).join('') || String(rb.stderr || '').split('\n').filter(function (l) { return /AssertionError|!==/.test(l); })[0] || '';
   check(rb.status !== 0, 'moved pin is RED against the untouched baseline (it still pins something): ' + suite + ' :: ' + String(tail).trim().slice(0, 90));
 });

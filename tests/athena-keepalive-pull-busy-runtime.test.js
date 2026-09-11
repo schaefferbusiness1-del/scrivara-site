@@ -1,4 +1,19 @@
 'use strict';
+/* kabackstop-1.0.0 (3.0.117) moved this contract. Through 3.0.116 a busy tick
+ * deferred the WHOLE keep-alive job - including the shadow-DOM session-expiry
+ * Continue backstop - for the entire length of a day or month pull, so a long
+ * run could meet athenaOne's idle logout with the backstop blind and the rows
+ * simply stopped arriving. The two jobs are now split: while a chart read or a
+ * quiet-pull lease is live, kaTick runs ONE dialog-only kaFrameTouch injection
+ * per athena tab and defers everything else. The pins that prove the split are
+ * unchanged in spirit - it is still an error for a busy tick to synthesize
+ * frame activity (activityEvents === 0) or to issue any athena session request
+ * (fetches.length === 0); only the injection count moved, and every busy-tick
+ * injection must carry args[0] === 'dialog-only'.
+ *
+ * The harness also has to hand chrome.scripting's own args[] to the injected
+ * function, the way Chrome does - without that it cannot tell a dialog-only
+ * pass from a full frame touch. */
 
 const assert = require('assert');
 const fs = require('fs');
@@ -43,7 +58,9 @@ async function run() {
   const fetches = [];
   let activityEvents = 0;
   let queryImpl = async () => [{ id: 41, discarded: false, url: 'https://athenanet.athenahealth.com/123/6/ax/dashboard' }];
-  let executeImpl = async details => [{ frameId: 0, result: await details.func() }];
+  /* Chrome passes details.args to details.func; so must this harness, or a
+     dialog-only pass is indistinguishable from a full frame touch. */
+  let executeImpl = async details => [{ frameId: 0, result: await details.func(...(details.args || [])) }];
 
   class FakeDate extends Date {
     static now() { return clock.now; }
@@ -102,20 +119,23 @@ async function run() {
   );
 
   await context.tick();
-  assert.strictEqual(injections.length, 0, 'kaTick injected kaFrameTouch while the explicit chart-read deadline was active');
+  assert.strictEqual(injections.length, 1, 'kaTick skipped the session-expiry backstop while the explicit chart-read deadline was active');
+  assert.strictEqual(String(injections[0].args && injections[0].args[0]), 'dialog-only', 'the chart-read-busy injection must be dialog-only');
   assert.strictEqual(fetches.length, 0, 'kaTick issued an Athena session request while the explicit chart-read deadline was active');
   assert.strictEqual(activityEvents, 0, 'kaTick synthesized frame activity while the explicit chart-read deadline was active');
 
   clock.now = context.__mlsChartReadBusyUntil + 1;
   context.__mlsQp.active = true;
   await context.tick();
-  assert.strictEqual(injections.length, 0, 'kaTick injected kaFrameTouch while the explicit quiet-pull lease was active');
+  assert.strictEqual(injections.length, 2, 'kaTick skipped the session-expiry backstop while the explicit quiet-pull lease was active');
+  assert.strictEqual(String(injections[1].args && injections[1].args[0]), 'dialog-only', 'the quiet-pull-busy injection must be dialog-only');
   assert.strictEqual(fetches.length, 0, 'kaTick issued an Athena session request while the explicit quiet-pull lease was active');
   assert.strictEqual(activityEvents, 0, 'kaTick synthesized frame activity while the explicit quiet-pull lease was active');
 
   context.__mlsQp.active = false;
   await context.tick();
-  assert.strictEqual(injections.length, 1, 'kaTick did not become eligible after the explicit pull guards cleared');
+  assert.strictEqual(injections.length, 3, 'kaTick did not become eligible after the explicit pull guards cleared');
+  assert(!(injections[2].args && injections[2].args.length), 'the eligible tick must run a FULL frame touch, not a dialog-only pass');
   assert(activityEvents >= 3, 'eligible kaTick did not execute kaFrameTouch');
   assert(fetches.some(entry => entry.url === '/123/6/ax/login/ping' && entry.method === 'GET'), 'eligible kaTick did not issue the Athena session ping');
   assert(fetches.some(entry => entry.url === context.location.href && entry.method === 'HEAD'), 'eligible kaTick did not issue the same-page HEAD');
@@ -131,16 +151,21 @@ async function run() {
     return [{ id: 41, discarded: false, url: 'https://athenanet.athenahealth.com/123/6/ax/dashboard' }];
   };
   await context.tick();
-  assert.strictEqual(injections.length, 0, 'kaTick failed to re-check a pull that began during tab enumeration');
+  assert.strictEqual(injections.length, 1, 'kaTick failed to re-check a pull that began during tab enumeration');
+  assert.strictEqual(String(injections[0].args && injections[0].args[0]), 'dialog-only', 'the mid-enumeration re-check must downgrade to a dialog-only pass, not skip the backstop');
   assert.strictEqual(fetches.length, 0, 'kaTick issued session traffic after a pull began during tab enumeration');
+  assert.strictEqual(activityEvents, 0, 'kaTick synthesized frame activity after a pull began during tab enumeration');
 
   /* Periodic and one-shot alarms can arrive together. Only one eligible tick
-     may inject while the first asynchronous frame pass is still in flight. */
+     may inject while the first asynchronous frame pass is still in flight.
+     The block above legitimately leaves one backstop injection behind now, so
+     the counter resets here the way every other block resets it. */
+  injections.length = 0;
   context.__mlsChartReadBusyUntil = 0;
   queryImpl = async () => [{ id: 41, discarded: false, url: 'https://athenanet.athenahealth.com/123/6/ax/dashboard' }];
   let releaseExecute;
   executeImpl = details => new Promise(resolve => {
-    releaseExecute = async () => resolve([{ frameId: 0, result: await details.func() }]);
+    releaseExecute = async () => resolve([{ frameId: 0, result: await details.func(...(details.args || [])) }]);
   });
   const firstTick = context.tick();
   for (let i = 0; i < 8 && injections.length === 0; i++) await Promise.resolve();
