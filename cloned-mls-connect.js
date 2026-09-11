@@ -55650,12 +55650,50 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        progress or a newer in-memory result. */
     try {
       var statusNode = $('mlsDsStatus');
-      if (statusNode && hydratedTerminal && !DS.pulling && !DS.retrying && DS.__autoRetrying !== true && !DS.preferenceGatePending) {
+      var quiet = dsQuietPulledState(DS.day);
+      var paintable = statusNode && !DS.pulling && !DS.retrying && DS.__autoRetrying !== true && !DS.preferenceGatePending;
+      if (paintable && hydratedTerminal) {
         statusNode.style.display = 'block';
         statusNode.textContent = dsTerminalReceiptLine(hydratedTerminal);
         dsSyncDiagBtn(hydratedTerminal.status === 'failed');
+      } else if (paintable && quiet) {
+        /* upnext-1.0.0: a day MLS has already read on its own says so, in the
+           same words Today has always used ("your patients are ready"), on the
+           same line an explicit pull's receipt uses. A day with a receipt of
+           its own keeps that receipt - this only fills the silence. */
+        statusNode.style.display = 'block';
+        if (statusNode.textContent !== quiet) statusNode.textContent = quiet;
       }
     } catch (eReceiptPaint) {}
+  }
+  /* upnext-1.0.0: the doctor-facing sentence for a day the quiet upcoming-days
+     lane has already brought in. Returns '' for every other day, so nothing
+     else on the strip changes. No new vocabulary: "ready" is the word Today's
+     own finished pull has always used. */
+  function dsQuietPulledState(day) {
+    var k = String(day || DS.day || '').slice(0, 10);
+    if (!k) return '';
+    var st = null;
+    try {
+      var up = window.__mlsUpcomingPull;
+      st = (up && typeof up.dayReady === 'function') ? up.dayReady(k) : null;
+    } catch (eQp) { st = null; }
+    if (!st || st.ready !== true) return '';
+    var n = 0;
+    try { n = rowsFor(k).length; } catch (eQr) { n = Number(st.rows || 0); }
+    if (!n) return '';
+    /* the SAME day words the pull button uses ("today" / "Tuesday the 12th"),
+       so the strip never grows a second vocabulary for the same date */
+    var label = 'today';
+    if (k !== todayKey()) {
+      label = '';
+      try {
+        var d = new Date(k + 'T12:00:00');
+        label = d.toLocaleDateString('en-US', { weekday: 'long' }) + ' the ' + dsOrdinal(d.getDate());
+      } catch (eQl) { label = ''; }
+      if (!label) label = k;
+    }
+    return 'Your patients for ' + label + ' are ready — ' + n + ' chart' + (n === 1 ? '' : 's') + ' already brought in.';
   }
   function setDay(k) {
     k = String(k || '').slice(0, 10);
@@ -57601,6 +57639,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      status line use, so a live probe and a proof read ONE function. */
   api.resumeState = function (day) { return dsResumeState(day); };
   api.pullVerb = function (day) { return dsPullVerb(day); };
+  /* upnext-1.0.0: '' unless MLS has already brought that day in on its own. */
+  api.pulledLine = function (day) { return dsQuietPulledState(day); };
   api.renderList = renderList;
   api.isBusy = function () { return !!(DS.pulling || DS.retrying || DS.__autoRetrying); };
   api.revert = function () {
