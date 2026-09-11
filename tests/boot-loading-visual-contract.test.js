@@ -53,7 +53,7 @@ assert(app.includes("window.__mlsLoaderReadyAt=Date.now(); window.dispatchEvent(
 assert(!app.slice(app.indexOf('function sfWaitForStableFirstFrame('), app.indexOf('function sfShowGateLoading')).includes('priorityQueued'),
   'noncritical queued presentation work can still hold the secure loader after the critical bundle is ready');
 assert(app.includes("showAgreementsGate(true)"), 'compliance handoff can bypass the readiness barrier');
-assert(app.includes("window.__MLS_AV='b1235'"), 'ScribeFlow loader was not cache-busted to b1235');
+assert(app.includes("window.__MLS_AV='b1238'"), 'ScribeFlow loader was not cache-busted to b1238');
 
 const sessionStart = app.indexOf('function startSession(email)');
 const sessionSource = app.slice(sessionStart, app.indexOf('function logout(force)', sessionStart));

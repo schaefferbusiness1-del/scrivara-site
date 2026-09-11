@@ -9,7 +9,7 @@ const pages = [
   'index.html', 'booking.html', 'patient-portal.html', 'lawyers.html',
   'expert.html', 'appointment.html', 'intake.html', 'send-portal-invite.html',
   'assist.html', 'review-finder.html', 'gbp-setup.html', 'get-extension.html',
-  'best-doctors-optout.html'
+  'best-doctors-optout.html', 'opnotes.html'
 ];
 
 const lawyerCopy = fs.readFileSync(path.join(root, 'lawyers.html'), 'utf8');
