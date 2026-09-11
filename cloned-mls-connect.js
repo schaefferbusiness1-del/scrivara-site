@@ -7675,6 +7675,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     '#mlsEz3 .ez3-h1{color:#1A211C !important;font-family:Newsreader,Georgia,serif !important;font-weight:600 !important;letter-spacing:-.015em !important;}',
     '#mlsEz3 .ez3-big:not(.rec):not(.ok):not(.dim){background:#204034 !important;color:#fff !important;border:0 !important;box-shadow:0 10px 26px -10px rgba(32,64,52,.55) !important;}',
     '#mlsEz3 .ez3-big.dim{background:#F2F0E9 !important;color:#55605A !important;border:1px solid #E4E1D8 !important;box-shadow:none !important;}',
+    /* doorlight-1.0.0 (2026-09-11, measured live on b1232): the Type-or-paste door
+       shipped with the dark-surface tokens (#EAF1EE on rgba(255,255,255,.07)) on the
+       light #mlsEz3 gradient - contrast ~1.2:1, the owner could not see it. Same
+       light tokens the dim hero already uses; ~13:1 on the page. */
+    '#mlsEz3 .ez3-alt{background:#F2F0E9 !important;color:#1A211C !important;border:1px solid #D9D5CA !important;box-shadow:none !important;}',
+    '#mlsEz3 .ez3-alt:hover{background:#E9E6DD !important;}',
+    '#mlsEz3 .ez3-alt small{color:#4A5550 !important;opacity:1 !important;}',
     '#mlsEz3 .ez3-sm.pri{background:#204034 !important;color:#fff !important;border-color:transparent !important;}',
     '#mlsEz3 .ez3-modeseg .on,#mlsEz3 .ez3-seg button.on{background:#fff !important;color:#1A211C !important;box-shadow:0 1px 3px rgba(20,33,28,.15) !important;}',
     '#mlsEz3 select,#mlsEz3 input{background:#FCFBF8 !important;color:#1A211C !important;border:1px solid #E4E1D8 !important;}',
