@@ -310,13 +310,46 @@
       ' known verified visit(s), newest first, plus clinical fields stored on this exact patient profile. ' +
       'Use this for full clinical context (disease progression, prior procedures and response, medications, ' +
       'allergies, and pain/function trend). Do NOT copy it verbatim and do NOT invent anything not present here. ' +
-      'Document TODAY\'S procedure in the procedure sections; reference prior history only where clinically appropriate.';
+      'Document TODAY\'S procedure in the procedure sections from today\'s own data only; the BACKGROUND_ONLY rule below governs every other use of this block.';
+    /* ===== bgonly-1.0.0 (owner 2026-09-11) ================================
+       The pulled chart already reached this prompt - problems, medications,
+       allergies, PMH/PSH, the Athena snapshot and every verified visit. What
+       it did NOT carry was the visit note's own guard rail. The SOAP path
+       fences the same material as BACKGROUND_ONLY_BEGIN/END with an explicit
+       "this is not evidence of anything done today" rule (callOpenAI's
+       ctxLine); the op-note path shipped with the far weaker "reference prior
+       history only where clinically appropriate", which is an invitation, not
+       a limit. On an operative report that difference is the fabrication
+       class: a prior procedure, a held medication or an old finding narrated
+       as part of TODAY'S operation.
+
+       The fence goes INSIDE the existing '=== MLS VERIFIED EXACT-PATIENT
+       CONTEXT ... ===' markers on purpose - stripInjectedHistory() and the
+       repair pass both key on those, so the splice stays idempotent and the
+       repair prompt keeps carrying the block unchanged. Nothing about WHAT is
+       collected moves; only the instruction around it.
+       The rule wording is the visit note's own, adapted in exactly one
+       respect: today's evidence for an operative report is today's own
+       procedure data, not TODAY_TRANSCRIPT. */
+    var bgBegin = 'BACKGROUND_ONLY_BEGIN';
+    var bgEnd = 'BACKGROUND_ONLY_END';
+    var bgRule =
+      'The BACKGROUND_ONLY block is not evidence of anything addressed, reviewed, examined, assessed, ' +
+      'performed, ordered, continued, or planned today. Never copy a background problem, medication, ' +
+      'allergy, imaging result or prior procedure into today\'s indication, findings, technique, procedure ' +
+      'details, specimens, complications, estimated blood loss, post-operative plan, or coding unless ' +
+      'today\'s own procedure data explicitly brings it into this operation. Background may only ' +
+      'disambiguate an explicit reference in today\'s own data; silence is not stability, review, ' +
+      'reconciliation, or continuation.';
 
     var profileLimit = visits.length > 40 ? 1500 : MAX_PROFILE_CHARS;
     var snapshotLimit = visits.length > 40 ? 1000 : MAX_SNAPSHOT_CHARS;
     var profileTextBounded = boundedClinicalText(profile.text, profileLimit);
     var snapshotTextBounded = boundedClinicalText(snapshot.text, snapshotLimit);
-    var skeletonLength = begin.length + end.length + header.length + profileTextBounded.length + snapshotTextBounded.length + 260;
+    /* the fence and its rule are part of the skeleton, so MAX_HISTORY_CHARS
+       still holds after they are added (they cost about 700 characters) */
+    var skeletonLength = begin.length + end.length + header.length + bgBegin.length + bgEnd.length +
+      bgRule.length + profileTextBounded.length + snapshotTextBounded.length + 264;
     var indexBudget = Math.max(900, Math.min(4200, MAX_HISTORY_CHARS - skeletonLength - 1800));
     var indexMax = visits.length ? Math.max(48, Math.min(360, Math.floor(indexBudget / visits.length) - 1)) : 360;
     var indexLines = visits.map(function (visit) { return visitOneLine(visit, indexMax); });
@@ -335,12 +368,13 @@
     chosen.sort(function (a, b) { return a.index - b.index; });
 
     function assemble(detailBlocks, allVisitLines) {
-      var out = begin + '\n' + header;
+      var out = begin + '\n' + header + '\n\n' + bgBegin;
       if (profileTextBounded) out += '\n\nEXACT PATIENT PROFILE (immutable patient ID verified):\n' + profileTextBounded;
       if (snapshotTextBounded) out += '\n\nLATEST VERIFIED ATHENA CHART SNAPSHOT (replaced on the most recent exact-patient pull):\n' + snapshotTextBounded;
       if (allVisitLines.length) out += '\n\nALL VERIFIED VISITS INDEX (newest first; every visit represented):\n' + allVisitLines.join('\n');
       else out += '\n\nVERIFIED VISITS: none recorded.';
       if (detailBlocks.length) out += '\n\nRICH VERIFIED CLINICAL DETAIL (recent and procedure-relevant visits):\n' + detailBlocks.map(function (x) { return x.block; }).join('\n\n');
+      out += '\n' + bgEnd + '\n' + bgRule;
       return out + '\n' + end;
     }
 

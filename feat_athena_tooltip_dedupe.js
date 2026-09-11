@@ -971,13 +971,21 @@
       return (W.__mlsCodeTable && typeof W.__mlsCodeTable.count === 'function') ? W.__mlsCodeTable.count() : null;
     }, null);
   }
+  /* Visit-note drafting sends the practice table to /api/generate, which keeps
+     only the first NOTE_PREF_MAX_BILLING_COUNT rows (backend src/openai.js) and
+     hostedNotePreferences() now stops at the same number. Saying "N codes
+     loaded, used everywhere" for a 900-row sheet was simply untrue, so a table
+     past the limit says where the limit is. Move BOTH numbers together. */
+  var HOSTED_BILLING_MAX = 24;
   function refreshBillingCodesCard() {
     var status = byId('mlsSetCodeTableStatus');
     if (!status) return;
     var n = billingCodesCount();
     var text = n == null ? 'The billing-code module has not loaded yet — reload MLS if this persists.'
       : (n === 0 ? 'No practice table uploaded — the AI fills its best current standard ICD-10/CPT code for each diagnosis.'
-        : n + ' practice code' + (n === 1 ? '' : 's') + ' loaded — used everywhere MLS drafts or fills codes (notes, templates, op-notes, studies).');
+        : (n > HOSTED_BILLING_MAX
+          ? n + ' practice codes loaded — MLS uses the first ' + HOSTED_BILLING_MAX + ' when drafting a visit note; any of them can still be looked up for templates, op-notes and studies.'
+          : n + ' practice code' + (n === 1 ? '' : 's') + ' loaded — used everywhere MLS drafts or fills codes (notes, templates, op-notes, studies).'));
     if (status.textContent !== text) status.textContent = text;
     var button = byId('mlsSetCodeTableOpen');
     if (button) button.disabled = (n == null);

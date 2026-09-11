@@ -1127,6 +1127,16 @@ const tests = [
      only a bounded structured preferences object. This executes the shipped
      collector, proves its caps, and refuses any raw browser system prompt. */
   'note-defaults-transport-split.test.js',
+  /* NEW 2026-09-11. The practice billing code table, measured against the
+     shipped parser and editor. Reopening the Settings card and pressing Save
+     re-parsed an UNQUOTED prefill, so "Spondylosis without myelopathy, lumbar"
+     came back coded "LUMBAR"; a superbill's "Billing notes" column outranked
+     its "CPT" column; semicolon/pipe sheets, Excel's text-forcing apostrophe
+     and CPT Category II/III never parsed; and every ICD-10 and HCPCS row
+     reached /api/generate untyped because the store writes 'icd'/'hcpcs' while
+     the server allowlists 'icd10'/'cpt'. Every claim carries a control that
+     fails on the pre-fix bytes (45 of them). */
+  'billing-code-table-truth.test.js',
   'settings-scheduling-api-contract.test.js',
   'studio-tabs-show-one-panel.test.js',
   'visit-stage-rail-fills.test.js',
@@ -2484,6 +2494,25 @@ const tests = [
   'patient-row-owns-its-clicks-runtime.test.js',
   'review-note-tab-lands-on-the-note.test.js',
   'review-note-tab-lands-on-the-note-runtime.test.js',
+  /* NEW 2026-09-11 - upnext-1.0.0, owner: "it always has to pull the to-be
+     visits as to make good op notes". The quiet upcoming-days lane keeps the
+     next scheduled days' charts in MLS ahead of time, so an operative note is
+     drafted against a chart that is already here.
+     -runtime drives the REAL importer over the shared fake-extension harness:
+     today then tomorrow, once each, stopping at the first empty future day; a
+     second walk inside the six-hour window reads nothing; every busy stamp
+     (recording, generating, the Send-to-athenaOne sheet, a running pull, a
+     write, another tab) defers it BY NAME; the setting OFF stops it; and the
+     two quiet gates are driven side by side so they cannot drift apart.
+     -surface-contract EXECUTES the Settings option and the day-strip line out
+     of the shipping files, in both shells.
+     opnote-background-only proves the pulled chart now reaches the op-note
+     prompt under the visit note's own BACKGROUND_ONLY rule rather than the
+     permissive sentence it shipped with - on an operative report that gap was
+     the fabrication class. */
+  'upcoming-autopull-runtime.test.js',
+  'upcoming-autopull-surface-contract.test.js',
+  'opnote-background-only.test.js',
   /* NEW 2026-09-11, vanishbox-1.0.0. The Doctor visit room's transcript block
      vanished ~0.7-8s after opening a patient: the calm pass folds
      .ez3fl-transcript.mls-empty, and once the flow lane owns the top the
@@ -2508,7 +2537,21 @@ const tests = [
   'studio-merge-idle-preload-runtime.test.js',
   /* tpldisc-1.0.0 (owner 2026-09-11): the multi-upload "Review and add" list
      gets a plain Discard control, sharing its reset with a successful Add. */
-  'template-multi-upload-discard-runtime.test.js'
+  'template-multi-upload-discard-runtime.test.js',
+  /* NEW 2026-09-11, noteadv-1.0.0. The backend now serves a visit note it used
+     to refuse and names the sentences the recording did not clearly say. The
+     suite proves they are caught where the answer arrives, kept with the note,
+     cleared by the next run, painted as one amber line inside the room's own
+     surface string, cleared by an edit or by Keep, and silent on an ok answer
+     or an older server that sends nothing. */
+  'note-advisory-flagged-lines.test.js',
+  /* NEW 2026-09-11, vntplpick-1.0.0. One press changes the template on a note
+     that is already drafted and writes it again from the same recording,
+     through the one template seam the connect bundle does not replace. The
+     suite proves an operative-report template can never come through that new
+     door, and that the control is absent without a recording, during a pull,
+     while recording, and on every screen but the drafted note. */
+  'visit-template-change-on-draft.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
