@@ -26063,7 +26063,32 @@ function _renderTplSplitPreview(){
       +'<span style="flex:1"><span style="font-weight:600;font-size:13.5px">'+esc(t.name)+'</span> <span style="font-size:11px;color:var(--muted)">('+(t.text||'').length+' chars)</span>'
       +'<div style="font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:520px;margin-top:2px">'+esc((t.text||'').replace(/\s+/g,' ').slice(0,90))+'…</div></span></label>';
   }).join('');
-  box.innerHTML=rows+'<button class="btn-green" style="font-size:13px;padding:8px 14px;margin-top:4px" onclick="tplAddSplit()">➕ Add selected to my templates</button>';
+  /* tpldisc-1.0.0: both controls live in ONE wrapper now (was a bare
+     <button>) so the sticky-footer CSS (feat_mls_template_library.js
+     #tplMultiResult>.tpl-split-actions) can pin them together at the bottom
+     of the scrollable review list; see _tplDiscardSplit() below for why a
+     dismiss control exists at all. */
+  box.innerHTML=rows+'<div class="tpl-split-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;background:var(--card,#fff)">'
+    +'<button class="btn-green" style="font-size:13px;padding:8px 14px" onclick="tplAddSplit()">➕ Add selected to my templates</button>'
+    +'<button class="btn-ghost" style="font-size:13px;padding:8px 14px" onclick="_tplDiscardSplit()">Discard these</button>'
+    +'</div>';
+}
+/* tpldisc-1.0.0 (owner 2026-09-11): "Review and add" had no way to be
+   dismissed without adding - _tplPendingSplit is a plain module-level
+   variable with no tie to the modal's open/closed state, so closing and
+   reopening Templates (or the op-note room's Templates tab, which the same
+   panel gets moved into - feat_mls_opnote_room.js) left the exact same
+   unreviewed rows waiting right where "Add selected" would find them.
+   Discard resets every variable a fresh page load starts with - the same
+   reset tplAddSplit's own success path now shares, so the two can never
+   drift apart - and a NEW file selection (tplMultiFile, which snapshots
+   _tplPendingCarry from whatever these are at that moment) starts from a
+   truly empty review exactly like a fresh open would, with nothing left to
+   silently carry forward. */
+function _tplDiscardSplit(){
+  _tplPendingSplit=[]; _tplPendingCarry=[]; _tplUnreadableRows=[]; _tplAiOff=false; _tplRecogFound=0;
+  var box=document.getElementById('tplMultiResult'); if(box) box.innerHTML='';
+  _tplMultiStatus('Discarded. Nothing was added.','');
 }
 function tplAddSplit(){
   var keep=_tplPendingSplit.filter(function(t){return t.keep && (t.text||'').trim();});
@@ -26104,7 +26129,9 @@ function tplAddSplit(){
   });
   setTemplates(list);
   if(!getActiveTemplateId() && list[0]) localStorage.setItem(uns('templateActive'),list[0].id);
-  _tplPendingSplit=[]; _tplPendingCarry=[]; document.getElementById('tplMultiResult').innerHTML=''; _tplMultiStatus('✓ Added '+keep.length+' template'+(keep.length>1?'s':'')+' to your dropdown.','#1c7a43');
+  /* tpldisc-1.0.0: the SAME reset _tplDiscardSplit() performs, so a success
+     here and an explicit Discard can never clear a different set of variables. */
+  _tplDiscardSplit(); _tplMultiStatus('✓ Added '+keep.length+' template'+(keep.length>1?'s':'')+' to your dropdown.','#1c7a43');
   renderTemplateList(); renderTemplateActiveSelect();
   try{ if(typeof _syncSpecialtyPresetTemplates==='function') _syncSpecialtyPresetTemplates(); }catch(e){}
   try{ toast('Added '+keep.length+' templates.','ok'); }catch(e){}

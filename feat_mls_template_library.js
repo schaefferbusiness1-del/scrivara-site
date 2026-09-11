@@ -245,6 +245,11 @@
          The list gets its own scroller and the commit control rides the
          bottom of it, so the action is reachable at any batch size. */
       '#tplMultiResult:not(:empty){max-height:min(52vh,440px);overflow-y:auto;overscroll-behavior:contain;position:relative;padding-right:4px}',
+      /* tpldisc-1.0.0: the review's "Add selected"/"Discard these" pair now
+         rides together in one .tpl-split-actions wrapper (was a bare
+         <button>, hence the child-combinator selector); still sticky, still
+         full width, still reachable at any batch size. */
+      '#tplMultiResult>.tpl-split-actions{position:sticky;bottom:0;z-index:2;width:100%;margin-top:9px}',
       '#tplMultiResult>button{position:sticky;bottom:0;z-index:2;width:100%;margin-top:9px}'
     ].join('\n');(document.head||document.documentElement).appendChild(st);
   }

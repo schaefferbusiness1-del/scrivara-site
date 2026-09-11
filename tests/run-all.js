@@ -2505,7 +2505,10 @@ const tests = [
   /* smpreload-1.0.0 (owner 2026-09-11): the dedicated idle preload for
      feat_mls_studio_merge.js, independent of the shared __mlsDeferAsset
      queue, plus the "Loading the rest of AI Studio..." placeholder. */
-  'studio-merge-idle-preload-runtime.test.js'
+  'studio-merge-idle-preload-runtime.test.js',
+  /* tpldisc-1.0.0 (owner 2026-09-11): the multi-upload "Review and add" list
+     gets a plain Discard control, sharing its reset with a successful Add. */
+  'template-multi-upload-discard-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
