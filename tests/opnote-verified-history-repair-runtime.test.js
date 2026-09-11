@@ -146,8 +146,19 @@ async function main() {
   assert.strictEqual(blocked.calls.length, 1, 'changed history reached the repair transport');
 
   const collision = harness();
-  const bodyA = 'COLLISION BODY 000000000ha6';
-  const bodyB = 'COLLISION BODY 000000000l78';
+  /* A CRAFTED FNV COLLISION, not a random pair: two same-length visit bodies
+     whose FULL verified-history context hashes to the identical compact token,
+     so the assertion below exercises the real collision path in
+     validateBinding rather than a token mismatch.
+     RE-TUNED 2026-09-11 (bgonly-1.0.0): the context block now carries the
+     BACKGROUND_ONLY fence and its rule, so the previous pair
+     ('...000ha6' / '...000l78') no longer collides against it. The property
+     under test is unchanged - a different verified history sharing one compact
+     token must still be REFUSED. Re-tune with a birthday search over a
+     fixed-length suffix if the block text ever changes again; the token length
+     half (:1689 here) comes from the history budget, not from the suffix. */
+  const bodyA = 'COLLISION BODY 00000000ams8';
+  const bodyB = 'COLLISION BODY 00000000am54';
   collision.exact.visits = [{
     date: '2026-07-14', type: 'Collision regression', source: 'athena-copy',
     identityVerified: true, identityBinding: 'exact-a', raw: bodyA

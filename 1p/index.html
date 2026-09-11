@@ -5612,6 +5612,16 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <input type="checkbox" id="setPullVisitBodies" style="margin-top:2px">
           <span><b>📖 Pull full visit notes</b> — during a DAY or bulk Athena pull, open each scheduled chart and save every dated prior visit note as well (slower, most complete). Off: pulls still open each scheduled chart and save its identity, chart facts (problems, medications, allergies) and the pulled day's own visit note — only OLDER visit notes are skipped. The single-patient pull button still reads the one patient you explicitly chose.</span>
         </label>
+        <!-- upnext-1.0.0 (owner 2026-09-11, "it always has to pull the to-be
+             visits as to make good op notes"): an operative note is written
+             from what came BEFORE, so the next days' charts have to already be
+             here when the doctor starts writing. Default ON; unchecking it
+             stops the quiet lane on the spot, because the engine reads the
+             stored key rather than this node. -->
+        <label style="display:flex;align-items:flex-start;gap:8px;margin:0 0 10px;font-size:13px;cursor:pointer">
+          <input type="checkbox" id="setUpcomingAutoPull" style="margin-top:2px" checked>
+          <span><b>📅 Pull upcoming visits automatically</b> — MLS quietly brings in the charts for your next scheduled days, so a note you write tomorrow already has that patient's earlier visits, imaging and procedures.</span>
+        </label>
         <a href="https://mlsscribe.com/get-extension.html" target="_blank" rel="noopener" data-eds-primary="1" class="btn-primary" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇ Download MLS Assist (latest)</a>
         <a href="https://mlsscribe.com/MLS_Assist_v3.0.112.zip" download="MLS_Assist_v3.0.112.zip" style="display:inline-block;margin-left:8px;text-decoration:none;font-size:13px;padding:9px 13px;border:1.5px solid var(--line);border-radius:10px;font-weight:700;color:var(--ink)">📦 Direct package (v3.0.112 ZIP)</a>
         <span class="note" style="display:block;margin:6px 0 0">The published version and release notes load automatically from the MLS Assist release feed. <a href="https://mlsscribe.com/get-extension.html" target="_blank" rel="noopener">Install options &amp; SHA-256 digest</a> (the digest is printed there for the exact released build, same bytes as the Web Store)</span>
@@ -10358,6 +10368,7 @@ function openSettings(){
   if(typeof loadAthenaSettings==='function') loadAthenaSettings();
   renderTwofaSettings();
   renderPullVisitBodiesSetting();
+  renderUpcomingAutoPullSetting(); /* upnext-1.0.0 */
   /* The unified Settings owner keeps one tab model. Re-running the legacy
      builder here wiped the bar and reset the scroll position during opening. */
   if(!(window.__mlsUiUnification&&window.__mlsUiUnification.installed)) mlsBuildSettingsTabs();
@@ -10766,6 +10777,42 @@ function renderPullVisitBodiesSetting(){
       }
       try{ const inline=document.getElementById('mlsDsVisitBodies'); if(inline) inline.checked=cb.checked; }catch(e){}
       try{ toast(cb.checked?'Full visit notes will be pulled — pulls run slower but save every encounter note.':'Pulls will read each chart’s facts and its own-day note — historical visit notes are skipped.','ok'); }catch(e){}
+    });
+  }catch(e){}
+}
+
+/* upnext-1.0.0 — "Pull upcoming visits automatically", the Settings view of
+   the quiet upcoming-days lane (the engine reads the stored key, never this
+   node). DEFAULT ON: an account that has never opened Settings still gets the
+   next days' charts, so only an explicit '0' turns the lane off. The write is
+   read back before the toast, the same discipline the option above uses. */
+function upcomingAutoPullPref(){
+  try{
+    if(typeof window.uns!=='function') return true;
+    return String(localStorage.getItem(window.uns('upcomingAutoPull')))!=='0';
+  }catch(e){ return true; }
+}
+function renderUpcomingAutoPullSetting(){
+  try{
+    const cb=document.getElementById('setUpcomingAutoPull'); if(!cb) return;
+    cb.checked=upcomingAutoPullPref();
+    if(cb.dataset.wired==='1') return;
+    cb.dataset.wired='1';
+    cb.addEventListener('change',function(){
+      const want=cb.checked===true;
+      let saved=false;
+      try{
+        if(typeof window.uns==='function'){
+          localStorage.setItem(window.uns('upcomingAutoPull'), want?'1':'0');
+          saved=(upcomingAutoPullPref()===want);
+        }
+      }catch(e){ saved=false; }
+      if(!saved){
+        cb.checked=upcomingAutoPullPref();
+        try{ toast('That change did not save — nothing changed.','warn'); }catch(e){}
+        return;
+      }
+      try{ toast(want?'MLS will bring in your next scheduled days on its own.':'MLS will only bring in a day when you press Pull.','ok'); }catch(e){}
     });
   }catch(e){}
 }

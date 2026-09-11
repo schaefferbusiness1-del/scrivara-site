@@ -2469,7 +2469,26 @@ const tests = [
      inside the viewport", never "something got scrolled". */
   'patient-row-owns-its-clicks-runtime.test.js',
   'review-note-tab-lands-on-the-note.test.js',
-  'review-note-tab-lands-on-the-note-runtime.test.js'
+  'review-note-tab-lands-on-the-note-runtime.test.js',
+  /* NEW 2026-09-11 - upnext-1.0.0, owner: "it always has to pull the to-be
+     visits as to make good op notes". The quiet upcoming-days lane keeps the
+     next scheduled days' charts in MLS ahead of time, so an operative note is
+     drafted against a chart that is already here.
+     -runtime drives the REAL importer over the shared fake-extension harness:
+     today then tomorrow, once each, stopping at the first empty future day; a
+     second walk inside the six-hour window reads nothing; every busy stamp
+     (recording, generating, the Send-to-athenaOne sheet, a running pull, a
+     write, another tab) defers it BY NAME; the setting OFF stops it; and the
+     two quiet gates are driven side by side so they cannot drift apart.
+     -surface-contract EXECUTES the Settings option and the day-strip line out
+     of the shipping files, in both shells.
+     opnote-background-only proves the pulled chart now reaches the op-note
+     prompt under the visit note's own BACKGROUND_ONLY rule rather than the
+     permissive sentence it shipped with - on an operative report that gap was
+     the fabrication class. */
+  'upcoming-autopull-runtime.test.js',
+  'upcoming-autopull-surface-contract.test.js',
+  'opnote-background-only.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
