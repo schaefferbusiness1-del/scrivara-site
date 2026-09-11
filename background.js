@@ -1688,6 +1688,16 @@ async function mlsAthenaActionV2DriverFn(req) {
        lane. The bound A/P editor on this exact frame must be Slate; otherwise
        the existing encounter Save path remains authoritative. */
     nativeNamedSave = !!(nativeNamedSave && hit.nativePersistenceReconcile);
+    /* surfacechange-1.0.0 (3.0.116): the probe found a Slate A/P editor and
+       the four native section proofs verified, so this request was authorized
+       as a reconcile of sections athenaOne persisted itself - NOT as a press
+       on the encounter Save control. If the A/P editor is no longer Slate at
+       execute time the surface changed underneath that authorization, and the
+       shipped fall-through would quietly become an encounter Save press the
+       app never asked for. Refuse instead. Nothing is clicked, read back or
+       written here. The context object is not built until below this line, so
+       this receipt deliberately carries no context. */
+    if (mode !== 'probe' && action === 'save_draft' && req.nativePersistenceProofSetVerified === true && !nativeNamedSave) return { ok: false, blocked: true, action: action, attempted: false, readOnly: true, verified: false, saved: false, persisted: false, serverVerified: false, reason: 'section-persistence-surface-changed', error: 'The A/P editor changed shape since MLS checked this encounter, so MLS did not press Save. Re-open the encounter, then press Confirm again.', noAutomaticChaining: 'no-automatic-chaining' };
     var bill = hit.bill, orderTarget = hit.orderTarget, actionControl = bill ? bill.el : (orderTarget ? orderTarget.search : hit.noteTarget.control);
     var actionScope = bill ? bill.root : (orderTarget ? orderTarget.root : noteScope);
     var taughtValidation = null;
@@ -2596,13 +2606,40 @@ async function mlsAthenaActionV2DriverFn(req) {
 
     /* ATHENA_ACTION_V2_SAVENAMED_EXECUTE_START */
     if (nativeNamedSave && action === 'save_draft') {
-      if (req.nativePersistenceProofSetVerified !== true) return { ok: false, blocked: true, action: action, attempted: false, verified: false, saved: false, persisted: false, reason: 'section-persistence-proof-missing', context: context, noAutomaticChaining: 'no-automatic-chaining' };
+      if (req.nativePersistenceProofSetVerified !== true) return { ok: false, blocked: true, action: action, attempted: false, readOnly: true, verified: false, saved: false, persisted: false, serverVerified: false, reason: 'section-persistence-proof-missing', error: 'MLS has no proof that Athena saved each reviewed section itself, so it did not verify the note. Nothing was pressed. Send the sections again.', context: context, noAutomaticChaining: 'no-automatic-chaining' };
       var nativeProofFrameTimeOrigin = Number(req.nativePersistenceProofFrameTimeOrigin || 0);
       function nativeFrameLifetimeMatches() {
         var current = 0; try { current = Number(hit.frame.w.performance && hit.frame.w.performance.timeOrigin || 0); } catch (eLifetime) { current = 0; }
         return nativeProofFrameTimeOrigin > 0 && current === nativeProofFrameTimeOrigin;
       }
-      if (!nativeFrameLifetimeMatches()) return { ok: false, blocked: true, action: action, attempted: false, verified: false, saved: false, persisted: false, reason: 'section-persistence-frame-changed', context: context, noAutomaticChaining: 'no-automatic-chaining' };
+      if (!nativeFrameLifetimeMatches()) return { ok: false, blocked: true, action: action, attempted: false, readOnly: true, verified: false, saved: false, persisted: false, serverVerified: false, reason: 'section-persistence-frame-changed', error: 'The Athena encounter reloaded while MLS was reading the saved note back. Nothing was pressed. Let it finish loading, then press Confirm again.', context: context, noAutomaticChaining: 'no-automatic-chaining' };
+      /* readnorm-1.0.0 (3.0.116, measured live 2026-09-09): athenaOne's own
+         hydration of a section it persisted collapsed a duplicated space
+         inside an HPI line, so the byte-exact comparison refused a section
+         Athena really did save. Newline structure still has to match exactly
+         - only runs of spaces and tabs INSIDE a line are collapsed and the
+         line ends trimmed - and BOTH sides go through this one helper, so a
+         reviewed section that arrived with CRLF (noteNorm on the write leg
+         versus a bare trim on the expected side) cannot refuse either.
+         Different words are still a mismatch. */
+      function nativeReadNorm(v) {
+        return noteNorm(v).split('\n').map(function (line) { return line.replace(/[ \t]+/g, ' ').trim(); }).join('\n');
+      }
+      function nativeReadLabel(key) { return { hpi: 'HPI', ros: 'ROS', exam: 'PE', ap: 'A/P' }[key] || 'reviewed'; }
+      /* honest-refusal-1.0.0 (3.0.116): every refusal this block can return
+         happens BEFORE any control is pressed, so each one says so in plain
+         English and names the one step that clears it. */
+      function nativeReadError(reason, key) {
+        var label = nativeReadLabel(key);
+        if (reason === 'section-persistence-frame-changed') return 'The Athena encounter reloaded while MLS was reading the saved note back. Nothing was pressed. Let it finish loading, then press Confirm again.';
+        if (reason === 'section-persistence-readback-missing') return 'MLS could not open the ' + label + ' section to read it back. Nothing was pressed. Open that section in the encounter, then press Confirm again.';
+        if (reason === 'section-persistence-readback-ambiguous') return 'MLS found more than one ' + label + ' section and did not guess. Nothing was pressed.';
+        if (reason === 'section-persistence-readback-mismatch') return 'The saved ' + label + ' text in Athena does not match the reviewed text. Nothing was pressed. Inspect that section before retrying.';
+        if (reason === 'note-editor-unreadable') return 'MLS could not read the ' + label + ' editor. Nothing was pressed. Let the encounter finish loading, then press Confirm again.';
+        if (reason === 'context-mismatch') return 'The encounter open in athenaOne changed while MLS was reading the saved note back. Nothing was pressed. Re-open the encounter, then press Confirm again.';
+        if (reason === 'forbidden-control') return 'The only control MLS could use to open the ' + label + ' section is a Sign, billing, order or close control. MLS will never click one. Nothing was pressed.';
+        return 'MLS did not verify the saved note in Athena. Nothing was pressed.';
+      }
       async function nativeReadSection(key, expectedValue) {
         if (!nativeFrameLifetimeMatches()) return { ok: false, reason: 'section-persistence-frame-changed' };
         var target = findNamedNoteAction(hit.frame, 'write_note', key), navLabel = { hpi: 'HPI', ros: 'ROS', exam: 'PE', ap: 'A/P' }[key];
@@ -2618,18 +2655,32 @@ async function mlsAthenaActionV2DriverFn(req) {
         if (!target || !target.editor || String(target.editor.getAttribute && target.editor.getAttribute('data-slate-editor') || '').toLowerCase() !== 'true') return { ok: false, reason: 'section-persistence-readback-missing' };
         var freshStage = hetStageEncounterContext(hit.frame, expectedPatient);
         if (!freshStage || digits(freshStage.encounterId) !== digits(context.encounterId) || digits(freshStage.appointmentId) !== digits(context.appointmentId) || dateKey(freshStage.visitDate) !== dateKey(context.visitDate) || norm(freshStage.provider) !== norm(context.provider)) return { ok: false, reason: 'context-mismatch' };
+        /* settle-1.0.0 (3.0.116): athenaOne can still be hydrating the section
+           it just persisted when the first read lands, so one read is a coin
+           flip. Read up to FOUR times, 400ms apart on the hidden-tab-safe
+           sleep, re-resolving the editor and re-checking the frame lifetime
+           between reads. The stage-context gate above already ran and is not
+           repeated. Nothing is clicked and nothing is written. */
+        var nativeExpectedNorm = nativeReadNorm(expectedValue);
         var value = editorValue(target.editor);
+        for (var settle = 1; settle < 4 && (value === null || nativeReadNorm(value) !== nativeExpectedNorm); settle++) {
+          await sleep(400);
+          if (!nativeFrameLifetimeMatches()) return { ok: false, reason: 'section-persistence-frame-changed' };
+          target = findNamedNoteAction(hit.frame, 'write_note', key);
+          if (!target || !target.editor || String(target.editor.getAttribute && target.editor.getAttribute('data-slate-editor') || '').toLowerCase() !== 'true') return { ok: false, reason: 'section-persistence-readback-missing' };
+          value = editorValue(target.editor);
+        }
         if (value === null) return { ok: false, reason: 'note-editor-unreadable' };
-        if (value !== expectedValue) return { ok: false, reason: 'section-persistence-readback-mismatch' };
+        if (nativeReadNorm(value) !== nativeExpectedNorm) return { ok: false, reason: 'section-persistence-readback-mismatch' };
         return { ok: true, key: key, persisted: true, saved: true, verified: true };
       }
       var nativeResults = [], nativeKeys = ['hpi','ros','exam','ap'];
       for (var nativeReadI = 0; nativeReadI < nativeKeys.length; nativeReadI++) {
         var nativeReadKey = nativeKeys[nativeReadI], nativeRead = await nativeReadSection(nativeReadKey, nativeSaveSections[nativeReadKey]);
-        if (!nativeRead.ok) return { ok: false, blocked: true, action: action, attempted: true, verified: false, saved: false, persisted: false, serverVerified: true, reason: nativeRead.reason, failedDestination: nativeReadKey, sectionsDeclared: 5, persistedDestinations: nativeResults.length, context: context, results: nativeResults, noAutomaticChaining: 'no-automatic-chaining' };
+        if (!nativeRead.ok) return { ok: false, blocked: true, action: action, attempted: false, readOnly: true, verified: false, saved: false, persisted: false, serverVerified: false, reason: nativeRead.reason, error: nativeReadError(nativeRead.reason, nativeReadKey), failedDestination: nativeReadKey, sectionsDeclared: 5, persistedDestinations: nativeResults.length, context: context, results: nativeResults, noAutomaticChaining: 'no-automatic-chaining' };
         nativeResults.push(nativeRead);
       }
-      return { ok: true, action: action, attempted: true, verified: true, saved: true, persisted: true, serverVerified: true, reason: 'exact-section-persistence-reconciled', nativePersistenceReconcile: true, sectionsDeclared: 5, persistedDestinations: 4, signed: false, context: context, results: nativeResults, noAutomaticChaining: 'no-automatic-chaining' };
+      return { ok: true, action: action, attempted: false, readOnly: true, verified: true, saved: true, persisted: true, serverVerified: true, reason: 'exact-section-persistence-reconciled', nativePersistenceReconcile: true, sectionsDeclared: 5, persistedDestinations: 4, signed: false, context: context, results: nativeResults, noAutomaticChaining: 'no-automatic-chaining' };
     }
     /* savenamed-1.0.0 (3.0.111, owner ruling 2026-09-02): a trusted press on
        the MLS site drives athenaOne's encounter Save for a review that
