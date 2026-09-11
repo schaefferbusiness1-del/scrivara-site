@@ -2469,7 +2469,45 @@ const tests = [
      inside the viewport", never "something got scrolled". */
   'patient-row-owns-its-clicks-runtime.test.js',
   'review-note-tab-lands-on-the-note.test.js',
-  'review-note-tab-lands-on-the-note-runtime.test.js'
+  'review-note-tab-lands-on-the-note-runtime.test.js',
+  /* NEW 2026-09-11, the pull lane's three wedge classes, executed against the
+     SHIPPED day-strip bytes in a vm.
+     dslease-1.0.0: a pull start now consults the SAME driver predicate the
+     follow guard owns (dnoteAthenaDriver via window.__mlsAthenaDrivenByMls),
+     so it can never begin while the write lane or a background reader is on
+     the athena tab - and while it runs it keeps the shared per-tab busy stamp
+     those lanes already read fresh, so the refusal is symmetric.
+     dsceil-1.0.0: si.dayPull() was awaited with NO ceiling, so a bridge that
+     never settled left DS.pulling true, the button on "Starting..." and no
+     outcome ever written. Progress (status lines or the engine's own row
+     counters) defers the ceiling; silence ends the run with
+     'engine-no-settle', and a late answer is recorded, never swapped in.
+     dsbt-1.0.0: done() used to return on a stale session serial BEFORE
+     DS.pulling=false and the button re-enable, so a session boundary landing
+     mid-pull killed the control for good. The teardown always runs, only the
+     painting is gated, and the boundary drives the active run's own terminal
+     before it bumps. */
+  'day-strip-lease-ceiling-boundary.test.js',
+  /* dobfill-1.0.0: 694 of 1857 records carry neither a DOB nor an MRN, and
+     both identity passes filtered them out the moment the schedule row carried
+     a DOB - so the create branch minted a second chart for a patient the store
+     already had, on every appointment. A keyless record is now FILLED from the
+     row when exactly one tolerant name candidate exists and nothing conflicts;
+     anything weaker is a one-click suggestion, and nothing mints while one is
+     pending. Both shells are executed, and the twins must carry one hunk. */
+  'identity-dobless-fill-not-mint-runtime.test.js',
+  /* vpp-1.0.0: the verdict census judged ENTRIES over rows AND unresolved, and
+     the two lists carry the same ids - a 20-patient day reported requested 40,
+     failed 20, closed:true. One judgement per distinct patient, and closed now
+     asserts the denominator as well as the sum.
+     refusal-durable-1.0.0: every refusal lived in an in-memory receipt the next
+     pull overwrote (350 ledger entries, state tally {done:350}, no attention
+     key anywhere), so a day could never be proven complete after a reload. The
+     terminal failure is written into the day key as its own row with the exact
+     code, the run-scoped attempt count and the retry-skipped reason; the
+     needs-attention queue is a scan of those rows, and the one-click Retry
+     re-reads only them. */
+  'schedimport-verdict-census-and-durable-refusals.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

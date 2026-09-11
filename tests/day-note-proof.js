@@ -349,7 +349,8 @@ async function partBDrainInsideThePull() {
 
   /* SERIALIZED BY CONSTRUCTION: the hook is wired on the settle path, after
      the lease and pullRunning are released - never as a second driver. */
-  const settleSlice = IMPORTER.slice(IMPORTER.indexOf('function runManagedAthenaOperation(task, busyFactory)'));
+  /* oown-1.0.0 added a third parameter; anchor on the NAME, not the signature. */
+  const settleSlice = IMPORTER.slice(IMPORTER.indexOf('function runManagedAthenaOperation('));
   const settleTail = settleSlice.slice(0, settleSlice.indexOf('function buildRetryRows'));
   const releaseAt = settleTail.indexOf('pullRunning = false;');
   const drainAt = settleTail.indexOf('dnoteAfterSettle(value)');

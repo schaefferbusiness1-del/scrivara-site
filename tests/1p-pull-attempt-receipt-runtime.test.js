@@ -15,7 +15,10 @@ const vm = require('vm');
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, '1p-mls-connect.js'), 'utf8');
 
-const start = source.indexOf('  function ownAttemptResult(result, day, fallbackReason, fallbackError) {');
+/* dsline-1.0.0 added a fifth parameter (the sentence the lane showed the
+ * doctor, stored so the 1.2s strip repaint cannot erase a refusal). Anchor on
+ * the NAME - a parameter list is a spelling, not a property. */
+const start = source.indexOf('  function ownAttemptResult(');
 const end = source.indexOf('  /* ===== end oar-1.0.0 */', start);
 assert(start >= 0 && end > start, 'the 1p per-attempt pull receipt owner (oar-1.0.0) is missing');
 

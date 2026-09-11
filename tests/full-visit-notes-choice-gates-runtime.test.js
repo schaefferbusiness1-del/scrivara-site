@@ -221,7 +221,7 @@ function slowYearChoiceCase() {
 }
 
 function receiptCases() {
-  const own = balancedFunction(CONNECT, 'function ownAttemptResult(result, day, fallbackReason, fallbackError)', 'local receipt');
+  const own = balancedFunction(CONNECT, 'function ownAttemptResult(', 'local receipt');
   const local = { lastAttemptResult: null, day: '2026-08-22' };
   const localCtx = vm.createContext({
     DS: local, String, Object,

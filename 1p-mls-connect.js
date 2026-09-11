@@ -55032,6 +55032,23 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var code = String(value == null ? '' : value).toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80);
     return code || String(fallback || 'unclassified');
   }
+  /* dsline-1.0.0 (MEASURED 2026-09-11): syncStrip repaints #mlsDsStatus from
+     the stored terminal receipt on every 1.2s tick, and dsTerminalReceiptLine
+     only ever produced the generic 'Pull failed for <day>.' So a refusal the
+     lane had just painted - "another part of MLS is using athenaOne", "the
+     pull was interrupted because the MLS session changed" - survived about a
+     second on screen and then vanished, leaving the doctor a toast at best. A
+     refusal he cannot read is not a refusal. The sentence the lane composed is
+     therefore stored WITH the receipt and repainted from it, which also makes
+     it survive a reload like every other terminal fact.
+     Only sentences THIS file wrote are eligible: an extension string can carry
+     a patient's name, and this receipt is account-local and PHI-free by
+     contract. Bounded, single-line, no markup. */
+  function dsReceiptLine(value) {
+    var text = String(value == null ? '' : value).replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, '');
+    if (!text || /[<>]/.test(text)) return '';
+    return text.slice(0, 240);
+  }
   function dsTerminalStatus(result) {
     var r = result && typeof result === 'object' ? result : null;
     if (r && r.ok === true && r.complete === true) return 'complete';
@@ -55056,6 +55073,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       v: 1, kind: 'day-pull-terminal', target: target, status: dsTerminalStatus(r),
       at: Date.now(), pullId: dsReceiptCode(r.pullId, ''),
       reason: dsReceiptCode(r.reason, dsTerminalStatus(r)), durable: false,
+      line: dsReceiptLine(r.__dsDoctorLine), /* dsline-1.0.0 */
       schedule: { complete: sr.complete === true, expected: dsReceiptCount(sr.expectedCount || sr.candidateCount), parsed: dsReceiptCount(sr.parsedCount || sr.mergedRows) },
       history: { requested: dsReceiptCount(hr.requested), processed: dsReceiptCount(hr.processed), complete: hr.complete === true, failures: dsReceiptCount(hr.failures), retry: Array.isArray(hr.retry) ? hr.retry.length : 0 },
       visitNotes: { requested: requested, mode: requested === true ? 'full' : (hr.visitNotesMode === 'blocked-unchosen' ? 'blocked-unchosen' : (requested === false ? 'day-facts' : 'unknown')), read: dsReceiptCount(hr.todayNoteRead), failures: dsReceiptCount(hr.todayNoteFailures), notRequested: dsReceiptCount(hr.todayNoteNotRequested) } /* dayfacts-1.0.1: the persisted terminal receipt speaks the same vocabulary as every other level, and a fail-closed unchosen refusal keeps its OWN mode - it must never read as a day-facts pull that did work */
@@ -55091,6 +55109,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   function dsTerminalReceiptLine(receipt) {
     if (!receipt) return '';
+    /* dsline-1.0.0: when the lane recorded the exact sentence it showed, that
+       sentence IS this receipt's line - across the 1.2s repaint and across a
+       reload. Every older receipt keeps the generic status sentence below.
+       dsReceiptLine is the WRITER's sanitiser and runs on the way in; this
+       reader repeats the two cheap guards inline instead of calling it,
+       because the sentence builder is lifted and executed on its own by
+       tests/day-note-foldin-contract.test.js and a cross-slice dependency
+       would make that suite fail for a reason that is not about the sentence. */
+    var ownLine = String((receipt && receipt.line) || '').replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, '').slice(0, 240);
+    if (ownLine && /[<>]/.test(ownLine)) ownLine = '';
+    if (ownLine) return ownLine + (receipt.durable !== true ? ' Status could not be saved for reload; it is available in this tab only.' : '');
     var status = receipt.status === 'complete' ? 'complete' : (receipt.status === 'partial' ? 'partial' : 'failed');
     var line = 'Pull ' + status + ' for ' + fmtDay(receipt.target || DS.day) + '.';
     if (receipt.visitNotes && receipt.visitNotes.mode === 'blocked-unchosen') line += ' The Full-visit-notes choice has not been made for this account yet, so no chart was opened and nothing was read.';
@@ -55206,6 +55235,24 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     '#mlsDsRetryHistoryBtn:hover{background:#FFF3CC;}',
     '#mlsDsRetryHistoryBtn[disabled]{opacity:.7;cursor:default;}',
     '#mlsDsDiagBtn{display:none;border:1px solid #D9C1C1;background:#FDF3F3;color:#7A1F1F;font:700 12px system-ui;border-radius:9px;padding:8px 12px;cursor:pointer;}',
+    /* attq-1.0.0 / idq-1.0.0: the two queues the doctor could not see. Same
+       amber weight as Retry failed histories - a thing to finish, never an
+       alarm - and both hidden entirely when their queue is empty. */
+    '#mlsDsAttentionBtn{display:none;border:1px solid #D8C997;background:#FFF9E8;color:#68551E;font:700 12px system-ui;border-radius:9px;padding:8px 12px;cursor:pointer;}',
+    '#mlsDsAttentionBtn:hover{background:#FFF3CC;}',
+    '#mlsDsAttentionBtn[disabled]{opacity:.7;cursor:default;}',
+    '#mlsDsIdentityBtn{display:none;border:1px solid #C9D6CF;background:#F1F6F3;color:#204034;font:700 12px system-ui;border-radius:9px;padding:8px 12px;cursor:pointer;}',
+    '#mlsDsIdentityBtn:hover{background:#E4EEE8;}',
+    '#mlsDsIdentityBtn[disabled]{opacity:.7;cursor:default;}',
+    '#mlsDsIdentityPanel{display:none;background:#fff;border:1px solid #E7E5DD;border-radius:12px;padding:11px 13px;margin:0 0 10px;box-shadow:0 1px 2px rgba(20,33,28,.04);}',
+    '#mlsDsIdentityPanel h4{margin:0 0 4px;font:700 13px system-ui;color:#1A211C;}',
+    '#mlsDsIdentityPanel p{margin:0 0 9px;font:400 12px system-ui;color:#55605A;}',
+    '#mlsDsIdentityPanel .ds-idrow{border-top:1px solid #F0EEE7;padding:9px 0 0;margin:9px 0 0;}',
+    '#mlsDsIdentityPanel .ds-idname{font:600 12.5px system-ui;color:#1A211C;margin:0 0 6px;}',
+    '#mlsDsIdentityPanel .ds-idacts{display:flex;flex-wrap:wrap;gap:6px;}',
+    '#mlsDsIdentityPanel button{border:1px solid #C9D6CF;background:#F1F6F3;color:#204034;font:700 12px system-ui;border-radius:9px;padding:7px 11px;cursor:pointer;}',
+    '#mlsDsIdentityPanel button:hover{background:#E4EEE8;}',
+    '#mlsDsIdentityPanel button.ds-idskip{border-color:#E4E1D8;background:#FCFBF8;color:#55605A;}',
     '#mlsDsDiagBtn:hover{background:#F9E4E4;}',
     '#mlsDsStrip .ds-spin{width:13px;height:13px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;animation:mlsDsSpin .8s linear infinite;flex:none;display:inline-block;}',
     '@keyframes mlsDsSpin{to{transform:rotate(360deg)}}',
@@ -55340,6 +55387,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         dsSyncDiagBtn(hydratedTerminal.status === 'failed');
       }
     } catch (eReceiptPaint) {}
+    /* attq-1.0.0 / idq-1.0.0: the two queues ride the same tick as the rest
+       of the strip, so a refusal filed by a pull that finished minutes ago is
+       still on screen when the doctor comes back to the tab. */
+    try { syncAttentionControl(); } catch (eAttSync) {}
+    try { syncIdentityControl(); } catch (eIdSync) {}
   }
   function setDay(k) {
     k = String(k || '').slice(0, 10);
@@ -56003,7 +56055,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      date - so a doctor's copied diagnostic could describe a pull they never
      clicked, and a promise that resolved to nothing at all produced no
      attempt record whatsoever. */
-  function ownAttemptResult(result, day, fallbackReason, fallbackError) {
+  function ownAttemptResult(result, day, fallbackReason, fallbackError, doctorLine) {
     var source = result && typeof result === 'object' ? result : null, owned = {};
     if (source) Object.keys(source).forEach(function (key) { owned[key] = source[key]; });
     owned.ok = !!(source && source.ok === true);
@@ -56011,6 +56063,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (!owned.reason) owned.reason = fallbackReason || 'unverified-result';
     if (!owned.target) owned.target = String(day || DS.day || '');
     if (!owned.error && fallbackError) owned.error = String(fallbackError);
+    /* dsline-1.0.0: only a caller that composed the sentence itself may hand
+       one in, so the stored receipt can never inherit extension prose. */
+    if (doctorLine) owned.__dsDoctorLine = String(doctorLine);
     /* dtr-1.0.0: file a bounded terminal answer before any later UI branch
        can return or schedule an automatic retry. Storage failure is retained
        as an honest tab-only state; it is never reported as durable. */
@@ -56069,6 +56124,230 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     return items.length;
   }
 
+  /* ===== attq-1.0.0 + idq-1.0.0 (a queue nobody can see is not a queue) ===
+     MEASURED 2026-09-11. The engine files every refused chart into its own
+     day ledger under an att:: key and can re-read exactly those rows
+     (attentionQueue / retryAttention); the shell raises a one-click identity
+     suggestion whenever a schedule row could belong to more than one keyless
+     record, and blocks the duplicate mint until it is answered
+     (__mlsIdentityFillQueue / __mlsIdentityFillApply / ...Dismiss). NOTHING ON
+     ANY SCREEN MENTIONED EITHER. Both were reachable only from a console, so
+     a durable refusal was a number in a receipt and a blocked mint was a
+     patient the doctor never heard about.
+
+     Both surfaces are the same shape: a strip control that exists only while
+     its queue has something in it, naming the count in the doctor's words,
+     and one click that does the whole job. Neither ever drives athenaOne
+     without going through the same one-keyboard gate the Pull button uses. */
+  var DS_ATTENTION_VERSION = 'attq-1.0.0', DS_IDENTITY_QUEUE_VERSION = 'idq-1.0.0';
+  var dsAttCache = { day: '', at: 0, count: 0 };
+  function dsImporter() {
+    try { return window.MLSScheduleImporter || window.__mlsSI || null; } catch (eImp) { return null; }
+  }
+  /* syncStrip runs on the 1.2s strip tick, and this reads (and JSON-parses)
+     an account-local ledger key, so the answer is cached per day for 4s. A
+     retry, a pull terminal and a day change all drop the cache explicitly. */
+  function dsAttentionCount(force) {
+    var day = String(DS.day || '');
+    var now = Date.now();
+    if (force !== true && dsAttCache.day === day && (now - dsAttCache.at) < 4000) return dsAttCache.count;
+    var si = dsImporter(), n = 0;
+    if (si && typeof si.attentionQueue === 'function') {
+      try { n = Number((si.attentionQueue({ day: day }) || {}).count || 0); } catch (eAq) { n = 0; }
+    }
+    if (!isFinite(n) || n < 0) n = 0;
+    dsAttCache = { day: day, at: now, count: n };
+    return n;
+  }
+  function dsAttentionCacheClear() { dsAttCache = { day: '', at: 0, count: 0 }; }
+  function syncAttentionControl(force) {
+    var btn = $('mlsDsAttentionBtn'); if (!btn) return 0;
+    var n = dsAttentionCount(force === true);
+    btn.style.display = n > 0 ? 'inline-block' : 'none';
+    btn.disabled = !!(DS.pulling || DS.retrying || DS.__autoRetrying);
+    if (n > 0) {
+      var label = '⚠ Finish ' + n + ' chart' + (n === 1 ? '' : 's') + ' that need' + (n === 1 ? 's' : '') + ' attention';
+      if (btn.textContent !== label) btn.textContent = label;
+    }
+    return n;
+  }
+  /* The one click. It re-reads ONLY the rows the ledger holds for this day,
+     never the whole day, and it refuses for the same reason a pull refuses
+     when another MLS lane has the athena tab. */
+  function retryAttentionCharts() {
+    var stat = $('mlsDsStatus'), btn = $('mlsDsAttentionBtn'), pullBtn = $('mlsDsPullBtn');
+    function say(line) {
+      if (stat) { stat.style.display = 'block'; stat.textContent = line; }
+      try { dsStatusLog(line); } catch (eSay) {}
+    }
+    if (DS.pulling || DS.retrying || DS.__autoRetrying) {
+      say('A pull is still running. This button wakes up the moment it is done.');
+      return;
+    }
+    var si = dsImporter();
+    if (!si || typeof si.retryAttention !== 'function') {
+      say('These charts cannot be re-read on this build. Run the day again when you can.');
+      return;
+    }
+    var busyLane = dsAthenaBusyLane();
+    if (busyLane) {
+      var busyLine = dsAthenaBusyLine(busyLane, 'Those charts were not re-read');
+      say(busyLine);
+      try { if (typeof window.toast === 'function') window.toast(busyLine, 'err'); } catch (eAt0) {}
+      return;
+    }
+    var day = DS.day, total = dsAttentionCount(true);
+    if (total < 1) { syncAttentionControl(true); say('Nothing on ' + fmtDay(day) + ' is waiting for a second read.'); return; }
+    var sessionSerial = DS.sessionSerial;
+    DS.retrying = true;
+    if (btn) btn.disabled = true;
+    if (pullBtn) pullBtn.disabled = true;
+    dsLeaseHold();
+    say('Re-reading ' + total + ' chart' + (total === 1 ? '' : 's') + ' for ' + fmtDay(day) + '...');
+    function finish(lineFor) {
+      DS.retrying = false;
+      dsLeaseRelease();
+      if (pullBtn) { pullBtn.disabled = false; pullBtn.innerHTML = '📥 ' + esc(dsPullVerb()); }
+      dsAttentionCacheClear();
+      var left = syncAttentionControl(true);
+      if (sessionSerial !== DS.sessionSerial) return;
+      say(lineFor(left));
+    }
+    var settled = false;
+    try {
+      Promise.resolve(si.retryAttention(day, function (m) {
+        if (sessionSerial !== DS.sessionSerial) return;
+        try { if (stat && m) { stat.style.display = 'block'; stat.textContent = String(m); } } catch (eAt1) {}
+      })).then(function () {
+        if (settled) return; settled = true;
+        finish(function (left) {
+          return left === 0
+            ? ('Every chart that needed attention on ' + fmtDay(day) + ' has now been read.')
+            : (left + ' chart' + (left === 1 ? '' : 's') + ' on ' + fmtDay(day) + ' still need' + (left === 1 ? 's' : '') + ' attention. Select the same button to try them again.');
+        });
+      }, function () {
+        if (settled) return; settled = true;
+        finish(function () { return 'That second read did not finish. Nothing further was read. Try again in a moment.'; });
+      });
+    } catch (eAt2) {
+      if (!settled) { settled = true; finish(function () { return 'That second read could not start. Nothing was read.'; }); }
+    }
+  }
+  /* idq-1.0.0: the identity suggestions the shell raises and the importer
+     refuses a mint on. The queue itself is the shell's; this only shows it
+     and hands the two verbs back. */
+  function dsIdentityQueue() {
+    try {
+      var fn = window.__mlsIdentityFillQueue;
+      var rows = (typeof fn === 'function') ? fn() : [];
+      return Array.isArray(rows) ? rows.slice(0, 20) : [];
+    } catch (eIq) { return []; }
+  }
+  function syncIdentityControl() {
+    var btn = $('mlsDsIdentityBtn'); if (!btn) return 0;
+    var rows = dsIdentityQueue(), n = rows.length;
+    btn.style.display = n > 0 ? 'inline-block' : 'none';
+    btn.disabled = !!(DS.pulling || DS.retrying || DS.__autoRetrying);
+    if (n > 0) {
+      var label = 'Confirm ' + n + ' patient record' + (n === 1 ? '' : 's');
+      if (btn.textContent !== label) btn.textContent = label;
+    } else { closeIdentityPanel(); }
+    return n;
+  }
+  function closeIdentityPanel() {
+    try { var old = document.getElementById('mlsDsIdentityPanel'); if (old) old.remove(); } catch (eIp) {}
+  }
+  function dsPatientById(id) {
+    try {
+      var pts = (typeof window.getPatients === 'function' ? window.getPatients() : []) || [];
+      for (var i = 0; i < pts.length; i++) if (String(pts[i] && pts[i].id || '') === String(id)) return pts[i];
+    } catch (eP) {}
+    return null;
+  }
+  /* Every name here is written with textContent, never innerHTML: these are
+     patient names out of the store and they are never treated as markup. */
+  function renderIdentityPanel() {
+    closeIdentityPanel();
+    var rows = dsIdentityQueue();
+    if (!rows.length) return null;
+    var strip = $('mlsDsStrip'); if (!strip || !strip.parentNode) return null;
+    var panel = document.createElement('div');
+    panel.id = 'mlsDsIdentityPanel';
+    if (panel.setAttribute) { panel.setAttribute('role', 'group'); panel.setAttribute('aria-label', 'Confirm a patient record'); }
+    panel.style.display = 'block';
+    var h = document.createElement('h4');
+    h.textContent = 'Is this someone you already have?';
+    panel.appendChild(h);
+    var p = document.createElement('p');
+    p.textContent = 'These appointments matched a patient in MLS by name, but that record has no date of birth, so MLS will not merge them on its own. Confirm the chart and the date of birth is filled in. Until then no new record is created for that name.';
+    panel.appendChild(p);
+    rows.forEach(function (row, ri) {
+      if (!row || !row.key) return;
+      var wrap = document.createElement('div');
+      wrap.className = 'ds-idrow';
+      var title = document.createElement('div');
+      title.className = 'ds-idname';
+      title.textContent = String(row.name || 'This appointment') + (row.dob ? (' — born ' + String(row.dob)) : '');
+      wrap.appendChild(title);
+      var acts = document.createElement('div');
+      acts.className = 'ds-idacts';
+      (row.candidateIds || []).slice(0, 6).forEach(function (cid, ci) {
+        var cand = dsPatientById(cid);
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.id = 'mlsDsIdPick' + ri + '_' + ci;
+        b.textContent = 'This is ' + String((cand && cand.name) || 'this record');
+        b.onclick = function () { applyIdentitySuggestion(row.key, cid); };
+        acts.appendChild(b);
+      });
+      var skip = document.createElement('button');
+      skip.type = 'button';
+      skip.className = 'ds-idskip';
+      skip.id = 'mlsDsIdSkip' + ri;
+      skip.textContent = 'Not the same person';
+      skip.onclick = function () { dismissIdentitySuggestion(row.key); };
+      acts.appendChild(skip);
+      wrap.appendChild(acts);
+      panel.appendChild(wrap);
+    });
+    var close = document.createElement('button');
+    close.type = 'button';
+    close.id = 'mlsDsIdentityCloseBtn';
+    close.className = 'ds-idskip';
+    close.style.marginTop = '10px';
+    close.textContent = 'Decide later';
+    close.onclick = function () { closeIdentityPanel(); };
+    panel.appendChild(close);
+    strip.parentNode.insertBefore(panel, strip.nextSibling);
+    return panel;
+  }
+  function toggleIdentityPanel() {
+    if (document.getElementById('mlsDsIdentityPanel')) { closeIdentityPanel(); return; }
+    renderIdentityPanel();
+  }
+  function identityPanelSay(line) {
+    var stat = $('mlsDsStatus');
+    if (stat) { stat.style.display = 'block'; stat.textContent = line; }
+    try { dsStatusLog(line); } catch (eIs) {}
+  }
+  function applyIdentitySuggestion(key, patientId) {
+    var out = null;
+    try { out = (typeof window.__mlsIdentityFillApply === 'function') ? window.__mlsIdentityFillApply(key, patientId) : null; } catch (eIa) { out = null; }
+    if (!out || out.ok !== true) {
+      identityPanelSay('That record could not be confirmed. Nothing was changed. Open the patient and add the date of birth by hand.');
+    } else {
+      var cand = dsPatientById(out.patientId);
+      identityPanelSay('Confirmed' + (cand && cand.name ? (': ' + String(cand.name)) : '') + '. The date of birth was filled in and the next pull will use that chart.');
+    }
+    syncIdentityControl();
+    if (dsIdentityQueue().length) renderIdentityPanel();
+  }
+  function dismissIdentitySuggestion(key) {
+    try { if (typeof window.__mlsIdentityFillDismiss === 'function') window.__mlsIdentityFillDismiss(key); } catch (eId) {}
+    identityPanelSay('Kept as separate people. The next pull may create a new record for that appointment.');
+    syncIdentityControl();
+    if (dsIdentityQueue().length) renderIdentityPanel();
+  }
   function wakeAthenaAndRetryFailedHistories() {
     if (DS.pulling || DS.retrying || !DS.lastResult || wakeRetryInFlight) return;
     var source = DS.lastResult, hr = source && source.historyReceipt ? source.historyReceipt : source, items = retryItems(source), ids = [];
@@ -56439,6 +56718,266 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     } catch (ePtsT) {}
     return true;
   }
+  /* ===== dslease-1.0.0 + dsceil-1.0.0 + dsbt-1.0.0 (one pull lane owner) ===
+     Three measured wedges of the same run, kept together because they share
+     one teardown.
+
+     dslease-1.0.0 - ONE KEYBOARD ON THE ATHENA TAB. The follow guard already
+     owns the single predicate that names every MLS lane driving athenaOne
+     (dnoteAthenaDriver, published as window.__mlsAthenaDrivenByMls), but it
+     was only ever consulted AFTER a chart identity arrived - never as a START
+     gate. A pull could therefore begin while the write lane was hopping
+     sections or a background reader had a chart open, and two drivers typed
+     into one athena tab. This strip now asks that SAME predicate before it
+     touches anything, and refuses by name: {ok:false, reason:'athena-busy',
+     by:<lane>}, nothing read and nothing typed. The other direction is the
+     per-tab busy stamp the other lanes already read (window.__mlsPullBusyAt -
+     the write lane's own pull-busy check and the importer's name-lookup
+     preflight both refuse on it): this strip keeps it fresh for the WHOLE run,
+     the click-to-claim gap and the automatic convergence rounds included, and
+     clears only the stamp it wrote itself. A write-lane hop stamp older than
+     90s is treated as leaked, never as a live driver - a stale flag may not
+     take the doctor's Pull button away from him.
+
+     dsceil-1.0.0 - AN ENGINE PROMISE WITH NO CEILING. si.dayPull() was awaited
+     with no ceiling at all, so a bridge that never settles left DS.pulling
+     true, the button on "Starting...", and NO outcome ever written (measured
+     live at 00:03). The roster warm-up 100 lines above already owns exactly
+     this race for its own bridge. The ceiling here is deliberately a
+     NO-PROGRESS ceiling plus an absolute cap: a pull that is still streaming
+     status or advancing the engine's own row counters is alive however long it
+     takes, and only a SILENT run is timed out. Expiry writes reason
+     'engine-no-settle', asks the engine to stop driving athena cooperatively,
+     and then runs the ordinary terminal so the button comes back.
+
+     dsbt-1.0.0 - A STALE SERIAL SKIPPED THE TEARDOWN. done() opened with a
+     session-serial guard, so a session boundary landing mid-pull returned
+     before DS.pulling=false and the button re-enable: a normally-finishing
+     pull left the control dead for good. The teardown now ALWAYS runs; only
+     the PAINTING (status text, toast, retry control, list) is gated on the
+     serial still matching. resetDaySwitchSession drives the active run's own
+     terminal BEFORE it bumps the serial, and a sweeper restores a button left
+     disabled with nothing running.
+     ==================================================================== */
+  var DS_LEASE_VERSION = 'dslease-1.0.0', DS_CEILING_VERSION = 'dsceil-1.0.0', DS_BOUNDARY_VERSION = 'dsbt-1.0.0';
+  /* Lanes that ARE this strip's own run, or that the cross-tab shield below
+     refuses with a better sentence. Never a reason to refuse a press here. */
+  var DS_OWN_ATHENA_LANES = { 'day-pull': true, 'day-history-pull': true, 'other-tab': true };
+  var DS_ATHENA_LANE_LABEL = {
+    'write-lane': 'MLS is writing into athenaOne right now',
+    'patient-batch': 'MLS is reading a patient chart right now',
+    'deferred-round': 'MLS is finishing a queued day note right now',
+    'day-note-drain': 'MLS is reading the day notes it still owes',
+    'notes-idle': 'the background note catch-up has a chart open',
+    'month-pull': 'a month pull is running',
+    'range-job': 'a saved date-range job is running',
+    'visits-backfill': 'the visit backfill has a chart open'
+  };
+  /* A write-lane navigation stamp this old is leaked state, not a live hop.
+     wfNavBegin/wfNavEnd refresh athenaBusyAt on every hop, so a real hop is
+     never 90s stale while running is false. */
+  var DS_WRITE_LANE_STALE_MS = 90000;
+  function dsWriteLaneStale() {
+    try {
+      var wf = window.__mlsWriteFlow, s = wf && wf.state;
+      if (!s) return false;
+      if (s.running === true || s.busy === true) return false;
+      if (s.athenaBusy !== true) return false;
+      var at = Number(s.athenaBusyAt || 0);
+      return at > 0 && (Date.now() - at) > DS_WRITE_LANE_STALE_MS;
+    } catch (eWs) { return false; }
+  }
+  function dsAthenaDriverLane() {
+    var by = '';
+    try {
+      var receipt = (typeof window.__mlsAthenaDrivenByMls === 'function') ? window.__mlsAthenaDrivenByMls() : null;
+      if (receipt && receipt.driving === true) by = String(receipt.by || '');
+    } catch (eDrv) {}
+    if (!by) {
+      try {
+        var siDrv = window.__mlsSI;
+        if (siDrv && typeof siDrv._athenaDriver === 'function') by = String(siDrv._athenaDriver() || '');
+      } catch (eDrv2) {}
+    }
+    return by;
+  }
+  function dsAthenaBusyLane() {
+    var by = dsAthenaDriverLane();
+    if (!by || DS_OWN_ATHENA_LANES[by] === true) return '';
+    if (by === 'write-lane' && dsWriteLaneStale()) return '';
+    return by;
+  }
+  /* One sentence, two subjects (the pull button and the needs-attention
+     re-read). The fallback names no lane code and no internal word: the
+     doctor is told athenaOne is in use by MLS, which is the whole actionable
+     fact - the lane itself rides the refusal receipt for support. */
+  function dsAthenaBusyLine(by, subject) {
+    var what = DS_ATHENA_LANE_LABEL[by] || 'another part of MLS is using athenaOne';
+    return String(subject || 'Pull not started') + ' — ' + what + '. Nothing was read and nothing was typed. Try again in a moment.';
+  }
+  /* The reciprocal half: while this strip owns a run the shared per-tab busy
+     stamp stays fresh, so the write lane and the name-lookup preflight refuse
+     for the whole run and not only for the window the engine holds its own
+     lease. Only the stamp we wrote is ever cleared. */
+  var dsLeaseTimer = null, dsLeaseStamp = 0;
+  function dsLeaseTick() {
+    if (!(DS.pulling || DS.retrying || DS.__autoRetrying)) { dsLeaseRelease(); return; }
+    try { dsLeaseStamp = Date.now(); window.__mlsPullBusyAt = dsLeaseStamp; } catch (eLt) {}
+  }
+  function dsLeaseHold() {
+    dsLeaseTick();
+    /* 8s, not 25s: the store-guard readers around this file treat a stamp
+       older than 10s as "no pull owns the roster", so a slower heartbeat
+       would let them compete with the run they are meant to defer to. */
+    if (dsLeaseTimer == null) { try { dsLeaseTimer = setInterval(dsLeaseTick, 8000); } catch (eLh) {} }
+  }
+  function dsLeaseRelease() {
+    if (dsLeaseTimer != null) { try { clearInterval(dsLeaseTimer); } catch (eLr) {} dsLeaseTimer = null; }
+    try { if (dsLeaseStamp && Number(window.__mlsPullBusyAt || 0) === dsLeaseStamp) window.__mlsPullBusyAt = 0; } catch (eLr2) {}
+    dsLeaseStamp = 0;
+  }
+  /* dsceil-1.0.0 sizing. The engine's own history budget is 12-45 minutes;
+     the pre-flight bridges and the day-note drain sit on top of it, so the
+     absolute cap is deliberately far above any honest run and the
+     no-progress ceiling is what actually bites. The override is a
+     diagnostic/test seam: it can only move the clock, never change what is
+     read from athena or what any receipt says. */
+  var DS_CEIL_TICK_MS = 15000;
+  var DS_CEIL_NO_PROGRESS_MS = 12 * 60 * 1000;
+  var DS_CEIL_ABSOLUTE_MS = 75 * 60 * 1000;
+  function dsCeilConfig() {
+    var cfg = { version: DS_CEILING_VERSION, tickMs: DS_CEIL_TICK_MS, noProgressMs: DS_CEIL_NO_PROGRESS_MS, absoluteMs: DS_CEIL_ABSOLUTE_MS, source: 'default' };
+    try {
+      var o = window.__mlsDayPullCeilingOverrideV1;
+      if (o && typeof o === 'object') {
+        var np = Number(o.noProgressMs), ab = Number(o.absoluteMs), tk = Number(o.tickMs);
+        if (isFinite(np) && np >= 1000) { cfg.noProgressMs = np; cfg.source = 'override'; }
+        if (isFinite(ab) && ab >= 1000) { cfg.absoluteMs = ab; cfg.source = 'override'; }
+        if (isFinite(tk) && tk >= 50) { cfg.tickMs = tk; cfg.source = 'override'; }
+      }
+    } catch (eCc) {}
+    return cfg;
+  }
+  /* PHI-free liveness signature. The engine's own progress surface carries a
+     patient name in .current, so only its LENGTH is read here - the counters
+     are what actually prove a row moved. */
+  function dsEngineProgressSignature() {
+    try {
+      var d = window.__mlsDayHistoryPull, s = d && d.state;
+      if (!s) return '';
+      return [s.running === true ? 1 : 0, Number(s.total || 0), Number(s.done || 0),
+        Number(s.ok || 0), Number(s.failed || 0), String(s.current || '').length].join('|');
+    } catch (eSig) { return ''; }
+  }
+  /* The ONE live run this strip owns. A session boundary and the sweeper drive
+     its own terminal through this handle instead of stranding it. */
+  var dsActiveRun = null, dsBtnStuckSince = 0, dsWedgeReceipt = null;
+  function dsRunTeardown(handle) {
+    if (!handle || dsActiveRun === handle) dsActiveRun = null;
+    dsLeaseRelease();
+  }
+  function dsInterruptedLine(day) {
+    return 'The pull for ' + fmtDay(day || DS.day) + ' was interrupted before it finished. Nothing further was read. Select Pull to run the day again.';
+  }
+  /* Own the disarm inside the mutex: drive the terminal, THEN let the caller
+     bump. When no live closure owns the run (a relay attempt, or an engine
+     that predates this build) the disarm still happens here rather than
+     leaving the control dead. */
+  function dsAbortActiveRun(reasonCode, message) {
+    var reason = String(reasonCode || 'aborted');
+    var line = String(message || '') || dsInterruptedLine(DS.day);
+    var run = dsActiveRun;
+    if (run && typeof run.abort === 'function') {
+      try { if (run.abort(reason, line) === true) return true; } catch (eAb) {}
+    }
+    if (!(DS.pulling === true || DS.__autoRetrying === true)) return false;
+    try {
+      window.__mlsPullLastOutcome = { ok: false, complete: false, reason: reason, at: Date.now(),
+        target: String(DS.day || ''), pullId: String(DS.pullId || '') };
+    } catch (eAb1) {}
+    dsRaiseOutcomeFence(reason, DS.day); /* oown-1.0.0 */
+    try { ownAttemptResult(null, DS.day, reason, line, line); } catch (eAb2) {}
+    try { var siAb = window.__mlsSI; if (siAb && typeof siAb.stopPull === 'function') siAb.stopPull(); } catch (eAb3) {}
+    DS.pulling = false; DS.__autoRetrying = false; DS.pullProviderScope = null;
+    dsRunTeardown(null);
+    try { var abBtn = $('mlsDsPullBtn'); if (abBtn) { abBtn.disabled = false; abBtn.innerHTML = '📥 ' + esc(dsPullVerb()); } } catch (eAb4) {}
+    try { var abStat = $('mlsDsStatus'); if (abStat) { abStat.style.display = 'block'; abStat.textContent = line; } } catch (eAb5) {}
+    try { dsStatusLog(line); } catch (eAb6) {}
+    try { var abBar = document.getElementById('mlsDsPullBar'); if (abBar) abBar.style.display = 'none'; } catch (eAb7) {}
+    return true;
+  }
+  /* The wall-clock backstop. A frozen tab throttles every timer this lane
+     arms, so the sweeper recomputes from DS.pullStartedAt on the ordinary
+     strip tick and never trusts a timer to have fired. */
+  function dsWedgeSweep() {
+    var now = Date.now(), cfg = dsCeilConfig();
+    var startedAt = Number(DS.pullStartedAt || 0);
+    if ((DS.pulling === true || DS.__autoRetrying === true) && startedAt > 0 && (now - startedAt) > (cfg.absoluteMs + 60000)) {
+      dsWedgeReceipt = { version: DS_CEILING_VERSION, kind: 'no-settle-sweep', at: now, sinceMs: now - startedAt, day: String(DS.day || '') };
+      dsAbortActiveRun('engine-no-settle', dsNoSettleLine(DS.day, now - startedAt, 'absolute'));
+      dsBtnStuckSince = 0;
+      return true;
+    }
+    var wb = null;
+    try { wb = $('mlsDsPullBtn'); } catch (eWs0) {}
+    var busy = !!(DS.pulling || DS.retrying || DS.__autoRetrying || DS.preferenceGatePending);
+    if (!wb || wb.disabled !== true || busy) { dsBtnStuckSince = 0; return false; }
+    if (!dsBtnStuckSince) { dsBtnStuckSince = now; return false; }
+    if ((now - dsBtnStuckSince) < 30000) return false;
+    dsBtnStuckSince = 0;
+    dsWedgeReceipt = { version: DS_BOUNDARY_VERSION, kind: 'button-watchdog', at: now, sinceMs: 30000, day: String(DS.day || '') };
+    try { wb.disabled = false; wb.innerHTML = '📥 ' + esc(dsPullVerb()); } catch (eWs1) {}
+    dsLeaseRelease();
+    try {
+      var wline = dsInterruptedLine(DS.day);
+      var wstat = $('mlsDsStatus');
+      if (wstat) { wstat.style.display = 'block'; wstat.textContent = wline; }
+      dsStatusLog(wline);
+    } catch (eWs2) {}
+    return true;
+  }
+  /* The strip knows ONE thing when this fires: nothing came back. It may not
+     say athenaOne "stopped answering" - it cannot see athenaOne at all, only
+     whether this pull reported anything - so the sentence names the silence
+     it actually measured, and the two ceilings measure different silences. */
+  function dsNoSettleLine(day, sinceMs, kind) {
+    var mins = Math.max(1, Math.round(Number(sinceMs || 0) / 60000));
+    var span = mins + ' minute' + (mins === 1 ? '' : 's');
+    var cause = String(kind || '') === 'no-progress'
+      ? 'nothing has come back from this pull for ' + span + ', so MLS stopped waiting'
+      : 'it ran for ' + span + ' without finishing, so MLS stopped waiting';
+    return 'The pull for ' + fmtDay(day || DS.day) + ' did not finish — ' + cause +
+      '. Nothing further was read. Select Pull to run the day again.';
+  }
+  /* oown-1.0.0 (the app half of "the outcome the doctor was shown is the
+     outcome"). When THIS lane writes an attempt's terminal itself - the
+     no-settle ceiling expired, or a session boundary ended the run - the
+     engine's own settle can still be minutes away. MEASURED 2026-09-11: it
+     landed 15s later and re-owned window.__mlsPullLastOutcome, so the machine
+     surface said 'history-partial' while the doctor was reading 'interrupted'.
+     The fence is the engine's cue to file that answer as the late answer it
+     is. A fence raised before an operation started belongs to an earlier
+     attempt and is ignored, so nothing has to remember to clear it. */
+  function dsRaiseOutcomeFence(reason, day) {
+    try {
+      window.__mlsPullOutcomeFenceV1 = { version: DS_CEILING_VERSION, at: Date.now(),
+        reason: String(reason || 'aborted').slice(0, 40),
+        target: String(day || DS.day || '').slice(0, 10), pullId: String(DS.pullId || '') };
+    } catch (eFence) {}
+  }
+  /* Read-only lease + ceiling surface for probes, the write lane and tests.
+     Nothing here can start a pull; dsAthenaBusyLane only ever refuses one. */
+  try {
+    window.__mlsDayPullLeaseV1 = {
+      version: DS_LEASE_VERSION,
+      busyLane: function () { return dsAthenaBusyLane(); },
+      driverLane: function () { return dsAthenaDriverLane(); },
+      pulling: function () { return !!(DS.pulling || DS.retrying || DS.__autoRetrying); },
+      ceiling: function () { return dsCeilConfig(); },
+      lastWedge: function () { return dsWedgeReceipt; },
+      lastRefusal: null
+    };
+  } catch (eLeasePub) {}
   function startPull(autoRetry) {
     var automaticRetry = autoRetry === DS_AUTO_RETRY;
     var preferenceReady = autoRetry === DS_PREF_READY;
@@ -56454,6 +56993,35 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if (stB) { stB.style.display = "block"; stB.textContent = msgB; }
       try { if (typeof window.toast === "function") window.toast(msgB, ""); } catch (eB) {}
       return;
+    }
+    /* dslease-1.0.0: ONE keyboard. Ask the follow guard's own driver predicate
+       BEFORE anything here reads, stamps, navigates or disables a control, and
+       refuse by name when another MLS lane is on the athena tab. This is also
+       the terminal for an automatic retry that lost the tab between attempts:
+       it clears __autoRetrying and gives the button back, so a refusal can
+       never become the next wedge. */
+    var dsBusyLane = dsAthenaBusyLane();
+    if (dsBusyLane) {
+      var dsBusyMsg = dsAthenaBusyLine(dsBusyLane);
+      var dsBusyRefusal = { ok: false, complete: false, reason: 'athena-busy', by: dsBusyLane, at: Date.now(), target: String(DS.day || ''), automatic: automaticRetry === true };
+      DS.__autoRetrying = false;
+      try { if (window.__mlsDayPullLeaseV1) window.__mlsDayPullLeaseV1.lastRefusal = dsBusyRefusal; } catch (eLb1) {}
+      /* An AUTOMATIC re-read that loses the tab keeps the receipt the pull it
+         is retrying actually earned - "18 of 20" is the day's truth and a
+         refusal to re-read is not allowed to erase it. A HUMAN press owns its
+         own refusal receipt, exactly as every other start refusal here does. */
+      if (!automaticRetry) {
+        try { window.__mlsPullLastOutcome = dsBusyRefusal; } catch (eLb0) {}
+        try { ownAttemptResult(null, DS.day, 'athena-busy', dsBusyMsg, dsBusyMsg); } catch (eLb2) {}
+      }
+      dsLeaseRelease();
+      var dsBusyBtn = $('mlsDsPullBtn');
+      if (dsBusyBtn) { dsBusyBtn.disabled = false; dsBusyBtn.innerHTML = '📥 ' + esc(dsPullVerb()); }
+      var dsBusyStat = $('mlsDsStatus');
+      if (dsBusyStat) { dsBusyStat.style.display = 'block'; dsBusyStat.textContent = dsBusyMsg; }
+      dsStatusLog(dsBusyMsg);
+      try { if (typeof window.toast === 'function') window.toast(dsBusyMsg, 'err'); } catch (eLb3) {}
+      return dsBusyRefusal;
     }
     /* A first NEW human day/bulk pull must choose completeness before this
        function reads the relay, importer, provider roster, or Athena bridge.
@@ -56617,7 +57185,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (stat) { stat.style.display = 'block'; stat.textContent = dsResumeAt.resumable ? dsResumeLine(dsResumeAt, day) : ('Starting the Athena pull for ' + fmtDay(day) + '...'); }
     var closed = false;
     function done(ok, msg, keepStatus, signinRequired) {
-      if (sessionSerial !== DS.sessionSerial) return;
+      var dsPainting = (sessionSerial === DS.sessionSerial); /* dsbt-1.0.0: teardown always, paint only for THIS session */
       if (closed) return; closed = true;
       /* pts-1.1.0: ONE PHI-free attempt-scoped terminal at the ownership
          seam. Every terminal path of this pull flows through done(), and
@@ -56626,11 +57194,21 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          convergence settles, through the shared epoch owner. */
       dsTerminalPullEpoch(dsLocalEpoch, ok === true);
       DS.pulling = false;
+      DS.__autoRetrying = false; /* dsbt-1.0.0: the attempt's terminal ends its automatic chain too */
       DS.pullProviderScope = null;
+      /* dsbt-1.0.0 + dsceil-1.0.0: the teardown a stale serial used to skip -
+         the no-settle ceiling, the shared busy stamp, the active-run handle
+         and the control itself. None of it may depend on who is looking. */
+      dsCeilStop();
+      dsRunTeardown(dsRunHandle);
+      if (btn) { btn.disabled = false; btn.innerHTML = '📥 ' + esc(dsPullVerb()); }
+      try { var dsBarT = document.getElementById('mlsDsPullBar'); if (dsBarT) dsBarT.style.display = 'none'; } catch (eDsBarT) {}
+      if (!dsPainting) return;
       syncRetryControl(DS.lastResult);
+      try { dsAttentionCacheClear(); syncAttentionControl(true); } catch (eAttDone) {} /* attq-1.0.0 */
+      try { syncIdentityControl(); } catch (eIdDone) {} /* idq-1.0.0 */
       dsStatusLog(msg);
       dsSyncDiagBtn(!ok); /* a failed pull earns the copyable error report */
-      if (btn) { btn.disabled = false; btn.innerHTML = '📥 ' + esc(dsPullVerb()); }
       if (stat) { stat.style.display = 'block'; stat.textContent = String(msg || (ok ? (fmtDay(day) + ' pull completed successfully.') : (fmtDay(day) + ' pull failed. Try again.'))); }
       /* "select Retry" must point at a REAL visible control beside the
          message: one Retry button, shown only for the sign-in state, wired to
@@ -56650,10 +57228,95 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           if (retryBtnEl) retryBtnEl.style.display = '';
         } else if (retryBtnEl) { retryBtnEl.style.display = 'none'; }
       } catch (e) {}
-      try { var dsBar = document.getElementById('mlsDsPullBar'); if (dsBar) dsBar.style.display = 'none'; } catch (e) {}
       try { if (typeof window.toast === 'function') window.toast(msg, ok ? 'ok' : 'err'); } catch (e) {}
       renderList();
     }
+    /* ===== dsceil-1.0.0: the ceiling for the engine promise itself =========
+       Declared at startPull's own scope (never inside the try below) so every
+       terminal path - including a synchronous throw from the engine - reaches
+       a defined dsCeilStop. The clock is NO-PROGRESS plus an absolute cap:
+       status lines and the engine's own row counters both count as progress,
+       so a slow-but-live pull is never cut short, and only silence expires. */
+    var dsCeilCfg = dsCeilConfig();
+    /* dsEarlyTerminaled: THIS lane, not the engine, wrote the attempt's
+       terminal (the ceiling expired, or a session boundary / sweeper drove the
+       abort). A later answer from the engine is then recorded as late and may
+       never re-own the receipt the doctor was already shown. */
+    var dsCeilTimer = null, dsEarlyTerminaled = false, dsCeilProgressAt = Date.now(), dsCeilSig = dsEngineProgressSignature();
+    function dsCeilStop() { if (dsCeilTimer != null) { try { clearInterval(dsCeilTimer); } catch (eCs) {} dsCeilTimer = null; } }
+    function dsCeilProgress() { dsCeilProgressAt = Date.now(); }
+    function dsNoSettleTerminal(kind) {
+      if (closed || dsEarlyTerminaled) return false;
+      /* A later attempt in this lane (the automatic re-read ladder, the
+         wedged-athena recovery) owns the strip now. An abandoned closure may
+         never paint a terminal over the run that replaced it. */
+      if (dsActiveRun !== dsRunHandle) { dsCeilStop(); return false; }
+      dsEarlyTerminaled = true;
+      dsCeilStop();
+      var sinceMs = Math.max(0, Date.now() - Number(DS.pullStartedAt || Date.now()));
+      var line = dsNoSettleLine(day, sinceMs, kind);
+      try {
+        window.__mlsPullLastOutcome = { ok: false, complete: false, reason: 'engine-no-settle', at: Date.now(),
+          target: String(day || ''), pullId: String(DS.pullId || ''), ceiling: String(kind || ''), sinceMs: sinceMs,
+          noProgressMs: dsCeilCfg.noProgressMs, absoluteMs: dsCeilCfg.absoluteMs };
+      } catch (eNs0) {}
+      dsRaiseOutcomeFence('engine-no-settle', day); /* oown-1.0.0 */
+      try { ownAttemptResult(null, day, 'engine-no-settle', line, line); } catch (eNs1) {}
+      /* Ask the engine to stop driving athena. Its lease and every mutex
+         release through its own settle path the moment it lets go; this lane
+         never rips a lease out from under a driver that may still be typing. */
+      try { if (si && typeof si.stopPull === 'function') si.stopPull(); } catch (eNs2) {}
+      done(false, line);
+      return true;
+    }
+    /* An engine that answers AFTER its ceiling is recorded, PHI-free, as the
+       late answer it is. The receipt the doctor was shown stands. */
+    function dsLateSettle(ok, reason) {
+      try {
+        window.__mlsPullLateSettleV1 = { version: DS_CEILING_VERSION, at: Date.now(),
+          pullId: String((dsRunHandle && dsRunHandle.pullId) || ''), target: String(day || ''),
+          ok: ok === true, reason: String(reason || ''),
+          lateByMs: Math.max(0, Date.now() - Number((dsRunHandle && dsRunHandle.startedAt) || Date.now())) };
+      } catch (eLs0) {}
+      if (sessionSerial !== DS.sessionSerial) return;
+      try { dsStatusLog('athenaOne answered after MLS had already stopped waiting for this pull. What the day shows above is what was read.'); } catch (eLs1) {}
+    }
+    function dsCeilTick() {
+      if (closed || dsActiveRun !== dsRunHandle) { dsCeilStop(); return; }
+      var nowC = Date.now();
+      var sigC = dsEngineProgressSignature();
+      if (sigC !== dsCeilSig) { dsCeilSig = sigC; dsCeilProgressAt = nowC; }
+      var startedC = Number(DS.pullStartedAt || nowC);
+      if ((nowC - startedC) > dsCeilCfg.absoluteMs) { dsNoSettleTerminal('absolute'); return; }
+      if ((nowC - dsCeilProgressAt) > dsCeilCfg.noProgressMs) dsNoSettleTerminal('no-progress');
+    }
+    try { dsCeilTimer = setInterval(dsCeilTick, dsCeilCfg.tickMs); } catch (eCeilArm) { dsCeilTimer = null; }
+    /* dsbt-1.0.0: the handle a session boundary or the sweeper drives so this
+       run ends with ITS OWN terminal instead of being stranded. */
+    var dsRunHandle = {
+      kind: 'local', day: day, pullId: String(DS.pullId || ''), startedAt: Number(DS.pullStartedAt || Date.now()),
+      sessionSerial: sessionSerial, pullSerial: pullSerial,
+      abort: function (code, message) {
+        if (closed) return false;
+        var reason = String(code || 'aborted');
+        if (reason === 'engine-no-settle') return dsNoSettleTerminal('sweeper');
+        var line = String(message || '') || dsInterruptedLine(day);
+        dsEarlyTerminaled = true; /* a late engine answer may not re-own this */
+        dsCeilStop();
+        try {
+          window.__mlsPullLastOutcome = { ok: false, complete: false, reason: reason, at: Date.now(),
+            target: String(day || ''), pullId: String(DS.pullId || '') };
+        } catch (eRh0) {}
+        dsRaiseOutcomeFence(reason, day); /* oown-1.0.0 */
+        try { ownAttemptResult(null, day, reason, line, line); } catch (eRh1) {}
+        try { if (si && typeof si.stopPull === 'function') si.stopPull(); } catch (eRh2) {}
+        done(false, line);
+        return true;
+      }
+    };
+    dsActiveRun = dsRunHandle;
+    /* dslease-1.0.0: this strip now owns the athena tab for the whole run. */
+    dsLeaseHold();
     try {
       /* The pull runs for many minutes; the doctor needs a real progress bar,
          not just a status sentence. Both phases stream exact "X of N" counts. */
@@ -56700,7 +57363,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       };
       var hideDsProgress = function () { try { var bar = document.getElementById('mlsDsPullBar'); if (bar) bar.style.display = 'none'; } catch (e) {} };
       paintDsProgress('');
-      var dsOnStatus = function (m) { if (sessionSerial !== DS.sessionSerial) return; try { if (window.__mlsPullShieldTick) window.__mlsPullShieldTick(); } catch (eShield) {} try { if (stat && m) stat.textContent = String(m); } catch (e) {} dsStatusLog(m); paintDsProgress(m); };
+      var dsOnStatus = function (m) { dsCeilProgress(); /* dsceil-1.0.0: a status line is proof of life */ if (sessionSerial !== DS.sessionSerial) return; try { if (window.__mlsPullShieldTick) window.__mlsPullShieldTick(); } catch (eShield) {} try { if (stat && m) stat.textContent = String(m); } catch (e) {} dsStatusLog(m); paintDsProgress(m); };
       /* cv-1.0.0 (lane convergence 2026-07-27): the selected-day strip runs the
          SAME guarded entry the staff-prep lane runs. dayPull adds the one
          pre-flight (open the day in athenaOne, re-read the painted grid,
@@ -56746,6 +57409,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         : si.pull(legacyPullOpts);
       if (p && typeof p.then === 'function') {
         p.then(function (result) {
+          /* dsceil-1.0.0: the ceiling already wrote this attempt's terminal.
+             A late answer is recorded as the late answer it is - it may not
+             re-own the receipt the doctor was already shown. */
+          if (dsEarlyTerminaled) { dsLateSettle(!!(result && result.ok === true), (result && result.reason) || 'late-resolve'); return; }
           /* oar-1.0.0: own this attempt's receipt BEFORE anything reads it, so
              a promise that resolves to nothing still leaves an honest record. */
           result = ownAttemptResult(result, day, 'unverified-result', 'The Athena pull returned no verifiable result.');
@@ -57103,6 +57770,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         },
                function (err) {
                  var errText = (err && err.message) || 'check the Athena tab and try again.';
+                 if (dsEarlyTerminaled) { dsLateSettle(false, 'late-reject'); return; } /* dsceil-1.0.0 */
                  ownAttemptResult(null, day, 'pull-exception', errText);
                  done(false, 'The pull for ' + fmtDay(day) + ' did not finish - ' + errText);
                });
@@ -57120,6 +57788,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     try {
       var strip = $('mlsDsStrip'); if (strip) strip.remove();
       var list = $('mlsDsList'); if (list) list.remove();
+      try { closeIdentityPanel(); } catch (eIdRm) {} /* idq-1.0.0: the panel is a sibling of the strip, not a child */
     } catch (e) {}
   }
   function easyMode() {
@@ -57170,6 +57839,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         '<button type="button" class="ds-pull" id="mlsDsPullBtn">📥 Pull today</button>' +
         '<button type="button" id="mlsDsRetryHistoryBtn">↻ Retry failed histories only</button>' +
         '<button type="button" id="mlsDsWakeRetryBtn" style="display:none">↻ Wake Athena and retry</button>' +
+        '<button type="button" id="mlsDsAttentionBtn" aria-label="Finish the charts that need attention" title="Charts athenaOne refused on a finished pull. MLS re-reads only those charts — nothing else is touched.">⚠ Charts need attention</button>' +
+        '<button type="button" id="mlsDsIdentityBtn" aria-label="Confirm a patient record" title="A schedule row matched a patient you already have, but more than one record could be the same person. Confirm which chart it is and the date of birth is filled in for you.">Confirm a patient record</button>' +
         '<button type="button" id="mlsDsDiagBtn" title="Copies a patient-free technical report of the last failed pull — paste it in a message to support.">⧉ Copy error report</button>' +
         '<label id="mlsDsVisitTgl" title="On: also save every dated historical encounter note (slower, stores more). Off: each chart’s facts and its own-day note only (faster, stores less)." style="display:inline-flex;align-items:center;gap:5px;font:600 12px system-ui;color:#2E6A4B;cursor:pointer;white-space:nowrap"><input type="checkbox" id="mlsDsVisitBodies" style="accent-color:#2E6A4B"> Full visit notes</label>' +
         '<span id="mlsDsStatus"></span>';
@@ -57232,8 +57903,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       $('mlsDsPullBtn').onclick = startPull;
       $('mlsDsRetryHistoryBtn').onclick = retryFailedHistories;
       $('mlsDsWakeRetryBtn').onclick = wakeAthenaAndRetryFailedHistories;
+      $('mlsDsAttentionBtn').onclick = retryAttentionCharts;
+      $('mlsDsIdentityBtn').onclick = toggleIdentityPanel;
       $('mlsDsDiagBtn').onclick = dsCopyDiag;
       syncRetryControl(DS.lastResult);
+      syncAttentionControl(); syncIdentityControl(); /* attq-1.0.0 / idq-1.0.0 */
       syncStrip(); renderList();
     } catch (e) {}
   }
@@ -57256,6 +57930,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     } catch (e) {}
   }
   function resetDaySwitchSession() {
+    /* dsbt-1.0.0: OWN THE DISARM INSIDE THE MUTEX. The serial bump below is
+       what made every in-flight callback stale, and done() used to return on
+       a stale serial BEFORE its teardown - so a boundary landing mid-pull
+       left DS.pulling true and the control dead for good. Drive the active
+       run's own terminal FIRST; only then bump. Wrapped because this function
+       is also executed in isolation by the session-reset suite. */
+    try { dsAbortActiveRun('aborted-session-boundary', 'The pull was interrupted because the MLS session changed. Nothing further was read.'); } catch (eDsBt) {}
     DS.sessionSerial++; DS.pullSerial++;
     DS.day = todayKey(); DS.followToday = true; DS.pulling = false; DS.retrying = false;
     DS.lastResult = null; DS.lastAttemptResult = null; DS.terminalReceipt = null; DS.terminalReceiptKey = ''; DS.statusLog = []; DS.statusOmitted = 0; DS.autoRePull = 0; DS.__autoRetrying = false;
@@ -57271,8 +57952,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   window.addEventListener('mls:easy-visit-day-changed', onEasyVisitDayChanged);
   window.addEventListener('mls:easy-mode-changed', onEasyModeChanged);
   window.addEventListener('mls:session-boundary', resetDaySwitchSession);
-  var iv = setInterval(function () { try { ensure(); } catch (e) {} }, 1200);
+  /* dsceil-1.0.0 + dsbt-1.0.0: the wall-clock backstop rides the strip's own
+     tick - no new timer, and nothing here depends on a timer having fired. */
+  var iv = setInterval(function () { try { ensure(); } catch (e) {} try { dsWedgeSweep(); } catch (eSweep) {} }, 1200);
   ensure();
+  try { dsWedgeSweep(); } catch (eBootSweep) {} /* and once at boot */
   /* Public, read-only date/row authority plus explicit actions. Features use
      these instead of scraping the strip label or inventing another list. */
   api.currentDay = function () { return DS.day; };
@@ -57287,6 +57971,32 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   api.pullVerb = function (day) { return dsPullVerb(day); };
   api.renderList = renderList;
   api.isBusy = function () { return !!(DS.pulling || DS.retrying || DS.__autoRetrying); };
+  /* dslease-1.0.0 / dsceil-1.0.0 / dsbt-1.0.0 read-only seams. busyLane() is
+     the SAME predicate the start gate consults, so a probe or a suite can ask
+     "would a pull be refused right now, and by whom" without pressing
+     anything; sweepNow() is the wall-clock backstop, driven by hand. */
+  api.leaseVersion = DS_LEASE_VERSION;
+  api.busyLane = function () { return dsAthenaBusyLane(); };
+  api.driverLane = function () { return dsAthenaDriverLane(); };
+  api.pullCeiling = function () { return dsCeilConfig(); };
+  api.lastWedge = function () { return dsWedgeReceipt; };
+  api.sweepNow = function () { return dsWedgeSweep(); };
+  api.abortActiveRun = function (reason, message) { return dsAbortActiveRun(reason || 'aborted', message || ''); };
+  /* attq-1.0.0 / idq-1.0.0 read-only seams. Neither can start anything the
+     doctor has not pressed; retryAttention here is the SAME handler the
+     visible control is wired to, so a test can never prove a path the
+     doctor does not have. */
+  api.attentionCount = function () { return dsAttentionCount(true); };
+  api.retryAttentionCharts = function () { return retryAttentionCharts(); };
+  api.identityQueue = function () { return dsIdentityQueue(); };
+  api.showIdentityPanel = function () { return renderIdentityPanel(); };
+  try {
+    window.__mlsDayQueuesV1 = {
+      attentionVersion: DS_ATTENTION_VERSION, identityVersion: DS_IDENTITY_QUEUE_VERSION,
+      attention: function () { return dsAttentionCount(true); },
+      identity: function () { return dsIdentityQueue(); }
+    };
+  } catch (eQueuePub) {}
   api.revert = function () {
     try { clearInterval(iv); } catch (e) {}
     try { window.removeEventListener('mls:easy-visit-day-changed', onEasyVisitDayChanged); } catch (e) {}
@@ -57294,6 +58004,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     try { window.removeEventListener('mls:session-boundary', resetDaySwitchSession); } catch (e) {}
     try { st.remove(); } catch (e) {}
     try { var a = $('mlsDsStrip'); if (a) a.remove(); var b = $('mlsDsList'); if (b) b.remove(); } catch (e) {}
+    /* dslease-1.0.0: a revert releases the busy stamp this strip was holding
+       and takes its read-only lease surface down with it. */
+    try { dsLeaseRelease(); } catch (e) {}
+    try { delete window.__mlsDayPullLeaseV1; } catch (e) { try { window.__mlsDayPullLeaseV1 = null; } catch (e2) {} }
+    /* attq-1.0.0 / idq-1.0.0: the panel lives OUTSIDE the strip node, so it
+       has to be removed by name or a revert would leave it orphaned. */
+    try { closeIdentityPanel(); } catch (e) {}
+    try { delete window.__mlsDayQueuesV1; } catch (e) { try { window.__mlsDayQueuesV1 = null; } catch (e3) {} }
     api.installed = false; delete window.__mlsDaySwitch;
   };
 })();

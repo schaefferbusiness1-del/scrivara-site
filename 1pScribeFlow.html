@@ -28998,6 +28998,194 @@ function _athenaHistoryNameCompatible(seen, want){
   var sa=s2.split(' '), wa=w2.split(' ');
   return _athenaHistoryNameTokensCover(_athenaHistoryNameUnrun(sa,wa),_athenaHistoryNameUnrun(wa,sa));
 }
+/* ===== dobfill-1.0.0 (the duplicate mint, measured) =====================
+   694 of 1857 stored patients carry NEITHER a DOB nor an MRN. Both passes in
+   _athenaHistoryTargetSnapshot filter such a record OUT the moment the
+   schedule row carries a DOB (_athenaHistoryDobSame is false when either side
+   has no digits, and the tolerant pass demands a hard second factor), so
+   matches came back empty and the create branch minted a BRAND-NEW chart for
+   a patient the store already had - silently splitting the chart on every
+   appointment.
+   The owner ruling (8/28) draws the line: a record with no second factor is
+   FILLED from the row when the tolerant name match yields exactly ONE
+   candidate and no other name-compatible record carries a key of its own.
+   More than one candidate, or any keyed name-compatible record, is a one-click
+   SUGGESTION - never a silent merge - and while a suggestion is pending for
+   that name nothing may be minted under it. A record that already carries a
+   DOB or an MRN is never a candidate, so no match this file already made can
+   change. The fill writes dob/mrn and its own receipt, never a clinical
+   field. */
+var _MLS_IDENTITY_FILL_SUFFIX='identityFillV1';
+function _athenaIdentityFillState(){
+  var st=window.__mlsIdentityFill;
+  if(st&&typeof st==='object') return st;
+  st=window.__mlsIdentityFill={fills:0,candidates:0,blockedMints:0,suggestions:[],pending:{}};
+  try{
+    var raw=(typeof uns==='function'&&typeof localStorage!=='undefined')?localStorage.getItem(uns(_MLS_IDENTITY_FILL_SUFFIX)):null;
+    var prior=raw?JSON.parse(raw):null;
+    if(prior&&typeof prior==='object'){
+      if(prior.pending&&typeof prior.pending==='object') st.pending=prior.pending;
+      if(Array.isArray(prior.suggestions)) st.suggestions=prior.suggestions.slice(0,20);
+    }
+  }catch(eFillRead){}
+  return st;
+}
+/* Durable on purpose: a suggestion the doctor has not answered still blocks
+   the mint after a reload, which is what "never mint while one is pending"
+   has to mean. Account-namespaced, ids plus the row's own name/dob/mrn. */
+function _athenaIdentityFillSave(){
+  try{
+    if(typeof uns!=='function'||typeof localStorage==='undefined') return;
+    var st=_athenaIdentityFillState();
+    localStorage.setItem(uns(_MLS_IDENTITY_FILL_SUFFIX),JSON.stringify({pending:st.pending||{},suggestions:(st.suggestions||[]).slice(0,20)}));
+  }catch(eFillWrite){}
+}
+/* Keyless means NO second factor at all: no DOB digits, and no MRN digits on
+   either mrn or athenaId. Anything keyed is out of this pass entirely. */
+function _athenaIdentityKeyless(x){
+  if(!x||!String(x.name||'').trim()) return false;
+  if(_athenaHistoryDigits(x.dob)) return false;
+  return !_athenaHistoryDigits((x&&x.mrn)||(x&&x.athenaId));
+}
+function _athenaIdentityDoblessCandidates(pts,wantName){
+  var out=[];
+  for(var i=0;i<(pts||[]).length;i++){
+    var x=pts[i];
+    if(!_athenaIdentityKeyless(x)) continue;
+    if(!_athenaHistoryNameCompatible(String(x.name||''),wantName)) continue;
+    out.push(x);
+  }
+  return out;
+}
+/* Any OTHER name-compatible record that already carries a key of its own. Its
+   presence means the row may belong to IT, so a keyless record must not be
+   filled on a name alone - fail closed to a suggestion. */
+function _athenaIdentityFillConflicts(pts,wantName,exceptId){
+  var out=[];
+  for(var i=0;i<(pts||[]).length;i++){
+    var x=pts[i];
+    if(!x||!String(x.name||'').trim()) continue;
+    if(exceptId&&String(x.id||'')===String(exceptId)) continue;
+    if(_athenaIdentityKeyless(x)) continue;
+    if(!_athenaHistoryNameCompatible(String(x.name||''),wantName)) continue;
+    out.push(x);
+  }
+  return out;
+}
+function _athenaIdentitySuggestionPending(wantName){
+  var key=_athenaHistoryName(wantName);
+  if(!key) return false;
+  var st=_athenaIdentityFillState();
+  return !!(st.pending&&st.pending[key]);
+}
+function _athenaIdentitySuggest(wantName,wantDob,wantMrn,cands,conflicts){
+  var key=_athenaHistoryName(wantName);
+  if(!key) return null;
+  var st=_athenaIdentityFillState();
+  function ids(list){ return (list||[]).map(function(c){return String(c&&c.id||'');}).filter(Boolean).slice(0,10); }
+  var row={key:key,name:String(wantName||''),dob:String(wantDob||''),mrn:String(wantMrn||''),
+    candidateIds:ids(cands),conflictIds:ids(conflicts),at:Date.now()};
+  st.pending=st.pending||{}; st.pending[key]=row;
+  st.suggestions=(st.suggestions||[]).filter(function(s){return s&&s.key!==key;});
+  st.suggestions.unshift(row);
+  if(st.suggestions.length>20) st.suggestions.length=20;
+  _athenaIdentityFillSave();
+  return row;
+}
+/* Writes ONLY dob/mrn plus the fill receipt - never a clinical field, and
+   never over a value the record already holds. */
+function _athenaIdentityFillApply(p,wantDob,wantMrn){
+  if(!p||!p.id||typeof upsertPatient!=='function') return null;
+  var filled={},k;
+  for(k in p) if(Object.prototype.hasOwnProperty.call(p,k)) filled[k]=p[k];
+  var wrote=false;
+  if(wantDob&&!_athenaHistoryDigits(filled.dob)){ filled.dob=String(wantDob); wrote=true; }
+  if(wantMrn&&!_athenaHistoryDigits(filled.mrn||filled.athenaId)){ filled.mrn=String(wantMrn); wrote=true; }
+  if(!wrote) return null;
+  filled.identityFilledAt=Date.now();
+  filled.identityFilledFrom='athena-schedule';
+  try{upsertPatient(filled);}catch(eFillApply){return null;}
+  return filled;
+}
+/* The one-click half of the suggestion: the doctor names the record, this
+   performs the SAME dob/mrn-only fill and clears the pending block. */
+function _athenaIdentityApplySuggestion(key,patientId){
+  var st=_athenaIdentityFillState();
+  var row=st.pending&&st.pending[String(key||'')];
+  if(!row) return {ok:false,reason:'no-suggestion'};
+  if((row.candidateIds||[]).indexOf(String(patientId||''))<0) return {ok:false,reason:'not-a-candidate'};
+  var pts=(typeof getPatients==='function'?getPatients():[])||[],p=null,i;
+  for(i=0;i<pts.length;i++) if(pts[i]&&String(pts[i].id||'')===String(patientId)){ p=pts[i]; break; }
+  if(!p) return {ok:false,reason:'record-gone'};
+  var filled=_athenaIdentityFillApply(p,row.dob,row.mrn);
+  if(!filled) return {ok:false,reason:'fill-refused'};
+  st.fills++;
+  _athenaIdentityDismissSuggestion(key);
+  return {ok:true,patientId:String(filled.id)};
+}
+function _athenaIdentityDismissSuggestion(key){
+  var st=_athenaIdentityFillState();
+  key=String(key||'');
+  if(st.pending&&st.pending[key]) delete st.pending[key];
+  st.suggestions=(st.suggestions||[]).filter(function(s){return s&&s.key!==key;});
+  _athenaIdentityFillSave();
+  return {ok:true};
+}
+/* status: 'none' - nothing keyless answers to this name (behaviour unchanged);
+   'filled' - exactly one candidate, no conflict, dob/mrn written;
+   'candidate' - a fill is available but this caller may not write;
+   'suggested' - ambiguous or conflicted, and the caller must refuse to mint. */
+function _athenaIdentityFillOrSuggest(pts,wantName,wantDob,wantMrn,allowWrite){
+  if(!_athenaHistoryName(wantName)||(!wantDob&&!wantMrn)) return {status:'none'};
+  var cands=_athenaIdentityDoblessCandidates(pts,wantName);
+  if(!cands.length) return {status:'none'};
+  var st=_athenaIdentityFillState();
+  st.candidates+=cands.length;
+  var conflicts=_athenaIdentityFillConflicts(pts,wantName,cands.length===1?cands[0].id:'');
+  if(cands.length>1||conflicts.length){
+    _athenaIdentitySuggest(wantName,wantDob,wantMrn,cands,conflicts);
+    return {status:'suggested'};
+  }
+  if(allowWrite!==true) return {status:'candidate'};
+  var filled=_athenaIdentityFillApply(cands[0],wantDob,wantMrn);
+  if(!filled){ _athenaIdentitySuggest(wantName,wantDob,wantMrn,cands,conflicts); return {status:'suggested'}; }
+  st.fills++;
+  return {status:'filled',patient:filled};
+}
+try{
+  window.__mlsIdentityFillApply=_athenaIdentityApplySuggestion;
+  window.__mlsIdentityFillDismiss=_athenaIdentityDismissSuggestion;
+  window.__mlsIdentityFillQueue=function(){ var st=_athenaIdentityFillState(); return (st.suggestions||[]).slice(); };
+  /* dobfill-1.0.1 (MEASURED 2026-09-11): the DAY PULL does not mint through
+     the snapshot below - it mints inside the schedule importer, which calls
+     this file zero times. A roster of seven became nine, the chart facts
+     landed on the fresh duplicates, and identityFills stayed 0 because the
+     pass that would have filled them had no caller on that path. Rather than
+     copy the rule into the importer (two copies of an identity rule is how
+     two answers happen), the importer asks THESE three questions and this
+     file keeps the rule: resolve the row (fill or suggest), ask whether an
+     unanswered suggestion still stands for a name, and record a mint refused
+     because one does. One resolver, one rule. */
+  window.__mlsIdentityFillResolve=function(pts,name,dob,mrn,allowWrite){
+    try{ return _athenaIdentityFillOrSuggest(pts||[],String(name||''),String(dob||''),String(mrn||''),allowWrite===true); }
+    catch(eFillResolve){ return {status:'none'}; }
+  };
+  window.__mlsIdentityFillPending=function(name){
+    try{ return _athenaIdentitySuggestionPending(String(name||''))===true; }catch(eFillPending){ return false; }
+  };
+  window.__mlsIdentityFillBlockMint=function(name){
+    try{
+      if(!_athenaIdentitySuggestionPending(String(name||''))) return false;
+      _athenaIdentityFillState().blockedMints++;
+      return true;
+    }catch(eFillBlock){ return false; }
+  };
+  window.__mlsIdentityFillCounts=function(){
+    var st=_athenaIdentityFillState();
+    return {fills:Number(st.fills||0),candidates:Number(st.candidates||0),
+      blockedMints:Number(st.blockedMints||0),suggestions:(st.suggestions||[]).length};
+  };
+}catch(eFillExpose){}
 function _athenaHistoryTargetSnapshot(ref, allowCreate){
   ref=(ref&&typeof ref==='object')?ref:{name:String(ref||'')};
   var pts=(typeof getPatients==='function'?getPatients():[])||[];
@@ -29027,10 +29215,21 @@ function _athenaHistoryTargetSnapshot(ref, allowCreate){
         return !!(mOk||dOk);
       });
     }
+    /* dobfill-1.0.0: the THIRD pass - keyless records. Fill exactly one
+       unconflicted candidate from the row, or raise a one-click suggestion
+       and refuse. Runs only after both keyed passes have already declined,
+       so nothing this matcher used to match can stop matching here. */
+    if(!matches.length&&(wantDob||wantMrn)){
+      var fillPass=_athenaIdentityFillOrSuggest(pts,wantName,wantDob,wantMrn,allowCreate===true);
+      if(fillPass.status==='filled'&&fillPass.patient) matches=[fillPass.patient];
+      else if(fillPass.status==='suggested') return null;
+    }
   }
   if(matches.length>1) return null;
   var p=matches[0]||null;
   if(!p&&allowCreate===true&&wantName&&(wantDob||wantMrn)&&typeof upsertPatient==='function'){
+    /* dobfill-1.0.0: never mint a duplicate while a suggestion is pending. */
+    if(_athenaIdentitySuggestionPending(wantName)){ _athenaIdentityFillState().blockedMints++; return null; }
     p={id:'p'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),name:wantName,dob:wantDob,mrn:wantMrn,reason:String(ref.reason||''),source:'athena-schedule',created:Date.now()};
     try{upsertPatient(p);}catch(e){return null;}
   }

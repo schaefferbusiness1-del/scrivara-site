@@ -43,9 +43,13 @@ function extractBraced(src, startToken, from) {
   throw new Error('unbalanced braces after ' + startToken);
 }
 
-const wrapperSrc = extractBraced(si, 'function runManagedAthenaOperation(task, busyFactory) {');
-assert.ok(wrapperSrc.indexOf('__mlsPullLastOutcome') >= 0,
-  'the wrapper still owns the __mlsPullLastOutcome stamp (anchor drift check)');
+/* oown-1.0.0 added a third parameter (the operation's scope). Anchor on the
+ * NAME, never on the parameter list - a signature is a spelling. */
+const wrapperSrc = extractBraced(si, 'function runManagedAthenaOperation(');
+/* oown-1.0.0: the settle asks stampManagedOutcome instead of assigning the
+ * global itself, so the drift check follows the OWNERSHIP, not the spelling. */
+assert.ok(wrapperSrc.indexOf('__mlsPullLastOutcome') >= 0 || wrapperSrc.indexOf('stampManagedOutcome(') >= 0,
+  'the wrapper still owns the __mlsPullLastOutcome stamp, directly or through stampManagedOutcome (anchor drift check)');
 
 /* hs-1.0 helper: present on new bytes. On old bytes the wrapper never
  * references it, so an inert fallback keeps the extraction from masking the
@@ -54,6 +58,22 @@ assert.ok(wrapperSrc.indexOf('__mlsPullLastOutcome') >= 0,
 let helperSrc = 'function honestPullOutcome() { throw new Error("honestPullOutcome missing from shipped bytes"); }';
 if (si.indexOf('function honestPullOutcome(') >= 0) {
   helperSrc = extractBraced(si, 'function honestPullOutcome(');
+}
+/* oown-1.0.0: the settle no longer stamps __mlsPullLastOutcome itself - it
+ * asks stampManagedOutcome, which keeps a SUBSET round from replacing the
+ * day's verdict and honours the app's late-answer fence. Both are lifted with
+ * the wrapper (they are dependencies of the slice, not this suite's subject);
+ * on bytes that predate them the inert fallbacks keep the extraction from
+ * masking the behavioural cases below. */
+if (si.indexOf('function pullOutcomeFence(') >= 0) {
+  helperSrc += '\n' + extractBraced(si, 'function pullOutcomeFence(');
+} else {
+  helperSrc += '\nfunction pullOutcomeFence() { return null; }';
+}
+if (si.indexOf('function stampManagedOutcome(') >= 0) {
+  helperSrc += '\n' + extractBraced(si, 'function stampManagedOutcome(');
+} else {
+  helperSrc += '\nfunction stampManagedOutcome(v) { window.__mlsPullLastOutcome = honestPullOutcome(v); return true; }';
 }
 
 /* ---- build the REAL wrapper against a controlled environment ---- */

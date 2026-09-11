@@ -197,7 +197,9 @@ async function testStopEndsEverything() {
 /* the lease/mutex release is structural: prove the settle path releases on
    BOTH outcomes and that nothing in the stop path bypasses it. */
 function testStopReleasesTheLease() {
-  const i = SI.indexOf('function runManagedAthenaOperation(task, busyFactory) {');
+  /* oown-1.0.0 added a third parameter (the operation's scope). Anchor on the
+     NAME, never on a parameter list - a signature is a spelling. */
+  const i = SI.indexOf('function runManagedAthenaOperation(');
   ok(i >= 0, 'runManagedAthenaOperation is missing');
   const block = SI.slice(i, SI.indexOf('function buildRetryRows', i));
   const releases = (block.match(/releaseAthenaOwner\(\);/g) || []).length;
