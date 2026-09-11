@@ -27555,6 +27555,11 @@ function newVisit(opts){
   document.getElementById('patientLabel').value='';
   document.getElementById('transcript').value=''; finalText='';
   currentSoap=''; currentInsurance=''; currentCoding=null; currentOpt=null; pendingCodingReview=null; currentFormat='soap'; currentNoteProvenance='typed'; currentAthenaNote=''; currentAthenaNoteProvenance='none'; currentAthenaNoteSourceFingerprint='';
+  /* noteadv-1.0.1: the note is gone, so its lines to check and the template
+     that shaped it go with it. Without this the last patient's doubted
+     sentences were written into the NEXT patient's draft and saved note, and
+     the screen named a template that note was never written with. */
+  try{ if(typeof _mlsForgetVisitNoteAdvisory==='function') _mlsForgetVisitNoteAdvisory(); }catch(eNoteAdvNew){}
   _athenaSetVisitBinding(null); _athenaResetSuperbill(true);
   currentAVS=''; currentReferral=''; currentRecs=null; currentHandout=''; currentIME='';
   currentOrders=[]; editingOrderId=null; ordersDx={text:'',icd:[]};
@@ -31953,6 +31958,12 @@ function _mlsFlashGenerationBlock(message){
 }
 function _mlsRefuseGeneration(code,message,showToast){
   var runId=++_mlsGenerationSequence;
+  /* vntplpick-1.0.1: NO NOTE WAS WRITTEN, SO THE TEMPLATE CHOICE IS SPENT.
+     The room arms the choice and then presses Generate; when that press is
+     refused - nothing recorded yet, the visit not verified, no key saved - the
+     choice used to sit there for five minutes and steer whichever note the
+     doctor generated next, including the next patient's. */
+  try{ if(typeof _mlsClearVisitTplPick==='function') _mlsClearVisitTplPick(); }catch(eVnPickRefuse){}
   if(showToast!==false)_mlsShoutGeneration(message);
   _mlsEmitGeneration('refused',{runId:runId,code:String(code||'generation-refused'),message:String(message||'')});
   _mlsEmitGeneration('settled',{runId:runId,status:'refused',code:String(code||'generation-refused'),message:String(message||'')});
@@ -31996,6 +32007,15 @@ function _mlsStartOptionalTemplate(transcript,expectedBinding,expectedEpoch,sour
        the draft still on screen - is the only true thing anyone has about
        this note. Put it back rather than leave the doctor with silence. */
     try{ if(!(receipt&&receipt.applied===true)) _mlsRestorePrimaryTplNotice(); }catch(eVntplRestore){}
+    /* noteadv-1.0.1: the re-format has just rewritten the note the lines to
+       check were measured against. Look for each of them in the new text
+       before the doctor reads it, so a line whose punctuation moved stays on
+       the amber list instead of quietly disappearing from the screen while the
+       saved note goes on carrying it. */
+    try{ if(receipt&&receipt.applied===true&&typeof _mlsReanchorVisitNoteAdvisory==='function')
+      _mlsReanchorVisitNoteAdvisory((typeof currentFormat!=='undefined'&&currentFormat==='insurance')
+        ?(typeof currentInsurance==='string'?currentInsurance:'')
+        :(typeof currentSoap==='string'?currentSoap:'')); }catch(eNoteAdvReanchor){}
     return receipt;
   }
   var templatePromise;
@@ -32145,6 +32165,12 @@ async function generateNote(){
      starting, ONCE per run and after every refusal above - a press that was
      refused leaves the note on screen and its lines exactly as they were. */
   try{ if(typeof _mlsBeginVisitNoteAdvisoryRun==='function') _mlsBeginVisitNoteAdvisoryRun(); }catch(eNoteAdvBegin){}
+  /* vntplpick-1.0.1: THE TEMPLATE CHOICE IS TAKEN ONCE, HERE, and handed to
+     every attempt this run makes. Taken after the five refusals above for the
+     same reason the lines-to-check are cleared here: a press that was refused
+     never started a run, and its choice is dropped by the refusal itself. */
+  var generationTplPick=null;
+  try{ generationTplPick=(typeof _mlsConsumeVisitTplPick==='function')?_mlsConsumeVisitTplPick():null; }catch(eVnPickRun){ generationTplPick=null; }
   try{
     if(typeof window.__mlsEnsureDraftTuning==='function'){
       await _mlsAwaitGeneration(run,Promise.resolve().then(function(){return window.__mlsEnsureDraftTuning();}),_mlsGenerationTimeoutMs('setup',10000),'generation-setup-timeout');
@@ -32197,7 +32223,7 @@ async function generateNote(){
     }
     let result=await _mlsAwaitGeneration(
       run,
-      callOpenAI(transcript,key,{signal:run.controller.signal,evidence:evidence,resolvedDraftTuning:generationDraftTuning}),
+      callOpenAI(transcript,key,{signal:run.controller.signal,evidence:evidence,resolvedDraftTuning:generationDraftTuning,visitTplPick:generationTplPick}),
       _mlsGenerationTimeoutMs('main',90000),
       'generation-timeout'
     );
@@ -32208,7 +32234,7 @@ async function generateNote(){
     /* noteq-1.0.0 (b1169): grade the validated draft and, when it lands under
        floor, run the ONE permitted repair pass - before any editor surface is
        mutated, so a failed retry cannot disturb a good draft. */
-    try{ result=await _mlsNoteQualityRepairStructured(result,transcript,key,evidence,run,generationDraftTuning); }catch(eNoteqRepair){}
+    try{ result=await _mlsNoteQualityRepairStructured(result,transcript,key,evidence,run,generationDraftTuning,generationTplPick); }catch(eNoteqRepair){}
     /* Older /api/generate deployments may return the already-valid flat SOAP
        note without the newer athena_note sidecar. Reuse it only when it
        independently passes the exact five-destination validator; narrative,
@@ -33800,17 +33826,51 @@ function _mlsGenTemplateContract(tpl){
    lives up beside _mlsConsumeTemplateOverride, with maybeApplyTemplate's other
    helpers - a shipped suite executes exactly that region. */
 var _mlsGenTplMeasure=null;
-function _mlsResolveGenerationTemplate(visitText){
+/* vntplpick-1.0.1: THE CHOICE BELONGS TO THE WHOLE GENERATION, NOT TO THE
+   FIRST QUESTION ASKED DURING IT. A visit note that lands under the quality
+   floor is written a SECOND time, and the resolver runs once per attempt. When
+   the choice was consumed by the first attempt, the second silently fell back
+   to the doctor's usual template: the note he read could be labelled with a
+   template it was never written with, and a deliberate "Plain note" was
+   re-formatted straight back onto the template he had just stepped away from.
+   So generateNote takes the choice ONCE, at the point the run is committed,
+   and hands the same one to every attempt in that run. */
+function _mlsConsumeVisitTplPick(){
+  var pick=null;
+  try{ pick=window.__mlsVisitTplPick||null; window.__mlsVisitTplPick=null; }catch(eVnPick1){ pick=null; }
+  if(!pick||typeof pick!=='object') return null;
+  if(!(Number(pick.at)>0&&(Date.now()-Number(pick.at))<300000)) return null;
+  /* And it belongs to the patient it was made for. A choice made on one chart
+     may never shape another chart's note. */
+  try{
+    var want=String(pick.pt||'');
+    if(want){
+      var now=(typeof getActivePtId==='function')?String(getActivePtId()||''):'';
+      if(now&&now!==want) return null;
+    }
+  }catch(eVnPick2){}
+  return {id:String(pick.id||''),plain:pick.plain===true,at:Number(pick.at)||0,pt:String(pick.pt||'')};
+}
+function _mlsClearVisitTplPick(){
+  try{ window.__mlsVisitTplPick=null; }catch(eVnPick3){}
+  return null;
+}
+function _mlsResolveGenerationTemplate(visitText,runPick){
   try{
     /* vntplpick-1.0.0 (owner 2026-09-11): THE ONE TEMPLATE THE DOCTOR CHOSE
-       FOR THIS NOTE, read and cleared right here. This is the only template
-       seam the connect bundle does not replace, so it is the only door a pick
-       made on the note screen can come through. A pick older than five minutes
-       belongs to no press on screen and is dropped. A chosen template still
-       goes through the same scope gate below, so an operative report can never
-       slip into a visit note through this new door either. */
+       FOR THIS NOTE. This is the only template seam the connect bundle does
+       not replace, so it is the only door a pick made on the note screen can
+       come through. A pick older than five minutes belongs to no press on
+       screen and is dropped. A chosen template still goes through the same
+       scope gate below, so an operative report can never slip into a visit
+       note through this new door either.
+       vntplpick-1.0.1: the run hands its own copy in, so every attempt of one
+       generation resolves the SAME answer. Called with nothing - which is any
+       path that is not a committed run - it reads and clears the pending
+       choice exactly as it always did. */
     var vnPick=null;
-    try{ vnPick=window.__mlsVisitTplPick||null; window.__mlsVisitTplPick=null; }catch(eGenTplPick){ vnPick=null; }
+    if(runPick&&typeof runPick==='object') vnPick=runPick;
+    else try{ vnPick=window.__mlsVisitTplPick||null; window.__mlsVisitTplPick=null; }catch(eGenTplPick){ vnPick=null; }
     if(vnPick&&typeof vnPick==='object'&&!(Number(vnPick.at)>0&&(Date.now()-Number(vnPick.at))<300000)) vnPick=null;
     if(vnPick&&typeof vnPick==='object'){
       try{ window.__mlsVisitTplPickUsed={id:String(vnPick.id||''),plain:vnPick.plain===true,at:Number(vnPick.at)||0}; }catch(eGenTplUsed){}
@@ -33883,6 +33943,9 @@ try{ window.__mlsVisitTemplateContract={version:'vntpl-1.1.0',build:_mlsGenTempl
    and saved beside the note that already holds them. They are never written to
    the console, never counted anywhere, and never leave the device by any other
    road. Every reader is wrapped so this can never break a generation. */
+/* The backend serves at most this many doubted sentences on one note; every
+   cap on this side matches it, so nothing is dropped without a word. */
+var NOTEADV_MAX_ROWS=24;
 function _mlsNoteAdvisoryFromQuality(q){
   if(!q||typeof q!=='object') return null;
   var status=String(q.status||'');
@@ -33892,8 +33955,12 @@ function _mlsNoteAdvisoryFromQuality(q){
     var code=String(rawIssues[i]==null?'':rawIssues[i]).slice(0,96);
     if(/^[a-z0-9_]{2,96}$/i.test(code)) issues.push(code);
   }
+  /* noteadv-1.0.1: the server sends AT MOST 24 doubted sentences, so 24 is the
+     number this side keeps. The old 12 threw away the second half of a long
+     note's doubts under an amber line that said "check the highlighted lines"
+     and then showed only some of them. */
   var flagged=[],rawFlagged=Array.isArray(q.flagged)?q.flagged:[];
-  for(i=0;i<rawFlagged.length&&flagged.length<12;i++){
+  for(i=0;i<rawFlagged.length&&flagged.length<NOTEADV_MAX_ROWS;i++){
     var row=rawFlagged[i];
     if(!row||typeof row!=='object') continue;
     var sentence=String(row.sentence==null?'':row.sentence).replace(/\s+/g,' ').trim().slice(0,600);
@@ -33902,7 +33969,9 @@ function _mlsNoteAdvisoryFromQuality(q){
     if(!/^[a-z0-9_]{2,96}$/i.test(issue)) issue='';
     var arm=String(row.arm==null?'':row.arm);
     if(!/^(display|athena)$/.test(arm)) arm='display';
-    flagged.push({issue:issue,sentence:sentence,arm:arm});
+    /* `lost` is set only by the re-anchor pass below, and travels with the
+       note so a reopened note still says which line could not be re-found. */
+    flagged.push({issue:issue,sentence:sentence,arm:arm,lost:row.lost===true});
   }
   if(status!=='review'||!flagged.length) return {status:'ok',issues:issues,flagged:[]};
   return {status:'review',issues:issues,flagged:flagged};
@@ -33929,6 +33998,20 @@ function _mlsBeginVisitNoteAdvisoryRun(){
   try{ window.__mlsVisitNoteAdvisory=null; window.__mlsLastNoteAdvisory=null; window.__mlsVisitTplPickUsed=null; }catch(eNoteAdvB){}
   return null;
 }
+/* noteadv-1.0.1: THE NOTE ON SCREEN IS GONE, SO ITS LINES ARE GONE.
+   newVisit() empties the editor for the next patient and, before this, left
+   every one of these standing: the last patient's doubted sentences then rode
+   into the NEXT patient's draft, saved note and parked work, and the template
+   line on screen named a template that note was never written with. This also
+   drops a template choice armed for a press that never ran, so it can never
+   steer somebody else's note. Unlike the run clear above it takes the pending
+   choice too, because no generation is about to read it. */
+function _mlsForgetVisitNoteAdvisory(){
+  currentNoteAdvisory=null;
+  try{ window.__mlsVisitNoteAdvisory=null; window.__mlsLastNoteAdvisory=null;
+    window.__mlsVisitTplPick=null; window.__mlsVisitTplPickUsed=null; }catch(eNoteAdvF){}
+  return null;
+}
 function _mlsStampVisitNoteAdvisory(){
   var q=null;
   try{ q=window.__mlsLastNoteAdvisory||null; }catch(eNoteAdvS1){ q=null; }
@@ -33945,8 +34028,8 @@ function _mlsVisitNoteAdvisoryRecord(){
   var a=currentNoteAdvisory;
   if(!a) return null;
   var rows=[],src=Array.isArray(a.flagged)?a.flagged:[];
-  for(var i=0;i<src.length&&rows.length<12;i++)
-    rows.push({issue:String(src[i].issue||''),sentence:String(src[i].sentence||''),arm:String(src[i].arm||'display')});
+  for(var i=0;i<src.length&&rows.length<NOTEADV_MAX_ROWS;i++)
+    rows.push({issue:String(src[i].issue||''),sentence:String(src[i].sentence||''),arm:String(src[i].arm||'display'),lost:src[i].lost===true});
   var t=a.template||{};
   return {status:(a.status==='review'&&rows.length)?'review':'ok',
     issues:(Array.isArray(a.issues)?a.issues:[]).slice(0,12),
@@ -33970,10 +34053,86 @@ function _mlsRestoreVisitNoteAdvisory(saved){
   try{ window.__mlsVisitNoteAdvisory=currentNoteAdvisory; }catch(eNoteAdvR1){}
   return currentNoteAdvisory;
 }
+/* noteadv-1.0.1 - THE RE-FORMAT REWRITES THE NOTE AFTER THE LINES WERE STAMPED.
+   With "Use templates" on, the optional re-format sends the finished note back
+   to the model and replaces it with the templated answer. A doubted sentence
+   whose punctuation or spacing moved by one character is then no longer word
+   for word in the note, and the room - which shows a line only while the note
+   still holds it - dropped it from the amber list without the doctor touching
+   a word, while the saved note went on carrying it. So after the re-format
+   lands, every doubted line is looked for again in the new text: the same
+   words with different punctuation or spacing re-attach to the new wording,
+   and a line that genuinely cannot be found is KEPT and marked, never dropped
+   in silence. Words only - nothing here reads or writes anything but the note
+   text already on screen. */
+function _mlsNoteAdvFlat(s){ return String(s==null?'':s).replace(/\s+/g,' ').trim(); }
+function _mlsNoteAdvNorm(s){ return _mlsNoteAdvFlat(s).toLowerCase().replace(/[^a-z0-9 ]+/g,' ').replace(/\s+/g,' ').trim(); }
+function _mlsNoteAdvTokens(s){ var n=_mlsNoteAdvNorm(s); return n?n.split(' '):[]; }
+function _mlsNoteAdvSplitSentences(line){
+  var out=[],buf='',i,ch;
+  for(i=0;i<line.length;i++){
+    ch=line.charAt(i); buf+=ch;
+    if((ch==='.'||ch==='?'||ch==='!')&&(i+1>=line.length||line.charAt(i+1)===' ')){
+      var t=_mlsNoteAdvFlat(buf); if(t) out.push(t); buf='';
+    }
+  }
+  var last=_mlsNoteAdvFlat(buf); if(last) out.push(last);
+  return out;
+}
+/* Every run of the new note a doubted line could have become: each whole line,
+   and each sentence inside it. Both are contiguous in the flattened note, so
+   anything chosen here still passes the room's own "is it still in the note"
+   test. Bounded so a very long note cannot make this expensive. */
+function _mlsNoteAdvCandidates(noteText){
+  var lines=String(noteText==null?'':noteText).split(/\n+/),out=[],i,j;
+  for(i=0;i<lines.length&&out.length<600;i++){
+    var line=_mlsNoteAdvFlat(lines[i]);
+    if(!line) continue;
+    out.push(line);
+    var parts=_mlsNoteAdvSplitSentences(line);
+    if(parts.length>1) for(j=0;j<parts.length&&out.length<600;j++) out.push(parts[j]);
+  }
+  return out;
+}
+function _mlsNoteAdvOverlap(wantTokens,haveTokens){
+  if(!wantTokens.length||!haveTokens.length) return 0;
+  var have={},i,hit=0;
+  for(i=0;i<haveTokens.length;i++) have[' '+haveTokens[i]]=(have[' '+haveTokens[i]]||0)+1;
+  for(i=0;i<wantTokens.length;i++){ var k=' '+wantTokens[i]; if(have[k]>0){ have[k]-=1; hit+=1; } }
+  return hit/wantTokens.length;
+}
+function _mlsReanchorVisitNoteAdvisory(noteText){
+  var a=currentNoteAdvisory;
+  if(!a||!Array.isArray(a.flagged)||!a.flagged.length) return a||null;
+  var flatNote=_mlsNoteAdvFlat(noteText),cands=null,i,j;
+  for(i=0;i<a.flagged.length;i++){
+    var row=a.flagged[i];
+    var s=_mlsNoteAdvFlat(row&&row.sentence);
+    if(!s){ continue; }
+    if(flatNote&&flatNote.indexOf(s)>=0){ row.lost=false; continue; }
+    var norm=_mlsNoteAdvNorm(s);
+    if(!norm){ row.lost=true; continue; }
+    if(!cands) cands=_mlsNoteAdvCandidates(noteText);
+    var want=_mlsNoteAdvTokens(s),best='',bestScore=0;
+    for(j=0;j<cands.length;j++){
+      var cand=cands[j];
+      var score=(_mlsNoteAdvNorm(cand)===norm)?1:_mlsNoteAdvOverlap(want,_mlsNoteAdvTokens(cand));
+      /* On a tie the SHORTEST run wins: the tightest piece of the note that
+         still holds every word of the doubted line. */
+      if(score>bestScore||(score===bestScore&&score>0&&best&&cand.length<best.length)){ bestScore=score; best=cand; }
+    }
+    if(best&&bestScore>=0.7){ row.sentence=best.slice(0,600); row.lost=false; }
+    else row.lost=true;
+  }
+  try{ window.__mlsVisitNoteAdvisory=currentNoteAdvisory; }catch(eNoteAdvA){}
+  return currentNoteAdvisory;
+}
 try{ window._mlsNoteAdvisoryFromQuality=_mlsNoteAdvisoryFromQuality;
   window._mlsStampVisitNoteAdvisory=_mlsStampVisitNoteAdvisory;
   window._mlsVisitNoteAdvisoryRecord=_mlsVisitNoteAdvisoryRecord;
   window._mlsRestoreVisitNoteAdvisory=_mlsRestoreVisitNoteAdvisory;
+  window._mlsForgetVisitNoteAdvisory=_mlsForgetVisitNoteAdvisory;
+  window._mlsReanchorVisitNoteAdvisory=_mlsReanchorVisitNoteAdvisory;
   window._mlsVisitNotePlainChosen=_mlsVisitNotePlainChosen; }catch(eNoteAdvX){}
 /* ===== end noteadv-1.0.0 ===== */
 
@@ -34069,7 +34228,10 @@ For red_flags/suggested_orders/differentials/opioids/recommendations: use ONLY w
   _mlsGenTplMeasure=null;
   var tplContract=null;
   try{
-    var genTemplate=_mlsResolveGenerationTemplate(transcript);
+    /* vntplpick-1.0.1: options.visitTplPick is this RUN's copy of the doctor's
+       choice, handed to every attempt the run makes so the repair pass cannot
+       resolve a different template than the first attempt did. */
+    var genTemplate=_mlsResolveGenerationTemplate(transcript,options.visitTplPick||null);
     _mlsSetGenTemplateHandoff(genTemplate,transcript);
     tplContract=genTemplate?_mlsGenTemplateContract(genTemplate):null;
     if(tplContract) _mlsGenTplMeasure={id:tplContract.id,name:tplContract.name,text:tplContract.templateText,at:Date.now()};
@@ -34107,10 +34269,20 @@ For red_flags/suggested_orders/differentials/opioids/recommendations: use ONLY w
    Runs after the first result validates and BEFORE any editor surface is
    mutated, so a failed or worse retry leaves the original draft untouched.
    Returns the result to display, and stamps the grade for the strip. */
-async function _mlsNoteQualityRepairStructured(result,transcript,key,evidence,run,generationDraftTuning){
+async function _mlsNoteQualityRepairStructured(result,transcript,key,evidence,run,generationDraftTuning,visitTplPick){
   var firstText='';
   try{ firstText=String((result&&result.soap)||''); }catch(eNoteqFirst){ firstText=''; }
   if(!firstText.trim()) return result;
+  /* noteadv-1.0.1: THE LINES TO CHECK BELONG TO THE DRAFT THAT IS KEPT.
+     The doubted sentences arrive parked on one shared spot, overwritten by
+     every answer; the repair below asks for a SECOND draft and then keeps the
+     first unless the second scores higher. Without this snapshot the note the
+     doctor reads was stamped with the OTHER draft's doubts - which name
+     sentences that are not in his note, so the amber list painted nothing at
+     all and the sentences the server really doubted were never shown. */
+  var firstAdvisory=null;
+  try{ firstAdvisory=window.__mlsLastNoteAdvisory||null; }catch(eNoteAdvFirst){ firstAdvisory=null; }
+  var keptFirstDraft=true;
   /* noteq-1.1.0 (b1177): a generation that STARTED before the module loaded is
      still graded - we await here as well as at contract time, so the module
      that arrives mid-flight is used rather than missed. */
@@ -34129,7 +34301,7 @@ async function _mlsNoteQualityRepairStructured(result,transcript,key,evidence,ru
   try{
     var second=await _mlsAwaitGeneration(
       run,
-      callOpenAI(transcript,key,{signal:run.controller.signal,evidence:evidence,noteqFindings:res,resolvedDraftTuning:generationDraftTuning}),
+      callOpenAI(transcript,key,{signal:run.controller.signal,evidence:evidence,noteqFindings:res,resolvedDraftTuning:generationDraftTuning,visitTplPick:visitTplPick||null}),
       _mlsGenerationTimeoutMs('main',90000),
       'generation-timeout'
     );
@@ -34138,8 +34310,10 @@ async function _mlsNoteQualityRepairStructured(result,transcript,key,evidence,ru
     var secondRes=__mlsNoteQualityGrade(secondText,'visit-note-soap',ctx);
     var pick=__mlsNoteQualityBetter(firstText,res,secondText,secondRes);
     regenerated=true;
-    if(pick.used==='second'){ res=pick.res; result=second; }
+    if(pick.used==='second'){ res=pick.res; result=second; keptFirstDraft=false; }
   }catch(eNoteqRegen){ /* the first draft stands, exactly as validated */ }
+  /* noteadv-1.0.1: put the KEPT draft's doubted sentences back. */
+  if(keptFirstDraft){ try{ window.__mlsLastNoteAdvisory=firstAdvisory; }catch(eNoteAdvKeep){} }
   try{ window.__mlsLastNoteQuality=res; }catch(eNoteqStamp2){}
   __mlsNoteQualityRecord('visit-note-soap',res,regenerated);
   return result;
@@ -54759,13 +54933,21 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
      editor. Restores ONLY into an empty editor, and ONLY the entry whose own
      recorded ptId matches the patient now open (a mismatched entry is dropped
      rather than shown — fail closed, never the wrong chart). */
+  /* noteadv-1.0.1: THIS PATIENT HAS NO PARKED WORK, so nothing left on screen
+     belongs to him - including the previous patient's lines to check and the
+     template line beside them. Only ever when the editor really is empty: a
+     note already on screen keeps its own lines. */
+  function forgetNoteAdvisory() {
+    if (safe(function () { return editorState().any; }, true)) return;
+    safe(function () { if (typeof _mlsForgetVisitNoteAdvisory === 'function') _mlsForgetVisitNoteAdvisory(); });
+  }
   function restoreFor(id) {
     var want = str(id);
     if (!want || activeId() !== want) return false;
     var map = readStash();
     var d = map[want];
-    if (!d) return false;
-    if (str(d.ptId) !== want) { delete map[want]; writeStash(map); return false; }
+    if (!d) { forgetNoteAdvisory(); return false; }
+    if (str(d.ptId) !== want) { delete map[want]; writeStash(map); forgetNoteAdvisory(); return false; }
     if (editorState().any) return false;
 
     /* adhocid-1.0.0 (owner-measured 2026-09-11): A RESTORED IN-TAB DRAFT IS

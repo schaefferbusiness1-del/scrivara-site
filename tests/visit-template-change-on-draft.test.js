@@ -72,20 +72,24 @@ const CLASSIFIER = between(SHELL,
   '/* ===== vntpl-1.1.0 - THE STANDARD VISIT NOTE ONLY EVER TAKES A VISIT-NOTE',
   '/* ===== end vntpl-1.1.0 classifier ===== */', 'the vntpl-1.1.0 classifier');
 const KINDOF_FN = extractFn(SHELL, 'function _mlsTplKindOf(t){');
-const GENRESOLVE_FN = extractFn(SHELL, 'function _mlsResolveGenerationTemplate(visitText){');
+const GENRESOLVE_FN = extractFn(SHELL, 'function _mlsResolveGenerationTemplate(visitText,runPick){');
+const CONSUME_FN = extractFn(SHELL, 'function _mlsConsumeVisitTplPick(){');
+const CLEAR_FN = extractFn(SHELL, 'function _mlsClearVisitTplPick(){');
 const ROOM_BLOCK = between(LIVE,
   '/* ===== vntplpick-1.0.0 (owner 2026-09-11) - CHANGE THE TEMPLATE ON A NOTE',
   '  /* ---- doctor room (one clear action at a time)', 'the room template-pick block');
 
 /* THE VNTPL BLOCK'S ASCII RULE APPLIES TO WHAT WAS ADDED TO IT: one smart
    quote is a control byte by the time the latin1 writer has been through. */
-for (let i = 0; i < GENRESOLVE_FN.length; i += 1) {
-  if (GENRESOLVE_FN.charCodeAt(i) > 126) {
-    assert.fail('the generation resolver carries a non-ASCII byte at ' + i + ': ' +
-      JSON.stringify(GENRESOLVE_FN.slice(i - 20, i + 20)));
+[GENRESOLVE_FN, CONSUME_FN, CLEAR_FN].forEach(function (fn, n) {
+  for (let i = 0; i < fn.length; i += 1) {
+    if (fn.charCodeAt(i) > 126) {
+      assert.fail('template function ' + n + ' carries a non-ASCII byte at ' + i + ': ' +
+        JSON.stringify(fn.slice(i - 20, i + 20)));
+    }
   }
-}
-checks += 1;
+  checks += 1;
+});
 
 /* ==========================================================================
  * SYNTHETIC LIBRARY -- invented for this file
@@ -109,11 +113,13 @@ function bootResolver(opts) {
     __library: JSON.parse(JSON.stringify(LIBRARY)), __autoPick: opts.autoPick === undefined ? null : opts.autoPick };
   sandbox.window = sandbox;
   vm.createContext(sandbox);
+  sandbox.__activePt = opts.activePt === undefined ? '' : opts.activePt;
   vm.runInContext(
-    KINDOF_FN + '\n' + CLASSIFIER + '\n' + GENRESOLVE_FN + '\n' +
+    KINDOF_FN + '\n' + CLASSIFIER + '\n' + CONSUME_FN + '\n' + CLEAR_FN + '\n' + GENRESOLVE_FN + '\n' +
     'function useTemplatesOn(){ return ' + (opts.on === false ? 'false' : 'true') + '; }\n' +
     'function resolveActiveTemplate(){ return __autoPick ? JSON.parse(JSON.stringify(__autoPick)) : null; }\n' +
     'function _mlsRenderTplPickReceipt(fb){ __painted.push(fb === undefined ? "none" : fb); return ""; }\n' +
+    (opts.noPtId ? '' : 'function getActivePtId(){ return __activePt; }\n') +
     (opts.noLookup ? '' :
       'function getTemplateById(id){ for (var i = 0; i < __library.length; i++) { if (__library[i].id === id) ' +
       'return JSON.parse(JSON.stringify(__library[i])); } return null; }\n'),
@@ -122,6 +128,13 @@ function bootResolver(opts) {
     sandbox,
     arm: (pick) => { sandbox.__mlsVisitTplPick = pick; },
     resolve: () => vm.runInContext('_mlsResolveGenerationTemplate("synthetic visit text about a sore elbow")', sandbox),
+    /* vntplpick-1.0.1: exactly what generateNote does - take the choice ONCE at
+       the point the run is committed, then hand that same copy to every
+       attempt the run makes. */
+    consume: () => vm.runInContext('_mlsConsumeVisitTplPick()', sandbox),
+    clear: () => vm.runInContext('_mlsClearVisitTplPick()', sandbox),
+    resolveWith: (runPick) => { sandbox.__runPick = runPick; return vm.runInContext(
+      '_mlsResolveGenerationTemplate("synthetic visit text about a sore elbow", __runPick || null)', sandbox); },
     used: () => vm.runInContext('window.__mlsVisitTplPickUsed || null', sandbox),
     pending: () => vm.runInContext('window.__mlsVisitTplPick || null', sandbox),
     skip: () => vm.runInContext('window.__mlsLastGenTemplateSkip || null', sandbox)
@@ -186,6 +199,79 @@ function bootResolver(opts) {
 })();
 
 /* ==========================================================================
+ * PART A2 (vntplpick-1.0.1) -- THE CHOICE HOLDS FOR THE WHOLE GENERATION
+ *
+ * A visit note that lands under the quality floor is written a SECOND time,
+ * and the resolver runs once per attempt. The choice used to be consumed by
+ * the first attempt, so the second silently fell back to the doctor's usual
+ * template: the note he read could be labelled with a template it was never
+ * written with, and a deliberate "Plain note" was re-formatted straight back
+ * onto the template he had just stepped away from.
+ * ======================================================================== */
+(function A6_bothAttemptsResolveTheSameChoice() {
+  const g = bootResolver({ autoPick: VISIT_TPL });
+  g.arm({ id: VISIT_TPL_2.id, plain: false, at: Date.now() });
+  const runPick = g.consume();
+  ok(runPick, 'the run could not take the choice at the point it was committed');
+  eq(g.pending(), null, 'taking the choice for the run left it armed for the next note as well');
+  eq((g.resolveWith(runPick) || {}).id, VISIT_TPL_2.id, 'the first attempt ignored the choice');
+  eq((g.resolveWith(runPick) || {}).id, VISIT_TPL_2.id,
+    'the repair attempt fell back to the usual template, so the note is labelled with one it was not written with');
+  eq(g.used().id, VISIT_TPL_2.id, 'the record of which template was used was lost on the second attempt');
+
+  /* AND PLAIN STAYS PLAIN ON BOTH ATTEMPTS - this is the case that put the
+     abandoned template straight back onto the note. */
+  const p = bootResolver({ autoPick: VISIT_TPL });
+  p.arm({ id: '', plain: true, at: Date.now() });
+  const plainRun = p.consume();
+  eq(plainRun.plain, true, 'the plain-note choice did not survive being taken for the run');
+  eq(p.resolveWith(plainRun), null, 'the first attempt handed a template to a plain note');
+  eq(p.resolveWith(plainRun), null,
+    'the repair attempt put the doctor\'s usual template back onto the note he asked to keep plain');
+  eq(p.used().plain, true, 'the plain-note choice left no record after the second attempt');
+})();
+
+(function A7_theChoiceBelongsToOnePressAndOneChart() {
+  /* A refused press never starts a run, and its choice is dropped there. */
+  const refused = bootResolver({ autoPick: VISIT_TPL });
+  refused.arm({ id: VISIT_TPL_2.id, plain: false, at: Date.now() });
+  refused.clear();
+  eq(refused.pending(), null, 'a refused press left the choice armed for the next note');
+  eq(refused.consume(), null, 'a cleared choice came back anyway');
+  eq((refused.resolve() || {}).id, VISIT_TPL.id, 'a cleared choice still steered the next note');
+
+  /* And a choice made on one chart may never shape another chart's note. */
+  const moved = bootResolver({ autoPick: VISIT_TPL, activePt: 'pt_synthetic_b' });
+  moved.arm({ id: VISIT_TPL_2.id, plain: false, at: Date.now(), pt: 'pt_synthetic_a' });
+  eq(moved.consume(), null, 'a template choice made on one chart was carried into another chart\'s note');
+  const same = bootResolver({ autoPick: VISIT_TPL, activePt: 'pt_synthetic_a' });
+  same.arm({ id: VISIT_TPL_2.id, plain: false, at: Date.now(), pt: 'pt_synthetic_a' });
+  eq((same.consume() || {}).id, VISIT_TPL_2.id, 'the doctor\'s own choice was dropped on his own chart');
+
+  /* Stale and rubbish never reach a run. */
+  const stale = bootResolver({ autoPick: VISIT_TPL });
+  stale.arm({ id: VISIT_TPL_2.id, plain: false, at: Date.now() - 600000 });
+  eq(stale.consume(), null, 'a choice from ten minutes ago was taken for this run');
+  const junk = bootResolver({ autoPick: VISIT_TPL });
+  junk.arm('not an object');
+  eq(junk.consume(), null, 'a rubbish choice value was taken for this run');
+})();
+
+/* The run really does hand its copy to both calls, and drops it on a refusal. */
+ok(SHELL.indexOf('var generationTplPick=null;') > 0,
+  'generateNote no longer takes the template choice once for the whole run');
+ok(SHELL.indexOf('resolvedDraftTuning:generationDraftTuning,visitTplPick:generationTplPick}') > 0,
+  'the first attempt is no longer given the run\'s template choice');
+ok(SHELL.indexOf('resolvedDraftTuning:generationDraftTuning,visitTplPick:visitTplPick||null}') > 0,
+  'the repair attempt is no longer given the run\'s template choice');
+ok(SHELL.indexOf('_mlsResolveGenerationTemplate(transcript,options.visitTplPick||null)') > 0,
+  'the one template seam that runs no longer reads the run\'s own choice');
+ok(extractFn(SHELL, 'function _mlsRefuseGeneration(code,message,showToast){').indexOf('_mlsClearVisitTplPick()') > 0,
+  'a refused Generate press leaves the template choice armed for the next note, on any patient');
+ok(extractFn(SHELL, 'function newVisit(opts){').indexOf('_mlsForgetVisitNoteAdvisory()') > 0,
+  'a new visit leaves the last note\'s template choice and receipt standing');
+
+/* ==========================================================================
  * PART B -- THE CONTROL ON THE DRAFTED NOTE
  * ======================================================================== */
 function bootRoom(opts) {
@@ -215,6 +301,9 @@ function bootRoom(opts) {
       (opts.binding === false ? 'false' : 'true') + '; }\n' +
     'function captureBusy(){ return ' + (opts.recording === true ? 'true' : 'false') + '; }\n' +
     'function pullLease(){ return ' + (opts.lease === true ? '{ id: "l1", at: Date.now() }' : 'null') + '; }\n' +
+    /* The room's own read-only question about a generation already in flight. */
+    'function genRunOverlay(){ return ' + (opts.generating === true ? '{ active: true, hint: "MLS is writing this note." }' : 'null') + '; }\n' +
+    (opts.noPtId ? '' : 'window.getActivePtId = function(){ return ' + JSON.stringify(opts.activePt || 'pt_synthetic_a') + '; };\n') +
     /* THE REAL SHIPPED SCOPE GATE, not a stand-in: the picker must ask the
        same question the automatic path asks, and a stub here would prove the
        picker filters, not that it filters by the shipped rule. */
@@ -290,6 +379,20 @@ function bootRoom(opts) {
   const busy = bootRoom({});
   busy.sandbox.__mlsPullBusyAt = Date.now();
   eq(busy.api.tplPickHtml(), '', 'the control is offered while a pull is still marked busy');
+  /* vntplpick-1.0.1: AND NOT DURING THE REGENERATION IT ITSELF STARTED. The
+     previous note stays on screen while the new one is written, so without
+     this the room went on saying "This note was written with: <the template
+     the doctor just replaced>" over a note that was being thrown away. */
+  const running = bootRoom({ generating: true });
+  running.sandbox.__mlsLastGenTemplateContract = { id: VISIT_TPL.id, name: VISIT_TPL.name };
+  eq(running.api.tplPickHtml(), '', 'the template control stayed up while MLS was writing the note');
+  eq(running.api.tplChangeAllowed(), false, 'the template control answers a press while MLS is writing the note');
+  const openRunning = bootRoom({ generating: true, open: true });
+  eq(openRunning.api.tplPickHtml(), '', 'an open template list stayed up while MLS was writing the note');
+  openRunning.api.applyTplPick({ id: VISIT_TPL_2.id });
+  eq(openRunning.genBtn.clicks, 0, 'a second template was picked while MLS was already writing the note');
+  eq(openRunning.sandbox.__mlsVisitTplPick, undefined,
+    'a press during a generation armed a choice that would steer the note after it');
 })();
 
 (function B4_pickRegeneratesThroughTheSameDoor() {
@@ -300,6 +403,8 @@ function bootRoom(opts) {
   eq(armed.id, VISIT_TPL_2.id, 'the wrong template was handed to the generation');
   eq(armed.plain, false, 'picking a real template asked for a plain note');
   ok(Number(armed.at) > 0, 'the choice carries no time, so it can never be judged stale');
+  eq(armed.pt, 'pt_synthetic_a',
+    'the choice does not say which chart it was made on, so it could shape another patient\'s note');
   eq(r.genBtn.clicks, 1, 'the note was not written again through the ordinary Generate path');
   eq(r.calls.stamps, 1, 'the generating state the doctor already knows was not shown');
   eq(r.calls.bindingAsked.join(','), 'note regeneration', 'the visit was not re-checked before writing again');
@@ -385,8 +490,12 @@ ok(SHELL.indexOf('_mlsStartOptionalTemplate(transcript,generationBinding,generat
  * ======================================================================== */
 ['1pScribeFlow.html', '1p/index.html', 'ScribeFlow.html', 'cloned/index.html'].forEach(function (name) {
   const src = read(name);
-  eq(extractFn(src, 'function _mlsResolveGenerationTemplate(visitText){'), GENRESOLVE_FN,
+  eq(extractFn(src, 'function _mlsResolveGenerationTemplate(visitText,runPick){'), GENRESOLVE_FN,
     name + ': the generation resolver is not byte-identical to 1pScribeFlow.html');
+  eq(extractFn(src, 'function _mlsConsumeVisitTplPick(){'), CONSUME_FN,
+    name + ': the run\'s copy of the choice is not byte-identical to 1pScribeFlow.html');
+  eq(extractFn(src, 'function _mlsClearVisitTplPick(){'), CLEAR_FN,
+    name + ': the refusal clear is not byte-identical to 1pScribeFlow.html');
   ok(src.indexOf('window.__mlsVisitTplPickUsed=') > 0, name + ': the choice leaves no record of being used');
 });
 ['1p-mls-connect.js', 'mls-connect.js', 'cloned-mls-connect.js'].forEach(function (name) {
@@ -405,5 +514,7 @@ ok(SHELL.indexOf('window._mlsGenTemplateScopeSkip=_mlsGenTemplateScopeSkip;') > 
 console.log('PASS visit-template-change-on-draft: ' + checks +
   ' checks - a drafted visit note can be written again with any visit-note template or with no template at all, ' +
   'through the one template seam that runs and the same Generate path; operative-report and bodiless templates are ' +
-  'never offered and never accepted; the control is absent without a recording, during a pull, while recording and ' +
-  'on every screen but the drafted note; and the saved default is never touched');
+  'never offered and never accepted; the choice is taken once for the whole run so the repair attempt resolves the ' +
+  'same template (and the same plain note); it is dropped by a refused press, by a new visit and on another chart; ' +
+  'the control is absent without a recording, during a pull, while recording, while MLS is writing the note and on ' +
+  'every screen but the drafted note; and the saved default is never touched');

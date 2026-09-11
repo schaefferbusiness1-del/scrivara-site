@@ -22658,6 +22658,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     '.ez3-flagline{background:rgba(234,179,8,.14);border:1px solid rgba(234,179,8,.5);color:#fbe7a2;',
       'border-radius:10px;padding:8px 11px;font-size:13px;line-height:1.5;display:flex;gap:10px;align-items:flex-start;}',
     '.ez3-flagtext{flex:1;min-width:0;overflow-wrap:anywhere;}',
+    '.ez3-flaglost{display:block;margin:4px 0 0;font-size:12px;font-weight:600;opacity:.92;}',
     '.ez3-flagline .ez3-sm{flex:0 0 auto;}',
     /* vntplpick-1.0.0: the template door on a drafted note, in its own wrapper
        so the visit-focus fold cannot reach it. */
@@ -25102,6 +25103,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     }, null);
   }
   function flatText(s) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim(); }
+  /* noteadv-1.0.1: the server sends at most this many doubted sentences, and
+     the shell keeps all of them, so the screen shows all of them too. At 12
+     the amber line said "check the highlighted lines" over half a list. */
+  var ADV_MAX_ROWS = 24;
   function advisoryRows() {
     var a = advisoryReceipt();
     if (!a) return [];
@@ -25109,25 +25114,58 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (S.flagKeptKey !== key) { S.flagKeptKey = key; S.flagKept = {}; }
     var note = flatText(noteText()), out = [];
     if (!note) return out;
-    for (var i = 0; i < a.flagged.length && out.length < 12; i++) {
-      var s = flatText(a.flagged[i] && a.flagged[i].sentence);
+    for (var i = 0; i < a.flagged.length && out.length < ADV_MAX_ROWS; i++) {
+      var row = a.flagged[i];
+      var s = flatText(row && row.sentence);
       if (!s) continue;
       if (S.flagKept[s]) continue;
-      if (note.indexOf(s) < 0) continue;
-      out.push(s);
+      /* A line the re-format could not find again is KEPT on the list and
+         says so. Dropping it would hide a doubt the saved note still holds. */
+      var lost = !!(row && row.lost === true);
+      if (!lost && note.indexOf(s) < 0) continue;
+      out.push({ text: s, lost: lost });
     }
     return out;
   }
-  function advisoryHtml() {
+  /* The rows only. The wrapper below puts this inside the host the note
+     editor patches in place, so a line edited away goes as it is typed. */
+  function advisoryInnerHtml() {
     var rows = advisoryRows();
     if (!rows.length) return '';
     var h = '<div class="ez3-warnbar" role="status">⚠️ Check the highlighted lines: the dictation did not clearly say them.</div>' +
             '<div class="ez3-flaglist">';
     for (var i = 0; i < rows.length; i++) {
-      h += '<div class="ez3-flagline"><span class="ez3-flagtext">' + esc(rows[i]) + '</span>' +
-           '<button type="button" class="ez3-sm" id="ez3FlagKeep_' + i + '">Keep</button></div>';
+      h += '<div class="ez3-flagline"><span class="ez3-flagtext">' + esc(rows[i].text) +
+           (rows[i].lost ? '<span class="ez3-flaglost">MLS could not find this line after the note was re-formatted. Read the whole note before you sign it.</span>' : '') +
+           '</span><button type="button" class="ez3-sm" data-flag="' + esc(rows[i].text) +
+           '" id="ez3FlagKeep_' + i + '">Keep</button></div>';
     }
     return h + '</div>';
+  }
+  /* The host is always painted, even with nothing to say, so the note editor
+     below has somewhere to write when the last line is edited away. */
+  function advisoryHtml() { return '<div class="ez3-advisory" id="ez3Advisory">' + advisoryInnerHtml() + '</div>'; }
+  /* PATCH, NEVER REPLACE (walkfix-1.0.0's rule): rebuilding the whole surface
+     from a keystroke would tear the note textarea out from under the caret. */
+  function advisoryRepaint() {
+    var host = $('ez3Advisory');
+    if (!host) return false;
+    var want = advisoryInnerHtml();
+    if (host.innerHTML === want) return false;
+    host.innerHTML = want;
+    return true;
+  }
+  /* Keep means "I read that line and it is right". It is resolved by the
+     SENTENCE written on the button, not by the button's position: a line the
+     doctor edited away renumbers the list, and by index Keep then cleared a
+     different line than the one he pressed. */
+  function advisoryKeep(btn, n) {
+    var s = flatText(safe(function () { return btn && btn.getAttribute ? btn.getAttribute('data-flag') : ''; }, ''));
+    if (!s) { var rows = advisoryRows(); s = (rows[n] && rows[n].text) || ''; }
+    if (!s) return false;
+    if (!S.flagKept) S.flagKept = {};
+    S.flagKept[s] = 1;
+    return true;
   }
 
   /* ===== vntplpick-1.0.0 (owner 2026-09-11) - CHANGE THE TEMPLATE ON A NOTE
@@ -25153,6 +25191,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (S.phase !== 'note') return false;
     if (captureBusy()) return false;
     if (tplPickBusy()) return false;
+    /* vntplpick-1.0.1: NOT WHILE MLS IS WRITING THIS NOTE. A regeneration
+       leaves the previous note on screen, so the drafted-note screen stays up
+       while the new note is being written - and with it a line naming the
+       template of the note that is being replaced. The press was already
+       refused underneath; now the control goes away instead of lying. */
+    if (safe(function () { var r = genRunOverlay(); return !!(r && r.active); }, false)) return false;
     var t = $('transcript');
     return !!(t && String(t.value || '').trim());
   }
@@ -25211,7 +25255,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var g = genBtnResolve();
     if (!g) { toast('MLS is still writing this note. Wait for it to finish, then choose a template.'); return; }
     var armed = safe(function () {
-      window.__mlsVisitTplPick = { id: String((pick && pick.id) || ''), plain: !(pick && pick.id), at: Date.now() };
+      /* vntplpick-1.0.1: the choice carries the chart it was made on, so a
+         choice that somehow outlives a patient switch can be dropped rather
+         than shape somebody else's note. */
+      var pt = safe(function () { return isFn(window.getActivePtId) ? String(window.getActivePtId() || '') : ''; }, '');
+      window.__mlsVisitTplPick = { id: String((pick && pick.id) || ''), plain: !(pick && pick.id), at: Date.now(), pt: pt };
       return true;
     }, false);
     if (!armed) { toast('MLS could not change the template. Try again.'); return; }
@@ -25469,15 +25517,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     /* noteadv-1.0.0: Keep means "I read that line and it is right." It only
        ever removes the amber line; it never touches a word of the note. The
        kept sentences live in S, because the surface is replaced wholesale on
-       every changed render and a DOM attribute would not survive it. */
+       every changed render and a DOM attribute would not survive it.
+       noteadv-1.0.1: the sentence comes off the button that was pressed, and
+       only the amber list is repainted - a full render would rebuild the note
+       box and throw away the caret of a doctor who is part-way through an
+       edit. */
     (function () {
-      for (var fi = 0; fi < 12; fi++) {
+      for (var fi = 0; fi < ADV_MAX_ROWS; fi++) {
         (function (n) {
-          on('ez3FlagKeep_' + n, function () {
-            var rows = advisoryRows();
-            if (!S.flagKept) S.flagKept = {};
-            if (rows[n]) S.flagKept[rows[n]] = 1;
-            render();
+          on('ez3FlagKeep_' + n, function (btn) {
+            if (advisoryKeep(btn, n)) advisoryRepaint();
           });
         })(fi);
       }
@@ -25657,6 +25706,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       ta.addEventListener('input', function () {
         var n = $('noteBox');
         if (n) { n.value = ta.value; try { n.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {} }
+        /* noteadv-1.0.1: a line the doctor has just edited away stops being
+           flagged as he types. Nothing else repaints from typing - render() is
+           driven by clicks - so before this the amber row for a sentence he had
+           already deleted sat there until some unrelated press. PATCH the list
+           only: a full render would rebuild this very textarea and throw away
+           the caret mid-edit. */
+        safe(function () { return advisoryRepaint(); });
       });
     }
     var txTop = $('ez3Transcript'), txReal = $('transcript');

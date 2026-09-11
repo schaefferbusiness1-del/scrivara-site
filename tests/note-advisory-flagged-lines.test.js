@@ -121,7 +121,17 @@ const REVIEW_ANSWER = {
   });
   const many = { status: 'review', issues: [], flagged: [] };
   for (let i = 0; i < 40; i += 1) many.flagged.push({ issue: 'code_' + i, sentence: 'Synthetic line ' + i + '.', arm: 'display' });
-  eq(s._mlsNoteAdvisoryFromQuality(many).flagged.length, 12, 'the flagged list is not capped at twelve');
+  /* noteadv-1.0.1: the server serves at most 24 doubted sentences, so 24 is
+     what this side keeps. At 12 a long note showed half its doubts under an
+     amber line that said "check the highlighted lines" and said nothing about
+     the ones it had dropped. */
+  eq(s._mlsNoteAdvisoryFromQuality(many).flagged.length, 24,
+    'the flagged list does not keep every sentence the server can serve');
+  eq(s._mlsVisitNoteAdvisoryRecord.length, 0, 'the record reader grew an argument');
+  s.__mlsLastNoteAdvisory = many;
+  s._mlsStampVisitNoteAdvisory();
+  eq(s._mlsVisitNoteAdvisoryRecord().flagged.length, 24,
+    'the saved record throws away half the doubted lines the screen shows');
   const long = { status: 'review', issues: [], flagged: [{ issue: 'x_code', sentence: 'q'.repeat(4000), arm: 'display' }] };
   eq(s._mlsNoteAdvisoryFromQuality(long).flagged[0].sentence.length, 600, 'a flagged sentence is not capped at 600 characters');
   const bad = { status: 'review', issues: ['<script>', 'ok_code'], flagged: [{ issue: '<b>', sentence: 'Synthetic line.', arm: 'nonsense' }] };
@@ -217,10 +227,20 @@ function bootRoom(opts) {
   opts = opts || {};
   const S = { phase: 'note', flagKept: {}, flagKeptKey: '' };
   const note = { value: opts.note == null ? '' : opts.note };
+  /* The advisory host the room patches in place, and the Keep buttons that
+     carry their own sentence. Both stand in for real nodes only. */
+  const host = { innerHTML: '' };
+  const buttons = {};
   const sandbox = {
     String, Number, Object, Array, RegExp, JSON, Date, Math,
     S,
-    document: { getElementById(id) { return id === 'noteBox' ? note : null; } }
+    document: {
+      getElementById(id) {
+        if (id === 'noteBox') return note;
+        if (id === 'ez3Advisory') return host;
+        return buttons[id] || null;
+      }
+    }
   };
   sandbox.window = sandbox;
   vm.createContext(sandbox);
@@ -230,13 +250,37 @@ function bootRoom(opts) {
     "function esc(s){ return String(s == null ? '' : s).replace(/[&<>\"']/g, function (c) {\n" +
     '  return { \'&\': \'&amp;\', \'<\': \'&lt;\', \'>\': \'&gt;\', \'"\': \'&quot;\', "\'": \'&#39;\' }[c]; }); }\n' +
     "function noteText(){ var n = $('noteBox'); return n ? (n.value || '') : ''; }\n" +
-    extractFn(LIVE, '  function advisoryReceipt() {') + '\n' +
-    extractFn(LIVE, '  function flatText(s) {') + '\n' +
-    extractFn(LIVE, '  function advisoryRows() {') + '\n' +
-    extractFn(LIVE, '  function advisoryHtml() {') + '\n' +
-    'this.api = { advisoryRows: advisoryRows, advisoryHtml: advisoryHtml, advisoryReceipt: advisoryReceipt };',
+    ROOM_BLOCK + '\n' +
+    'this.api = { advisoryRows: advisoryRows, advisoryHtml: advisoryHtml, advisoryReceipt: advisoryReceipt,\n' +
+    '  advisoryInnerHtml: advisoryInnerHtml, advisoryRepaint: advisoryRepaint, advisoryKeep: advisoryKeep,\n' +
+    '  ADV_MAX_ROWS: ADV_MAX_ROWS };',
     sandbox, { filename: 'noteadv-1.0.0-room.js' });
-  return { sandbox, S, note, api: sandbox.api };
+  /* The buttons the room would have painted, exactly as advisoryInnerHtml
+     writes them: each carries the sentence it belongs to. */
+  function mountButtons() {
+    Object.keys(buttons).forEach(function (k) { delete buttons[k]; });
+    const html = sandbox.api.advisoryInnerHtml();
+    const re = /data-flag="([^"]*)" id="(ez3FlagKeep_\d+)"/g;
+    let m;
+    while ((m = re.exec(html)) !== null) {
+      (function (value, id) {
+        buttons[id] = { id: id, getAttribute(name) { return name === 'data-flag' ? value : null; } };
+      })(m[1].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"').replace(/&#39;/g, "'"), m[2]);
+    }
+    return buttons;
+  }
+  /* Exactly what the shipped Keep handler does: resolve the button, keep by
+     its sentence, repaint only the amber list. */
+  function pressKeep(n) {
+    mountButtons();
+    const btn = buttons['ez3FlagKeep_' + n] || null;
+    const changed = sandbox.api.advisoryKeep(btn, n);
+    if (changed) sandbox.api.advisoryRepaint();
+    return changed;
+  }
+  return { sandbox, S, note, host, api: sandbox.api, mountButtons, pressKeep,
+    texts: function () { return sandbox.api.advisoryRows().map(function (r) { return r.text; }); } };
 }
 
 const LINE_A = 'Synthetic line one: the left elbow was sore after gardening.';
@@ -264,13 +308,18 @@ const NOTE_TEXT = 'S: Synthetic opening line.\n' + LINE_A + '\nA: Synthetic asse
 
 (function B2_silentOnOkAndOnNoReceipt() {
   const r = bootRoom({ note: NOTE_TEXT });
+  /* noteadv-1.0.1: the host is always painted so the note editor has somewhere
+     to write when the last line is edited away; with nothing to say it is
+     empty, and an empty host says nothing. */
+  const EMPTY = '<div class="ez3-advisory" id="ez3Advisory"></div>';
   r.sandbox.__mlsVisitNoteAdvisory = { status: 'ok', key: 'adv1-1', issues: [], flagged: [] };
-  eq(r.api.advisoryHtml(), '', 'an ok note still painted an amber line');
+  eq(r.api.advisoryHtml(), EMPTY, 'an ok note still painted an amber line');
+  eq(r.api.advisoryInnerHtml(), '', 'an ok note put something inside the amber host');
   r.sandbox.__mlsVisitNoteAdvisory = null;
-  eq(r.api.advisoryHtml(), '', 'a note with no receipt at all still painted an amber line');
+  eq(r.api.advisoryHtml(), EMPTY, 'a note with no receipt at all still painted an amber line');
   /* A server that sends nothing leaves nothing behind: same screen as before. */
   delete r.sandbox.__mlsVisitNoteAdvisory;
-  eq(r.api.advisoryHtml(), '', 'an older server that sends no quality field changed the screen');
+  eq(r.api.advisoryHtml(), EMPTY, 'an older server that sends no quality field changed the screen');
 })();
 
 (function B3_editedAwayStopsShowing() {
@@ -281,12 +330,35 @@ const NOTE_TEXT = 'S: Synthetic opening line.\n' + LINE_A + '\nA: Synthetic asse
   ] };
   eq(r.api.advisoryRows().length, 2, 'both flagged lines should be shown before any edit');
   r.note.value = NOTE_TEXT.replace(LINE_A, 'Synthetic line one, rewritten by the doctor.');
-  const rows = r.api.advisoryRows();
+  const rows = r.texts();
   eq(rows.length, 1, 'a line the doctor edited away is still being flagged');
   eq(rows[0], LINE_B, 'the wrong line survived the edit');
   /* Wrapping and spacing are not an edit: the same words still count. */
   r.note.value = NOTE_TEXT.replace(LINE_B, LINE_B.replace(/ /g, '\n   '));
-  ok(r.api.advisoryRows().indexOf(LINE_B) >= 0, 'a re-wrapped line stopped counting as the same line');
+  ok(r.texts().indexOf(LINE_B) >= 0, 'a re-wrapped line stopped counting as the same line');
+})();
+
+/* noteadv-1.0.1: THE LIST FOLLOWS THE TYPING. Nothing else in the room
+   repaints from a keystroke, so before this the amber row for a sentence the
+   doctor had already deleted sat there until some unrelated press. */
+(function B3b_editRepaintsInPlace() {
+  const r = bootRoom({ note: NOTE_TEXT });
+  r.sandbox.__mlsVisitNoteAdvisory = { status: 'review', key: 'adv1-1', issues: [], flagged: [
+    { issue: 'unsupported_claim', sentence: LINE_A, arm: 'display' },
+    { issue: 'garbled_term', sentence: LINE_B, arm: 'athena' }
+  ] };
+  r.host.innerHTML = r.api.advisoryInnerHtml();
+  eq((r.host.innerHTML.match(/class="ez3-flagline"/g) || []).length, 2, 'the list did not start with both lines');
+  r.note.value = NOTE_TEXT.replace(LINE_A, 'Synthetic line one, rewritten by the doctor.');
+  eq(r.api.advisoryRepaint(), true, 'an edit did not repaint the amber list');
+  eq((r.host.innerHTML.match(/class="ez3-flagline"/g) || []).length, 1,
+    'the line the doctor just deleted is still on screen');
+  ok(r.host.innerHTML.indexOf(LINE_A) < 0, 'the deleted line is still painted');
+  eq(r.api.advisoryRepaint(), false, 'an unchanged list was rewritten anyway - that is what eats a click');
+  /* The last line going away empties the host rather than needing a render. */
+  r.note.value = 'S: Synthetic opening line only.';
+  eq(r.api.advisoryRepaint(), true, 'clearing the last flagged line did not repaint');
+  eq(r.host.innerHTML, '', 'the amber bar stayed up over a note with no flagged line left in it');
 })();
 
 (function B4_keepRemovesOneLine() {
@@ -296,14 +368,16 @@ const NOTE_TEXT = 'S: Synthetic opening line.\n' + LINE_A + '\nA: Synthetic asse
     { issue: 'garbled_term', sentence: LINE_B, arm: 'athena' }
   ] };
   eq(r.api.advisoryRows().length, 2, 'both lines should start visible');
-  /* Exactly what the shipped Keep handler does. */
-  r.S.flagKept[r.api.advisoryRows()[0]] = 1;
-  const left = r.api.advisoryRows();
+  /* Exactly what the shipped Keep handler does: press the button, which
+     carries its own sentence, and repaint only the amber list. */
+  eq(r.pressKeep(0), true, 'pressing Keep on the first line did nothing');
+  const left = r.texts();
   eq(left.length, 1, 'Keep did not remove the line it was pressed on');
   eq(left[0], LINE_B, 'Keep removed the wrong line');
   eq(r.note.value, NOTE_TEXT, 'Keep changed a word of the note');
-  r.S.flagKept[left[0]] = 1;
-  eq(r.api.advisoryHtml(), '', 'keeping every line still left the amber line on screen');
+  eq(r.pressKeep(0), true, 'pressing Keep on the remaining line did nothing');
+  eq(r.api.advisoryInnerHtml(), '', 'keeping every line still left the amber line on screen');
+  eq(r.host.innerHTML, '', 'Keep did not clear the amber list it was pressed in');
 
   /* A NEW NOTE RESETS WHAT WAS KEPT - a receipt with a different key is a
      different note, and its lines have never been read. */
@@ -311,6 +385,55 @@ const NOTE_TEXT = 'S: Synthetic opening line.\n' + LINE_A + '\nA: Synthetic asse
     { issue: 'unsupported_claim', sentence: LINE_A, arm: 'display' }
   ] };
   eq(r.api.advisoryRows().length, 1, 'a freshly generated note inherited the last note\'s kept lines');
+})();
+
+/* noteadv-1.0.1: KEEP CLEARS THE LINE IT WAS PRESSED ON, NOT THE ONE THAT
+   HAPPENS TO SIT AT THAT POSITION NOW. The numbers on the buttons were fixed
+   when the list was painted, but the handler re-read the list at click time -
+   so an edit that removed an earlier line renumbered it underneath, and Keep
+   then cleared a sentence the doctor had never read. */
+(function B4b_keepIsByTheSentenceNotByPosition() {
+  const LINE_C = 'Synthetic line three: the brace is to be worn at night.';
+  const note = 'S: Synthetic opening line.\n' + LINE_A + '\n' + LINE_B + '\n' + LINE_C + '\nP: Synthetic plan.';
+  const r = bootRoom({ note: note });
+  r.sandbox.__mlsVisitNoteAdvisory = { status: 'review', key: 'adv9-1', issues: [], flagged: [
+    { issue: 'unsupported_claim', sentence: LINE_A, arm: 'display' },
+    { issue: 'garbled_term', sentence: LINE_B, arm: 'display' },
+    { issue: 'unsupported_claim', sentence: LINE_C, arm: 'display' }
+  ] };
+  /* The list is painted with all three; the buttons carry their own line. */
+  const painted = r.mountButtons();
+  eq(Object.keys(painted).length, 3, 'the list did not paint a Keep for each line');
+  /* Now the doctor deletes the FIRST flagged line without any repaint, and
+     then presses the Keep that is still sitting beside the second one. */
+  r.note.value = note.replace(LINE_A + '\n', '');
+  const btn = painted.ez3FlagKeep_1;
+  eq(r.api.advisoryKeep(btn, 1), true, 'Keep beside the second line did nothing');
+  const left = r.texts();
+  ok(left.indexOf(LINE_B) < 0, 'Keep cleared a different line than the one it was pressed on');
+  ok(left.indexOf(LINE_C) >= 0, 'Keep silently cleared the line below the one that was pressed');
+  eq(left.length, 1, 'the wrong number of lines survived the press');
+})();
+
+/* noteadv-1.0.1: A LINE THE RE-FORMAT COULD NOT FIND AGAIN IS KEPT AND SAYS
+   SO. Dropping it would hide a doubt the saved note still carries. */
+(function B4c_lostLineStaysListed() {
+  const r = bootRoom({ note: NOTE_TEXT });
+  r.sandbox.__mlsVisitNoteAdvisory = { status: 'review', key: 'adv8-1', issues: [], flagged: [
+    { issue: 'unsupported_claim', sentence: 'Synthetic line that the re-format dissolved.', arm: 'display', lost: true },
+    { issue: 'garbled_term', sentence: LINE_B, arm: 'athena' }
+  ] };
+  const rows = r.api.advisoryRows();
+  eq(rows.length, 2, 'a line that could not be re-found was dropped from the list');
+  eq(rows[0].lost, true, 'the line that could not be re-found is not marked');
+  const html = r.api.advisoryInnerHtml();
+  ok(html.indexOf('MLS could not find this line after the note was re-formatted.') > 0,
+    'the doctor is not told that a doubted line could not be found again');
+  ok(html.indexOf('Read the whole note before you sign it.') > 0,
+    'the line that could not be found does not name the one step to take');
+  /* And Keep still clears it, because it is the doctor's own line. */
+  eq(r.pressKeep(0), true, 'Keep did not work on a line that could not be re-found');
+  eq(r.api.advisoryRows().length, 1, 'Keep did not clear the line that could not be re-found');
 })();
 
 (function B5_escapedNotInjected() {
@@ -371,12 +494,172 @@ ok(LIVE.indexOf("id=\"ez3Sign\"") > 0 && LIVE.indexOf("id=\"ez3Send\"") > 0,
     name + ': advisoryRows is not byte-identical to 1p-mls-connect.js');
   eq(extractFn(live, '  function advisoryHtml() {'), extractFn(LIVE, '  function advisoryHtml() {'),
     name + ': advisoryHtml is not byte-identical to 1p-mls-connect.js');
+  ['  function advisoryInnerHtml() {', '  function advisoryRepaint() {', '  function advisoryKeep(btn, n) {'].forEach(function (marker) {
+    eq(extractFn(live, marker), extractFn(LIVE, marker),
+      name + ': ' + marker.trim() + ' is not byte-identical to 1p-mls-connect.js');
+  });
   ok(live.indexOf('.ez3-flagline{background:rgba(234,179,8,.14);') > 0,
     name + ': the flagged-line skin no longer reuses the room\'s own amber');
+  ok(live.indexOf('safe(function () { return advisoryRepaint(); });') > 0,
+    name + ': typing in the note no longer repaints the flagged lines');
 });
 
-console.log('PASS note-advisory-flagged-lines: ' + checks +
-  ' checks - the flagged lines are caught where the answer arrives, cleaned, kept with the note, cleared by the ' +
-  'next run, restored with a reopened note, painted as one amber line plus a pressable list inside the room\'s own ' +
-  'surface string, removed by an edit or by Keep, silent on an ok answer and on an older server, and never logged ' +
-  'or sent anywhere');
+/* ==========================================================================
+ * PART F (noteadv-1.0.1) -- THE RECEIPT DIES WITH THE NOTE IT BELONGS TO,
+ * FOLLOWS THE DRAFT THAT IS KEPT, AND SURVIVES THE RE-FORMAT
+ * ======================================================================== */
+
+/* F1: A PATIENT SWITCH EMPTIES THE EDITOR, so the lines to check go with it.
+   Before this, patient A's doubted sentences were written into patient B's
+   draft and saved note the moment B's transcript was touched. */
+(function F1_forgetOnANewVisit() {
+  const s = bootShell();
+  s.__mlsLastNoteAdvisory = REVIEW_ANSWER;
+  s.__mlsLastGenTemplateContract = { id: 'tpl_visit_1', name: 'Office visit' };
+  s.__mlsVisitTplPickUsed = { id: 'tpl_visit_1', plain: false, at: Date.now() };
+  s.__mlsVisitTplPick = { id: 'tpl_visit_2', plain: false, at: Date.now() };
+  s._mlsStampVisitNoteAdvisory();
+  eq(s._mlsVisitNoteAdvisoryRecord().flagged.length, 2, 'the receipt was not stamped before the forget test');
+  s._mlsForgetVisitNoteAdvisory();
+  eq(s._mlsVisitNoteAdvisoryRecord(), null,
+    'the last patient\'s lines are still written into the next patient\'s draft and saved note');
+  eq(s.window.__mlsVisitNoteAdvisory, null, 'the last patient\'s lines are still on screen');
+  eq(s.window.__mlsLastNoteAdvisory, null, 'the last answer is still parked for the next note to pick up');
+  eq(s.window.__mlsVisitTplPickUsed, null, 'the last note\'s template is still named on the next patient\'s note');
+  eq(s.window.__mlsVisitTplPick, null,
+    'a template choice armed for a press that never ran survives into the next patient\'s note');
+  /* And the restore path still restores - forgetting is not a one-way door. */
+  s.__mlsLastNoteAdvisory = REVIEW_ANSWER;
+  s._mlsStampVisitNoteAdvisory();
+  eq(s._mlsVisitNoteAdvisoryRecord().flagged.length, 2, 'a note generated after a switch carries no lines');
+})();
+
+/* F2: and the two places that empty the editor actually call it. */
+const NEWVISIT_FN = extractFn(SHELL, 'function newVisit(opts){');
+ok(NEWVISIT_FN.indexOf('_mlsForgetVisitNoteAdvisory()') > 0,
+  'newVisit() empties the editor but leaves the last patient\'s lines to check standing');
+ok(NEWVISIT_FN.indexOf('currentAthenaNote=\'\'') > 0, 'the newVisit reset block moved - re-aim this pin');
+ok(SHELL.indexOf('if (!d) { forgetNoteAdvisory(); return false; }') > 0,
+  'switching to a patient with no parked work leaves the previous patient\'s lines on screen');
+ok(SHELL.indexOf('if (safe(function () { return editorState().any; }, true)) return;') > 0,
+  'the parked-work clear would fire over a note that is already on screen');
+
+/* F3: THE LINES BELONG TO THE DRAFT THAT IS KEPT. A note under the quality
+   floor is written a SECOND time and the first draft is kept unless the second
+   scores higher - but the doubted sentences are parked on one shared spot that
+   every answer overwrites, so the note on screen was stamped with the OTHER
+   draft's doubts. Runs the REAL shipped repair pass. */
+const REPAIR_FN = extractFn(SHELL, 'async function _mlsNoteQualityRepairStructured(');
+async function repairRun(opts) {
+  const calls = [];
+  const sandbox = { String, Number, Object, Array, RegExp, JSON, Date, Math, Promise, calls };
+  sandbox.window = sandbox;
+  sandbox.__firstAdv = { status: 'review', issues: [], flagged: [{ issue: 'a_code', sentence: 'First draft synthetic line.', arm: 'display' }] };
+  sandbox.__secondAdv = { status: 'review', issues: [], flagged: [{ issue: 'b_code', sentence: 'Second draft synthetic line.', arm: 'display' }] };
+  sandbox.__throwOnSecond = opts.throwOnSecond === true;
+  sandbox.__used = opts.used || 'first';
+  vm.createContext(sandbox);
+  vm.runInContext(
+    'var _mlsGenTplMeasure = null;\n' +
+    'async function __mlsNoteQualityEnsure(){ return true; }\n' +
+    "function __mlsNoteQualityGrade(text){ return { pass: false, score: String(text).indexOf('SECOND') >= 0 ? 9 : 1 }; }\n" +
+    'function __mlsNoteQualityRecord(){ return true; }\n' +
+    "function _mlsGenerationTimeoutMs(){ return 90000; }\n" +
+    'function _mlsValidateStructuredNoteResult(){ return true; }\n' +
+    'function __mlsNoteQualityBetter(aText, aRes, bText, bRes){ return __used === "second" ? { used: "second", res: bRes } : { used: "first", res: aRes }; }\n' +
+    'async function _mlsAwaitGeneration(run, p){ return await p; }\n' +
+    'async function callOpenAI(transcript, key, options){\n' +
+    '  calls.push({ visitTplPick: options && options.visitTplPick, noteqFindings: !!(options && options.noteqFindings) });\n' +
+    '  window.__mlsLastNoteAdvisory = __secondAdv;\n' +
+    '  if (__throwOnSecond) throw new Error("synthetic second-call failure");\n' +
+    '  return { soap: "SECOND draft synthetic note body." };\n' +
+    '}\n' +
+    REPAIR_FN + '\n' +
+    'this.run = function (pick) {\n' +
+    '  window.__mlsLastNoteAdvisory = __firstAdv;\n' +
+    '  var run = { controller: { signal: null } };\n' +
+    '  return _mlsNoteQualityRepairStructured({ soap: "FIRST draft synthetic note body." },\n' +
+    '    "synthetic transcript", "k", null, run, null, pick);\n' +
+    '};',
+    sandbox, { filename: 'noteadv-1.0.1-repair.js' });
+  const pick = { id: 'tpl_picked', plain: false, at: Date.now(), pt: '' };
+  const result = await sandbox.run(pick);
+  return { sandbox, calls, result, adv: sandbox.window.__mlsLastNoteAdvisory, pick };
+}
+
+/* F4: THE RE-FORMAT REWRITES THE NOTE AFTER THE LINES WERE STAMPED. */
+(function F4_reanchorAfterTheReformat() {
+  const s = bootShell();
+  const KEPT = 'Synthetic kept line: the splint was refitted today.';
+  const MOVED = 'Synthetic moved line: the follow up is in three weeks.';
+  const GONE = 'Synthetic vanished line: the old brace was discarded.';
+  s.__mlsLastNoteAdvisory = { status: 'review', issues: [], flagged: [
+    { issue: 'a_code', sentence: KEPT, arm: 'display' },
+    { issue: 'b_code', sentence: MOVED, arm: 'display' },
+    { issue: 'c_code', sentence: GONE, arm: 'display' }
+  ] };
+  s._mlsStampVisitNoteAdvisory();
+  /* The templated answer: one line verbatim, one with the punctuation and the
+     capitals moved, and one that the re-format simply did not reproduce. */
+  const MOVED_NEW = 'Synthetic moved line - the follow up is in three weeks';
+  const REFORMATTED = 'PLAN:\n' + KEPT + '\n' + MOVED_NEW + '\nDISPOSITION: routine.';
+  const back = s._mlsReanchorVisitNoteAdvisory(REFORMATTED);
+  eq(back.flagged.length, 3, 'the re-anchor pass dropped a doubted line');
+  eq(back.flagged[0].sentence, KEPT, 'a line that survived the re-format word for word was rewritten');
+  eq(back.flagged[0].lost, false, 'a line still in the note was marked as missing');
+  eq(back.flagged[1].sentence, MOVED_NEW,
+    'a line whose punctuation the re-format changed was not re-attached to its new wording');
+  eq(back.flagged[1].lost, false, 'a line that was found again is still marked as missing');
+  eq(back.flagged[2].sentence, GONE, 'a line that could not be found was quietly rewritten');
+  eq(back.flagged[2].lost, true, 'a line the re-format dissolved was dropped instead of marked');
+  /* Every re-attached line is really in the new note, so the room will paint
+     it - that is the whole point of re-attaching it. */
+  const flat = REFORMATTED.replace(/\s+/g, ' ').trim();
+  ok(flat.indexOf(back.flagged[0].sentence) >= 0, 'a re-attached line is not in the note it was attached to');
+  ok(flat.indexOf(back.flagged[1].sentence) >= 0, 'a re-attached line is not in the note it was attached to');
+  /* And the mark travels with the note. */
+  const rec = s._mlsVisitNoteAdvisoryRecord();
+  eq(rec.flagged[2].lost, true, 'the saved note forgets that a line could not be found');
+  const round = JSON.parse(JSON.stringify({ noteAdvisory: rec }));
+  eq(s._mlsRestoreVisitNoteAdvisory(round).flagged[2].lost, true,
+    'a reopened note forgets that a line could not be found');
+  /* Nothing to re-anchor is not an error. */
+  s._mlsForgetVisitNoteAdvisory();
+  eq(s._mlsReanchorVisitNoteAdvisory('some other synthetic note'), null,
+    'the re-anchor pass invented a receipt where there was none');
+})();
+
+ok(SHELL.indexOf('_mlsReanchorVisitNoteAdvisory((typeof currentFormat!==\'undefined\'&&currentFormat===\'insurance\')') > 0,
+  'the re-format no longer re-anchors the doubted lines against the note it just rewrote');
+
+(async function tail() {
+  const keptFirst = await repairRun({ used: 'first' });
+  eq(keptFirst.adv, keptFirst.sandbox.__firstAdv,
+    'the note on screen is stamped with the doubted lines of the draft that was thrown away');
+  eq(String(keptFirst.result.soap).indexOf('FIRST'), 0, 'the repair pass kept the wrong draft in this fixture');
+  eq(keptFirst.calls.length, 1, 'the repair pass did not ask for exactly one second draft');
+  eq(keptFirst.calls[0].noteqFindings, true, 'the second draft was asked for without the first draft\'s findings');
+  eq(keptFirst.calls[0].visitTplPick, keptFirst.pick,
+    'the second draft was written without the template the doctor chose for this note');
+
+  const tookSecond = await repairRun({ used: 'second' });
+  eq(tookSecond.adv, tookSecond.sandbox.__secondAdv,
+    'the second draft was kept but stamped with the first draft\'s doubted lines');
+  eq(String(tookSecond.result.soap).indexOf('SECOND'), 0, 'the repair pass kept the wrong draft in this fixture');
+
+  const blewUp = await repairRun({ used: 'second', throwOnSecond: true });
+  eq(blewUp.adv, blewUp.sandbox.__firstAdv,
+    'a second draft that failed still left its doubted lines stamped on the first draft');
+  eq(String(blewUp.result.soap).indexOf('FIRST'), 0, 'a failed second draft did not leave the first one standing');
+
+  console.log('PASS note-advisory-flagged-lines: ' + checks +
+    ' checks - the flagged lines are caught where the answer arrives, cleaned, kept with the note, cleared by the ' +
+    'next run and by a patient switch, restored with a reopened note, re-attached after the template re-format (or ' +
+    'kept and marked when they cannot be found), stamped from the draft that is actually kept, painted as one amber ' +
+    'line plus a pressable list inside the room\'s own surface string, repainted in place as the doctor types, ' +
+    'removed by an edit or by a Keep resolved by its own sentence, silent on an ok answer and on an older server, ' +
+    'and never logged or sent anywhere');
+})().catch(function (err) {
+  console.error(err && err.stack ? err.stack : err);
+  process.exit(1);
+});
