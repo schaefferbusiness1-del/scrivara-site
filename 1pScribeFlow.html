@@ -10271,7 +10271,73 @@ function mlsBuildSettingsTabs(){
   });
   mlsSelectSettingsTab(0);
 }
-function openSettings(){
+/* settingsgate-1.0.0 (owner P0 2026-09-11): THE FULL SETTINGS DIALOG OPENED BY
+   ITSELF DURING A DAY PULL. #settingsModal.show has exactly one writer -
+   openSettings() below - and openSettings() was being called from four
+   GENERATION REFUSAL branches (ai-unavailable in generateNote, the coding
+   review, recommendations, and an unresolved signer). generateNote() is
+   invoked PROGRAMMATICALLY by the kiosk avatar timer, the recording-segment
+   lane, the voice-intent router and the command palette, so a transient
+   hasAI() false while a pull saturated the network threw the whole Settings
+   dialog over work nobody had asked to interrupt.
+   The modal now opens only behind a real gesture: every TRUSTED pointerdown
+   or keydown stamps __mlsLastTrustedGesture, and openSettings returns false
+   without adding 'show' unless that stamp is younger than
+   __MLS_SETTINGS_GESTURE_MS or the caller passes {userInitiated:true}.
+   A refusal is silent by design - nothing is written to the doctor log,
+   because a refusal here is not a fault the doctor can act on. Callers that
+   legitimately run more than a second after the click - anything behind an
+   await - pass {userInitiated:true} explicitly. */
+var __mlsLastTrustedGesture=0;
+var __MLS_SETTINGS_GESTURE_MS=1000;
+(function(){
+  function __mlsStampTrustedGesture(ev){ if(ev&&ev.isTrusted===true) __mlsLastTrustedGesture=Date.now(); }
+  try{
+    document.addEventListener('pointerdown',__mlsStampTrustedGesture,true);
+    document.addEventListener('keydown',__mlsStampTrustedGesture,true);
+  }catch(eGestureListen){}
+})();
+function __mlsSettingsGestureFresh(){
+  return (Date.now()-__mlsLastTrustedGesture)<__MLS_SETTINGS_GESTURE_MS;
+}
+/* One inline offer for every refusal that used to yank Settings open. The
+   sentence is the refusal's own sentence; the button is the doctor's OWN
+   click, so it satisfies the gesture gate on its own event and does not need
+   the flag. Returns false and touches nothing when the anchor is absent - the
+   refusal toast has already carried the sentence either way. */
+function _mlsOfferSettingsAction(message,anchorIds){
+  try{
+    var ids=anchorIds||[],anchor=null;
+    for(var i=0;i<ids.length;i++){ var candidate=document.getElementById(ids[i]); if(candidate&&candidate.parentNode){ anchor=candidate; break; } }
+    if(!anchor) return false;
+    var prior=document.getElementById('mlsSettingsOfferRow');
+    if(prior&&prior.parentNode) prior.parentNode.removeChild(prior);
+    var row=document.createElement('div');
+    row.id='mlsSettingsOfferRow';
+    row.setAttribute('role','status');
+    row.style.cssText='display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;font-size:13px';
+    var say=document.createElement('span');
+    say.textContent=String(message||'');
+    row.appendChild(say);
+    var go=document.createElement('button');
+    go.type='button';
+    go.className='btn-ghost';
+    go.id='mlsSettingsOfferBtn';
+    go.style.cssText='font-size:12px;padding:4px 10px';
+    go.textContent='Open Settings';
+    go.addEventListener('click',function(){
+      try{ if(row.parentNode) row.parentNode.removeChild(row); }catch(eRowGone){}
+      try{ openSettings({userInitiated:true}); }catch(eOpenSettings){}
+    });
+    row.appendChild(go);
+    anchor.parentNode.insertBefore(row,anchor.nextSibling);
+    return true;
+  }catch(eOffer){ return false; }
+}
+function openSettings(opts){
+  /* settingsgate-1.0.0: the gate. See the note above - nothing below this line
+     runs for a caller nobody pressed. */
+  if(!(opts&&opts.userInitiated===true)&&!__mlsSettingsGestureFresh()) return false;
   try{ window.__mlsEnsureDraftTuning(); }catch(eDtLoad){}
   snapshotQolCommits();   /* what Close must put back if Save is never pressed */
   applyBackendModeUI();
@@ -10357,6 +10423,7 @@ function openSettings(){
      1p-mls-connect.js), so force one render right after the modal opens
      instead of waiting up to 4s for the next tick. */
   try{ if(window.__mlsExtVerLive&&typeof window.__mlsExtVerLive.render==='function') window.__mlsExtVerLive.render(); }catch(eExtVer){}
+  return true;
 }
 /* Theme, text size and compact are PREVIEW-only: applyThemePreview and friends
    toggle body classes and nothing else, and only Save writes them to storage.
@@ -31795,8 +31862,16 @@ async function generateNote(){
   if(!_athenaGuardBoundEditor('note generation'))return _mlsRefuseGeneration('visit-binding-blocked','MLS could not bind this draft to the active patient. Re-open the intended visit and try again.',false);
   const hasAiNow=hasAI();
   if(!hasAiNow&&transcript.trim()!==EXAMPLE.trim()){
-    openSettings();
-    return _mlsRefuseGeneration('ai-unavailable','Add your OpenAI API key in Settings to generate notes.');
+    /* settingsgate-1.0.0: this branch used to call openSettings(), and this
+       function runs programmatically (kiosk avatar timer, recording segments,
+       voice intent, command palette) - a transient hasAI() false during a day
+       pull is what opened the full dialog over the doctor's work. The refusal
+       code, sentence and return value are unchanged; only the door changed
+       from forced to offered. */
+    var _mlsAiKeyMessage='Add your OpenAI API key in Settings to generate notes.';
+    var _mlsAiKeyRefusal=_mlsRefuseGeneration('ai-unavailable',_mlsAiKeyMessage);
+    _mlsOfferSettingsAction(_mlsAiKeyMessage,['noteGenError','genError','genBtn']);
+    return _mlsAiKeyRefusal;
   }
   const gb=document.getElementById('genBtn');
   const run=_mlsStartGeneration(transcriptEl,evidence);
@@ -34285,7 +34360,8 @@ async function reviewCodingDocumentation(){
       document.getElementById('optCard').scrollIntoView({behavior:'smooth'});
     } else {
       toast('Add your OpenAI API key in Settings to optimize coding.','err');
-      openSettings();
+      /* settingsgate-1.0.0: offer the door, never force it open. */
+      _mlsOfferSettingsAction('Add your OpenAI API key in Settings to optimize coding.',['optBtn']);
     }
     return;
   }
@@ -34751,7 +34827,8 @@ async function generateRecommendations(){
       toast('Offline example recommendations shown. Add your OpenAI key for any visit.','');
     } else {
       toast('Add your OpenAI API key in Settings to generate recommendations.','err');
-      openSettings();
+      /* settingsgate-1.0.0: offer the door, never force it open. */
+      _mlsOfferSettingsAction('Add your OpenAI API key in Settings to generate recommendations.',['genRecsBtn']);
     }
     return;
   }
@@ -34976,7 +35053,8 @@ function signNote(){
   if(!resolvedSigner){
     setBadge(false);
     toast('MLS cannot confirm who is signing this note. Set your provider name in Settings, then sign.','err');
-    try{ if(typeof openSettings==='function') openSettings(); }catch(eSign){}
+    /* settingsgate-1.0.0: offer the door, never force it open. */
+    try{ _mlsOfferSettingsAction('MLS cannot confirm who is signing this note. Set your provider name in Settings, then sign.',['signBtn','signLine']); }catch(eSign){}
     return;
   }
   const name=resolvedSigner;
@@ -55963,6 +56041,12 @@ html body.mls-recording .ez3fl-transcript.mls-empty .ez3fl-txhead::after{
   flex-basis:100%; order:9;
   font:600 11.5px/1.35 var(--sans, system-ui, sans-serif);
   color:#2E6A4B;
+}
+
+/* vanishbox-1.0.0 - measured b1233: with the flow lane owning the top the engine's
+   .ez3-transcript-card is hidden, so folding the empty flow box leaves NO box at all. */
+html body.mls-calm #mlsEz3Body.ez3fl-top-owns .ez3fl-transcript.mls-empty{
+  display:block !important;
 }
 
 /* ---- (2) ONE RECORD CONTROL -------------------------------------------

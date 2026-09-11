@@ -62707,7 +62707,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var m = NAV.exec(q); if (!m) return null;
     var raw = String(m[1] || '').trim().toLowerCase();
     if (raw === 'templates' || raw === 'template') { try { if (typeof window.openTemplates === 'function') { window.openTemplates(); api.navigated++; return { reply: 'Opened Templates.' }; } } catch (e) {} return null; }
-    if (raw === 'settings' || raw === 'setting') { try { if (typeof window.openSettings === 'function') { window.openSettings(); api.navigated++; return { reply: 'Opened Settings.' }; } } catch (e) {} return null; }
+    if (raw === 'settings' || raw === 'setting') { try { if (typeof window.openSettings === 'function') { window.openSettings({ userInitiated: true }); api.navigated++; return { reply: 'Opened Settings.' }; } } catch (e) {} return null; }
     var v = VIEWS[raw]; if (!v) return null;
     try { if (typeof window.showView === 'function') { window.showView(v); api.navigated++; return { reply: 'Opened ' + raw.charAt(0).toUpperCase() + raw.slice(1) + '.' }; } } catch (e) {}
     return null;

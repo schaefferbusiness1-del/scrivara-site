@@ -590,7 +590,10 @@
       if (!isFn(window.__mlsEnsureDraftTuning)) throw new Error('draft-tuning-loader-missing');
       var api = await window.__mlsEnsureDraftTuning();
       if (!api || api.installed !== true) throw new Error('draft-tuning-loader-failed');
-      if (isFn(window.openSettings)) window.openSettings();
+      /* settingsgate-1.0.0: Configure runs AFTER `await __mlsEnsureDraftTuning()`,
+         so the trusted-gesture stamp from the doctor's click can be older than
+         the gate's window by the time we get here. This press IS the doctor's. */
+      if (isFn(window.openSettings)) window.openSettings({ userInitiated: true });
       else {
         var fallback = byId('rectab_settings') || qs('#mlsDock button[data-dest="tools"]');
         if (!fallback || !isFn(fallback.click)) throw new Error('settings-entry-missing');

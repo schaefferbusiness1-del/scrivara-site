@@ -548,7 +548,7 @@ async function main() {
           ready: `document.getElementById('opPrepModal')&&document.getElementById('opPrepModal').classList.contains('show')`,
           then: `(() => { const t=document.getElementById('oprTabTpls'); if(t){ t.click(); return 1; } return 0; })()`,
           close: `(() => { if (typeof closeOpPrep==='function') closeOpPrep(); return 1; })()` },
-        { label: 'Settings', open: `(() => { if (typeof openSettings==='function'){ openSettings(); return 1; } return 0; })()`,
+        { label: 'Settings', open: `(() => { if (typeof openSettings==='function'){ openSettings({ userInitiated: true }); return 1; } return 0; })()`,
           ready: `document.getElementById('settingsModal')&&document.getElementById('settingsModal').classList.contains('show')`,
           then: '', close: `(() => { if (typeof closeSettings==='function') closeSettings(); return 1; })()` }
       ]) {
