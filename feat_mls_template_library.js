@@ -18,7 +18,30 @@
 
   function esc(v){return S(v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
   function byId(id){return document.getElementById(id);}
-  function hosted(){if(state.unsupported)return false;try{return isFn(window.backendMode)&&window.backendMode()&&isFn(window.bkToken)&&!!window.bkToken();}catch(e){return false;}}
+  /* tl-1.7.0 (owner 2026-09-11: "this extra stuff should be deleted or work").
+     MEASURED against the backend's own gate (src/routes/templateLibrary.js,
+     every /api/template-sets* and /api/template-imports/* route behind
+     requireClinician; src/auth.js requireClinician): it 403s exactly three
+     roles - the owner/admin account, a lawyer account, and a receptionist
+     account - and nothing else, no plan/tier check. For those three the red
+     "Cloud template sets are available on clinician accounts" line is not a
+     transient error; it is permanent and can never turn green. For every
+     actual clinician account (doctor, head, nurse, user) the routes work.
+     accountLocked() mirrors that exact wall client-side using the same
+     role flags the rest of this file already exposes on window
+     (bkUser.isAdmin, isLawyerUser(), isReceptionistUser()), so the whole
+     panel can be hidden for the accounts it can never work for instead of
+     showing a permanently broken control surface. */
+  function accountLocked(){
+    try{
+      var u=window.bkUser; if(!u) return false;
+      if(u.isAdmin) return true;
+      if(isFn(window.isLawyerUser)&&window.isLawyerUser()) return true;
+      if(isFn(window.isReceptionistUser)&&window.isReceptionistUser()) return true;
+      return false;
+    }catch(e){ return false; }
+  }
+  function hosted(){if(state.unsupported||accountLocked())return false;try{return isFn(window.backendMode)&&window.backendMode()&&isFn(window.bkToken)&&!!window.bkToken();}catch(e){return false;}}
   /* The deployed backend may not serve the template-set endpoints yet. A 404 on
      any of them means "cloud library unavailable" — flip to device-only mode
      (the proven local flow) instead of surfacing dead-end errors. */
@@ -227,6 +250,9 @@
   }
 
   function ensurePanel(){
+    /* Never build (and remove if already built) the cloud-library block for an
+       account the backend permanently 403s - see accountLocked() above. */
+    if(accountLocked()){ var locked=byId('tlPanel'); if(locked)locked.remove(); return; }
     css();var modal=byId('templatesModal'),anchor=byId('tplList');if(!modal||!anchor||byId('tlPanel'))return;
     var panel=document.createElement('section');panel.id='tlPanel';panel.setAttribute('aria-label','Versioned template library');panel.innerHTML=
       '<h4>☁ Versioned template library</h4><p class="tl-sub">The active set follows this signed-in account. Imports are previewed first; older versions remain recoverable.</p>'+
@@ -390,9 +416,17 @@
       progressStage(handle,'Verifying committed version',body.templates.length,body.templates.length,'Applying the committed active version when selected.');
       if(result&&result.set&&(result.set.active||result.set.id===state.activeSetId||body.activate)){if(await confirmReplace(result.set))applySet(result.set);else status('Imported. Your device templates were left alone.',false);}
       state.pending=null;window._tplPendingSplit=[];if(pending.fromForm&&isFn(window.clearTplForm))window.clearTplForm();state.editingId='';
-      var box=byId(resultBoxId)||byId('tplMultiResult');if(box)box.innerHTML='<div class="tl-import-review"><b>Import '+esc(result.status)+'.</b>'+countsHtml(result.counts)+(result.set&&!result.set.active?'<button data-tl-activate="'+esc(result.set.id)+'">Activate imported set</button>':'')+'</div>';
-      if(box)box.onclick=function(ev){var a=ev.target&&ev.target.closest?ev.target.closest('[data-tl-activate]'):null;if(a)activateSet(a.getAttribute('data-tl-activate'));};
-      await refresh({applyActive:false,silent:true});if(handle)handle.complete(result.status==='partial'?'Import completed with rejected rows.':'Templates imported.');return result;
+      var box=byId(resultBoxId)||byId('tplMultiResult');if(box)box.innerHTML='<div class="tl-import-review"><b>Import '+esc(result.status)+'.</b>'+countsHtml(result.counts)+'</div>';
+      await refresh({applyActive:false,silent:true});
+      /* tl-1.7.0 (owner 2026-09-11: "the doctor should never have to press
+         Activate imported set") - a freshly imported set that is not yet the
+         account's active set used to sit behind a manual "Activate imported
+         set" button. It now activates itself through the SAME activateSet()
+         the removed button called, so it carries the identical
+         confirmReplace() destructive-change guard and the identical network
+         call - only the extra click is gone. */
+      if(result&&result.set&&!result.set.active&&result.set.id!==state.activeSetId&&!body.activate) await activateSet(result.set.id);
+      if(handle)handle.complete(result.status==='partial'?'Import completed with rejected rows.':'Templates imported.');return result;
     }catch(error){status(error.message,true);if(error.code==='TEMPLATE_VERSION_CONFLICT'){state.conflict={kind:'import',body:body,localTemplates:cloneTemplates(body.templates)};await loadConflictVersion();status('A newer cloud version exists. Your previewed changes are still available to retry.',true);}renderPanel();if(handle)handle.fail(error);throw error;}})();
   }
 

@@ -45,7 +45,7 @@ function configureHarness(loader, withSection = true) {
   const modal = { classList: { contains(name) { return name === 'show'; } } };
   const section = withSection ? { classList: { remove() {} }, style: {}, scrollIntoView() {} } : null;
   const first = { focus() { this.focused = true; } };
-  const nodes = { mlsFrRow_tuning: row, mlsFrAiBtn: button, settingsModal: modal, mlsDraftTuningSection: section, mlsDtFamily: first };
+  const nodes = { mlsFrRow_tuning: row, mlsFrAiBtn: button, settingsModal: modal, mlsVisitNoteTemplatesSection: section, mlsVnTplOpen_hpi: first };
   const document = { getElementById(id) { return nodes[id] || null; }, querySelector() { return null; } };
   const window = { __mlsEnsureDraftTuning: loader, openSettings() { this.opened = true; }, opened: false };
   const context = vm.createContext({ window, document, Promise, timers, console });

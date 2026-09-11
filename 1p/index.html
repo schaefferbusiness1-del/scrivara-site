@@ -4778,6 +4778,23 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 
   <!-- ============ CREATE YOUR OWN — AI widget/tab studio ============ -->
   <div id="studioView" style="display:none">
+    <!-- smpreload-1.0.0: feat_mls_studio_merge.js turns this screen from
+         Copilot + Build a custom tool + My creations into Ask / Practice /
+         Build with the practice-analysis section folded in, but it is loaded
+         lazily. This line is the honest state until that has happened; the
+         merge module removes it the moment it hoists (reconcile()/teardown()
+         in feat_mls_studio_merge.js), whether the merge lands normally or the
+         page is running in ?ui=classic. -->
+    <!-- grid-column:1/-1 is a deliberate, defensive no-op outside a grid
+         layout: feat_mls_studio_exact.js can turn #studioView into a CSS
+         grid before this line is removed, and every explicitly-placed grid
+         child in that layout claims a FULL row (col 1/-1) at its own
+         grid-row - see feat_mls_studio_merge.js's own header for the exact
+         "two panels, one cell" defect class that made stray unpositioned
+         children paint over each other. A full-width, auto-row item can
+         only ever land in a row where BOTH columns are free, so this can
+         land low on a first paint but can never overlap another card. -->
+    <p id="mlsStudioMergeLoading" class="note" style="grid-column:1/-1;margin:0 0 10px">Loading the rest of AI Studio…</p>
     <!-- ===== AI COPILOT ===== -->
     <div class="card" id="copilotCard">
       <div id="copilotHero">
@@ -5902,7 +5919,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
   <div class="modal" style="max-width:960px">
     <button class="modal-x" onclick="closeTemplates()">×</button>
     <h3>📄 Templates <span style="font-weight:400;font-size:14px;color:var(--muted)">(optional output formatting)</span></h3>
-    <p class="note">Import a blank template/form (PDF or image). When enabled, MLS formats the generated note to match the template's structure and fields. Templates are stored locally on this device. Off by default — when off, generation is unchanged.</p>
+    <p class="note">Import a blank template/form (PDF or image). When enabled, MLS formats the generated note to match the template's structure and fields. Templates are stored locally on this device. On by default; when off, generation is unchanged.</p>
 
     <div class="field" style="margin-top:4px">
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
@@ -23084,11 +23101,13 @@ async function extractPdfText(file){
    and (when enabled) reformat a generated note to match a template.
    Storage: uns('templates') -> JSON array of
      {id, name, keywords:[...], text, created}
-   Toggle:  uns('useTemplates') -> '1' | '0'   (default OFF)
+   Toggle:  uns('useTemplates') -> '1' | '0'   (default ON when never set - tpldef-1.0.0)
    Active:  uns('templateActive') -> template id  ('' = none)
-   Auto:    uns('templateAuto') -> '1' | '0'
-   This whole subsystem is additive and is ONLY consulted when the
-   toggle is ON; with it OFF the generate path is byte-for-byte unchanged.
+   Auto:    uns('templateAuto') -> '1' | '0'   (default ON when never set - tpldef-1.0.0)
+   This whole subsystem is additive; with the toggle OFF the generate path is
+   byte-for-byte unchanged. See useTemplatesOn()/templateAutoOn() below for
+   the exact default-reading rule: an explicit stored '0' or '1' always wins,
+   and only a key that was never written reads as ON.
    ========================================================= */
 /* b965 PERF — THE TEMPLATE STORE IS READ IN LOOPS, SO IT MUST NOT RE-PARSE.
    MEASURED on the owner's real library (96 templates, ~520KB of JSON): one
@@ -23183,8 +23202,15 @@ function setTemplates(arr){
   try{ if(typeof syncPrefsToServer==='function') syncPrefsToServer(); }catch(e){}
   try{ if(typeof _syncSpecialtyPresetTemplates==='function') _syncSpecialtyPresetTemplates(); }catch(e){}
 }
-function useTemplatesOn(){ return localStorage.getItem(uns('useTemplates'))==='1'; }
-function templateAutoOn(){ return localStorage.getItem(uns('templateAuto'))==='1'; }
+/* tpldef-1.0.0 (owner 2026-09-11): a fresh account/device has never written
+   either key, so localStorage.getItem returns null - that null used to read
+   as OFF. Both checkboxes must default ON for a fresh account while any
+   account that already made an EXPLICIT choice (a stored '0' or '1', from
+   opening this modal and toggling it, or from the seeded demo/import paths
+   that write '1' directly) keeps exactly that choice untouched: only the
+   null/never-set case changes. */
+function useTemplatesOn(){ var v=localStorage.getItem(uns('useTemplates')); return v==null?true:v==='1'; }
+function templateAutoOn(){ var v=localStorage.getItem(uns('templateAuto')); return v==null?true:v==='1'; }
 function getActiveTemplateId(){ return localStorage.getItem(uns('templateActive'))||''; }
 /* b965 PERF: find in the cached store, then clone only the ONE template that
    matched. This is called inside draft loops and per-row matchers; cloning the

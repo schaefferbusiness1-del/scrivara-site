@@ -2189,13 +2189,26 @@
        but it only re-runs that pass on a tab press or a Settings open. A card
        mounted after the rail was already built would otherwise sit visible under
        whatever tab happens to be showing. Match the selected tab now; the next
-       organizer pass owns it from there. */
+       organizer pass owns it from there.
+       CLASS ONLY - vntplhide-1.0.0 (owner 2026-09-11: "Configure... does
+       nothing"). MEASURED: this used to ALSO write sec.style.display='none'
+       inline. mlsSelectSettingsTab() - the function every tab click and every
+       other caller of "switch to Notes & AI" runs through, including
+       feat_mls_firstrun.js's own Configure handler - only ever toggles the
+       set-tab-hidden CLASS (secs.forEach((s,i)=>s.classList.toggle(...))); it
+       never touches an element's inline style. An inline display:none beats
+       that class forever, so the very first time Settings opened on any tab
+       other than Notes & AI, this card was hidden and could never be shown
+       again for the rest of the page's life - not from the Notes & AI tab,
+       not from Configure, not by any means short of a reload. The CSS rule
+       (.set-section.set-tab-hidden{display:none}) already does exactly what
+       the inline write was trying to do, and it is the one mechanism every
+       other caller actually clears. */
     try {
       var bar = q('settingsTabBar');
       var current = bar && bar.querySelector('[data-mls-settings-group].on');
       if (current && current.getAttribute('data-mls-settings-group') !== 'notes') {
         sec.classList.add('set-tab-hidden');
-        sec.style.display = 'none';
       }
     } catch (eRail) {}
     paintVisitTemplates();

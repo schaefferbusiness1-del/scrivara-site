@@ -166,6 +166,74 @@ async function previewThenCommit() {
   assert.strictEqual(h.api.state.pending, null);
 }
 
+/* tl-1.7.0 (owner 2026-09-11: "the doctor should never have to press Activate
+ * imported set"). A commit that lands a set which is not yet the account's
+ * active set - the ordinary bulk-upload case, no "Activate this set after
+ * commit" checkbox involved - used to stop at a manual button. It must now
+ * call the REAL activateSet() itself, the exact function the removed button
+ * called, so the same confirmReplace() guard and the same network call still
+ * run - only the doctor's extra click is gone. */
+async function commitAutoActivatesNewInactiveSet() {
+  const activateCalls = [];
+  const h = makeHarness((url, options) => {
+    if (url.includes('/api/template-sets?')) return response(200, { activeSetId: '', sets: [] });
+    if (url.endsWith('/api/template-imports/preview')) {
+      return response(200, { preview: { targetSetId: null, targetVersion: 0, counts: { added: 1 }, detail: { rejected: [] }, proposedTemplateCount: 1, canCommit: true } });
+    }
+    if (url.endsWith('/api/template-imports/commit')) {
+      const body = JSON.parse(options.body);
+      return response(200, { result: { status: 'completed', version: 1, counts: { added: 1 }, set: { ...setSummary('set-new', 1, false), templates: body.templates } } });
+    }
+    if (url.endsWith('/api/template-sets/set-new/activate')) {
+      activateCalls.push(true);
+      return response(200, { set: { ...setSummary('set-new', 1, true), templates: [{ id: 'new', name: 'New', text: 'new' }] } });
+    }
+    throw new Error(`Unexpected request ${options.method || 'GET'} ${url}`);
+  });
+  h.setLocal([]); // nothing on this device yet, so activating cannot "lose" anything and needs no confirm dialog
+  h.setHosted(true);
+  await h.api.refresh();
+  await h.api.previewImport({ templates: [{ id: 'new', name: 'New', text: 'new' }] });
+  assert(h.api.state.pending, 'preview must remain pending until explicit commit');
+  await h.api.commitPending();
+  assert.strictEqual(activateCalls.length, 1,
+    'a freshly imported, not-yet-active set must activate itself automatically through the real activateSet() call');
+  assert.deepStrictEqual(h.getLocal().map(x => x.id), ['new'],
+    'the auto-activated set was not actually applied to the device library');
+}
+
+/* vlibgate-1.0.0 (owner 2026-09-11): measured against the backend's own wall
+ * (src/routes/templateLibrary.js's requireClinician, src/auth.js) - every
+ * /api/template-sets* and /api/template-imports/* route 403s exactly three
+ * roles (owner/admin, lawyer, receptionist) and nothing else, permanently.
+ * accountLocked() mirrors that wall so hosted() (and therefore refresh(),
+ * and therefore the whole versioned-library panel) never even attempts the
+ * network call for those three account shapes, instead of building a panel
+ * that can only ever show a dead red line. */
+async function lockedAccountsNeverReachTheCloudLibrary() {
+  const locked = [
+    ['owner/admin', { bkUser: { isAdmin: true } }],
+    ['lawyer', { bkUser: { role: 'user' }, isLawyerUser: () => true }],
+    ['receptionist', { bkUser: { role: 'receptionist' }, isReceptionistUser: () => true }]
+  ];
+  for (const [label, overrides] of locked) {
+    const h = makeHarness(() => { throw new Error(label + ': no network call is ever expected for a permanently-locked account'); }, overrides);
+    h.setHosted(true);
+    const refreshed = await h.api.refresh();
+    assert.strictEqual(refreshed, false, label + ": refresh() must not proceed for an account requireClinician permanently 403s");
+  }
+  /* a real clinician account (no isAdmin, no lawyer/receptionist flag) must
+   * be completely unaffected - this is the account type the feature exists
+   * for, and every other test in this file already proves it works with no
+   * bkUser set at all. */
+  const clinician = makeHarness(url => {
+    if (url.includes('/api/template-sets?')) return response(200, { activeSetId: '', sets: [] });
+    throw new Error(`Unexpected request ${url}`);
+  }, { bkUser: { role: 'doctor' } });
+  clinician.setHosted(true);
+  assert.strictEqual(await clinician.api.refresh(), true, 'a real clinician account must still reach the cloud library');
+}
+
 async function conflictPreservesDeviceChanges() {
   let version = 1;
   let attempts = 0;
@@ -322,6 +390,24 @@ function staticContracts() {
   assert(source.includes("box.onclick=importClick"), 'preview controls need a durable delegated click handler');
   assert(source.includes("VERSION='tl-1.6.0'"), 'the add-means-add lane must carry tl-1.6.0 (pin moved deliberately: clean previews auto-commit from the Add click path)');
 
+  /* tl-1.7.0 (owner 2026-09-11): the doctor must never have to press "Activate
+   * imported set" - the manual button is gone, and a successful commit that
+   * lands a not-yet-active set activates it through the real activateSet(). */
+  assert(!source.includes('<button data-tl-activate="'),
+    'the manual "Activate imported set" button markup should be gone now that a successful import activates itself');
+  assert(/if\(result&&result\.set&&!result\.set\.active&&result\.set\.id!==state\.activeSetId&&!body\.activate\)\s*await\s*activateSet\(result\.set\.id\)/.test(source),
+    'commitPending no longer auto-activates a freshly imported, not-yet-active set through the real activateSet() guard');
+
+  /* tl-1.7.0 / vlibgate-1.0.0 (owner 2026-09-11): the versioned cloud library
+   * can never work for an account requireClinician (src/auth.js) permanently
+   * 403s - owner/admin, lawyer, receptionist - so the whole panel is hidden
+   * for those accounts instead of showing a dead control surface. */
+  assert(source.includes('function accountLocked()'), 'the versioned-library account gate is missing');
+  assert(/function hosted\(\)\{if\(state\.unsupported\|\|accountLocked\(\)\)return false;/.test(source),
+    'hosted() no longer treats a permanently-locked account as not-hosted');
+  assert(/function ensurePanel\(\)\{[\s\S]{0,200}if\(accountLocked\(\)\)/.test(source),
+    'ensurePanel() no longer refuses to build the versioned-library panel for a locked account');
+
   /* tl-1.3.0 — the two mechanisms that cost the owner his library on b833.
      Both are asserted on the SOURCE as well as at runtime, because both
      failures were silent and a runtime-only pin can be satisfied by a stub. */
@@ -368,11 +454,13 @@ function staticContracts() {
   staticContracts();
   await hydrationAndAccountIsolation();
   await previewThenCommit();
+  await commitAutoActivatesNewInactiveSet();
+  await lockedAccountsNeverReachTheCloudLibrary();
   await conflictPreservesDeviceChanges();
   await failedCommitKeepsPreviewAndIdempotency();
   await uploadDedupeAndRetryHandle();
   await formSaveVisibility();
-  console.log('PASS template library runtime, isolation, preview/commit, conflict, retry, loader, upload, and form-save visibility contracts');
+  console.log('PASS template library runtime, isolation, preview/commit, auto-activate, conflict, retry, loader, upload, and form-save visibility contracts');
 })().catch(error => {
   console.error(error);
   process.exit(1);
