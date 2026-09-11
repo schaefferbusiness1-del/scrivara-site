@@ -2479,7 +2479,21 @@ const tests = [
      deterministic arm - one synchronous __mlsCalmShell.render(), the exact
      call the calm dock's reconcile() makes - which fails on the pre-fix
      bytes. */
-  'visit-transcript-survives-the-calm-pass-runtime.test.js'
+  'visit-transcript-survives-the-calm-pass-runtime.test.js',
+  /* NEW 2026-09-11, noteadv-1.0.0. The backend now serves a visit note it used
+     to refuse and names the sentences the recording did not clearly say. The
+     suite proves they are caught where the answer arrives, kept with the note,
+     cleared by the next run, painted as one amber line inside the room's own
+     surface string, cleared by an edit or by Keep, and silent on an ok answer
+     or an older server that sends nothing. */
+  'note-advisory-flagged-lines.test.js',
+  /* NEW 2026-09-11, vntplpick-1.0.0. One press changes the template on a note
+     that is already drafted and writes it again from the same recording,
+     through the one template seam the connect bundle does not replace. The
+     suite proves an operative-report template can never come through that new
+     door, and that the control is absent without a recording, during a pull,
+     while recording, and on every screen but the drafted note. */
+  'visit-template-change-on-draft.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

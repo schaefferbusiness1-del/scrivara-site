@@ -11019,7 +11019,7 @@ function _saveVisitDraft(){
     if(!String(t).trim() && !String(soap).trim() && !String(ins).trim()) return;
     var binding=(typeof currentVisitAthenaBinding!=='undefined'&&currentVisitAthenaBinding)?currentVisitAthenaBinding:null;
     var bindingCopy=binding?{patient:binding.patient||null,source:binding.source||'',historical:binding.historical===true,identityConflict:binding.identityConflict===true,routeBlocked:binding.routeBlocked===true,visitContext:binding.visitContext||null,noteTimestamp:binding.noteTimestamp||null,displayDate:binding.displayDate||'',displayProvider:binding.displayProvider||''}:null;
-    sessionStorage.setItem(_visitDraftKey(), JSON.stringify({ t:t, soap:soap, ins:ins, context:(document.getElementById('contextBox')||{}).value||'', visitComment:(document.getElementById('visitComment')||{}).value||'', fmt:(typeof currentFormat!=='undefined'?currentFormat:'soap'), noteProvenance:(typeof currentNoteProvenance==='string'&&/^(typed|saved|generated_soap|edited_generated_soap|generated_nonsoap)$/.test(currentNoteProvenance))?currentNoteProvenance:'typed', athenaNote:(typeof currentAthenaNote==='string'?currentAthenaNote:''), athenaNoteProvenance:(typeof currentAthenaNoteProvenance==='string'&&/^(none|generated|edited|stale)$/.test(currentAthenaNoteProvenance))?currentAthenaNoteProvenance:'none', athenaNoteSourceFingerprint:(typeof currentAthenaNoteSourceFingerprint==='string'?currentAthenaNoteSourceFingerprint:''), pt:(document.getElementById('patientLabel')||{}).value||'', ptId:(bindingCopy&&bindingCopy.patient&&bindingCopy.patient.patientId)||(typeof getActivePtId==='function'?(getActivePtId()||''):''), ts:Date.now(), athenaBinding:bindingCopy, athenaCompromised:(typeof currentVisitAthenaCompromised!=='undefined'&&currentVisitAthenaCompromised===true) }));
+    sessionStorage.setItem(_visitDraftKey(), JSON.stringify({ t:t, soap:soap, ins:ins, context:(document.getElementById('contextBox')||{}).value||'', visitComment:(document.getElementById('visitComment')||{}).value||'', fmt:(typeof currentFormat!=='undefined'?currentFormat:'soap'), noteProvenance:(typeof currentNoteProvenance==='string'&&/^(typed|saved|generated_soap|edited_generated_soap|generated_nonsoap)$/.test(currentNoteProvenance))?currentNoteProvenance:'typed', athenaNote:(typeof currentAthenaNote==='string'?currentAthenaNote:''), athenaNoteProvenance:(typeof currentAthenaNoteProvenance==='string'&&/^(none|generated|edited|stale)$/.test(currentAthenaNoteProvenance))?currentAthenaNoteProvenance:'none', athenaNoteSourceFingerprint:(typeof currentAthenaNoteSourceFingerprint==='string'?currentAthenaNoteSourceFingerprint:''), noteAdvisory:((typeof _mlsVisitNoteAdvisoryRecord==='function')?_mlsVisitNoteAdvisoryRecord():null), pt:(document.getElementById('patientLabel')||{}).value||'', ptId:(bindingCopy&&bindingCopy.patient&&bindingCopy.patient.patientId)||(typeof getActivePtId==='function'?(getActivePtId()||''):''), ts:Date.now(), athenaBinding:bindingCopy, athenaCompromised:(typeof currentVisitAthenaCompromised!=='undefined'&&currentVisitAthenaCompromised===true) }));
   }catch(e){}
 }
 function _wipeVisitDraft(){ if(_visitDraftTimer){ clearTimeout(_visitDraftTimer); _visitDraftTimer=null; } _visitDirty=false; try{ sessionStorage.removeItem(_visitDraftKey()); }catch(e){} var b=document.getElementById('_visitRestoreBar'); if(b) b.remove(); }
@@ -11091,6 +11091,8 @@ function _restoreVisitDraft(){
       if(d.athenaCompromised===true||!rb)currentVisitAthenaCompromised=true;
     }
     if(typeof _mlsRestoreAthenaState==='function') _mlsRestoreAthenaState(d);
+    /* noteadv-1.0.0: the lines to check come back with the note they belong to. */
+    try{ if(typeof _mlsRestoreVisitNoteAdvisory==='function') _mlsRestoreVisitNoteAdvisory(d); }catch(eNoteAdvDraft){}
     var b=document.getElementById('_visitRestoreBar'); if(b) b.remove();
     _visitDirty=true;
     try{ toast('Restored your unsaved visit.','ok'); }catch(e){}
@@ -27490,6 +27492,9 @@ function noteRecordFromState(markSigned){
     athenaNote: (typeof currentAthenaNote==='string'?currentAthenaNote:''),
     athenaNoteProvenance: (typeof currentAthenaNoteProvenance==='string'&&/^(none|generated|edited|stale)$/.test(currentAthenaNoteProvenance))?currentAthenaNoteProvenance:'none',
     athenaNoteSourceFingerprint: (typeof currentAthenaNoteSourceFingerprint==='string'?currentAthenaNoteSourceFingerprint:''),
+    /* noteadv-1.0.0: the lines the recording did not clearly say, saved with
+       the note that already holds every one of them word for word. */
+    noteAdvisory: ((typeof _mlsVisitNoteAdvisoryRecord==='function')?_mlsVisitNoteAdvisoryRecord():null),
     insurance: (currentFormat==='insurance'?document.getElementById('noteBox').value:currentInsurance),
     coding: currentCoding,
     opt: currentOpt,
@@ -28128,6 +28133,8 @@ function loadRecordIntoEditor(n){
   if(document.getElementById('contextBox')) document.getElementById('contextBox').value=n.context||'';
   if(document.getElementById('visitComment')) document.getElementById('visitComment').value=n.visitComment||'';
   if(typeof _mlsRestoreAthenaState==='function') _mlsRestoreAthenaState(n);
+  /* noteadv-1.0.0: a reopened note brings its lines to check back with it. */
+  try{ if(typeof _mlsRestoreVisitNoteAdvisory==='function') _mlsRestoreVisitNoteAdvisory(n); }catch(eNoteAdvReopen){}
   if(currentAVS) showExtra('avsCard','avsBody',currentAVS);
   if(currentReferral) showExtra('refCard','refBody',currentReferral);
   if(currentIME) showExtra('imeCard','imeBody',currentIME); else { const ic=document.getElementById('imeCard'); if(ic) ic.style.display='none'; }
@@ -32004,6 +32011,10 @@ async function generateNote(){
   var outcome='failed',outcomeCode='',outcomeMessage='';
   if(gb){gb.disabled=true;gb.innerHTML='<span class="spin"></span> Generating…';}
   try{ ['genError','noteGenError'].forEach(function(id){ var genError=document.getElementById(id); if(genError){ genError.textContent=''; genError.style.display='none'; } }); }catch(eGenClear){}
+  /* noteadv-1.0.0: the last note's lines-to-check die with the run that is
+     starting, ONCE per run and after every refusal above - a press that was
+     refused leaves the note on screen and its lines exactly as they were. */
+  try{ if(typeof _mlsBeginVisitNoteAdvisoryRun==='function') _mlsBeginVisitNoteAdvisoryRun(); }catch(eNoteAdvBegin){}
   try{
     if(typeof window.__mlsEnsureDraftTuning==='function'){
       await _mlsAwaitGeneration(run,Promise.resolve().then(function(){return window.__mlsEnsureDraftTuning();}),_mlsGenerationTimeoutMs('setup',10000),'generation-setup-timeout');
@@ -32120,6 +32131,10 @@ async function generateNote(){
       throw _mlsGenerationAbortError('source-changed',_mlsDiscardField||'unknown');
     }
     currentSoap=_reorderNoteForStyle(result.note, generationStyle);
+    /* noteadv-1.0.0: the note the doctor is about to read is committed on the
+       line above. Its lines-to-check and the template that shaped it belong to
+       it from here on, and travel with it into the draft and the saved note. */
+    try{ if(typeof _mlsStampVisitNoteAdvisory==='function') _mlsStampVisitNoteAdvisory(); }catch(eNoteAdvStamp){}
     currentNoteProvenance=generationStyle==='soap'?'generated_soap':'generated_nonsoap';
     lastAIDraft=currentSoap; // baseline snapshot for "Teach MLS" before edits
     currentInsurance=result.insuranceNote||'';
@@ -32182,7 +32197,15 @@ async function generateNote(){
        Amber when it is under floor, green when it clears. Never modal, never
        blocking, and it never rewrites a word the doctor is reading. */
     try{__mlsNoteQualityStrip('noteBox',window.__mlsLastNoteQuality,'visit note');}catch(eNoteqStripMain){}
-    try{_mlsStartOptionalTemplate(transcript,generationBinding,generationEpoch,transcriptEl);}catch(eTemplateLaunch){
+    /* vntplpick-1.0.0: THE DOCTOR ASKED FOR A PLAIN NOTE. The optional
+       re-format resolves the active template by itself whenever this
+       generation handed it none, so without this branch it would put the very
+       template he just stepped away from straight back onto the note. Only an
+       explicit "Plain note" choice takes it; every other run is unchanged. */
+    var _vnPlainRun=false;
+    try{ _vnPlainRun=(typeof _mlsVisitNotePlainChosen==='function')&&_mlsVisitNotePlainChosen()===true; }catch(eVnPlainRun){ _vnPlainRun=false; }
+    try{ if(_vnPlainRun){ try{window.__mlsLastTemplateGenerationReceipt={applied:false,reason:'plain-note-chosen'};}catch(eVnPlainReceipt){} }
+      else _mlsStartOptionalTemplate(transcript,generationBinding,generationEpoch,transcriptEl);}catch(eTemplateLaunch){
       try{window.__mlsLastTemplateGenerationReceipt={applied:false,reason:'template-launch-failed'};}catch(eTemplateReceipt){}
     }
     return true;
@@ -33649,9 +33672,29 @@ function _mlsGenTemplateContract(tpl){
 var _mlsGenTplMeasure=null;
 function _mlsResolveGenerationTemplate(visitText){
   try{
-    if(typeof useTemplatesOn!=='function'||!useTemplatesOn()) return null;
-    if(typeof resolveActiveTemplate!=='function') return null;
-    var tpl=resolveActiveTemplate(visitText)||null;
+    /* vntplpick-1.0.0 (owner 2026-09-11): THE ONE TEMPLATE THE DOCTOR CHOSE
+       FOR THIS NOTE, read and cleared right here. This is the only template
+       seam the connect bundle does not replace, so it is the only door a pick
+       made on the note screen can come through. A pick older than five minutes
+       belongs to no press on screen and is dropped. A chosen template still
+       goes through the same scope gate below, so an operative report can never
+       slip into a visit note through this new door either. */
+    var vnPick=null;
+    try{ vnPick=window.__mlsVisitTplPick||null; window.__mlsVisitTplPick=null; }catch(eGenTplPick){ vnPick=null; }
+    if(vnPick&&typeof vnPick==='object'&&!(Number(vnPick.at)>0&&(Date.now()-Number(vnPick.at))<300000)) vnPick=null;
+    if(vnPick&&typeof vnPick==='object'){
+      try{ window.__mlsVisitTplPickUsed={id:String(vnPick.id||''),plain:vnPick.plain===true,at:Number(vnPick.at)||0}; }catch(eGenTplUsed){}
+    }else vnPick=null;
+    var tpl=null;
+    if(vnPick){
+      if(vnPick.plain===true||!String(vnPick.id||'')) return null;
+      tpl=(typeof getTemplateById==='function')?(getTemplateById(String(vnPick.id))||null):null;
+      if(!tpl) return null;
+    }else{
+      if(typeof useTemplatesOn!=='function'||!useTemplatesOn()) return null;
+      if(typeof resolveActiveTemplate!=='function') return null;
+      tpl=resolveActiveTemplate(visitText)||null;
+    }
     if(!tpl) return null;
     /* vntpl-1.1.0: THE LAST WORD, and the only gate guaranteed to run. The
        connect bundle REPLACES resolveActiveTemplate outright, so a rule that
@@ -33697,6 +33740,112 @@ try{ window.__mlsVisitTemplateContract={version:'vntpl-1.1.0',build:_mlsGenTempl
   scopeSkip:_mlsGenTemplateScopeSkip,isOperativeReport:_mlsTemplateIsOperativeReport,
   isVisitNoteShaped:_mlsTemplateIsVisitNoteShaped}; }catch(eVntplX){}
 /* ===== end vntpl-1.0.0 ===== */
+
+/* ===== noteadv-1.0.0 (owner 2026-09-11) - THE LINES THE DICTATION DID NOT
+   CLEARLY SAY =============================================================
+   The backend now writes a visit note it used to refuse, and says on the same
+   answer WHICH sentences the recording did not clearly support - almost always
+   a garbled word the model tidied up. aiCallRaw hands back a STRING, so every
+   other field of that answer is thrown away three lines after it arrives; this
+   block catches it, cleans it, and keeps it with the note it belongs to.
+
+   THE SENTENCES ARE THE DOCTOR'S OWN NOTE TEXT. They may be shown on screen
+   and saved beside the note that already holds them. They are never written to
+   the console, never counted anywhere, and never leave the device by any other
+   road. Every reader is wrapped so this can never break a generation. */
+function _mlsNoteAdvisoryFromQuality(q){
+  if(!q||typeof q!=='object') return null;
+  var status=String(q.status||'');
+  if(!/^(review|ok)$/.test(status)) return null;
+  var issues=[],rawIssues=Array.isArray(q.issues)?q.issues:[],i;
+  for(i=0;i<rawIssues.length&&issues.length<12;i++){
+    var code=String(rawIssues[i]==null?'':rawIssues[i]).slice(0,96);
+    if(/^[a-z0-9_]{2,96}$/i.test(code)) issues.push(code);
+  }
+  var flagged=[],rawFlagged=Array.isArray(q.flagged)?q.flagged:[];
+  for(i=0;i<rawFlagged.length&&flagged.length<12;i++){
+    var row=rawFlagged[i];
+    if(!row||typeof row!=='object') continue;
+    var sentence=String(row.sentence==null?'':row.sentence).replace(/\s+/g,' ').trim().slice(0,600);
+    if(!sentence) continue;
+    var issue=String(row.issue==null?'':row.issue).slice(0,96);
+    if(!/^[a-z0-9_]{2,96}$/i.test(issue)) issue='';
+    var arm=String(row.arm==null?'':row.arm);
+    if(!/^(display|athena)$/.test(arm)) arm='display';
+    flagged.push({issue:issue,sentence:sentence,arm:arm});
+  }
+  if(status!=='review'||!flagged.length) return {status:'ok',issues:issues,flagged:[]};
+  return {status:'review',issues:issues,flagged:flagged};
+}
+/* THIS VISIT NOTE'S OWN RECEIPT: the lines to check, and the template that
+   shaped it. The key is a plain counter stamp - never a patient, never a name. */
+var currentNoteAdvisory=null,_mlsNoteAdvisorySeq=0;
+function _mlsVisitNoteTemplateStamp(){
+  var out={id:'',name:'',chosen:false};
+  try{ var used=window.__mlsVisitTplPickUsed; if(used&&typeof used==='object') out.chosen=true; }catch(eNoteAdvT1){}
+  try{ var c=window.__mlsLastGenTemplateContract;
+    if(c&&c.id){ out.id=String(c.id).slice(0,120); out.name=String(c.name||'').replace(/[\r\n]+/g,' ').slice(0,120); } }catch(eNoteAdvT2){}
+  return out;
+}
+/* The doctor asked for a plain note on purpose. Anything else - templates off,
+   nothing matched, no library at all - is NOT this, and must leave the
+   optional re-format exactly as it shipped. */
+function _mlsVisitNotePlainChosen(){
+  var t=currentNoteAdvisory&&currentNoteAdvisory.template;
+  return !!(t&&t.chosen===true&&!t.id);
+}
+function _mlsBeginVisitNoteAdvisoryRun(){
+  currentNoteAdvisory=null;
+  try{ window.__mlsVisitNoteAdvisory=null; window.__mlsLastNoteAdvisory=null; window.__mlsVisitTplPickUsed=null; }catch(eNoteAdvB){}
+  return null;
+}
+function _mlsStampVisitNoteAdvisory(){
+  var q=null;
+  try{ q=window.__mlsLastNoteAdvisory||null; }catch(eNoteAdvS1){ q=null; }
+  var adv=_mlsNoteAdvisoryFromQuality(q)||{status:'ok',issues:[],flagged:[]};
+  _mlsNoteAdvisorySeq+=1;
+  adv.key='adv'+Date.now().toString(36)+'-'+_mlsNoteAdvisorySeq;
+  adv.at=Date.now();
+  adv.template=_mlsVisitNoteTemplateStamp();
+  currentNoteAdvisory=adv;
+  try{ window.__mlsVisitNoteAdvisory=currentNoteAdvisory; }catch(eNoteAdvS2){}
+  return currentNoteAdvisory;
+}
+function _mlsVisitNoteAdvisoryRecord(){
+  var a=currentNoteAdvisory;
+  if(!a) return null;
+  var rows=[],src=Array.isArray(a.flagged)?a.flagged:[];
+  for(var i=0;i<src.length&&rows.length<12;i++)
+    rows.push({issue:String(src[i].issue||''),sentence:String(src[i].sentence||''),arm:String(src[i].arm||'display')});
+  var t=a.template||{};
+  return {status:(a.status==='review'&&rows.length)?'review':'ok',
+    issues:(Array.isArray(a.issues)?a.issues:[]).slice(0,12),
+    flagged:rows,key:String(a.key||''),at:Number(a.at)||0,
+    template:{id:String(t.id||''),name:String(t.name||''),chosen:t.chosen===true}};
+}
+function _mlsRestoreVisitNoteAdvisory(saved){
+  var rec=saved&&saved.noteAdvisory;
+  if(!rec||typeof rec!=='object'){
+    currentNoteAdvisory=null;
+    try{ window.__mlsVisitNoteAdvisory=null; }catch(eNoteAdvR0){}
+    return null;
+  }
+  var adv=_mlsNoteAdvisoryFromQuality(rec)||{status:'ok',issues:[],flagged:[]};
+  adv.key=String(rec.key||'').slice(0,64)||('adv'+Date.now().toString(36));
+  adv.at=Number(rec.at)||0;
+  var t=(rec.template&&typeof rec.template==='object')?rec.template:{};
+  adv.template={id:String(t.id||'').slice(0,120),
+    name:String(t.name||'').replace(/[\r\n]+/g,' ').slice(0,120),chosen:t.chosen===true};
+  currentNoteAdvisory=adv;
+  try{ window.__mlsVisitNoteAdvisory=currentNoteAdvisory; }catch(eNoteAdvR1){}
+  return currentNoteAdvisory;
+}
+try{ window._mlsNoteAdvisoryFromQuality=_mlsNoteAdvisoryFromQuality;
+  window._mlsStampVisitNoteAdvisory=_mlsStampVisitNoteAdvisory;
+  window._mlsVisitNoteAdvisoryRecord=_mlsVisitNoteAdvisoryRecord;
+  window._mlsRestoreVisitNoteAdvisory=_mlsRestoreVisitNoteAdvisory;
+  window._mlsVisitNotePlainChosen=_mlsVisitNotePlainChosen; }catch(eNoteAdvX){}
+/* ===== end noteadv-1.0.0 ===== */
 
 async function callOpenAI(transcript,key,options){
   options=options||{};
@@ -34275,6 +34424,12 @@ async function aiCallRaw(sys,user,key,opts){
       /* ===== end cap-1.0.0 ===== */
     }
     const data=await res.json();
+    /* noteadv-1.0.0: the lines the recording did not clearly say ride this
+       same answer, beside `result`, and the next three lines throw every
+       other field away because this function answers with a STRING. Park a
+       cleaned copy here; the note text itself is untouched, and a server that
+       sends nothing leaves this a no-op. */
+    try{ window.__mlsLastNoteAdvisory=_mlsNoteAdvisoryFromQuality((data&&data.quality)||(data&&data.result&&typeof data.result==='object'?data.result.quality:null)); }catch(eNoteAdvStash){}
     // Primary contract: {result:<object>} — re-stringify so downstream JSON.parse works.
     if(data && data.result!==undefined){
       return typeof data.result==='string' ? data.result.trim() : JSON.stringify(data.result);
@@ -54434,6 +54589,9 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
       comment: safe(function () { return str((el('visitComment') || {}).value); }, ''),
       label: safe(function () { return str((el('patientLabel') || {}).value); }, ''),
       noteId: safe(function () { return str(typeof currentNoteId !== 'undefined' ? currentNoteId : ''); }, ''),
+      /* noteadv-1.0.0: the lines to check are part of this patient's parked
+         work, so they come back with it instead of quietly disappearing. */
+      noteAdvisory: safe(function () { return (typeof _mlsVisitNoteAdvisoryRecord === 'function') ? _mlsVisitNoteAdvisoryRecord() : null; }, null),
       compromised: safe(function () { return (typeof currentVisitAthenaCompromised !== 'undefined') && currentVisitAthenaCompromised === true; }, false),
       binding: b ? {
         patient: b.patient || null, source: str(b.source), historical: b.historical === true,
@@ -54534,6 +54692,8 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
       }
     });
     safe(function () { if (typeof _mlsRestoreAthenaState === 'function') _mlsRestoreAthenaState(d); });
+    /* noteadv-1.0.0: and the lines to check travel with it. */
+    safe(function () { if (typeof _mlsRestoreVisitNoteAdvisory === 'function') _mlsRestoreVisitNoteAdvisory(d); });
 
     safe(function () { if (typeof syncFormatToggle === 'function') syncFormatToggle(); });
     var shown = (safe(function () { return (typeof currentFormat !== 'undefined' && currentFormat === 'insurance'); }, false)) ? (d.ins || '') : (d.soap || '');
