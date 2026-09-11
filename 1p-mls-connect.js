@@ -54653,20 +54653,40 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
    for everyone, not only for people who open Studio. What is added is an
    immediate load when AI Studio is actually on screen - if the doctor is looking
    at it, there is nothing to defer for. Injection stays idempotent through the
-   same data-mls-asset guard, so the two paths cannot double-load. */
+   same data-mls-asset guard, so the two paths cannot double-load.
+   smpreload-1.0.0 (owner 2026-09-11, MEASURED live on b1237 at 13:5x:
+   window.__mlsStudioMerge undefined, #analysisView still outside #studioView,
+   doctor on the Visit view - i.e. neither trigger below had fired yet).
+   window.__mlsDeferAsset runs its own priority queue for a large and growing
+   list of boot-time assets, and this module's place in that queue is not this
+   module's to control - a busy boot can leave it waiting well past the
+   moment the doctor opens AI Studio. The KEPT on-screen trigger below still
+   covers that visit, but the whole point of a PRELOAD is to have already
+   finished before that happens. This is now a dedicated, direct
+   requestIdleCallback (a real setTimeout fallback where it does not exist)
+   that answers to nothing but the browser's own idle time, scheduled once,
+   right here, independent of __mlsDeferAsset's queue. */
 ;(function(){try{
-  /* sched is declared FIRST so the deferred path is the visible default and the
-     boot-script budget's lookbehind classifies this module as DEFERRED, which it
-     still is: the immediate call below only fires when AI Studio is already the
-     screen on show, which at boot it almost never is. */
-  var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,1200);};
   var A='feat_mls_studio_merge.js';
   function go(){try{if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement('script');s.src=A+'?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset',A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}}
   function studioOnScreen(){try{var v=document.getElementById('studioView');return !!v&&getComputedStyle(v).display!=='none';}catch(e){return false;}}
+  var preloadScheduled=false;
+  /* Guarded so a second call is a no-op: nothing here re-arms once the idle
+     callback (or its fallback timer) has been handed to the browser, so a
+     stray extra call from elsewhere can never stack a second one. */
+  function preloadIdle(){
+    if(preloadScheduled)return false;
+    preloadScheduled=true;
+    if(window.requestIdleCallback) window.requestIdleCallback(go,{timeout:4000});
+    else setTimeout(go,1200);
+    return true;
+  }
   if(studioOnScreen())go();
   try{window.addEventListener('mls:view-changed',function(){if(studioOnScreen())go();},true);}catch(eV){}
-  sched(go,{timeout:4000});
-}catch(e){}})(); /* Studio merge (owner 2026-07-26 "add the analysis tab to the ai studio tab smartly"): AI Studio becomes Ask / Practice / Build, #analysisView is hoisted into it, and showView('analysis') redirects there. Deferred on requestIdleCallback - AI Studio is not a first-paint surface (window.__mlsStudioMerge sm-1.0.0; revert()) */
+  preloadIdle();
+  /* read-only handle for the regression suite; not part of the app's public API */
+  window.__mlsStudioFastPreload={preload:preloadIdle,scheduled:function(){return preloadScheduled;},studioOnScreen:studioOnScreen};
+}catch(e){}})(); /* Studio merge (owner 2026-07-26 "add the analysis tab to the ai studio tab smartly"): AI Studio becomes Ask / Practice / Build, #analysisView is hoisted into it, and showView('analysis') redirects there. Preloaded on requestIdleCallback right after boot, independent of any other asset queue - AI Studio is not a first-paint surface (window.__mlsStudioMerge sm-1.0.0; revert()) */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_motion.js"]'))return;var s=document.createElement('script');s.src='feat_mls_motion.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_motion.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:4000,priority:0,owner:'__mlsMotion',requiresFoundation:true});}catch(e){}})(); /* Motion system (owner 2026-07-28 "awesome animations aple like" + the Siri ring on Copilot): one stylesheet, one body class, zero handlers rebound. The moving multi-colour ring is reserved for the Copilot/AI surfaces; everything else reuses the MOTION_TOKENS.md vocabulary. No timers and no observers. Deferred on requestIdleCallback - it is pure polish and must never be on the boot path (window.__mlsMotion mo-1.0.0; revert()) */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_visit_focus.js"]'))return;var s=document.createElement('script');s.src='feat_mls_visit_focus.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_visit_focus.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:1500,priority:0,owner:'__mlsVisitFocus',retireVersion:'vf-1.2.0',requiresFoundation:true});}catch(e){}})(); /* Visit & Patients focus: one primary per screen state; every secondary answers to a disclosure that already exists. Deferred on requestIdleCallback (timeout 1500) - it costs nothing at first paint and the loading screen owns the surface until well after it lands (window.__mlsVisitFocus vf-1.0.0; revert()). */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{var A="feat_mls_note_click_to_edit.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v="+(window.__MLS_AV||Date.now());s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:4000});}catch(e){}})(); /* nce-1.0.0: clicking the formatted note preview reveals the editor and places the caret where the doctor clicked (b779 folded away the only Edit control). Revert: window.__mlsNoteClickToEdit.revert() */

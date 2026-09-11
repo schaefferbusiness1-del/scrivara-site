@@ -2493,7 +2493,19 @@ const tests = [
      deterministic arm - one synchronous __mlsCalmShell.render(), the exact
      call the calm dock's reconcile() makes - which fails on the pre-fix
      bytes. */
-  'visit-transcript-survives-the-calm-pass-runtime.test.js'
+  'visit-transcript-survives-the-calm-pass-runtime.test.js',
+  /* tpldef-1.0.0 (owner 2026-09-11): the two Templates-modal checkboxes
+     default ON for a fresh account/device; any explicit stored choice wins. */
+  'template-defaults-on-for-fresh-account.test.js',
+  /* tl-1.7.0 / vntplcfg-1.0.0 / vlibgate-1.0.0 (owner 2026-09-11): the
+     first-run checklist's Dismiss and Configure controls, and Configure's
+     retarget onto #mlsVisitNoteTemplatesSection plus the inline-style trap
+     that made it permanently unable to show. */
+  'firstrun-dismiss-and-configure-target-runtime.test.js',
+  /* smpreload-1.0.0 (owner 2026-09-11): the dedicated idle preload for
+     feat_mls_studio_merge.js, independent of the shared __mlsDeferAsset
+     queue, plus the "Loading the rest of AI Studio..." placeholder. */
+  'studio-merge-idle-preload-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
