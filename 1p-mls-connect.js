@@ -22646,31 +22646,44 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     '#captureCard,#noteCard,#emrCard,#outcomesCard{display:none!important;}',
     'body.ez3adv #noteCard,body.ez3adv #emrCard,body.ez3adv #outcomesCard{display:block!important;}',
     'body.ez3adv #noteCard button[onclick*="generateNote"],body.ez3adv #noteCard button[onclick*="regenerateNote"],body.ez3adv #noteCard .ne-regen{display:none!important;}',
-    /* onenote-1.1.0: ONE NOTE ON THE SCREEN - AND NEVER ZERO.
+    /* onenote-1.2.0: ONE NOTE ON THE SCREEN - AND NEVER ZERO.
        The rule above shows #noteCard while the review workspace is open, and
-       revwork-1.2.0 ADOPTS the app's own #noteBox into it, so on paper the
-       guided flow's #ez3Note (a two-way mirror of that same #noteBox) is a
-       second copy of one note and should yield.
+       revwork-1.2.0 ADOPTS the app's own #noteBox (and its one .mls-fp-fmt
+       formatted view) into #mlsRevSlot inside it, so the guided flow's
+       #ez3Note - a two-way mirror of that same note - is a second copy and
+       should yield.
 
-       MEASURED IN THE BOOTED APP, 2026-09-11, and this is why the yield is
-       CONDITIONAL. feat_mls_visit_focus.js vf-1.2.0 already folds #noteCard's
-       own renderings - #noteEmpty, .mlsf-bar, .mlsf-note, .mls-opaddword -
-       under body.mls-vfocus.mls-note-live, and its ROUTES entry says in as many
-       words that the route back is "the engine note ladder (#ez3Note) renders
-       the same note text". #noteBox itself carries an inline display:none from
-       the formatter. So with visit-focus live - which is EVERY shipping shell,
-       because this same file loads it on idle - #noteCard shows no note at all,
-       and an unconditional yield here left the doctor on a workspace card that
-       read "2 Review the note" over nothing. Measured: visible copies of the
-       note went 1 -> 0.
+       WHY THE GUARD MOVED (owner-measured on the booted page, 2026-09-11,
+       four body states, counting every .mls-fp-fmt / #ez3Note / #noteBox with
+       offsetParent !== null and a non-zero height):
 
-       So the yield fires only where the duplicate it was written for can
-       actually happen: visit-focus not on the page (it is deferred, and
-       __mlsVisitFocus.revert() removes both the stylesheet and this class).
-       Both states now show exactly one note - with visit-focus, #ez3Note;
-       without it, #noteCard. The record, Sign and Send controls live OUTSIDE
-       this card on purpose, so nothing actionable moves either way. */
-    'body.ez3adv:not(.mls-vfocus) .ez3-notecard{display:none!important;}',
+           vfocus ON  + adv CLOSED   2 copies   <- the defect
+           vfocus ON  + adv OPEN     2 copies   <- the defect the owner saw
+           vfocus OFF + adv OPEN     1 copy
+           vfocus OFF + adv CLOSED   1 copy
+
+       onenote-1.1.0 wrote this yield as `body.ez3adv:not(.mls-vfocus)`, on the
+       reasoning that visit-focus already folds #noteCard's own renderings
+       (#noteEmpty, .mlsf-bar, .mlsf-note, .mls-opaddword) so the workspace
+       shows no note. That reasoning was true of those four selectors and false
+       of the card: feat_mls_visit_focus.js stamps body.mls-vfocus on EVERY
+       shipping shell (this same file loads it on idle), so the :not() never
+       matched anywhere, and revwork's adoption moves #noteBox and its
+       .mls-fp-fmt OUT of the #noteCard-scoped hides into #mlsRevSlot, where
+       vf-1.2.0's rules no longer reach it and its comment says the lower
+       .mls-fp-fmt is deliberately left alone. Two live copies, in the two
+       states a doctor is actually in.
+
+       The honest guard is not a claim about which modules are loaded - it is
+       whether the workspace IS SHOWING THE NOTE RIGHT NOW. revwork's reconcile
+       measures its own slot (offsetParent + height + real text) and stamps
+       body.mls-revnote, and clears it on release/revert. So the flow's copy
+       yields exactly when the workspace is holding a visible one, and never
+       when it is not - which is what keeps this from ever reading 1 -> 0.
+       Pinned by the booted-page count in tests/review-workspace-proof.js: one
+       visible copy in all four states. The record, Sign and Send controls live
+       OUTSIDE this card on purpose, so nothing actionable moves either way. */
+    'body.mls-revnote .ez3-notecard{display:none!important;}',
     '.ez3-advrow{display:flex;justify-content:center;margin:2px 0 0;}',
     '.ez3-advrow button{background:none;border:0;color:#C9DCD2;font-size:12px;font-weight:700;cursor:pointer;padding:7px 10px;}',
     '.ez3-advrow button:hover{color:#EAF1EE;}',
@@ -65653,6 +65666,69 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
     for (var i = 0; i < ADOPT.length; i++) { if (adoptInto(host, ADOPT[i])) n++; }
     return n;
   }
+  /* =======================================================================
+   *  4b. WHO IS SHOWING THE NOTE   (onenote-1.2.0, owner-measured 2026-09-11)
+   * -----------------------------------------------------------------------
+   * The guided flow renders its own copy of the note (#ez3Note inside
+   * .ez3-notecard) and this panel holds the app's own copy, so exactly one of
+   * them has to yield. The stylesheet used to decide that by naming MODULES -
+   * "yield while body.ez3adv and visit-focus is not loaded" - and measured on
+   * the booted page that selector never matched: visit-focus is on every
+   * shipping shell, so BOTH copies were on screen in both of the states a
+   * doctor works in.
+   *
+   * This is the fact the rule actually needs, and only this module can answer
+   * it: IS THE WORKSPACE SHOWING THE NOTE RIGHT NOW. Not "is the panel built",
+   * not "is the card displayed" - is there, inside #mlsRevSlot, a formatted
+   * view or a note box that has a layout box, a non-zero height and real text
+   * in it. Everything that can hide it - the unconditional #noteCard hide, the
+   * body.ez3adv reveal, visit-focus's mls-note-live reveal, the formatter's own
+   * inline display flip - is already accounted for by asking the browser.
+   *
+   * Stamped on every reconcile, cleared the moment the panel gives the note
+   * back (releaseAdopted) or the module reverts, so the flow's copy can never
+   * be hidden by a class left behind after the thing it named is gone.
+   * ===================================================================== */
+  var REVNOTE_CLASS = 'mls-revnote';
+  function nodeShown(el) {
+    return safe(function () {
+      if (!el || el.offsetParent === null) return false;
+      var r = isFn(el.getBoundingClientRect) ? el.getBoundingClientRect() : null;
+      return !!(r && r.height > 0);
+    }, false);
+  }
+  /* A copy the doctor can READ. An empty box or an empty formatted panel is
+     not a second copy of anything, and treating it as one is exactly how the
+     previous rule could have taken the last note off the screen. */
+  function slotHasVisibleNote() {
+    return safe(function () {
+      var slot = $(ID.slot);
+      if (!slot || !isFn(slot.querySelectorAll)) return false;
+      var nodes = slot.querySelectorAll('.mls-fp-fmt,#noteBox');
+      for (var i = 0; i < nodes.length; i++) {
+        var el = nodes[i];
+        if (!nodeShown(el)) continue;
+        var txt = '';
+        if (el.tagName === 'TEXTAREA') txt = String(el.value || '');
+        else {
+          var b = isFn(el.querySelector) ? el.querySelector('.fmt-body') : null;
+          txt = String((b ? b.textContent : el.textContent) || '');
+        }
+        if (txt.trim()) return true;
+      }
+      return false;
+    }, false);
+  }
+  function markRevNote() {
+    var on = slotHasVisibleNote();
+    safe(function () { if (document.body) document.body.classList.toggle(REVNOTE_CLASS, on); });
+    return on;
+  }
+  function clearRevNote() {
+    safe(function () { if (document.body) document.body.classList.toggle(REVNOTE_CLASS, false); });
+    return true;
+  }
+
   /* THE OTHER HALF OF EVERY MOVE. revert() (and a rebuild of the panel) must
      put the app's own controls back in the card, or a hot reload of this one
      module would take the doctor's note and his whole action row with it. */
@@ -65674,6 +65750,9 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
       }(_adopted[i]));
     }
     _adopted = [];
+    /* onenote-1.2.0: the note has just gone back to #noteCard, so the flow's
+       copy must stop yielding to a slot that no longer holds one. */
+    clearRevNote();
     return true;
   }
 
@@ -66384,6 +66463,7 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
     unhideFlow();
     relabelAdv();
     syncPanel();
+    markRevNote();                             /* onenote-1.2.0 */
     dedupeNextDoor();                          /* reviewfix-1.0.0 */
     enforceEdit();                             /* walkfix-1.0.0 (b1184) */
     watchWrap();
@@ -66548,6 +66628,10 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
     adopt: adoptAll,
     release: releaseAdopted,
     adopted: function () { return _adopted.map(function (a) { return a.key; }); },
+    /* onenote-1.2.0: the one-note seam, readable by a suite */
+    REVNOTE_CLASS: REVNOTE_CLASS,
+    slotHasVisibleNote: slotHasVisibleNote,
+    markRevNote: markRevNote,
     nextDoors: nextDoors,
     dedupeNextDoor: dedupeNextDoor,
     build: buildPanel,
@@ -66579,6 +66663,7 @@ window.__mlsEnsureDraftTuning = window.__mlsEnsureDraftTuning || function () {
          last-step action row; removing the panel without releasing them would
          take the doctor's note and every note action out of the document. */
       safe(releaseAdopted);
+      safe(clearRevNote);                      /* onenote-1.2.0 */
       safe(function () { var r = document.getElementById(ID.root); if (r && r.parentNode) r.parentNode.removeChild(r); });
       _iv = _deb = _bodyObs = _wrapObs = _noteObs = null;
       _wrapWatched = _noteWatched = null;

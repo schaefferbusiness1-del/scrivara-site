@@ -53,8 +53,10 @@
 
 const assert = require('assert');
 const fs = require('fs');
+const http = require('http');
 const path = require('path');
 const vm = require('vm');
+const { chromium } = require('playwright');
 
 const ROOT = path.resolve(__dirname, '..');
 const read = (n) => fs.readFileSync(path.join(ROOT, n), 'utf8');
@@ -125,73 +127,105 @@ ok(/classList\.toggle\('ez3adv'/.test(WIRE_ADV_BODY), 'the toggle no longer flip
 ok(!/display/.test(WIRE_ADV_BODY), 'the advanced toggle now writes a display - that is how the flow disappeared');
 
 /* ==========================================================================
- * 1b.  ONE NOTE ON THE SCREEN, NEVER TWO - AND NEVER ZERO  (onenote-1.1.0)
+ * 1b.  ONE NOTE ON THE SCREEN, NEVER TWO - AND NEVER ZERO  (onenote-1.2.0)
  * --------------------------------------------------------------------------
- * THE SHAPE ON PAPER. Opening the review workspace shows #noteCard, and this
- * module ADOPTS the app's own #noteBox into it. The guided flow above renders
- * its OWN #ez3Note - a two-way mirror of that same #noteBox - so on paper the
- * doctor gets the same note twice, one above the other, and the flow's copy
- * should yield.
+ * THE SHAPE. Opening the review workspace shows #noteCard, and revwork ADOPTS
+ * the app's own #noteBox - and its one .mls-fp-fmt formatted view - into
+ * #mlsRevSlot inside it. The guided flow above renders its OWN #ez3Note, a
+ * two-way mirror of that same note, inside .ez3-notecard. One of the two has
+ * to yield, or the doctor reads the same note twice in one scroll.
  *
- * WHAT WAS ACTUALLY ON THE SCREEN (measured in the booted 1p app, 2026-09-11).
- * feat_mls_visit_focus.js vf-1.2.0 ALREADY folds #noteCard's own renderings -
- * #noteEmpty, .mlsf-bar, .mlsf-note, .mls-opaddword, .mls-nm-meter - under
- * body.mls-vfocus.mls-note-live, and its ROUTES entry says in as many words
- * that the route back is "the engine note ladder (#ez3Note) renders the same
- * note text"; #noteBox itself carries an inline display:none from the
- * formatter. So in every shipping shell - this file loads visit-focus itself,
- * on idle - the workspace card shows NO note, and an unconditional yield here
- * took the last one away: visible copies of the note went 1 -> 0, over a card
- * reading "2 Review the note - Edit anything...".
+ * WHAT WAS ACTUALLY ON THE SCREEN. onenote-1.1.0 wrote the yield as
+ * `body.ez3adv:not(.mls-vfocus) .ez3-notecard`, reasoning that visit-focus
+ * already folds #noteCard's own renderings so the workspace shows no note.
+ * MEASURED on the booted 1p shell, 2026-09-11, counting every
+ * .mls-fp-fmt / #ez3Note / #noteBox with offsetParent !== null and a non-zero
+ * height, with a real generated note in the editor:
  *
- * THE CONTRACT, in both directions. Exactly ONE surface shows the note in
- * every body state. The yield fires only where the duplicate it was written
- * for can actually happen - visit-focus not on the page, which is what
- * __mlsVisitFocus.revert() and a failed deferred load both leave behind.
- * MEASURED both ways after the fix: with visit-focus live the workspace shows
- * textarea#ez3Note and nothing else; with visit-focus reverted it shows
- * #noteCard's own rendering and nothing else.
+ *       STATE                     BEFORE   AFTER
+ *   vfocus ON  + adv CLOSED          2       1
+ *   vfocus ON  + adv OPEN            2       1   <- what the owner reported
+ *   vfocus OFF + adv OPEN            1       1
+ *   vfocus OFF + adv CLOSED          1       1
  *
- * Only the NOTE yields: the record pill, Sign and Send are rendered outside
- * .ez3-notecard and stay on screen in both states (pinned in
- * tests/easy-pause-resume-runtime.test.js).
+ * Two reasons the old selector could not work. feat_mls_visit_focus.js stamps
+ * body.mls-vfocus on EVERY shipping shell (1p-mls-connect.js loads it itself,
+ * on idle), so the :not() never matched anywhere; and revwork's adoption moves
+ * #noteBox and its .mls-fp-fmt OUT of #noteCard into #mlsRevSlot, where
+ * visit-focus's #noteCard-scoped hides no longer reach them - vf-1.2.0 says in
+ * as many words that the lower .mls-fp-fmt is deliberately left alone.
+ *
+ * THE CONTRACT NOW. The yield does not name modules; it asks whether the
+ * workspace IS SHOWING THE NOTE. revwork's reconcile measures its own slot -
+ * a layout box, a non-zero height, real text - and stamps body.mls-revnote,
+ * clearing it in releaseAdopted() and revert(). So the flow's copy yields
+ * exactly when there is a visible copy to yield to, which is what makes
+ * "never zero" structural rather than a hopeful guard.
+ *
+ * THE COUNT ITSELF IS PROVED IN A BOOTED PAGE (PART R at the end of this
+ * suite), never by reading CSS: the previous version of this section was a
+ * pure CSS-parse pin, and it stayed green for the whole time the doctor was
+ * looking at two notes.
+ *
+ * Only the NOTE yields. The record pill, Sign and Send are rendered outside
+ * .ez3-notecard, and the Edit / Regenerate / Copy row INSIDE it was already
+ * folded by visit-focus in both of the states this rule changes - measured
+ * with the card force-shown, every one of them hidden before and after.
  * ======================================================================== */
 ok(CONNECT.includes("'#captureCard,#noteCard,#emrCard,#outcomesCard{display:none!important;}'"),
   'the engine cards are no longer hidden outside the review workspace - the note would show twice there');
 ok(CONNECT.includes("'body.ez3adv #noteCard,body.ez3adv #emrCard,body.ez3adv #outcomesCard{display:block!important;}'"),
   'the review workspace no longer shows #noteCard - the surface that holds the adopted note');
-ok(CONNECT.includes("'body.ez3adv:not(.mls-vfocus) .ez3-notecard{display:none!important;}'"),
-  'the flow note card yields unconditionally again, so where visit-focus has already folded #noteCard\'s rendering the doctor is left with NO note at all (measured 1 -> 0)');
+ok(CONNECT.includes("'body.mls-revnote .ez3-notecard{display:none!important;}'"),
+  'the flow note card no longer yields to the workspace copy, so the doctor reads the same note twice (measured: 2 visible copies in both visit-focus states)');
+ok(!CONNECT.includes("'body.ez3adv:not(.mls-vfocus) .ez3-notecard{display:none!important;}'"),
+  'the module-naming yield is back: :not(.mls-vfocus) never matches a shipping shell, so it hides nothing');
 ok(CONNECT.includes('\'<div class="ez3-card ez3-notecard">\''),
   'the flow note card lost the .ez3-notecard hook, so the yield rule matches nothing');
 
-/* THE CROSS-CHECK THAT MAKES THE GUARD READABLE. The guard exists because of
-   a rule in ANOTHER file. Read that file: if visit-focus ever stops folding
-   #noteCard's note, this suite must be the thing that says the guard can go,
-   rather than leaving a :not() nobody can explain. */
-const VFOCUS = read('feat_mls_visit_focus.js');
-ok(/body\.' \+ BODY \+ '\.' \+ NOTE \+ ' #visitView #noteCard \.mlsf-note/.test(VFOCUS),
-  'feat_mls_visit_focus.js no longer folds #noteCard .mlsf-note, so the review workspace may show the note again and the :not(.mls-vfocus) guard on the yield is now the thing hiding a duplicate');
-ok(/var STYLE_ID = 'mlsVfCss', BODY = 'mls-vfocus'/.test(VFOCUS),
-  'feat_mls_visit_focus.js renamed the body class the yield guard reads, so the guard now matches nothing and the note can vanish again');
-ok(/document\.body\.classList\.toggle\(BODY, false\)/.test(VFOCUS),
-  'feat_mls_visit_focus.js revert() no longer drops its body class, so the yield can never fire in the one state it is for');
+/* THE CLASS HAS EXACTLY ONE WRITER, AND IT MEASURES. A rule this strong may
+   not be driven by a flag somebody sets when they believe a note arrived. */
+ok(/function slotHasVisibleNote\(\)/.test(CODE),
+  'revwork no longer measures its own slot, so body.mls-revnote is a claim rather than a fact');
+ok(/offsetParent === null/.test(CODE) && /r\.height > 0/.test(CODE),
+  'the slot measurement stopped asking the browser for a layout box and a height');
+ok(/REVNOTE_CLASS = 'mls-revnote'/.test(CODE),
+  'revwork renamed the class the yield rule reads, so the flow copy can never be hidden again');
+ok(/markRevNote\(\);/.test(CODE), 'reconcile no longer stamps the one-note class');
+{
+  const rel = CODE.slice(CODE.indexOf('function releaseAdopted()'));
+  ok(rel.slice(0, rel.indexOf('\n  }')).indexOf('clearRevNote()') >= 0,
+    'giving the note back to #noteCard no longer clears body.mls-revnote - the flow copy would stay hidden with nothing showing the note');
+}
+ok(/safe\(clearRevNote\);/.test(CODE),
+  'revert() no longer clears body.mls-revnote, so a hot reload of this module could leave both copies hidden');
 
-/* The yield is guarded in one direction only: outside the workspace nothing
-   may hide the flow's note card, or the doctor would have no note at all. */
+/* The cross-check that makes the seam readable from the other side. */
+const VFOCUS = read('feat_mls_visit_focus.js');
+ok(/var STYLE_ID = 'mlsVfCss', BODY = 'mls-vfocus'/.test(VFOCUS),
+  'feat_mls_visit_focus.js renamed its body class; the measured state table above was taken with that class as the shipping default');
+ok(/document\.body\.classList\.toggle\(BODY, false\)/.test(VFOCUS),
+  'feat_mls_visit_focus.js revert() no longer drops its body class, so the visit-focus OFF half of the measured table is unreachable');
+ok(/The lower \.mls-fp-fmt is deliberately NOT in this hide rule/.test(VFOCUS),
+  'feat_mls_visit_focus.js changed its mind about the lower .mls-fp-fmt - re-measure the four states before trusting the rule above');
+
+/* Nothing may hide the flow note card without the one guard that proves a
+   visible copy exists somewhere else. */
 const NOTECARD_RULES = CONNECT.match(/[^'"\n]*\.ez3-notecard[^'"{}\n]*\{[^}]*\}/g) || [];
 ok(NOTECARD_RULES.length >= 1, 'no stylesheet rule mentions .ez3-notecard at all');
 for (const rule of NOTECARD_RULES) {
   if (!/display\s*:\s*none/i.test(rule)) continue;
-  ok(/^\s*body\.ez3adv:not\(\.mls-vfocus\)\s+\.ez3-notecard/.test(rule),
-    'a rule hides the flow note card without BOTH guards (body.ez3adv, and visit-focus not folding the other copy), so the note can vanish with nothing showing it: ' + rule);
+  ok(/^\s*body\.mls-revnote\s+\.ez3-notecard/.test(rule),
+    'a rule hides the flow note card without the guard that proves the workspace is showing one, so the note can vanish with nothing showing it: ' + rule);
 }
 
-/* And the same class may not be smuggled into the shells, where no rule here
-   could see it. */
+/* And neither class may be smuggled into the shells, where no rule here could
+   see it. */
 for (const [label, text] of [['1pScribeFlow.html', SHELL], ['1p/index.html', TWIN]]) {
   ok(text.indexOf('ez3-notecard') < 0,
     label + ' now styles or renders .ez3-notecard - the yield contract lives in one place, the connect stylesheet');
+  ok(text.indexOf('mls-revnote') < 0,
+    label + ' now writes body.mls-revnote - the class has exactly one writer, revwork reconcile()');
 }
 
 /* ==========================================================================
@@ -915,6 +949,135 @@ function startSegmentHarness(world) {
     ok(/and the right hip/.test(ta.value), 'a restarted recognizer was silenced by a stale folded boundary');
   }
 
+  /* ========================================================================
+   * R.  ONE VISIBLE NOTE, COUNTED IN A BOOTED PAGE   (onenote-1.2.0)
+   * ------------------------------------------------------------------------
+   * THE PIN THAT SECTION 1b IS NOT ALLOWED TO BE ON ITS OWN. Every earlier
+   * version of that contract was a CSS-parse pin, and a CSS-parse pin cannot
+   * see a selector that never matches: `body.ez3adv:not(.mls-vfocus)` read
+   * perfectly and hid nothing, because visit-focus stamps .mls-vfocus on every
+   * shipping shell. So this part boots the real 1p shell over a local server,
+   * puts a real generated note in the editor through the app's own offline
+   * branch, and COUNTS what has a layout box and a height:
+   *
+   *     [...document.querySelectorAll('.mls-fp-fmt, #ez3Note, #noteBox')]
+   *       .filter(el => el.offsetParent !== null &&
+   *                     el.getBoundingClientRect().height > 0).length === 1
+   *
+   * in all four body states - the review workspace open and closed, crossed
+   * with visit-focus live and reverted. Two vacuity guards run first: the
+   * flow's own #ez3Note must exist carrying the note (without it there is no
+   * duplicate to remove and the count passes for the wrong reason), and the
+   * workspace slot must actually be holding the adopted note.
+   * No login, no network, no PHI - one synthetic patient and the generator's
+   * own no-key example branch.
+   * ====================================================================== */
+  {
+    const MIME = {
+      '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
+      '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8',
+      '.png': 'image/png', '.svg': 'image/svg+xml'
+    };
+    const srv = http.createServer((req, res) => {
+      let rel = decodeURIComponent(req.url.split('?')[0]);
+      if (rel === '/') rel = '/1pScribeFlow.html';
+      const file = path.resolve(ROOT, '.' + rel);
+      if (!file.startsWith(ROOT)) { res.writeHead(403); res.end(); return; }
+      fs.readFile(file, (err, buf) => {
+        if (err) { res.writeHead(404); res.end('x'); return; }
+        res.writeHead(200, { 'content-type': MIME[path.extname(rel).toLowerCase()] || 'text/html; charset=utf-8' });
+        res.end(buf);
+      });
+    });
+    const port = await new Promise((r) => srv.listen(0, '127.0.0.1', () => r(srv.address().port)));
+    const browser = await chromium.launch({ channel: 'chrome', headless: true });
+    try {
+      const page = await (await browser.newContext({ viewport: { width: 1366, height: 900 } })).newPage();
+      await page.goto('http://127.0.0.1:' + port + '/1pScribeFlow.html', { waitUntil: 'load', timeout: 90000 });
+      await page.waitForTimeout(2000);
+      await page.evaluate(() => { window.__mlsHarnessAccountEmail = 'review-workspace@mlsscribe.test'; });
+      await page.evaluate(() => (typeof window.__mlsEnsureUiBundle === 'function' ? window.__mlsEnsureUiBundle() : null));
+      await page.waitForFunction(() => !!window.__mlsSimpleLayer, null, { timeout: 60000 });
+      await page.waitForTimeout(6000);
+      await page.evaluate(() => {
+        const a = document.getElementById('authScreen'); if (a) a.style.display = 'none';
+        const b = document.getElementById('appScreen'); if (b) b.style.display = '';
+      });
+      ok(await page.evaluate(() => !!(window.__mlsRevWork && window.__mlsRevWork.installed)),
+        'revwork did not install on the booted shell, so nothing below is measuring the shipped module');
+
+      /* one synthetic patient, the visit room, then the generator's no-key branch */
+      eq(await page.evaluate(() => {
+        savePatients([{ id: 'syn-rw', name: 'Ada Sample', dob: '1970-01-01', mrn: 'MRN100001', notes: [], visits: [] }]);
+        return getPatients().length;
+      }), 1, 'the synthetic roster did not land');
+      await page.evaluate(() => { selectPatient('syn-rw'); showView('visit'); });
+      await page.waitForTimeout(1200);
+      await page.evaluate(() => { const b = document.getElementById('ez3StartActive') || document.getElementById('ez3ActiveGo'); if (b) b.click(); });
+      await page.waitForTimeout(2500);
+      const gen = await page.evaluate(async () => {
+        window.hasAI = function () { return false; };
+        document.getElementById('transcript').value = EXAMPLE;
+        finalText = EXAMPLE;
+        const okGen = await generateNote();
+        return { ok: okGen, len: String(currentSoap || '').length };
+      });
+      await page.waitForTimeout(3500);
+      /* visit-focus is deferred (this same connect file loads it on idle), so
+         wait for it rather than racing it: without it the contract's two
+         visit-focus states do not exist. */
+      await page.waitForFunction(() => !!(window.__mlsVisitFocus && window.__mlsVisitFocus.installed), null, { timeout: 60000 })
+        .catch(() => { throw new Error('feat_mls_visit_focus.js never installed on the booted shell - the two states this contract is about do not exist'); });
+      ok(await page.evaluate(() => !!(window.__mlsVisitFocus && window.__mlsVisitFocus.installed)),
+        'feat_mls_visit_focus.js did not install on the booted shell - the two states this contract is about do not exist');
+      ok(gen.ok === true && gen.len > 500,
+        'the offline generator produced no note (ok=' + gen.ok + ' len=' + gen.len + ') - every count below would pass vacuously');
+
+      /* VACUITY GUARDS: both copies must EXIST before "exactly one is visible"
+         means anything at all. */
+      const shape = await page.evaluate(() => ({
+        flowNote: (() => { const n = document.getElementById('ez3Note'); return n ? String(n.value || '').length : -1; })(),
+        slotHolds: (() => { const s = document.getElementById('mlsRevSlot'); return !!(s && s.querySelector('#noteBox') && s.querySelector('.mls-fp-fmt')); })(),
+        candidates: document.querySelectorAll('.mls-fp-fmt, #ez3Note, #noteBox').length
+      }));
+      ok(shape.flowNote > 500,
+        'the guided flow is not rendering its own copy of the note (#ez3Note holds ' + shape.flowNote + ' chars), so there is no duplicate to remove and this part proves nothing');
+      ok(shape.slotHolds,
+        'the review workspace slot is not holding the adopted #noteBox and its formatted view, so the state this contract is about was never reached');
+      ok(shape.candidates >= 3,
+        'only ' + shape.candidates + ' note surfaces exist on the page - fewer than the two copies this contract counts');
+
+      const countVisible = () => page.evaluate(() => [...document.querySelectorAll('.mls-fp-fmt, #ez3Note, #noteBox')]
+        .filter((el) => el.offsetParent !== null && el.getBoundingClientRect().height > 0)
+        .map((el) => (el.id ? '#' + el.id : '.' + el.className) + ' in ' + ((el.parentElement && el.parentElement.id) ? '#' + el.parentElement.id : (el.parentElement ? '.' + el.parentElement.className : '?'))));
+
+      const states = [
+        { label: 'visit-focus live, review workspace CLOSED', run: () => page.evaluate(() => { document.body.classList.remove('ez3adv'); if (window.__mlsRevWork) window.__mlsRevWork.reconcile(); }) },
+        { label: 'visit-focus live, review workspace OPEN', run: () => page.evaluate(() => { document.body.classList.add('ez3adv'); if (window.__mlsRevWork) window.__mlsRevWork.reconcile(); }) },
+        { label: 'visit-focus REVERTED, review workspace OPEN', run: () => page.evaluate(() => { window.__mlsVisitFocus.revert(); document.body.classList.add('ez3adv'); if (window.__mlsRevWork) window.__mlsRevWork.reconcile(); }) },
+        { label: 'visit-focus REVERTED, review workspace CLOSED', run: () => page.evaluate(() => { document.body.classList.remove('ez3adv'); if (window.__mlsRevWork) window.__mlsRevWork.reconcile(); }) }
+      ];
+      for (const st of states) {
+        await st.run();
+        await page.waitForTimeout(900);
+        const seen = await countVisible();
+        eq(seen.length, 1,
+          'with ' + st.label + ' the doctor is looking at ' + seen.length + ' copies of the note, not one: ' + JSON.stringify(seen));
+      }
+
+      /* The class is a MEASUREMENT, not a mode: in the one state where the
+         workspace is not showing the note, it must be off and the flow copy
+         must be the one on screen. */
+      eq(await page.evaluate(() => document.body.classList.contains('mls-revnote')), false,
+        'body.mls-revnote survived into the state where #noteCard is hidden - the flow copy would be hidden with nothing showing the note');
+      eq(await page.evaluate(() => window.__mlsRevWork.slotHasVisibleNote()), false,
+        'revwork still believes its slot is showing the note while #noteCard is hidden');
+    } finally {
+      await browser.close();
+      srv.close();
+    }
+  }
+
   console.log('PASS review-workspace: ' + checks + ' checks - the guided flow cannot be hidden by the workspace toggle ' +
     '(proved by replaying the owner exact press against a DOM that hides #ez3Wrap, and by the invariant refusing to ' +
     'fight a legitimately closed visit view); the toggle is a true toggle with both labels naming the review workspace ' +
@@ -926,6 +1089,6 @@ function startSegmentHarness(world) {
     'pending consent arms the span, returns a truthy sentinel, starts the recorder when the doctor confirms and never ' +
     'paints "the recorder could not start", while a decline and a real failure still fail closed; consent survives a ' +
     'placeholder resolving into its own appointment but never crosses two concrete appointments or two patients; and a ' +
-    'correction typed mid-recording is no longer duplicated when the recognizer finalises that utterance');
+    'correction typed mid-recording is no longer duplicated when the recognizer finalises that utterance; and, counted in a BOOTED page with a real generated note, exactly ONE copy of it is visible in all four states - review workspace open/closed crossed with visit-focus live/reverted - where the module-naming yield it replaces left two');
 }
 })().catch((err) => { console.error(err); process.exit(1); });

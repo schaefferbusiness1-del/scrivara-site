@@ -27263,6 +27263,80 @@ function attachVisitToPatient(rec){
 
 let currentNoteId=null; // id of the history record being edited (null = brand new)
 
+/* ===== adhocid-1.0.0 (owner-measured 2026-09-11) ==========================
+ * AN AD-HOC VISIT AUTO-SAVED ITSELF ONTO A JULY HISTORY RECORD.
+ *
+ * WHAT HAPPENED. The doctor opened a patient by search - no appointment, a
+ * brand-new encounter - recorded it, and the note landed on top of a record
+ * created in July. currentNoteId is the whole story: it is the id of the
+ * History record being edited, and noteRecordFromState() reuses it verbatim,
+ * so upsertNote()'s update branch replaces that row and keeps its `created`.
+ *
+ * WHY IT SURVIVED THE SWITCH. newVisit() nulls currentNoteId, but the patient
+ * switch calls newVisit({patientSwitchReset:true}), which visitowner-1.0.0
+ * deliberately treats as an internal reset that PRESERVES the per-patient
+ * switch-back stash - and that stash carries `noteId`, written the last time
+ * the doctor left this patient with a History record loaded (Continue this
+ * draft -> loadRecordIntoEditor -> currentNoteId=n.id). restoreFor() put it
+ * straight back, so the next visit for that patient started life already
+ * pointing at an old row.
+ *
+ * TWO CURES, at the two moments a stale id can do harm:
+ *   1. restoreFor() no longer restores the id as a matter of course
+ *      (visitowner-1.0.0). A restored in-tab draft is UNSAVED WORK, not an
+ *      open History record; the id it came back with is kept as provenance
+ *      (rec.continuedFrom), and is re-adopted at the END of the restore ONLY
+ *      if this editor is still entitled to it by the guard below. Dropping it
+ *      unconditionally cured the overwrite and MEASURED a duplicate row in its
+ *      place - save, switch away, switch back, save again gave one visit two
+ *      History rows - so the re-adoption is part of the cure, not a softening
+ *      of it.
+ *   2. this guard, read by noteRecordFromState() on every single save. If
+ *      currentNoteId names a stored record that belongs to a DIFFERENT
+ *      patient, or whose stored transcript is neither empty nor the beginning
+ *      of the transcript now on screen, then whatever this editor holds is not
+ *      that record and a fresh id is minted instead of overwriting it.
+ *
+ * FAIL-OPEN ON PURPOSE. Every unknown - no id, no store, an id that names
+ * nothing, an exception - answers "yes, still ours", so the ordinary
+ * continue-this-draft path (record loaded, more dictation appended) keeps
+ * updating the one row exactly as it always did. The only thing that mints a
+ * new id is positive evidence that the row on disk is a different encounter.
+ * Whitespace is normalised before the prefix test so a reformat is not
+ * mistaken for a different visit.
+ * ======================================================================== */
+function _mlsNoteTranscriptContinues(was,now){
+  try{
+    var a=String(was==null?'':was).replace(/\s+/g,' ').trim();
+    var b=String(now==null?'':now).replace(/\s+/g,' ').trim();
+    if(!a) return true;                 /* nothing stored to contradict */
+    return b.indexOf(a)===0;            /* the saved visit, continued */
+  }catch(eTc){ return true; }
+}
+function _mlsNoteIdStillOurs(){
+  try{
+    if(!currentNoteId) return true;
+    if(typeof getNotes!=='function') return true;
+    var saved=(getNotes()||[]).find(function(n){return n&&String(n.id)===String(currentNoteId);});
+    if(!saved) return true;             /* nothing on disk to overwrite */
+    var active=(typeof getActivePtId==='function')?String(getActivePtId()||''):'';
+    var owner=String(saved.patientId||'');
+    if(owner&&active&&owner!==active) return false;
+    var nowText=(document.getElementById('transcript')||{}).value;
+    if(!_mlsNoteTranscriptContinues(saved.transcript,nowText)) return false;
+    return true;
+  }catch(eNid){ return true; }
+}
+/* The id an overwritten-and-replaced record came FROM, so the new row can say
+   where it started without pretending to BE that row. Set by the switch-back
+   restore; cleared by newVisit() and by actually opening a record. */
+function _mlsContinuedFromId(){
+  try{ return String(window.__mlsContinuedFromNoteId||''); }catch(eCf){ return ''; }
+}
+function _mlsSetContinuedFromId(id){
+  try{ window.__mlsContinuedFromNoteId=String(id||''); }catch(eCf2){}
+}
+
 function newVisit(opts){
   opts=opts||{};
   try{if(typeof _mlsAbortActiveGeneration==='function')_mlsAbortActiveGeneration('source-changed','new-visit');}catch(eGeneration){}
@@ -27277,6 +27351,7 @@ function newVisit(opts){
   if(!opts.preserveRecovery){ try{ if(typeof _wipeVisitDraft==='function') _wipeVisitDraft(); }catch(e){} }
   try{ if(typeof _hideNextActions==='function') _hideNextActions(); }catch(e){}
   currentNoteId=null;
+  _mlsSetContinuedFromId('');   /* adhocid-1.0.0: a fresh visit continues nothing */
   try{ if(typeof _heroReset==='function') _heroReset(); }catch(e){}   // clear the record-first hero for the next patient
   document.getElementById('patientLabel').value='';
   document.getElementById('transcript').value=''; finalText='';
@@ -27321,8 +27396,22 @@ function newVisit(opts){
 function noteRecordFromState(markSigned){
   const routePatient=currentVisitAthenaBinding&&currentVisitAthenaBinding.patient?currentVisitAthenaBinding.patient:null;
   const routeContext=currentVisitAthenaBinding&&currentVisitAthenaBinding.visitContext?currentVisitAthenaBinding.visitContext:null;
+  /* adhocid-1.0.0: the id this editor is entitled to overwrite. The guard is
+     declared just above `function newVisit(opts)`; the typeof check exists only
+     so a suite that runs this serializer in isolation still gets the shipped
+     behaviour (fail-open = keep the id), and the name is pinned by
+     tests/1p-visitowner-adhoc-record-identity-runtime.test.js. */
+  const _idOurs=(typeof _mlsNoteIdStillOurs==='function')?_mlsNoteIdStillOurs():true;
+  const _fromId=(function(){
+    try{
+      if(!_idOurs&&currentNoteId) return String(currentNoteId);
+      return (typeof _mlsContinuedFromId==='function')?_mlsContinuedFromId():'';
+    }catch(eFrom){ return ''; }
+  })();
   return {
-    id: currentNoteId || ('n'+Date.now()+Math.random().toString(36).slice(2,6)),
+    id: (_idOurs?currentNoteId:'') || ('n'+Date.now()+Math.random().toString(36).slice(2,6)),
+    /* provenance only - never an instruction to overwrite that row */
+    continuedFrom: _fromId,
     patient: (routePatient&&routePatient.name)||document.getElementById('patientLabel').value.trim()||'Unlabeled',
     patientLabel: document.getElementById('patientLabel').value,
     patientDob: (routePatient&&routePatient.dob)||'',
@@ -27661,6 +27750,19 @@ async function loadRecordsFromServer(opts){
   }catch(e){/* offline — keep local history */ return false; }
 }
 
+/* adhocid-1.0.0: ONE DEFINITION OF "WHEN DID THIS VISIT LAST CHANGE".
+   upsertNote() stamps `updated` on every write and preserves the original
+   `created` on an update, and the insert branch writes `created` a tick AFTER
+   the record was built - so neither field alone is reliably the later one.
+   The row's date and the row's place in the list must agree, and both are this
+   number. Never negative, never NaN: an unparseable record sorts last. */
+function _mlsNoteRecency(n){
+  try{
+    var u=Number(n&&n.updated)||0, c=Number(n&&n.created)||0;
+    var v=u>c?u:c;
+    return (isFinite(v)&&v>0)?v:0;
+  }catch(eRec){ return 0; }
+}
 function renderHistory(){
   const all=getNotes();
   const histData=__mlsHistoryData(all);
@@ -27695,6 +27797,15 @@ function renderHistory(){
   if(!arr.length){ empty.style.display='block'; list.innerHTML=''; list._mlsSig=''; empty.innerHTML='<span class="big">📭</span>'+(ap?'No saved visits for this patient yet. Generate a note and press <b>Save to history</b>.':'No saved visits yet. Generate a note and press <b>Save to history</b>.'); return; }
   empty.style.display='none';
   let ordered=mine.concat(orphans);
+  /* adhocid-1.0.0: A ROW THAT RECEIVED NEW BYTES TODAY MAY NOT HIDE UNDER AN
+     OLD DATE. __mlsHistoryData orders by `updated` alone, and the row label
+     below read `updated||created`, so any record whose stored `updated` is
+     missing, zero or older than its own `created` sank to the bottom of the
+     list wearing the wrong day - which is exactly how an overwritten July row
+     stayed invisible while it was being written into. Recency is the LATER of
+     the two, everywhere. Sorted on a copy (mine/orphans are the shared history
+     cache's own arrays and must never be reordered in place). */
+  ordered=ordered.slice().sort(function(a,b){ return _mlsNoteRecency(b)-_mlsNoteRecency(a); });
   // ---- Search + type filter so the doctor can find anything fast ----
   const qEl=document.getElementById('histSearch'); const q=(qEl&&qEl.value?qEl.value:'').trim().toLowerCase();
   const fEl=document.getElementById('histFilter'); const fv=fEl?fEl.value:'';
@@ -27750,7 +27861,7 @@ function renderHistory(){
           : ' <span class="badge" style="background:#e8f5ed;color:#204034;border-color:#cfe0d7" title="Backed up to your account (encrypted)">☁ Synced</span>')
     : ' <span class="badge draft" title="Saved only in this browser — sign in to back it up to your account">📱 This device</span>';
   var _histHtml=ordered.map(n=>{
-    const d=new Date(n.updated||n.created||Date.now());
+    const d=new Date(_mlsNoteRecency(n)||Date.now());   /* adhocid-1.0.0: the LATER of created/updated */
     const dateStr=d.toLocaleDateString()+' '+d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
     const status = n.isDraft ? '<span class="badge draft">● Draft</span>'
                   : (n.signed ? '<span class="badge signed">✔ Signed</span>' : '<span class="badge draft">● Unsigned</span>');
@@ -27921,6 +28032,7 @@ function loadRecordIntoEditor(n){
   _athenaSetVisitBinding(_athenaBindingForSavedRecord(n),true);
   _athenaResetSuperbill(true);
   currentNoteId=n.id;
+  _mlsSetContinuedFromId('');   /* adhocid-1.0.0: this record IS open, not continued from */
   document.getElementById('patientLabel').value=n.patient&&n.patient!=='Unlabeled'?n.patient:'';
   document.getElementById('transcript').value=n.transcript||''; finalText=(n.transcript||'')+' ';
   var savedNoteProvenance=(n&&typeof n.noteProvenance==='string'&&/^(typed|saved|generated_soap|edited_generated_soap|generated_nonsoap)$/.test(n.noteProvenance))?n.noteProvenance:'saved';
@@ -54290,7 +54402,24 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
     if (str(d.ptId) !== want) { delete map[want]; writeStash(map); return false; }
     if (editorState().any) return false;
 
-    safe(function () { if (typeof currentNoteId !== 'undefined') currentNoteId = d.noteId || null; });
+    /* adhocid-1.0.0 (owner-measured 2026-09-11): A RESTORED IN-TAB DRAFT IS
+       UNSAVED WORK, NOT AN OPEN HISTORY RECORD.
+       This line used to restore currentNoteId from the stash, and that is how
+       an ad-hoc visit - a patient opened by search, no appointment - auto-saved
+       itself onto a record created in July. The stashed noteId was written the
+       last time the doctor left this patient with a History record loaded
+       (Continue this draft -> loadRecordIntoEditor -> currentNoteId = n.id);
+       restoring it made noteRecordFromState reuse that id, so upsertNote's
+       update branch replaced the old row and kept its `created`.
+       The editor keeps every byte it had. Only the claim to overwrite a stored
+       row is dropped, and the id survives as PROVENANCE - the next saved record
+       carries it as rec.continuedFrom, so nothing about where this work came
+       from is lost. The END of this function re-adopts that id if, once the
+       transcript and the patient are back, this editor is still entitled to it
+       - otherwise a doctor who saves, switches away and comes back would get a
+       SECOND History row for one visit. */
+    safe(function () { if (typeof currentNoteId !== 'undefined') currentNoteId = null; });
+    safe(function () { if (typeof _mlsSetContinuedFromId === 'function') _mlsSetContinuedFromId(str(d.noteId)); });
     safe(function () { var tx = el('transcript'); if (tx) tx.value = d.t || ''; });
     safe(function () { if (typeof finalText !== 'undefined') finalText = d.t || ''; });
     safe(function () { if (typeof currentSoap !== 'undefined') currentSoap = d.soap || ''; });
@@ -54335,6 +54464,31 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
       safe(function () { if (typeof renderCoding === 'function') renderCoding(d.coding || null); });
       safe(function () { if (d.emr && typeof populateEMR === 'function') populateEMR(d.emr, d.coding || null); });
     }
+    /* adhocid-1.0.0, THE OTHER HALF - and it is not optional. Dropping the id
+       unconditionally fixes the July overwrite and MEASURES a new defect in
+       its place: save a bound visit, switch away, switch back, save again, and
+       the second save minted a SECOND History row for one visit (measured in
+       the booted shell: 2 rows on the unconditional drop, 1 before it). One
+       visit is one row; a duplicate is its own patient-safety problem, and the
+       app already carries a banner and a cleanup pass for exactly that.
+       So the id comes back - but only when this editor is still entitled to it,
+       judged by the SAME test every save is judged by, now that the transcript,
+       the patient and the binding are all restored. The owner's July record
+       fails that test (its transcript is not the beginning of the ad-hoc visit
+       now on screen) and stays dropped; a draft that is genuinely the stored
+       visit continued passes it and keeps its one row.
+       Fail-closed: if the guard is not on the page, the draft stays unsaved
+       work. Worst case that is an extra row; the alternative is an overwrite. */
+    safe(function () {
+      if (typeof currentNoteId === 'undefined') return;
+      var wasId = str(d.noteId);
+      if (!wasId) return;
+      if (typeof _mlsNoteIdStillOurs !== 'function') return;
+      currentNoteId = wasId;
+      if (!_mlsNoteIdStillOurs()) currentNoteId = null;
+      /* re-adopted: this IS that row again, so it is not "continued from" it */
+      else if (typeof _mlsSetContinuedFromId === 'function') _mlsSetContinuedFromId('');
+    });
     window.__mlsVisitEditorOwnerId = want;
     delete map[want];
     writeStash(map);
