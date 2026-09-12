@@ -146,7 +146,7 @@ function runtime(options) {
   };
   const toasts = [];
   const copied = [];
-  const storage = new Map();
+  const storage = opts.storage || new Map();
   let uuid = 0;
   const ctx = {
     document,
@@ -155,7 +155,13 @@ function runtime(options) {
     bkBase: () => 'https://synthetic-backend.invalid',
     bkToken: () => 'SYNTHETIC_CLINICIAN_CREDENTIAL',
     toast: (m, k) => toasts.push({ m, k }),
-    localStorage: { getItem: (k) => storage.has(String(k)) ? storage.get(String(k)) : null, setItem: (k, v) => storage.set(String(k), String(v)) },
+    localStorage: {
+      getItem: (k) => storage.has(String(k)) ? storage.get(String(k)) : null,
+      setItem(k, v) {
+        if (opts.dropJobStoreWrites && String(k).indexOf('mlsOpJobs:') === 0) return;
+        storage.set(String(k), String(v));
+      }
+    },
     crypto: { randomUUID: () => '00000000-0000-4000-8000-' + String(++uuid).padStart(12, '0') },
     /* This suite owns transport behavior; finalizer behavior is executed in
        opnote-integrity-audit-regressions-runtime.test.js.  Keep the boundary
@@ -173,7 +179,10 @@ function runtime(options) {
        vacuously on an empty library. */
     getTemplateById: (id) => (opts.templates || []).filter((t) => String(t.id) === String(id))[0] || null,
     getTemplates: () => (opts.templates || []).slice(),
-    navigator: { clipboard: { writeText: (v) => { copied.push(String(v)); return Promise.resolve(); } } },
+    navigator: {
+      clipboard: { writeText: (v) => { copied.push(String(v)); return Promise.resolve(); } },
+      locks: opts.locks || null
+    },
     fetch(url, init) {
       calls.push({ url: String(url), init: init || {} });
       const key = String(url).replace('https://synthetic-backend.invalid', '') + ' ' + String((init || {}).method || 'GET');
@@ -294,7 +303,7 @@ function happyReplies(extra) {
   /* ---- the ordinary hand-over -------------------------------------------- */
   {
     const r = runtime({
-      rows: [{ note: DRAFT, proc: 'Right knee arthroscopy', tplId: 'tpl_knee' }],
+      rows: [{ opKey: 'row-single', note: DRAFT, proc: 'Right knee arthroscopy', tplId: 'tpl_knee' }],
       templates: [KNEE_TEMPLATE],
       replies: happyReplies(),
     });
@@ -344,6 +353,9 @@ function happyReplies(extra) {
     checks++;
     ok(!('patient' in sent) && !('patientId' in sent) && !('dob' in sent),
       'the job body carries patient identity. The surgeon page is outside this practice; only the note text and the fields go.');
+    eq(r.ctx._opPrep[0].opJobId, 'oj_synthetic1', 'the returned single-job id was not attached to its row');
+    eq(r.ctx._opJobStoreRead()['row-single'], 'oj_synthetic1', 'the returned single-job id was not durably remembered');
+    eq(Object.keys(r.ctx._opIdemRead()).length, 0, 'the confirmed single-send key remained after its returned job id was durably remembered');
 
     /* THE LINK: minted after the job, shown once, gone on close */
     const mint = r.calls.filter((c) => /\/link$/.test(c.url));
@@ -368,6 +380,48 @@ function happyReplies(extra) {
     r.ctx.opSurgeonClose();
     eq(r.body.children.length, 0, 'the dialog stayed in the document after it was closed');
     ok(r.dialogHtml().indexOf(LINK_URL) === -1, 'the link is still in the document after the dialog closed');
+  }
+
+  /* A storage API can accept setItem without throwing and still fail to retain
+     the write (privacy/eviction adapters do this).  A row-only assignment is
+     not enough proof to discard the exact retry key. */
+  {
+    const rows = [{ opKey: 'row-single-dropped', note: DRAFT, proc: 'Right knee arthroscopy', tplId: 'tpl_knee' }];
+    const r = runtime({ rows, templates: [KNEE_TEMPLATE], replies: happyReplies(), dropJobStoreWrites: true });
+    await r.ctx.opPrepForSurgeon(0);
+    r.ctx.document.getElementById('opSurgeonPick').value = 'oc_synthetic1';
+    await r.ctx.opSurgeonSend();
+    const job = r.calls.filter((c) => /\/api\/opnote-jobs$/.test(c.url))[0];
+    eq(rows[0].opJobId, 'oj_synthetic1', 'the in-memory row did not receive the server job id in the storage-failure control');
+    eq(r.ctx._opJobStoreRead()['row-single-dropped'], undefined, 'the storage-failure fixture unexpectedly retained the job mapping');
+    eq(Object.keys(r.ctx._opIdemRead()).length, 1, 'the single-send key was cleared after durable job mapping failed');
+    eq(Object.values(r.ctx._opIdemRead())[0].key, job.init.headers['Idempotency-Key'], 'the key retained after mapping failure is not the exact key sent');
+  }
+
+  /* Two same-origin tabs pressing the same handoff at once share Chrome's
+     exclusive Web Lock.  Only the winner may allocate an idempotency key or
+     reach the server; the other gets a visible, retryable explanation. */
+  {
+    const held = new Set();
+    const locks = {
+      request(name, options, callback) {
+        if (held.has(name)) return Promise.resolve().then(() => callback(null));
+        held.add(name);
+        return Promise.resolve().then(() => callback({ name })).finally(() => held.delete(name));
+      }
+    };
+    const storage = new Map();
+    const row = () => ({ opKey: 'row-cross-tab', note: DRAFT, proc: 'Right knee arthroscopy', tplId: 'tpl_knee' });
+    const a = runtime({ rows: [row()], templates: [KNEE_TEMPLATE], replies: happyReplies(), locks, storage });
+    const b = runtime({ rows: [row()], templates: [KNEE_TEMPLATE], replies: happyReplies(), locks, storage });
+    await Promise.all([a.ctx.opPrepForSurgeon(0), b.ctx.opPrepForSurgeon(0)]);
+    a.ctx.document.getElementById('opSurgeonPick').value = 'oc_synthetic1';
+    b.ctx.document.getElementById('opSurgeonPick').value = 'oc_synthetic1';
+    await Promise.all([a.ctx.opSurgeonSend(), b.ctx.opSurgeonSend()]);
+    const jobs = a.calls.concat(b.calls).filter((c) => /\/api\/opnote-jobs$/.test(c.url));
+    eq(jobs.length, 1, 'two simultaneous same-intent tabs created more than one server job');
+    const messages = [a, b].map((r) => r.ctx.document.getElementById('opSurgeonMsg').textContent).filter(Boolean);
+    ok(messages.some((m) => /already being sent in another tab/i.test(m)), 'the refused simultaneous tab did not explain why nothing was sent');
   }
 
   /* ---- whole-day creation carries one opaque idempotency key -------------- */

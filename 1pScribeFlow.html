@@ -25128,6 +25128,21 @@ function _opIdemFor(intent){
   _opIdemWrite(state);return key;
 }
 function _opIdemConfirmed(intent,key){var state=_opIdemRead();if(state[intent]&&String(state[intent].key)===String(key)){delete state[intent];_opIdemWrite(state);}}
+/* Web Locks is atomic across same-origin tabs.  The lock name contains only the
+   two opaque intent hashes; no note, patient, client, or practice text.  An
+   unavailable lock refuses the second simultaneous press instead of creating
+   a second server key.  Older engines keep the persisted retry behavior. */
+async function _opWithHandoffLock(intent,work){
+  var locks=null;try{locks=window.navigator&&window.navigator.locks;}catch(e){}
+  if(!locks||typeof locks.request!=='function')return await work();
+  var unavailable=false;
+  var value=await locks.request('mls-opnote-handoff:'+String(intent||''),{mode:'exclusive',ifAvailable:true},async function(lock){
+    if(!lock){unavailable=true;return null;}
+    return await work();
+  });
+  if(unavailable){var err=new Error('This handoff is already being sent in another tab.');err.code='OPNOTE_SEND_IN_PROGRESS';throw err;}
+  return value;
+}
 /* opsendfix-1.0.0: EVERY REQUEST ON THIS SURFACE ANSWERS, ONE WAY OR ANOTHER.
    A request that hangs used to leave _opSurgeonBusy set for the rest of the
    page's life, and the hand-off screen repaints from that flag - so a slow
@@ -25241,14 +25256,18 @@ function _opJobStoreRead(){
   catch(e){ return {}; }
 }
 function _opRememberJob(row,id){
-  if(!row||!id) return;
-  row.opJobId=String(id);
+  if(!row||!id) return false;
+  var rememberedId=String(id),rowKey=String(row.opKey||''),durable=false;
+  row.opJobId=rememberedId;
   try{
+    if(!rowKey) throw new Error('missing row key');
     var store=_opJobStoreRead();
-    store[String(row.opKey||'')]=String(id);
+    store[rowKey]=rememberedId;
     localStorage.setItem(_opJobStoreKey(),JSON.stringify(store));
+    durable=String(_opJobStoreRead()[rowKey]||'')===rememberedId;
   }catch(e){}
   try{ _opPaintReturnedButton(); }catch(e){}
+  return durable&&String(row.opJobId||'')===rememberedId;
 }
 /* Put the remembered ids back on the rows the day has just rebuilt. Safe to run
    whenever the day changes; a key with no row is simply skipped. */
@@ -25433,10 +25452,10 @@ async function opSurgeonSendDay(){
       title:(String(r.proc||'').trim()||'Op note'), noteText:String(r.note||''), blanks:bl });
   }
   var dayBody=JSON.stringify({clientId:who.id,jobs:jobs});
-  var dayIntent=_opHandoffIntent('day',dayBody),dayIdem=_opIdemFor(dayIntent);
+  var dayIntent=_opHandoffIntent('day',dayBody),dayIdem='';
   var res=null;
-  try{ res=await _opSurgeonApi('/api/opnote-jobs/batch',{method:'POST',headers:{'Idempotency-Key':dayIdem},body:dayBody}); }
-  catch(e){ _opSurgeonBusy=''; _opSurgeonSay('That did not go through. Try again in a moment.'); return; }
+  try{ res=await _opWithHandoffLock(dayIntent,async function(){dayIdem=_opIdemFor(dayIntent);return await _opSurgeonApi('/api/opnote-jobs/batch',{method:'POST',headers:{'Idempotency-Key':dayIdem},body:dayBody});}); }
+  catch(e){ _opSurgeonBusy=''; _opSurgeonSay(e&&e.code==='OPNOTE_SEND_IN_PROGRESS'?'These op notes are already being sent in another tab. Wait for that handoff to finish.':'That did not go through. Try again in a moment.'); return; }
   var made=Number((res&&res.created)||0);
   var allConfirmed=made===jobs.length&&jobs.length>0,rememberedAll=false;
   /* The verdicts come back in the order the day was sent, so row n of the day
@@ -25449,7 +25468,7 @@ async function opSurgeonSendDay(){
     for(var v=0;v<day.length;v++){
       var returnedId=String(verd[v]&&verd[v].id||'');
       if(!verd[v]||!verd[v].ok||!returnedId){rememberedAll=false;continue;}
-      _opRememberJob(day[v].row,returnedId);if(String(day[v].row.opJobId||'')!==returnedId)rememberedAll=false;
+      if(!_opRememberJob(day[v].row,returnedId))rememberedAll=false;
     }
   }catch(e){rememberedAll=false;}
   if(allConfirmed&&rememberedAll)_opIdemConfirmed(dayIntent,dayIdem);
@@ -25482,12 +25501,13 @@ async function opSurgeonSend(){
   var title=String(row.proc||'').trim()||'Op note';
   var tplOne=_opSurgeonTplOf(row);
   var oneBody=JSON.stringify({clientId:clientId,templateId:row.tplId||null,templateName:tplOne?tplOne.name:'',templateText:tplOne?tplOne.text:'',title:title,noteText:String(row.note||''),blanks:blanks});
-  var oneIntent=_opHandoffIntent('single',oneBody),oneIdem=_opIdemFor(oneIntent);
+  var oneIntent=_opHandoffIntent('single',oneBody),oneIdem='';
   try{
-    var madeOne=await _opSurgeonApi('/api/opnote-jobs',{method:'POST',headers:{'Idempotency-Key':oneIdem},body:oneBody});
-    var madeOneId=(madeOne&&madeOne.job&&madeOne.job.id)||'';_opRememberJob(row,madeOneId);
-    if(madeOneId)_opIdemConfirmed(oneIntent,oneIdem);
-  }catch(e){ _opSurgeonBusy=''; _opSurgeonSay('That did not go through. Try again in a moment.'); return; }
+    var madeOne=await _opWithHandoffLock(oneIntent,async function(){oneIdem=_opIdemFor(oneIntent);return await _opSurgeonApi('/api/opnote-jobs',{method:'POST',headers:{'Idempotency-Key':oneIdem},body:oneBody});});
+    var madeOneId=(madeOne&&madeOne.job&&madeOne.job.id)||'';
+    var madeOneRemembered=_opRememberJob(row,madeOneId);
+    if(madeOneId&&madeOneRemembered)_opIdemConfirmed(oneIntent,oneIdem);
+  }catch(e){ _opSurgeonBusy=''; _opSurgeonSay(e&&e.code==='OPNOTE_SEND_IN_PROGRESS'?'This op note is already being sent in another tab. Wait for that handoff to finish.':'That did not go through. Try again in a moment.'); return; }
   _opSurgeonId=clientId;
   _opSurgeonCount=blanks.length;
   _opSurgeonTo=String((known&&known.email)||'').trim();

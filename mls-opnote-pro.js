@@ -580,13 +580,17 @@
     // active-patient chart first — a note/template header can fill gaps but
     // never override the bound chart. Procedure date and provider prefer the
     // note (they are note-specific facts).
-    var patient = meta.patient || H.patient || '';
-    var dob = meta.dob || H.dob || '';
-    var mrn = meta.mrn || H.mrn || '';
-    var dop = H.dop || meta.dop || '';
+    /* A successful exit preflight can bind a different chart than the one
+       currently open in the app (notably a PDF launched from history).  In
+       that case its verified facts own these slots even when the note is not
+       yet normalized; truthy active-page metadata must not bleed across. */
+    var patient = meta.__opFinalPatient ? (meta.patient || '') : (meta.patient || H.patient || '');
+    var dob = meta.__opFinalPatient ? (meta.dob || '') : (meta.dob || H.dob || '');
+    var mrn = meta.__opFinalPatient ? (meta.mrn || '') : (meta.mrn || H.mrn || '');
+    var dop = meta.__opFinalDate ? (meta.dop || '') : (H.dop || meta.dop || '');
     /* Bound chart/practice metadata is authoritative.  Template/model header
        prose is only a fallback when no verified provider was supplied. */
-    var provider = meta.provider || H.provider || '';
+    var provider = meta.__opFinalProvider ? (meta.provider || '') : (meta.provider || H.provider || '');
     if (provider && meta.spec && provider.indexOf(meta.spec) < 0) provider = provider; // keep as-is
     var assistant = H.assistant || '';
 
@@ -867,9 +871,23 @@
       safe(function () { toast('Final safety review is still loading. Wait a moment and try the PDF again.', 'err'); });
       return null;
     }
-    var seed = {}, stored = opts.finalizationContext || {};
+    var seed = {}, stored = opts.finalizationContext || {}, suppliedRow = opts.row || null;
     function copy(src) { if (!src) return; Object.keys(src).forEach(function (k) { seed[k] = src[k]; }); }
-    copy(meta); copy(stored);
+    copy(meta);
+    /* A history card may export patient Beta while patient Alpha is open.  The
+       old seed combined Beta's explicit id/name with Alpha's active DOB/MRN,
+       causing exact-patient verification to fail or, worse, Alpha's facts to
+       be printed by normalize().  Clear the active identity as a UNIT before
+       applying a differently-bound history receipt/caller target. */
+    var targetId = String(opts.patientId || (suppliedRow && suppliedRow.patientId) || stored.patientId || '').trim();
+    var targetName = String(opts.patient || (suppliedRow && suppliedRow.appt && suppliedRow.appt.name) || stored.patient || stored.name || '').trim();
+    var activeId = String(meta.patientId || '').trim(), activeName = String(meta.patient || '').trim();
+    function samePersonName(a, b) { return String(a || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim() === String(b || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }
+    var targetDiffers = targetId && activeId ? targetId !== activeId : (targetName && activeName && !samePersonName(targetName, activeName));
+    if (targetDiffers) {
+      seed.patient = ''; seed.name = ''; seed.patientId = ''; seed.dob = ''; seed.mrn = ''; seed.patientVerified = false;
+    }
+    copy(stored);
     if (opts.patient) { seed.patient = opts.patient; seed.name = opts.patient; }
     if (opts.patientId) seed.patientId = opts.patientId;
     if (opts.procedureDate) { seed.procedureDate = opts.procedureDate; seed.dateStr = opts.procedureDate; }
@@ -886,6 +904,29 @@
       return null;
     }
     return result;
+  }
+
+  function applyFinalizationMeta(meta, context) {
+    var ctx = context || {}, provenance = ctx.providerProvenance || {};
+    if (ctx.patientVerified === true) {
+      meta.patient = String(ctx.patient || ctx.name || '');
+      meta.patientId = String(ctx.patientId || '');
+      meta.dob = String(ctx.dob || '');
+      meta.mrn = String(ctx.mrn || '');
+      meta.patientVerified = true;
+      meta.__opFinalPatient = true;
+    }
+    var procedureDate = String(ctx.procedureDate || ctx.dateStr || '').trim();
+    if (procedureDate) { meta.dop = procedureDate; meta.__opFinalDate = true; }
+    if (provenance.nameVerified === true && (ctx.provider || ctx.providerName)) {
+      meta.provider = String(ctx.provider || ctx.providerName || '');
+      meta.providerNpi = provenance.npiVerified === true ? String(ctx.providerNpi || '') : '';
+      meta.__opFinalProvider = true;
+      /* The signed-in provider's specialty is not provenance for a different
+         appointment-bound clinician.  Better no suffix than a false one. */
+      if (String(provenance.source || '') === 'appointment') meta.spec = '';
+    }
+    return meta;
   }
 
   function pdfBlanksReady(text) {
@@ -906,11 +947,10 @@
   async function exportPdf(rawText, opts) {
     opts = opts || {};
     var meta = appMeta();
-    if (opts.patient) meta.patient = opts.patient;
     var finalReview = pdfFinalization(rawText, opts, meta);
     if (!finalReview) return false;
     rawText = finalReview.note;
-    if (finalReview.context && finalReview.context.provider) meta.provider = finalReview.context.provider;
+    applyFinalizationMeta(meta, finalReview.context);
     if (!pdfBlanksReady(rawText)) return false;
     var pro = isNormalized(rawText) ? String(rawText) : normalize(rawText, meta);
 

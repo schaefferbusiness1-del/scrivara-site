@@ -37,6 +37,7 @@ const vm = require('vm');
 
 const root = path.resolve(__dirname, '..');
 const PRO_SRC = fs.readFileSync(path.join(root, 'mls-opnote-pro.js'), 'utf8');
+const INTEGRITY_SRC = fs.readFileSync(path.join(root, 'feat_mls_opnote_integrity.js'), 'utf8');
 const NOT_DICTATED = '[not dictated]';
 const CONFLICT = 'CONFLICTING ENTRY (not reconciled): ';
 
@@ -57,6 +58,65 @@ function engine() {
   vm.runInNewContext(PRO_SRC, ctx, { filename: 'mls-opnote-pro.js' });
   assert(ctx.__mlsOpNotePro && typeof ctx.__mlsOpNotePro.normalize === 'function', 'the op-note composer did not install');
   return ctx.__mlsOpNotePro;
+}
+
+function exportEngine() {
+  const alpha = { id: 'patient-alpha', name: 'Alpha Patient', dob: '1970-01-02', mrn: 'ALPHA-1', visits: [] };
+  const beta = { id: 'patient-beta', name: 'Beta Patient', dob: '1985-04-03', mrn: 'BETA-2', visits: [] };
+  const saved = [], drawn = [], toasts = [];
+  class FakePdf {
+    constructor() {
+      this.pages = 1;
+      this.internal = {
+        pageSize: { getWidth: () => 612, getHeight: () => 792 },
+        getNumberOfPages: () => this.pages
+      };
+      drawn.push(this);
+    }
+    setPage() { return this; }
+    setFont() { return this; }
+    setFontSize() { return this; }
+    setTextColor() { return this; }
+    setDrawColor() { return this; }
+    setLineWidth() { return this; }
+    line() { return this; }
+    addPage() { this.pages++; return this; }
+    splitTextToSize(value) { return [String(value)]; }
+    text(value) {
+      const values = Array.isArray(value) ? value : [value];
+      values.forEach((x) => saved.push(String(x)));
+      return this;
+    }
+    save(filename) { this.filename = String(filename); }
+  }
+  const document = {
+    readyState: 'complete', addEventListener() {}, getElementById: () => null,
+    querySelector: () => null, querySelectorAll: () => [],
+    createElement: () => ({ style: {}, dataset: {}, setAttribute() {}, appendChild() {}, addEventListener() {}, querySelector: () => null }),
+    head: { appendChild() {} }, body: { appendChild() {} }
+  };
+  const ctx = {
+    console, String, Number, Boolean, Math, Date, JSON, Object, Array, RegExp, Error, isNaN, Promise,
+    setTimeout: () => 0, clearTimeout: () => {}, setInterval: () => 0, clearInterval: () => {},
+    document, navigator: { userAgent: 'node' }, location: { href: '' },
+    localStorage: { getItem: () => null, setItem() {} },
+    activePatient: () => alpha,
+    getPatients: () => [alpha, beta],
+    _opDobKey: (v) => String(v || '').trim(),
+    clinicalProviderName: () => 'Verified Clinician, MD',
+    getProviderName: () => 'Verified Clinician, MD',
+    getNpi: () => '1234567890',
+    getSpec: () => 'Synthetic Specialty',
+    getTemplates: () => [],
+    opNoteBlankTokens: () => [],
+    loadJsPdf: () => Promise.resolve({ jsPDF: FakePdf }),
+    toast: (message, kind) => toasts.push({ message: String(message), kind })
+  };
+  ctx.window = ctx;
+  vm.runInNewContext(INTEGRITY_SRC, ctx, { filename: 'feat_mls_opnote_integrity.js' });
+  vm.runInNewContext(PRO_SRC, ctx, { filename: 'mls-opnote-pro.js' });
+  assert(ctx.__mlsOpNoteIntegrity && ctx.__mlsOpNotePro, 'the integrated PDF/finalizer harness did not install');
+  return { ctx, alpha, beta, saved, drawn, toasts };
 }
 const pro = engine();
 const headerLine = (out, label) => (out.split('\n').find((l) => l.indexOf(label + ': ') === 0) || '').slice(label.length + 2);
@@ -375,12 +435,88 @@ const COPY_TWO = COPY_ONE + '\nOPERATIVE / PROCEDURE NOTE\n\n' +
   checks++;
 }
 
-console.log('PASS one document, one set of facts: a procedure date the note already states under a heading now reaches the header ' +
-  '(while an absent one, a "Date:" prose line and an unparseable value all still print [not dictated]); a header slot already holding ' +
-  'a placeholder - [not dictated], [[key]], [FILL:] or a rule of underscores - is treated as the empty slot it is, so the date the ' +
-  'document states reaches the header instead of being filed as a disagreement with nothing, while two REAL divergent dates are still ' +
-  'labelled and a note that states no date anywhere still prints [not dictated]; a repeated canonical heading ' +
-  'is reconciled rather than concatenated - identical restatements dropped, divergent ones LABELLED; a doubled document no longer ' +
-  'bypasses normalize(), prints ONE demographics block from the primary copy with every divergent identity labelled, and is never ' +
-  'dumped verbatim as ADDITIONAL DOCUMENTATION; the lossless promise is asserted line by line; and the any-view PDF button no longer ' +
-  'hands the composer one run-on line (' + checks + ' checks)');
+async function verifyFinalizedPdfIdentity() {
+  const e = exportEngine();
+  const raw = [
+    'OPERATIVE NOTE',
+    'Patient: Stale Template Patient',
+    'DOB: 1900-01-01',
+    'MRN: STALE-0',
+    'Date of Procedure: 2026-01-01',
+    'Provider: Template Clinician, DO',
+    'PROCEDURE(S) PERFORMED:',
+    'Synthetic procedure.',
+    'FINDINGS:',
+    'Stable.',
+    'DESCRIPTION OF PROCEDURE:',
+    'The synthetic procedure was completed.',
+    'COMPLICATIONS:',
+    'None.'
+  ].join('\n');
+  const exported = await e.ctx.__mlsOpNotePro.exportPdf(raw, {
+    patient: e.beta.name, patientId: e.beta.id, procedureDate: '2026-09-12',
+    finalizationContext: {
+      patient: e.beta.name, name: e.beta.name, patientId: e.beta.id, patientVerified: true,
+      dob: e.beta.dob, mrn: e.beta.mrn, procedureDate: '2026-09-12', dateStr: '2026-09-12',
+      provider: 'Beta Surgeon Do', providerName: 'Beta Surgeon Do', providerId: 'provider-beta',
+      providerIdentitySource: 'appointment', providerNpi: '1098765432', providerNpiSource: 'appointment'
+    }
+  });
+  assert.strictEqual(exported, true, 'a verified Beta export failed while Alpha was the active chart');
+  const page = e.saved.join('\n');
+  assert(page.includes('Patient: Beta Patient'), 'the PDF did not print the verified target patient');
+  assert(page.includes('DOB: 1985-04-03'), 'the PDF did not print the verified target DOB');
+  assert(page.includes('MRN: BETA-2'), 'the PDF did not print the verified target MRN');
+  assert(page.includes('Date of Procedure: 2026-09-12'), 'the PDF did not print the verified procedure date');
+  assert(page.includes('Provider: Beta Surgeon Do'), 'the PDF did not print the appointment-verified provider');
+  assert(!page.includes('Synthetic Specialty'), 'the active provider specialty crossed onto a different appointment provider');
+  for (const leaked of ['Alpha Patient', '1970-01-02', 'ALPHA-1', 'Stale Template Patient', '1900-01-01', 'STALE-0']) {
+    assert(!page.includes(leaked), 'active/stale identity leaked into the verified Beta PDF: ' + leaked);
+  }
+  assert.strictEqual(e.drawn[0].filename, 'OpNote_Beta_Patient_20260912.pdf', 'the verified target/date did not own the PDF filename');
+  assert.strictEqual(e.ctx.__mlsLastOpFinalization.context.patientId, e.beta.id, 'the finalization receipt belonged to the active Alpha chart');
+  checks++;
+
+  /* Legacy history cards supply patient + immutable id but have no saved
+     finalization context.  This is the old call shape, with a different chart
+     currently open, and must resolve Beta rather than combine Beta's name/id
+     with Alpha's DOB/MRN. */
+  e.saved.length = 0;
+  const legacy = [
+    'OPERATIVE NOTE',
+    'Patient: Beta Patient',
+    'Date of Procedure: 2026-08-25',
+    'Provider: Verified Clinician, MD',
+    'PROCEDURE(S) PERFORMED:',
+    'Legacy synthetic procedure.',
+    'FINDINGS:',
+    'Stable.',
+    'DESCRIPTION OF PROCEDURE:',
+    'The legacy synthetic procedure was completed.',
+    'COMPLICATIONS:',
+    'None.'
+  ].join('\n');
+  const legacyExported = await e.ctx.__mlsOpNotePdf(() => legacy, e.beta.name, {
+    patientId: e.beta.id, date: new Date('2026-08-26T12:00:00')
+  });
+  assert.strictEqual(legacyExported, true, 'the legacy history PDF call could not verify a non-active patient');
+  const legacyPage = e.saved.join('\n');
+  assert(legacyPage.includes('Patient: Beta Patient') && legacyPage.includes('DOB: 1985-04-03') && legacyPage.includes('MRN: BETA-2'),
+    'the legacy history PDF did not recover all verified Beta demographics');
+  assert(!legacyPage.includes('Alpha Patient') && !legacyPage.includes('1970-01-02') && !legacyPage.includes('ALPHA-1'),
+    'the legacy history PDF inherited demographics from the active Alpha chart');
+  assert.strictEqual(e.drawn[1].filename, 'OpNote_Beta_Patient_20260825.pdf', 'the legacy history PDF was filed under the wrong patient/date');
+  checks++;
+}
+
+verifyFinalizedPdfIdentity().then(() => {
+  console.log('PASS one document, one set of facts: a procedure date the note already states under a heading now reaches the header ' +
+    '(while an absent one, a "Date:" prose line and an unparseable value all still print [not dictated]); a header slot already holding ' +
+    'a placeholder - [not dictated], [[key]], [FILL:] or a rule of underscores - is treated as the empty slot it is, so the date the ' +
+    'document states reaches the header instead of being filed as a disagreement with nothing, while two REAL divergent dates are still ' +
+    'labelled and a note that states no date anywhere still prints [not dictated]; a repeated canonical heading ' +
+    'is reconciled rather than concatenated - identical restatements dropped, divergent ones LABELLED; a doubled document no longer ' +
+    'bypasses normalize(), prints ONE demographics block from the primary copy with every divergent identity labelled, and is never ' +
+    'dumped verbatim as ADDITIONAL DOCUMENTATION; the lossless promise is asserted line by line; the any-view PDF button no longer ' +
+    'hands the composer one run-on line; and current plus legacy PDF exports use the finalized patient context (' + checks + ' checks)');
+}).catch((error) => { console.error(error && error.stack || error); process.exit(1); });

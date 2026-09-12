@@ -239,6 +239,49 @@ async function main() {
   assert(familyAge.proposedNote.includes('Mother is a 70-year-old'), 'the family-member age was changed');
   assert(familyAge.proposedNote.includes('patient is a ' + api.patientAgeOn(fixturePatients[0].dob, serviceDate) + '-year-old'), 'the unambiguous patient age was not proposed correctly');
 
+  const historicalText = [
+    'Patient: Fixture Patient 01', 'Provider: Alex Morgan, MD',
+    'HISTORY: In 2010, the patient was a 20-year-old receiving conservative care.',
+    'FINDINGS: Stable.'
+  ].join('\n');
+  const historicalAge = api.finalizeNote(historicalText, directCtx,
+    { boundary: 'save', applyRepairs: true, requirePatient: true, requireProvider: true });
+  assert.strictEqual(historicalAge.ok, true, 'a clearly dated historical age was treated as the current encounter age');
+  assert(historicalAge.note.includes('In 2010, the patient was a 20-year-old'), 'the exact historical age was rewritten');
+  assert(!historicalAge.repairs.some(x => x.code === 'AGE_RECONCILED'), 'a historical age generated a false age-reconciliation receipt');
+
+  const ambiguousPastText = 'Patient: Fixture Patient 01\nProvider: Alex Morgan, MD\nHISTORY: The patient was a 20-year-old receiving care.';
+  const ambiguousPastAge = api.finalizeNote(ambiguousPastText, directCtx,
+    { boundary: 'save', applyRepairs: true, requirePatient: true, requireProvider: true });
+  assert.strictEqual(ambiguousPastAge.ok, false, 'an undated conflicting past-tense age passed as if it were historical');
+  assert(ambiguousPastAge.issues.some(x => x.code === 'AGE_CLAIM_AMBIGUOUS'), 'the ambiguous age lost its structured review reason');
+  assert.strictEqual(ambiguousPastAge.proposedNote, ambiguousPastText, 'the ambiguous past-tense age was mutated before review');
+
+  const surnameDo = api.finalizeNote([
+    'Patient: Fixture Patient 01', 'Provider: Alex Morgan Do', 'NPI: 1098765432', 'FINDINGS: Stable.'
+  ].join('\n'), Object.assign({}, directCtx, {
+    provider: 'Alex Morgan Do', providerName: 'Alex Morgan Do', providerId: 'provider-surname-do',
+    providerIdentitySource: 'appointment', providerNpi: '1098765432', providerNpiSource: 'appointment',
+    configuredProviderId: 'provider-practice-md'
+  }), { boundary: 'save', applyRepairs: true, requirePatient: true, requireProvider: true });
+  assert.strictEqual(surnameDo.ok, true, 'the real surname Do collapsed into the configured MD identity');
+  assert(surnameDo.note.includes('Provider: Alex Morgan Do'), 'the appointment-bound surname Do was replaced by Alex Morgan, MD');
+  assert(surnameDo.note.includes('NPI: 1098765432') && !surnameDo.note.includes('NPI: 1234567890'), 'the configured MD NPI crossed into the surname-Do provider');
+  assert.strictEqual(surnameDo.context.providerId, 'provider-surname-do', 'the explicit appointment provider id was discarded');
+  assert.strictEqual(surnameDo.context.providerProvenance.source, 'appointment', 'the distinct appointment provider was mislabeled as practice-owned');
+
+  const residueBase = 'Patient: Fixture Patient 01\nProvider: Alex Morgan, MD\nFINDINGS: Stable.';
+  for (const marker of ['TODO: finish this', 'DRAFT ONLY']) {
+    const residue = api.finalizeNote(residueBase + '\n' + marker, directCtx,
+      { boundary: 'save', applyRepairs: true, requirePatient: true, requireProvider: true });
+    assert.strictEqual(residue.ok, false, marker + ' escaped the shared finalizer');
+    assert(residue.issues.some(x => x.code === 'TEMPLATE_EDIT_RESIDUE'), marker + ' lost its line-level residue review reason');
+    assert.strictEqual(residue.proposedNote, residueBase + '\n' + marker, marker + ' was mutated instead of quarantined');
+  }
+  const narrativeResidueWords = api.finalizeNote(residueBase + '\nHISTORY: The prior draft only included a patient-authored TODO list.', directCtx,
+    { boundary: 'save', applyRepairs: true, requirePatient: true, requireProvider: true });
+  assert.strictEqual(narrativeResidueWords.ok, true, 'ordinary narrative uses of draft/TODO were blocked by the narrow residue rule');
+
   const noProviderName = context.clinicalProviderName;
   const noProviderGetter = context.getProviderName;
   context.clinicalProviderName = () => '';
