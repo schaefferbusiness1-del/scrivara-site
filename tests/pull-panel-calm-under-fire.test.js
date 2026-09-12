@@ -43,16 +43,17 @@ assert(connect.includes('var startedAt = 0, hidden = true, stopped = false;'),
    bump-build run, so the pin matches the code + comment SHAPE, not the tag. */
 assert(/hidden = true; \/\* b\d+: reset to the pill DEFAULT, never to the modal \*\//.test(render),
   'pull end resets to the pill default, never slams the modal back');
-/* 2026-07-29 (owner watched a live pull): the pill and the day-pull bar
-   published DIFFERENT numbers for one pull - bar "History 2/7", pill "Pulling
-   1/7" at the same instant (the bar counts the chart being worked on, the pill
-   counted charts finished). The pill now MIRRORS the bar so the two surfaces
-   can never disagree, and keeps its own state only as the fallback for screens
-   where the pull card is not mounted. */
-assert(connect.includes("function paintFab(S)") &&
-  connect.includes("document.getElementById('mlsDsPullBar')") &&
-  connect.includes("if (!n) n = (S.done || 0) + '/' + (S.total || 0);"),
-  'the pill mirrors the day-pull bar count, with its own state as the fallback');
+/* 2026-09-12: #mlsDsPullBar is a reused view with no run identity. A fast
+   second pull could therefore make the pill borrow the prior run's count.
+   Both pull surfaces now read the active engine state directly. */
+const paintFabStart = connect.indexOf('function paintFab(S)');
+const paintFabEnd = connect.indexOf('\n  /* b940 #36', paintFabStart);
+const paintFab = connect.slice(paintFabStart, paintFabEnd);
+assert(paintFabStart > 0 && paintFabEnd > paintFabStart,
+  'the pull pill painter could not be isolated');
+assert(!paintFab.includes("document.getElementById('mlsDsPullBar')") &&
+  paintFab.includes("var n = (S.done || 0) + '/' + (S.total || 0);"),
+  'the pill must use the active run state, never a stale unowned day-pull bar');
 
 /* ---- 2b. pillfirst-1.0.0: the dialog is DOCTOR-OPENED ONLY ----
    OWNER 2026-09-11, verbatim: "when I'm pulling why does this big thing pop
@@ -74,8 +75,10 @@ assert(connect.includes("function paintFab(S)") &&
     'exactly ONE place may open the pull dialog - a second opener is a second way for it to pop up by itself');
   assert(mod.includes("f.onclick = function () { userOpened = true; hidden = false; render(); };"),
     "the only opener is no longer the pill's own click handler");
-  assert(mod.includes('if (running && !wasRunning && userOpened) { userOpened = false; hidden = true; }'),
-    'a NEW run no longer returns the surface to the corner pill - the next pull inherits an open card');
+  assert(mod.includes('var replacedWhileRunning = !!(running && runId && watchedRunId && runId !== watchedRunId);') &&
+    mod.includes('var newRun = running && (!wasRunning || replacedWhileRunning);') &&
+    mod.includes('if (newRun && (userOpened || replacedWhileRunning)) { userOpened = false; hidden = true; }'),
+    'a NEW run no longer returns the surface to the corner pill, including a boundary missed between ticks');
   assert(mod.includes('if (!userOpened && !hidden) hidden = true;'),
     '`hidden` is no longer derived from the gesture, so a stale false can paint the dialog again');
   assert(mod.includes("if (hb) hb.onclick = function () { userOpened = false; hidden = true; render(); };"),

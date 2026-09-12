@@ -34,13 +34,15 @@ const CONNECT_PATH = path.join(root, 'mls-connect.js');
 const SHELL_PATH = path.join(root, 'ScribeFlow.html');
 const MERGE_PATH = path.join(root, 'feat_mls_studio_merge.js');
 const STUDY_PATH = path.join(root, 'feat_mls_study_request.js');
+const STUDY_GROUPS_PATH = path.join(root, 'feat_mls_studygroups.js');
 
 const connectSource = fs.readFileSync(CONNECT_PATH, 'utf8');
 const shellSource = fs.readFileSync(SHELL_PATH, 'utf8');
 const mergeSource = fs.readFileSync(MERGE_PATH, 'utf8');
 const studySource = fs.readFileSync(STUDY_PATH, 'utf8');
+const studyGroupsSource = fs.readFileSync(STUDY_GROUPS_PATH, 'utf8');
 
-const studyLoaderMarker = "var A='feat_mls_study_request.js',V='sr-2.4.3',LV='srl-1.0.3'";
+const studyLoaderMarker = "var A='feat_mls_study_request.js',V='sr-2.4.4',LV='srl-1.0.4'";
 const studyLoaderAt = connectSource.indexOf(studyLoaderMarker);
 const studyLoaderStart = connectSource.lastIndexOf(';(function(){try{', studyLoaderAt);
 const studyLoaderCloseMarker = '}catch(e){}})();';
@@ -164,6 +166,10 @@ const SHELL_HTML = `<!doctype html><html><body>
       await page.addScriptTag({ content: mergeSource });
       await page.waitForFunction(() => !!window.__mlsStudioMerge, null, { timeout: 5000 });
       await page.evaluate(() => window.__mlsStudioMerge.select('build'));
+      await page.evaluate(() => {
+        window.__procedureOpenTabs = [];
+        window.__mlsStudy = { open(tab) { window.__procedureOpenTabs.push(tab); return true; } };
+      });
       await page.addScriptTag({ content: studySource });
       await page.waitForSelector('#mlsStudyRequest');
 
@@ -180,6 +186,8 @@ const SHELL_HTML = `<!doctype html><html><body>
           visible: getComputedStyle(builder).display !== 'none' && !!builder.getClientRects().length,
           gridRow: getComputedStyle(builder).gridRowStart,
           promptEnabled: !prompt.disabled && !prompt.readOnly,
+          procedureVisible: !!document.getElementById('mlsStudyProcedure').getClientRects().length,
+          tabs: Array.from(document.querySelectorAll('#mlsSmTabs [data-mls-sm-tab]')).map(node => node.textContent.trim()),
           advancedOwnsLegacy: document.getElementById('mlsSgPro').closest('#mlsB39SgBody') === document.getElementById('mlsB39SgBody'),
           advancedOwnsGroups: document.getElementById('mls-sg-root').closest('#mlsB39SgBody') === document.getElementById('mlsB39SgBody')
         };
@@ -191,8 +199,15 @@ const SHELL_HTML = `<!doctype html><html><body>
       assert.strictEqual(mounted.visible, true, 'the Build tab still paints the healthy Study tool as missing');
       assert.strictEqual(mounted.gridRow, '3', 'Study is not the first Build panel beneath the section switcher');
       assert.strictEqual(mounted.promptEnabled, true, 'the visible Study composer cannot accept input');
+      assert.strictEqual(mounted.procedureVisible, true, 'the promised Study procedure doorway is not visible at the top of AI Studio');
+      assert.deepStrictEqual(mounted.tabs, ['Ask', 'Practice', 'Study & build'],
+        'the AI Studio switcher still hides Study behind a generic Build label');
       assert.strictEqual(mounted.advancedOwnsLegacy, true, 'legacy cohort controls escaped the advanced wrapper');
       assert.strictEqual(mounted.advancedOwnsGroups, true, 'named Study Groups escaped the advanced wrapper');
+
+      await page.locator('#mlsStudyProcedure').click();
+      assert.deepStrictEqual(await page.evaluate(() => window.__procedureOpenTabs.slice()), ['B'],
+        'Study procedure did not open the existing procedure-specific Study/Import tab');
 
       const prompt = page.locator('#mlsStudyPrompt');
       await prompt.fill('');
@@ -202,6 +217,47 @@ const SHELL_HTML = `<!doctype html><html><body>
         'Enter reached no handler or produced no honest validation status');
       assert.strictEqual(await page.locator('#mlsStudySubmit').isEnabled(), true,
         'an invalid request left the Study composer stuck disabled');
+      await page.close();
+    }
+
+    /* ======== 2b: both Study owners survive a Studio host inserted late ===== */
+    {
+      const page = await browser.newPage();
+      await page.setContent('<!doctype html><html><body><div id="appWrap"></div></body></html>');
+      await page.addScriptTag({ content: studyGroupsSource });
+      await page.addScriptTag({ content: studySource });
+      await page.waitForTimeout(100);
+      await page.evaluate(() => {
+        const studio = document.createElement('div');
+        studio.id = 'studioView';
+        document.getElementById('appWrap').appendChild(studio);
+      });
+      await page.waitForFunction(() => {
+        const studio = document.getElementById('studioView');
+        return !!(studio && studio.querySelector('#mlsStudyRequest') && studio.querySelector('#mls-sg-root'));
+      }, null, { timeout: 5000 });
+      const late = await page.evaluate(() => ({
+        builders: document.querySelectorAll('#mlsStudyRequest').length,
+        groups: document.querySelectorAll('#mls-sg-root').length,
+        launchers: document.querySelectorAll('#mls-sg-launch').length,
+        builderParent: document.getElementById('mlsStudyRequest').parentElement.id,
+        groupsInside: document.getElementById('studioView').contains(document.getElementById('mls-sg-root'))
+      }));
+      assert.deepStrictEqual(late, {
+        builders: 1, groups: 1, launchers: 0, builderParent: 'studioView', groupsInside: true
+      }, 'late Studio insertion did not reconcile one complete Study surface');
+
+      await page.evaluate(() => {
+        const study = window.__mlsStudyRequest, groups = window.__mlsStudyGroups;
+        if (study && typeof study.revert === 'function') study.revert();
+        if (groups && typeof groups.revert === 'function') groups.revert();
+        document.getElementById('studioView').remove();
+        const replacement = document.createElement('div'); replacement.id = 'studioView';
+        document.getElementById('appWrap').appendChild(replacement);
+      });
+      await page.waitForTimeout(150);
+      assert.strictEqual(await page.locator('#mlsStudyRequest,#mls-sg-root,#mls-sg-launch').count(), 0,
+        'reverted Study owners resurrected themselves after a later host insertion');
       await page.close();
     }
 

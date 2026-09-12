@@ -1,6 +1,6 @@
 /* =============================================================================
  * MLS Scribe natural-language study request surface
- * __mlsStudyRequest sr-2.4.3 (site only, additive, reversible)
+ * __mlsStudyRequest sr-2.4.4 (site only, additive, reversible)
  *
  * One sentence is enough: the deterministic parser turns it into a strict
  * StudySpec, the existing __mlsSgFix/__mlsStudyGroups engines build and run the
@@ -33,7 +33,7 @@
   (typeof globalThis !== 'undefined' ? globalThis : this), function (root) {
   'use strict';
 
-  var VERSION = 'sr-2.4.3';
+  var VERSION = 'sr-2.4.4';
   var CSS_ID = 'mlsStudyRequestCss';
   var UI_ID = 'mlsStudyRequest';
   var ADV_ID = 'mlsStudyAdvanced';
@@ -42,6 +42,7 @@
   var PRIVACY_WARNING = 'Direct identifiers removed where detectable; limited-data study draft requiring clinician and privacy review before use or sharing.';
   var LOCAL_JSPDF = 'vendor/jspdf.umd-4.2.1.min.js?v=e6551fcdc32f09d6';
   var mountObserver = null, childObserver = null, mountDeadline = null;
+  var hostObserver = null, hostDeadline = null;
   var mountedPro = null, generation = 0, lastQuery = '', lastResult = null, uiRunPromise = null;
   var objectUrls = [];
 
@@ -1969,6 +1970,10 @@
       '#mlsStudyPrompt::placeholder{color:#5d6c64!important;opacity:1!important}',
       '#mlsStudySubmit{width:40px;height:40px;flex:0 0 40px;border:0!important;border-radius:11px!important;background:var(--sr-green)!important;color:#fff!important;font-size:19px!important;cursor:pointer;padding:0!important}',
       '#mlsStudySubmit:disabled{opacity:.45;cursor:wait}',
+      '#' + UI_ID + ' .sr-procedure-row{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:0 0 12px}',
+      '#' + UI_ID + ' .sr-procedure{appearance:none;border:1px solid #b9cec1;border-radius:10px;background:#fff;color:#204034!important;padding:8px 12px;font:750 12.5px system-ui;cursor:pointer}',
+      '#' + UI_ID + ' .sr-procedure:hover{background:#edf5f0}',
+      '#' + UI_ID + ' .sr-procedure-note{color:var(--sr-muted)!important;font-size:12px}',
       '#' + UI_ID + ' .sr-hint{display:flex;justify-content:space-between;gap:12px;color:var(--sr-muted)!important;font-size:11.5px;margin:7px 2px 0}',
       '#' + UI_ID + ' .sr-example{color:var(--sr-accent)!important}',
       '.sr-spec{display:flex;flex-wrap:wrap;gap:7px;margin:14px 0 0}',
@@ -2096,24 +2101,37 @@
   function shouldSubmitKey(ev) {
     return !!(ev && ev.key === 'Enter' && !ev.shiftKey && !ev.isComposing && ev.keyCode !== 229);
   }
+  function openProcedureStudy() {
+    var study = root.__mlsStudy;
+    if (study && typeof study.open === 'function') {
+      try {
+        if (study.open('B') !== false) return true;
+      } catch (e) {}
+    }
+    setStatus('The procedure finder is still loading. Try Study procedure again in a moment.', 'error');
+    return false;
+  }
   function buildUi(doc) {
     var section = doc.createElement('section'); section.id = UI_ID; section.setAttribute('aria-labelledby', 'mlsStudyRequestTitle');
     section.innerHTML =
       '<div class="sr-eyebrow">Natural-language study builder</div>' +
       '<h3 id="mlsStudyRequestTitle">Describe the study. MLS writes the paper from your stored evidence.</h3>' +
       '<p class="sr-lede">Type the cohort, question, and time range in plain language. Press Enter - no setup steps required. MLS reads every connected evidence store (patients, notes, calendar, Athena pulls, your code table) and produces an academic-style paper - abstract, methods, statistics, tables, figures, discussion - up to 60 evidence-supported pages. Outputs scrub common direct identifiers, remain limited-data drafts requiring clinician/privacy review, and are never padded.</p>' +
+      '<div class="sr-procedure-row"><button type="button" id="mlsStudyProcedure" class="sr-procedure" aria-label="Study a procedure using Athena">Study procedure</button><span class="sr-procedure-note">Find a procedure cohort in Athena, then run the study here.</span></div>' +
       '<div class="sr-compose"><textarea id="mlsStudyPrompt" rows="2" aria-label="Describe the study to build" aria-keyshortcuts="Enter" placeholder="Example: Compare outcomes for patients who received lumbar epidural injections in the last 12 months, up to 40 pages"></textarea>' +
       '<button type="button" id="mlsStudySubmit" aria-label="Generate this study" title="Generate study">&#8593;</button></div>' +
       '<div class="sr-hint"><span>Enter to generate - Shift+Enter for a new line</span><span class="sr-example">Uses visits, notes, calendar, demographics, and code-table records already stored in MLS</span></div>' +
       '<div id="mlsStudySpec" class="sr-spec" hidden></div><div id="mlsStudyStatus" class="sr-status" role="status" aria-live="polite" hidden></div>' +
       '<div id="mlsStudyResults" class="sr-results" hidden></div>';
     var input = section.querySelector('#mlsStudyPrompt'), submit = section.querySelector('#mlsStudySubmit');
+    var procedure = section.querySelector('#mlsStudyProcedure');
     input.addEventListener('keydown', function (ev) {
       if (!shouldSubmitKey(ev)) return;
       ev.preventDefault(); runFromUi(input.value).catch(function () {});
     });
     input.addEventListener('input', function () { input.style.height = 'auto'; input.style.height = Math.min(150, input.scrollHeight) + 'px'; });
     submit.addEventListener('click', function () { runFromUi(input.value).catch(function () {}); });
+    procedure.addEventListener('click', openProcedureStudy);
     return section;
   }
   function adoptLegacy(pro, details, body) {
@@ -2194,10 +2212,26 @@
     try { if (mountDeadline) clearTimeout(mountDeadline); } catch (e) {}
     return true;
   }
+  function stopHostWait() {
+    try { if (hostObserver) hostObserver.disconnect(); } catch (e) {}
+    try { if (hostDeadline) clearTimeout(hostDeadline); } catch (e) {}
+    hostObserver = null; hostDeadline = null;
+  }
+  function waitForStudio() {
+    var doc = root.document, target = doc && (doc.documentElement || doc);
+    if (!target || hostObserver || typeof MutationObserver !== 'function') return;
+    hostObserver = new MutationObserver(function () {
+      if (!doc.getElementById('studioView')) return;
+      boot();
+    });
+    hostObserver.observe(target, { childList: true, subtree: true });
+    hostDeadline = setTimeout(stopHostWait, 60000);
+  }
   function boot() {
     if (!root.document) return;
     var studio = root.document.getElementById('studioView');
-    if (!studio) return;
+    if (!studio) { waitForStudio(); return; }
+    stopHostWait();
     if (mount()) return;
     if (mountObserver) return;
     mountObserver = new MutationObserver(function () { mount(); });
@@ -2212,6 +2246,7 @@
     uiRunPromise = null;
     try { if (mountObserver) mountObserver.disconnect(); if (childObserver) childObserver.disconnect(); } catch (e) {}
     try { if (mountDeadline) clearTimeout(mountDeadline); } catch (e) {}
+    stopHostWait();
     clearUrls();
     var doc = root.document;
     if (doc) {

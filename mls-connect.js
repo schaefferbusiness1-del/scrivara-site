@@ -5008,11 +5008,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
 
 /* =========================================================================
- * MLS Scribe - PULL PROGRESS SCREEN  (__mlsPullProgress) v1.0.0  2026-07-10 (b113)
+ * MLS Scribe - PULL PROGRESS SCREEN  (__mlsPullProgress) v1.1.0  2026-09-12
  *
  * The day/month history pull runs for minutes and (until now) only emitted
- * toasts + a text log. This adds a real, honest progress screen that opens the
- * moment a pull starts and closes when it ends:
+ * toasts + a text log. This adds real, honest progress that appears as a
+ * bottom-left pill the moment a pull starts; the full screen opens on click:
  *   - big "X of N" + percentage bar (from __mlsDayHistoryPull.state)
  *   - current patient being pulled, elapsed time, running saved/failed tally
  *   - honest per-patient row list (saved / could-not-read, with the reason)
@@ -5028,7 +5028,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 (function () {
   'use strict';
   try { if (window.__mlsPullProgress) return; } catch (e) { return; }
-  var api = { version: '1.0.0', opens: 0 };
+  var api = { version: '1.1.0', opens: 0 };
   var PANEL = 'mlsPullProgPanel', FAB = 'mlsPullProgFab';
   /* b940 #36: NON-BLOCKING BY DEFAULT. The pull opens as the bottom-left
      pill; the full panel is one click away. hidden survives the whole pull
@@ -5062,6 +5062,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      Stop pull - because the pill is always mounted while a pull runs. */
   var userOpened = false; /* set ONLY by the pill's click handler */
   var wasRunning = false; /* the previous tick's engine running flag */
+  var watchedRunId = ''; /* survives a missed terminal tick so a replacement run still resets the surface */
 
   var wkUrl = null;
   try { wkUrl = URL.createObjectURL(new Blob(['onmessage=function(e){setTimeout(function(){postMessage(1)},e.data)}'], { type: 'application/javascript' })); } catch (e) {}
@@ -5150,18 +5151,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   /* b940 #36: the pill carries live progress instead of a frozen label. */
   function paintFab(S) {
     var f = document.getElementById(FAB); if (!f || !S) return;
-    /* ONE COUNT, TWO SURFACES. The day-pull bar is the count the doctor is
-       already reading, so the pill mirrors it rather than publishing a second,
-       differently-based number for the same pull (measured live: bar 2/7 vs
-       pill 1/7 at the same instant). Own state is the fallback for screens
-       where the pull card is not mounted. */
-    var n = null;
-    try {
-      var bar = document.getElementById('mlsDsPullBar');
-      var m = bar && /(\d+)\s*\/\s*(\d+)/.exec(bar.textContent || '');
-      if (m) n = m[1] + '/' + m[2];
-    } catch (eFb) {}
-    if (!n) n = (S.done || 0) + '/' + (S.total || 0);
+    /* The engine state is the run-owned truth. #mlsDsPullBar is a reused view
+       node with no run identity; after a route change or a fast second pull it
+       can still carry the prior run's X/Y. Reading it here made a truthful
+       current state wear a stale count. Both the dialog and this pill now read
+       the same __mlsDayHistoryPull.state object. */
+    var n = (S.done || 0) + '/' + (S.total || 0);
     var t = 'Pulling ' + n + ' \u2014 show details';
     /* pullzero-1.0.0: "Pulling 0/0" is a count of nothing. Say what is true. */
     if ((Number(S.total) || 0) === 0 && !(S.phase && S.phase.kind)) t = 'Checking this day \u2014 show details';
@@ -5440,6 +5435,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function render() {
     var S = state();
     var running = !!(S && S.running);
+    var runId = running ? String(S.runId || '') : '';
+    var replacedWhileRunning = !!(running && runId && watchedRunId && runId !== watchedRunId);
+    var newRun = running && (!wasRunning || replacedWhileRunning);
     /* ===== pillfirst-1.0.0 (the door, gated) ==============================
        A NEW run always starts in the corner pill, whoever started it and
        whatever the last run left behind. A sweep/sub-batch never flips
@@ -5447,7 +5445,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        inside one pull - the b940 "hidden survives sweep boundaries" guarantee
        is untouched. The second line is the belt: `hidden` is now DERIVED from
        the gesture, so no leftover false can paint the dialog by itself. */
-    if (running && !wasRunning && userOpened) { userOpened = false; hidden = true; }
+    if (newRun && (userOpened || replacedWhileRunning)) { userOpened = false; hidden = true; }
+    if (replacedWhileRunning) {
+      startedAt = 0; watchedMaxTotal = 0; doneDismissed = false; stopRequested = false;
+      (function () { var oldPanel = document.getElementById(PANEL); if (oldPanel) oldPanel.remove(); })();
+    }
+    if (running && runId) watchedRunId = runId;
+    if (!running) watchedRunId = '';
     wasRunning = running;
     if (!userOpened && !hidden) hidden = true;
     /* ===== end pillfirst-1.0.0 (the door, gated) ===== */
@@ -52956,7 +52960,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){var A="feat_mls_dotphrase_keys.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260802dk1c2";s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);},{timeout:2500});}catch(e){}})(); /* restore loader: dot-phrase keyboard shortcuts (window.__mlsDotKeys) */
 ;(function(){try{var A="feat_mls_allergy_strip.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v="+(window.__MLS_AV||Date.now());s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* allergy-strip-1.1.0: event-driven allergy safety strip (window.__mlsAllergyStrip) */
 /* Stripe/legal payout onboarding is intentionally held. */
-;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){var A="feat_mls_studygroups.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260804sg1c8";s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);},{timeout:2500});}catch(e){}})(); /* idempotent Study Groups engine; one reconciled Studio mount, reviewed local imports */
+;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){var A="feat_mls_studygroups.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260912sg1c9";s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);},{timeout:2500});}catch(e){}})(); /* idempotent Study Groups engine; one reconciled Studio mount, reviewed local imports */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{var A="feat_mls_show_assistant.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260718sa3";s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* restore loader: show MLS assistant entry (window.__mlsShowAsst) */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return f();};sched(function(){var A="feat_mls_stop_confirm.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260630sc1c1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);return s;},{timeout:2500,priority:0,asset:'feat_mls_stop_confirm.js'});}catch(e){}})(); /* clinical-safety owner: secure-gate priority lane installs Stop confirmation before the app becomes interactive */
 
@@ -54543,7 +54547,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{var P=window.__mlsSpeechHubUpgradePolicy;if(P&&P.reloadRequired)return;var A='feat_mls_dictate_anywhere.js',V='da-1.1.1',api=window.__mlsDictateAnywhere,tags=document.querySelectorAll('script[data-mls-asset="'+A+'"]'),i,node;if(api&&api.installed&&api.version===V)return;for(i=0;i<tags.length;i++){node=tags[i];if((!api||api.installed!==true)&&node.getAttribute('data-mls-version')===V)return;}if(api&&typeof api.revert==='function')try{api.revert();}catch(_e){}try{if(api)api.installed=false;}catch(_m){}for(i=0;i<tags.length;i++){tags[i].setAttribute('data-mls-retired-asset',A);tags[i].removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src=A+'?v=20260719da111h1';s.setAttribute('data-mls-asset',A);s.setAttribute('data-mls-version',V);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* version-aware Dictate Anywhere da-1.1.1; one owner/tag and no ghost mic start. */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_study_calm.js"]'))return;var s=document.createElement('script');s.src='feat_mls_study_calm.js?v=20260802sg2f';s.setAttribute('data-mls-asset','feat_mls_study_calm.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b940: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
 ;(function(){try{
-  var A='feat_mls_study_request.js',V='sr-2.4.3',LV='srl-1.0.3',K='__mlsStudyRequestLoader';
+  var A='feat_mls_study_request.js',V='sr-2.4.4',LV='srl-1.0.4',K='__mlsStudyRequestLoader';
   var prior=window[K];
   if(prior&&prior.installed===true&&prior.version===LV&&typeof prior.ensure==='function'){
     prior.ensure('duplicate-bootstrap');return;
@@ -54599,7 +54603,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};
     sched(function(){ensure('idle');},{timeout:2500,asset:A});
   }
-}catch(e){}})(); /* srl-1.0.3 / sr-2.4.3 (2026-09-12): Study loads on its actual first-use routes, mounts before the legacy cohort host, starts in the final top-of-Build DOM order, and treats that settled position as a no-op so its late-host observer cannot self-trigger; the idle preload remains as a fallback and stale owner/tag pairs are retired before retry. */
+}catch(e){}})(); /* srl-1.0.4 / sr-2.4.4 (2026-09-12): Study loads on its actual first-use routes, mounts before the legacy cohort host, survives a late Studio host, and exposes the procedure workflow at the top of Build; the idle preload remains as a fallback and stale owner/tag pairs are retired before retry. */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);},A='feat_mls_study_provenance.js',V='p1sp-1.0.0';function load(){try{var api=window.__mlsP1StudyProvenance,old=document.querySelector('script[data-mls-asset="'+A+'"]');if(api&&api.installed&&api.version===V)return true;if(old){try{if(api&&typeof api.revert==='function')api.revert();}catch(e0){}old.setAttribute('data-mls-retired-asset',A);old.removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src=A+'?v='+(window.__MLS_AV||'p1-preview');s.setAttribute('data-mls-asset',A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);return s;}catch(e){return false;}}window.addEventListener('mls:study-lifecycle',function(e){var d=e&&e.detail||{};if(d.reason==='render')load();},true);if(document.getElementById('mlsStudyOv'))load();else sched(load,{timeout:2800,asset:A});}catch(e){}})(); /* /p1-only stored-evidence provenance, exact Study first-use admission plus idle fallback. */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patient_reach_v2.js"]'))return;var s=document.createElement('script');s.src='feat_mls_patient_reach_v2.js?v=20260804pr206';s.async=false;s.setAttribute('data-mls-asset','feat_mls_patient_reach_v2.js');s.addEventListener('load',function(){try{var m=window.__mlsP1Marketing;if(m&&m.installed===true&&typeof m.reconcile==='function')m.reconcile();var l=window.__mlsP1MarketingLoader;if(l&&l.installed===true&&typeof l.guardReach==='function')l.guardReach();}catch(_marketingReconcileError){}});(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* one Reviews/secure-portal owner: real rail workspaces + compact context dialogs + frozen-patient portal delegation; 1p Marketing reconciles or fail-closes Reviews after this late owner installs */
 ;(function(){try{var A='feat_mls_loading_calm.js',V='lb-2.1.0',api=window.__mlsLoadingCalm,tags=document.querySelectorAll('script[data-mls-asset="'+A+'"]'),i,node;if(api&&api.installed&&api.version===V)return;for(i=0;i<tags.length;i++){node=tags[i];if((!api||api.installed!==true)&&node.getAttribute('data-mls-version')===V)return;}if(api&&typeof api.revert==='function')try{api.revert();}catch(_e){}try{if(api)api.installed=false;}catch(_m){}for(i=0;i<tags.length;i++){tags[i].setAttribute('data-mls-retired-asset',A);tags[i].removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src=A+'?v=20260719lb204';s.setAttribute('data-mls-asset',A);s.setAttribute('data-mls-version',V);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* lb-2.1.0 version-aware headless job store; retires b431 floating loading owner/tag before reload. */
@@ -55144,7 +55148,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   preloadIdle();
   /* read-only handle for the regression suite; not part of the app's public API */
   window.__mlsStudioFastPreload={preload:preloadIdle,scheduled:function(){return preloadScheduled;},studioOnScreen:studioOnScreen};
-}catch(e){}})(); /* Studio merge (owner 2026-07-26 "add the analysis tab to the ai studio tab smartly"): AI Studio becomes Ask / Practice / Build, #analysisView is hoisted into it, and showView('analysis') redirects there. Preloaded on requestIdleCallback right after boot, independent of any other asset queue - AI Studio is not a first-paint surface (window.__mlsStudioMerge sm-1.0.1; revert()) */
+}catch(e){}})(); /* Studio merge (owner 2026-07-26 "add the analysis tab to the ai studio tab smartly"): AI Studio becomes Ask / Practice / Study & build, #analysisView is hoisted into it, and showView('analysis') redirects there. Preloaded on requestIdleCallback right after boot, independent of any other asset queue - AI Studio is not a first-paint surface (window.__mlsStudioMerge sm-1.0.2; revert()) */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_motion.js"]'))return;var s=document.createElement('script');s.src='feat_mls_motion.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_motion.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:4000,priority:0,owner:'__mlsMotion',requiresFoundation:true});}catch(e){}})(); /* Motion system (owner 2026-07-28 "awesome animations aple like" + the Siri ring on Copilot): one stylesheet, one body class, zero handlers rebound. The moving multi-colour ring is reserved for the Copilot/AI surfaces; everything else reuses the MOTION_TOKENS.md vocabulary. No timers and no observers. Deferred on requestIdleCallback - it is pure polish and must never be on the boot path (window.__mlsMotion mo-1.0.0; revert()) */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_visit_focus.js"]'))return;var s=document.createElement('script');s.src='feat_mls_visit_focus.js?v='+(window.__MLS_AV||Date.now());s.setAttribute('data-mls-asset','feat_mls_visit_focus.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:1500,priority:0,owner:'__mlsVisitFocus',retireVersion:'vf-1.2.0',requiresFoundation:true});}catch(e){}})(); /* Visit & Patients focus: one primary per screen state; every secondary answers to a disclosure that already exists. Deferred on requestIdleCallback (timeout 1500) - it costs nothing at first paint and the loading screen owns the surface until well after it lands (window.__mlsVisitFocus vf-1.0.0; revert()). */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,1200);};sched(function(){try{var A="feat_mls_note_click_to_edit.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v="+(window.__MLS_AV||Date.now());s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:4000});}catch(e){}})(); /* nce-1.0.0: clicking the formatted note preview reveals the editor and places the caret where the doctor clicked (b779 folded away the only Edit control). Revert: window.__mlsNoteClickToEdit.revert() */

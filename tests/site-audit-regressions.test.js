@@ -50,12 +50,16 @@ const loadingLoader = siteBundle.split(/\r?\n/).find(line => line.includes("var 
 assert(loadingLoader.includes("s.src=A+'?v=20260719lb204'") && loadingLoader.includes("s.setAttribute('data-mls-version',V)"),
   'the shared progress asset needs its exact version-aware fresh deployment URL');
 
-assert(siteBundle.includes('feat_mls_studygroups.js') && siteBundle.includes('20260804sg1c8'), 'reconciled Study Groups mount needs a fresh deployment URL');
+assert(siteBundle.includes('feat_mls_studygroups.js') && siteBundle.includes('20260912sg1c9'), 'reconciled Study Groups mount needs a fresh deployment URL');
 assert(studyGroups.includes('__MLS_PUBLIC_PREVIEW') && studyGroups.includes("skipped: 'public-synthetic-preview'"), 'read-only public preview still boots the hidden Study Groups/AI Studio surface');
-assert(studyGroups.includes("document.querySelectorAll('[id=\"mls-sg-root\"]')") && studyGroups.includes("[0, 250, 1000, 3000, 8000]"), 'Study Groups no longer deduplicates and reconciles its late mount');
+assert(studyGroups.includes("document.querySelectorAll('[id=\"mls-sg-root\"]')") && studyGroups.includes("[0, 250, 1000, 3000, 8000]") &&
+  studyGroups.includes("window.addEventListener('mls:view-changed', onStudioSignal, true)") && studyGroups.includes('function waitForStudio()'),
+  'Study Groups no longer deduplicates or survives a Studio host that arrives after its bounded retry window');
 assert(!studyGroups.includes('id="mls-sg-athena"') && !studyCalm.includes('pull visits from Athena'), 'unverified Study Groups Athena-visit control remains visible');
 assert(!studyAnalysis.includes('mls-sg-athena') && siteBundle.includes('feat_mls_task7_analysis_sg.js') && siteBundle.includes('A+"?v=20260722t7ac3"'), 'retired Study Groups Athena-visit enhancement remains loaded or callable');
-assert(siteBundle.includes('A wrapper sentinel') && siteBundle.includes('head.setAttribute("aria-expanded"') && siteBundle.includes('if (sg.parentNode !== body) body.appendChild(sg)'), 'Study Groups shell does not repair incomplete header/body/root state');
+assert(siteBundle.includes('A wrapper sentinel') && siteBundle.includes('head.setAttribute("aria-expanded"') &&
+  siteBundle.includes('if (sg.parentNode !== body && !(pro && pro.contains(sg))) body.appendChild(sg)'),
+  'Study Groups shell does not repair incomplete header/body/root state while preserving the primary advanced-study owner');
 assert(!siteBundle.includes('var sg = $("mls-sg-root"); if (!sg || $("mlsB39SgWrap"))'), 'Study Groups still trusts the broken wrapper-only sentinel');
 
 assert.strictEqual((home.match(/id="mlsChatBtn"/g) || []).length, 1, 'homepage needs one sales-chat button');

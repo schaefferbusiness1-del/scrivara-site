@@ -1,4 +1,4 @@
-/* MLS Studio Merge — sm-1.0.1
+/* MLS Studio Merge — sm-1.0.2
  *
  * Owner, 2026-07-26: "add the analysis tab to the ai studio tab smartly".
  *
@@ -77,7 +77,7 @@
 
   if (window.__mlsStudioMerge) return;
 
-  var VERSION = 'sm-1.0.1';
+  var VERSION = 'sm-1.0.2';
   var W = window, D = document;
   var BODY_CLASS = 'mls-sm';
   var STYLE_ID = 'mlsStudioMergeCss';
@@ -125,8 +125,8 @@
     },
     {
       key: 'build',
-      label: 'Build',
-      hint: 'Build a tool, or run a study',
+      label: 'Study & build',
+      hint: 'Run a study, or build a custom tool',
       /* THE OVERLAP THE OWNER PHOTOGRAPHED (2026-07-29): "Practice trends" and
          the natural-language study builder painted on top of each other.
          sx places FOUR study hosts in one full-width cell —

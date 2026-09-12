@@ -37,7 +37,7 @@ const freshHardcodedLoaderTags = new Map([
   ['mls-procedure-report.js', '20260807lib7'],
   ['feat_mls_assistant_exact.js', '20260820asst220perf2'],
   ['feat_mls_outcome_pdf.js', '20260807lib7'],
-  ['feat_mls_studygroups.js', '20260804sg1c8'],
+  ['feat_mls_studygroups.js', '20260912sg1c9'],
   ['feat_comp_report.js', '20260718pr5']
 ]);
 
@@ -193,7 +193,7 @@ for (const [file, tag] of freshHardcodedLoaderTags) {
 }
 const studyLoaderAt = connect.indexOf("var A='feat_mls_study_request.js'");
 const studyLoader = studyLoaderAt >= 0 ? connect.slice(studyLoaderAt, studyLoaderAt + 5000) : '';
-assert(studyLoader.includes("V='sr-2.4.3'") &&
+assert(studyLoader.includes("V='sr-2.4.4'") &&
   studyLoader.includes("s.src=A+'?v='+(window.__MLS_AV||Date.now());"),
   'Study must follow the current app build instead of returning to a hand-maintained cache tag');
 const afterVisitLoader = connect.match(/var A='feat_after_visit_summary\.js'[\s\S]{0,3000}?\/\* action-time AVS readiness:[^\n]*/)?.[0] || '';

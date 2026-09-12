@@ -23,11 +23,13 @@
  *   (b) the pill opens the dialog on a click, and "Stop pull" is right there -
  *       so the doctor can still stop a pull in two clicks;
  *   (c) Hide returns to the pill and does not stop the engine;
- *   (d) THE REGRESSION: with the card left open, a NEW run returns to the pill
- *       instead of inheriting the open card;
- *   (e) a run that ENDS with rows needing attention says so IN THE PILL, and
+ *   (d) a stale day-pull bar cannot replace the active run's count;
+ *   (e) THE REGRESSION: with the card left open, a replacement run returns to
+ *       the pill even when the renderer misses the terminal state between it;
+ *   (f) an ordinarily observed run boundary has the same pill-first behavior;
+ *   (g) a run that ENDS with rows needing attention says so IN THE PILL, and
  *       still does not open the dialog;
- *   (f) the results stay one click away - the pill opens the finished card.
+ *   (h) the results stay one click away - the pill opens the finished card.
  *
  * NO LOGIN, NO NETWORK, NO EXTENSION, NO PHI: synthetic names and synthetic
  * ids only, and nothing here is asserted to be persisted anywhere.
@@ -60,8 +62,10 @@ function eq(actual, expected, message) { assert.strictEqual(actual, expected, me
   const mod = MC.slice(a, b);
   eq((mod.match(/userOpened = true/g) || []).length, 1,
     'exactly ONE place may open the pull dialog - a second opener is a second way for it to pop up on its own');
-  ok(mod.includes('if (running && !wasRunning && userOpened) { userOpened = false; hidden = true; }'),
-    'the run-boundary re-arm is gone - a new run would inherit an open card');
+  ok(mod.includes('var replacedWhileRunning = !!(running && runId && watchedRunId && runId !== watchedRunId);') &&
+    mod.includes('var newRun = running && (!wasRunning || replacedWhileRunning);') &&
+    mod.includes('if (newRun && (userOpened || replacedWhileRunning)) { userOpened = false; hidden = true; }'),
+    'the run-boundary re-arm is gone - a replacement run could inherit an open card');
   ok(mod.includes('if (!userOpened && !hidden) hidden = true;'),
     '`hidden` is no longer derived from the doctor gesture');
   const added = mod.slice(mod.indexOf('/* ===== pillfirst-1.0.0'), mod.indexOf('var wasRunning'));
@@ -135,7 +139,8 @@ async function runtime() {
         pillText: f ? String(f.textContent || '').replace(/\s+/g, ' ').trim() : '',
         stopText: sb ? String(sb.textContent || '').trim() : '',
         stopUsable: !!(sb && !sb.disabled && getComputedStyle(sb).display !== 'none'),
-        engineRunning: !!(window.__mlsDayHistoryPull && window.__mlsDayHistoryPull.state && window.__mlsDayHistoryPull.state.running)
+        engineRunning: !!(window.__mlsDayHistoryPull && window.__mlsDayHistoryPull.state && window.__mlsDayHistoryPull.state.running),
+        opens: Number(window.__mlsPullProgress && window.__mlsPullProgress.opens) || 0
       };
     });
     const rowsFor = (n, failAt) => Array.from({ length: n }, (_, i) => ({
@@ -143,10 +148,11 @@ async function runtime() {
       ok: i !== failAt, reason: i === failAt ? 'read-failed' : ''
     }));
     const startRun = (rows, done) => page.evaluate(([rows, done]) => {
+      window.__pullPillSyntheticRunSeq = (Number(window.__pullPillSyntheticRunSeq) || 0) + 1;
       window.__mlsDayHistoryPull = { state: {
         __si: 1, running: true, total: rows.length, done: done,
         ok: done, failed: 0, chartOnly: 0, current: 'opening the next chart',
-        rows: rows.slice(0, done), runId: 'r' + Date.now().toString(36)
+        rows: rows.slice(0, done), runId: 'synthetic-run-' + window.__pullPillSyntheticRunSeq
       } };
     }, [rows, done]);
     const endRun = (rows) => page.evaluate((rows) => {
@@ -161,6 +167,16 @@ async function runtime() {
     }, rows);
     const clickPill = () => page.evaluate(() => { const f = document.getElementById('mlsPullProgFab'); if (f) f.click(); });
     const clickHide = () => page.evaluate(() => { const b = document.getElementById('mlsPullProgHide'); if (b) b.click(); });
+    const seedStaleBar = (text) => page.evaluate((text) => {
+      let bar = document.getElementById('mlsDsPullBar');
+      if (!bar) {
+        bar = document.createElement('div');
+        bar.id = 'mlsDsPullBar';
+        bar.dataset.pullPillSynthetic = '1';
+        document.body.appendChild(bar);
+      }
+      bar.textContent = text;
+    }, text);
 
     const five = rowsFor(5, 4);   /* 4 saved, 1 that needs attention */
 
@@ -191,7 +207,37 @@ async function runtime() {
     ok(s.pill, 'Hide took the pill away with the dialog - the pull became invisible');
     eq(s.engineRunning, true, 'Hide stopped the pull - "Hide (keep pulling)" must never touch the engine');
 
-    /* ===== (d) THE REGRESSION: a NEW run returns to the pill ============ */
+    /* ===== (d) an old unowned bar cannot overwrite this run's count ===== */
+    await seedStaleBar('History 99/99');
+    await page.waitForTimeout(TICK * 2);
+    s = await read();
+    ok(/Pulling 2\/5/.test(s.pillText),
+      `the pill did not use the active run's 2/5 state: "${s.pillText}"`);
+    ok(!/99\/99/.test(s.pillText),
+      `the pill borrowed a stale count from #mlsDsPullBar: "${s.pillText}"`);
+    measured.d_runOwnedCount = s.pillText;
+
+    /* ===== (e) THE REGRESSION: a replacement run returns to the pill ==== */
+    /* The renderer polls. A very fast terminal->new-run transition can happen
+       entirely between ticks, so running never appears false here. The runId
+       still has to close the old dialog and reset this surface for the new
+       run. */
+    await clickPill();
+    await page.waitForTimeout(TICK * 2);
+    s = await read();
+    ok(s.dialogVisible, 'the card could not be opened before the missed-terminal boundary');
+    const opensBeforeReplacement = s.opens;
+    await startRun(five, 3); /* no terminal state is rendered between runs */
+    await page.waitForTimeout(SETTLE);
+    s = await read();
+    eq(s.dialog, false, 'a replacement run inherited the old run card when the terminal tick was missed');
+    ok(s.pill && /Pulling 3\/5/.test(s.pillText),
+      `the replacement run did not own the pill count: "${s.pillText}"`);
+    eq(s.opens, opensBeforeReplacement + 1,
+      'the replacement run kept the prior run timer/lifecycle instead of starting its own');
+    measured.e_replacementRunPill = s.pillText;
+
+    /* ===== (f) an observed NEW run also returns to the pill ============= */
     /* The doctor opens the card; the run ends and the card stays open (that is
        the DONE card's contract, dn-1.0); then the next run starts. Before
        pillfirst-1.0.0 that run inherited the open card, and the doctor - who
@@ -210,7 +256,7 @@ async function runtime() {
       `the new run left no corner pill to work from: "${s.pillText}"`);
     measured.d_newRunPill = s.pillText;
 
-    /* ===== (e) a run that ENDS needing attention says so IN THE PILL ==== */
+    /* ===== (g) a run that ENDS needing attention says so IN THE PILL ==== */
     await endRun(five);
     await page.waitForTimeout(SETTLE);
     s = await read();
@@ -221,7 +267,7 @@ async function runtime() {
     ok(/show details/.test(s.pillText), `the finished pill offers no route to the results: "${s.pillText}"`);
     measured.e_donePill = s.pillText;
 
-    /* ===== (f) the results are still one click away ===================== */
+    /* ===== (h) the results are still one click away ===================== */
     await clickPill();
     await page.waitForTimeout(TICK * 2);
     const card = await page.evaluate(() => {
@@ -237,7 +283,13 @@ async function runtime() {
     measured.f_cardTally = card.tally;
 
     /* leave the app as it was found */
-    await page.evaluate(() => { try { window.__mlsDayHistoryPull = { state: null }; } catch (e) {} });
+    await page.evaluate(() => {
+      try { window.__mlsDayHistoryPull = { state: null }; } catch (e) {}
+      try {
+        const bar = document.getElementById('mlsDsPullBar');
+        if (bar && bar.dataset.pullPillSynthetic === '1') bar.remove();
+      } catch (e) {}
+    });
     await page.waitForTimeout(SETTLE);
     eq((await read()).pill, false, 'the surface did not clean itself up when the engine released');
 

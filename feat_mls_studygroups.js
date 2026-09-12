@@ -1,4 +1,4 @@
-/* feat_mls_studygroups.js — MLS "Study Group" cohort + study engine
+/* feat_mls_studygroups.js — MLS "Study Group" cohort + study engine sg-1.0.1
  * STAGING module. Additive, reversible, self-contained.
  * Revert handle: window.__mlsStudyGroups.revert()  (revert(true) also purges stored groups)
  *
@@ -349,6 +349,8 @@
 
   /* ================= UI ================= */
   var STYLE_ID = 'mls-sg-style';
+  var mountTimers = [], hostObserver = null, hostDeadline = null;
+  var lifecycleStarted = false, lifecycleReverted = false;
   function injectStyle() {
     if (document.getElementById(STYLE_ID)) return;
     var s = document.createElement('style'); s.id = STYLE_ID; s.setAttribute(TAG, '1');
@@ -494,6 +496,7 @@
     var mount = findStudioMount();
     var root = document.getElementById('mls-sg-root');
     if (mount) {
+      stopHostWait();
       root = render(mount);
       Array.prototype.slice.call(document.querySelectorAll('[id="mls-sg-launch"]')).forEach(function (node) { if (node.parentNode) node.parentNode.removeChild(node); });
       var modal = document.getElementById('mls-sg-modal');
@@ -517,10 +520,42 @@
     return 'launcher';
   }
 
+  /* The Studio shell is normally present in the initial document, but it may
+     be inserted after this deferred satellite's bounded retry window. Keep one
+     temporary document sentinel only while the host is absent, then hand off
+     to the existing scoped/idempotent renderer. */
+  function stopHostWait() {
+    try { if (hostObserver) hostObserver.disconnect(); } catch (e) {}
+    try { if (hostDeadline) clearTimeout(hostDeadline); } catch (e) {}
+    hostObserver = null; hostDeadline = null;
+  }
+  function waitForStudio() {
+    var target = document.documentElement || document;
+    if (lifecycleReverted || findStudioMount() || hostObserver || typeof MutationObserver !== 'function') return;
+    hostObserver = new MutationObserver(function () {
+      if (!findStudioMount()) return;
+      stopHostWait();
+      boot();
+    });
+    hostObserver.observe(target, { childList: true, subtree: true });
+    hostDeadline = setTimeout(stopHostWait, 60000);
+  }
+  function onStudioSignal() {
+    if (lifecycleReverted) return;
+    var mount = findStudioMount(), root = document.getElementById('mls-sg-root');
+    if (mount && (!root || !mount.contains(root))) boot();
+    else if (!mount) waitForStudio();
+  }
+
   /* ================= REVERT ================= */
   function revert(purgeData) {
+    lifecycleReverted = true;
     try { mountTimers.forEach(function (timer) { clearTimeout(timer); }); mountTimers = []; } catch (e) {}
     try { window.removeEventListener('mls:ui-ready', boot); } catch (e) {}
+    try { window.removeEventListener('mls:view-changed', onStudioSignal, true); } catch (e) {}
+    try { window.removeEventListener('mls:studio-section-changed', onStudioSignal, true); } catch (e) {}
+    try { document.removeEventListener('DOMContentLoaded', startMountLifecycle); } catch (e) {}
+    stopHostWait();
     try { document.querySelectorAll('[' + TAG + ']').forEach(function (n) { n.remove(); }); } catch (e) {}
     var st = document.getElementById(STYLE_ID); if (st) st.remove();
     var modal = document.getElementById('mls-sg-modal'); if (modal) modal.remove();
@@ -535,18 +570,18 @@
   window.__mlsStudyGroups = API;
 
   function boot() {
+    if (lifecycleReverted) return;
     try { var where = mountUI(); console.log('[mls-sg] mounted via ' + where + '; handle: window.__mlsStudyGroups'); }
     catch (e) { console.warn('[mls-sg] mount deferred', e); }
   }
-  var mountTimers = [];
   function startMountLifecycle() {
+    if (lifecycleStarted || lifecycleReverted) return;
+    lifecycleStarted = true;
     [0, 250, 1000, 3000, 8000].forEach(function (delay) { mountTimers.push(setTimeout(boot, delay)); });
-    /* 2026-08-04 (#24): 'mls:route-change' is dispatched by no production code.
-       It is NOT renamed to the live 'mls:view-changed' on purpose: mountUI()
-       re-renders whenever the Studio mount node exists, so riding every view
-       switch would churn the panel. The bounded timers + mls:ui-ready own
-       mounting. */
     try { window.addEventListener('mls:ui-ready', boot); } catch (e) {}
+    try { window.addEventListener('mls:view-changed', onStudioSignal, true); } catch (e) {}
+    try { window.addEventListener('mls:studio-section-changed', onStudioSignal, true); } catch (e) {}
+    waitForStudio();
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startMountLifecycle, { once: true });
   else startMountLifecycle();
