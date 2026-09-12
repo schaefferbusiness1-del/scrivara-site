@@ -9559,10 +9559,25 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         setLaneHidden(failGo, live || _recFail.kind === 'wait');
       }
     }
-    /* Review/send owns the lower #noteBox card. The prior-step wrapper now owns
-       only a compact Next action; hide that action while its destination is
-       open and restore it when Back closes the workspace. */
+    /* Review/send owns the lower #noteBox card. Hide this prior-step result
+       while that workspace is open and restore it when Back closes it. */
     setLaneHidden(noteWrap, _reviewStepOpen || !noteText.trim());
+    /* note-first: move the existing canonical editor into the guided result
+       slot. Never copy its value or rebuild it: input handlers and edits stay
+       with the same node. Engine repaint/remount simply supplies its new owner. */
+    if (noteWrap && noteText.trim() && !document.body.classList.contains('mls-phone')) {
+      if (rec.firstElementChild !== noteWrap) rec.insertBefore(noteWrap, rec.firstChild);
+      var canonicalNote = $('ez3Note');
+      var canonicalCard = canonicalNote && canonicalNote.closest('.ez3-notecard');
+      if (canonicalCard && canonicalCard.parentNode !== noteWrap) {
+        noteWrap.insertBefore(canonicalCard, noteWrap.querySelector('.ez3fl-nextrow'));
+      }
+      var canonicalFormat = canonicalNote && canonicalNote.__fpFmt;
+      if (canonicalNote && !canonicalNote.readOnly && canonicalFormat && canonicalFormat.hidden !== true) {
+        var editFormat = canonicalFormat.wrap && canonicalFormat.wrap.querySelector('.fmt-edit');
+        if (editFormat) editFormat.click();
+      }
+    }
     /* nextgate-1.0.0 (b1191, owner 2026-09-01: "review and send to athena should not
        be next if the note isn't generated"): while a generation is in flight, or
        while the only text on screen is an AI refusal, the Next door is dimmed with
@@ -9812,7 +9827,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           noteWrap.className = 'ez3fl-note'; noteWrap.id = 'ez3flNoteWrap'; noteWrap.hidden = true;
           noteWrap.innerHTML = '<label for="ez3flNote">Generated note - review and edit</label><textarea id="ez3flNote"></textarea>' +
             '<div class="ez3fl-nextrow"><button type="button" class="ez3fl-review" id="ez3flReview">Next: Review &amp; send to Athena</button>' +
-            '<span>Nothing sends automatically. You review every section and confirm the final action.</span></div>';
+            '<span>Read and edit your note, then review what to send to Athena; nothing sends automatically.</span></div>';
           rec.appendChild(noteWrap);
           var topNote = noteWrap.querySelector('#ez3flNote');
           topNote.addEventListener('input', function () {
@@ -28028,7 +28043,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var d = ev && ev.detail || {}, runId = Number(d.runId || 0);
     if (S.generationRunId && runId && runId !== S.generationRunId) return;
     S.genClickedAt = 0;
-    if (d.status === 'success') { S.lastWarn = ''; S.phase = noteText().trim().length >= 30 ? 'note' : 'stopped'; }
+    if (d.status === 'success') { S.lastWarn = ''; S.phase = noteText().trim().length >= 30 ? 'note' : 'stopped'; S.editing = S.phase === 'note'; }
     else if (d.status !== 'refused') {
       S.phase = 'stopped';
       S.lastWarn = String(d.message || '') || ez3EngineReason() ||
@@ -28056,6 +28071,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     open: function (screen) {
       var target = screen || 'home';
       if (target === 'doctor') adoptActiveVisitForDoctorOpen();
+      if (target === 'doctor' && noteText().trim()) S.editing = true;
       return setEasyMode('doctor', target, 'api-open-doctor', true);
     },
     close: function () {},   /* kept for compat — the workspace IS the tab */

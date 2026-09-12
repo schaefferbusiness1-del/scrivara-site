@@ -23,9 +23,10 @@
  * not the note on screen. And it carries two positive controls, because a
  * green run means nothing unless the instrument can see the defect:
  *
- *   A. the pre-fix SURFACE CHOICE - centre #ez3flNoteWrap, exactly what 1.0.0
- *      did - must leave the note off the screen;
- *   B. no landing at all must leave the note off the screen.
+ *   A. force the painted note below the viewport - measurement must fail;
+ *   B. no landing with that offscreen control must also fail.
+ * The note-first suite additionally serves exact b1267 bundle bytes as the
+ * historical positive control, since the wrapper now truly holds the editor.
  *
  * Synthetic note text only; no PHI ever reaches this file.
  *
@@ -235,10 +236,11 @@ async function pressTheNote(page) {
       'the block landed on ' + JSON.stringify(claim.shows.surface) + ', which is not one of the ' +
       'elements independently measured to be painting the note on screen: ' + JSON.stringify(shipped.carriers));
 
-    /* ---- 3. POSITIVE CONTROL A - the pre-fix surface choice must FAIL ----
-       Take the landing out, press again, then do exactly what reviewnote-1.0.0
-       did: centre #ez3flNoteWrap. If the note is on screen after that, this
-       whole measurement is blind. */
+    /* ---- 3. POSITIVE CONTROL A - offscreen words must FAIL ----
+       The note-first flow now puts the canonical editor IN the wrapper, so
+       centring it is correctly a landing. Force only the painted note below
+       the viewport to test this instrument; the generated-note suite separately
+       serves exact b1267 bytes to prove the historical defect. */
     await page.evaluate(() => window.__mlsReviewNoteLanding.revert());
     await goToReview(page);
     await pressTheNote(page);
@@ -247,6 +249,9 @@ async function pressTheNote(page) {
       const w = document.getElementById('ez3flNoteWrap');
       if (!w) return 'no wrap';
       w.scrollIntoView({ block: 'center', behavior: 'auto' });
+      const style = document.createElement('style');
+      style.textContent = '#ez3Note { transform:translateY(3000px) !important }';
+      document.head.appendChild(style);
       return 'staged';
     });
     eq(staged, 'staged', 'the positive control could not stage the pre-fix landing: ' + staged);
@@ -254,7 +259,7 @@ async function pressTheNote(page) {
     const controlA = await page.evaluate(measureNoteOnScreen, NOTE);
     measured.controlA = controlA.carriers;
     eq(controlA.anyOnScreen, false,
-      'THE INSTRUMENT IS BLIND: centring #ez3flNoteWrap - the pre-fix landing - put the note on ' +
+      'THE INSTRUMENT IS BLIND: moving painted note words below the viewport put the note on ' +
       'screen by itself, so the pass above says nothing: ' + JSON.stringify(controlA.carriers));
 
     /* ---- 4. POSITIVE CONTROL B - no landing at all must FAIL ---- */
