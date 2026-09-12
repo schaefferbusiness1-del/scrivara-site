@@ -40,7 +40,7 @@ const shellSource = fs.readFileSync(SHELL_PATH, 'utf8');
 const mergeSource = fs.readFileSync(MERGE_PATH, 'utf8');
 const studySource = fs.readFileSync(STUDY_PATH, 'utf8');
 
-const studyLoaderMarker = "var A='feat_mls_study_request.js',V='sr-2.4.1',LV='srl-1.0.1'";
+const studyLoaderMarker = "var A='feat_mls_study_request.js',V='sr-2.4.2',LV='srl-1.0.2'";
 const studyLoaderAt = connectSource.indexOf(studyLoaderMarker);
 const studyLoaderStart = connectSource.lastIndexOf(';(function(){try{', studyLoaderAt);
 const studyLoaderCloseMarker = '}catch(e){}})();';
@@ -252,6 +252,7 @@ const SHELL_HTML = `<!doctype html><html><body>
           src: tags[0] && tags[0].src,
           state: window.__mlsStudyRequestLoader && window.__mlsStudyRequestLoader.state,
           direct: document.getElementById('mlsStudyRequest').parentElement === document.getElementById('studioView'),
+          directlyAfterTabs: document.getElementById('mlsStudyRequest').previousElementSibling === document.getElementById('mlsSmTabs'),
           sectionEvents: window.__studioSectionEvents.slice()
         };
       });
@@ -260,6 +261,8 @@ const SHELL_HTML = `<!doctype html><html><body>
         'Study first use did not follow the current app build token');
       assert.strictEqual(firstUse.state, 'ready', 'Study loader did not verify its mounted owner');
       assert.strictEqual(firstUse.direct, true, 'first-use loading mounted Study outside the Build surface');
+      assert.strictEqual(firstUse.directlyAfterTabs, true,
+        'first-use Study starts below other Build cards and jumps only after deferred grid layout');
       assert.deepStrictEqual(firstUse.sectionEvents, ['build'],
         'the remembered Build section did not publish one first-use admission signal');
 

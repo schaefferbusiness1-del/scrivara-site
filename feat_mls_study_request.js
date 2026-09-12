@@ -1,6 +1,6 @@
 /* =============================================================================
  * MLS Scribe natural-language study request surface
- * __mlsStudyRequest sr-2.4.1 (site only, additive, reversible)
+ * __mlsStudyRequest sr-2.4.2 (site only, additive, reversible)
  *
  * One sentence is enough: the deterministic parser turns it into a strict
  * StudySpec, the existing __mlsSgFix/__mlsStudyGroups engines build and run the
@@ -33,7 +33,7 @@
   (typeof globalThis !== 'undefined' ? globalThis : this), function (root) {
   'use strict';
 
-  var VERSION = 'sr-2.4.1';
+  var VERSION = 'sr-2.4.2';
   var CSS_ID = 'mlsStudyRequestCss';
   var UI_ID = 'mlsStudyRequest';
   var ADV_ID = 'mlsStudyAdvanced';
@@ -2136,7 +2136,17 @@
   function placePrimary(doc, pro, section) {
     var studio = doc && doc.getElementById('studioView');
     if (!studio || !section) return false;
-    var anchor = doc.getElementById('mlsB39SgWrap');
+    /* DOM order must already say "Study first" before the optional sx grid
+       arrives; otherwise a fresh session briefly paints it after My creations
+       and then jumps it upward. Prefer directly after the section switcher,
+       fall back to immediately before Build's existing custom-tool column. */
+    var tabs = doc.getElementById('mlsSmTabs');
+    var anchor = tabs && tabs.parentNode === studio ? tabs.nextSibling : null;
+    if (!anchor) {
+      var build = studio.querySelector('.sx-right');
+      if (build && build.parentNode === studio) anchor = build;
+    }
+    if (!anchor) anchor = doc.getElementById('mlsB39SgWrap');
     if (!anchor || anchor.parentNode !== studio) anchor = pro && pro.parentNode === studio ? pro : null;
     if (section.parentNode !== studio || (anchor && section.nextSibling !== anchor)) studio.insertBefore(section, anchor);
     return true;
