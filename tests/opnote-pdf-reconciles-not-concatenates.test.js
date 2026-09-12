@@ -72,6 +72,17 @@ const withTail = (tail) => 'OPERATIVE / PROCEDURE NOTE\n\n' +
   'DISPOSITION / POST-PROCEDURE PLAN:\n' + tail + '\nDischarged home in stable condition.\n';
 
 {
+  /* Final provider provenance outranks a copied/template header.  The same meta
+     slot carries either the verified practice provider or the appointment-bound
+     provider selected by the shared finalizer. */
+  const practiceBound = pro.normalize(withTail('Date of Procedure: 08/25/2026'), { provider: 'Verified Practice Clinician, MD' });
+  assert.strictEqual(headerLine(practiceBound, 'Provider'), 'Verified Practice Clinician, MD',
+    'a template/header provider overrode verified practice provenance');
+  const appointmentBound = pro.normalize(withTail('Date of Procedure: 08/25/2026'), { provider: 'Verified Appointment Clinician, DO' });
+  assert.strictEqual(headerLine(appointmentBound, 'Provider'), 'Verified Appointment Clinician, DO',
+    'a template/header provider overrode appointment-bound provenance');
+  checks++;
+
   /* THE DEFECT */
   const out = pro.normalize(withTail('Date of Procedure: 08/25/2026'), {});
   assert.strictEqual(headerLine(out, 'Date of Procedure'), '08/25/2026',

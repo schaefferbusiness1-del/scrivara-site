@@ -217,8 +217,9 @@ const CREATED = new Date('2026-07-24T14:00:00Z');
     '__mlsOpNotePdf still takes only (getText, patient), so no caller can hand it a date. It is the ' +
     'PRIMARY route out of the op-note history list — the fallback that accepted opts never runs while ' +
     'this function exists.');
-  assert(/exportPdf\(String\(t\), \{ patient: patient, date: \(opts && opts\.date\) \|\| undefined \}\)/.test(code),
-    '__mlsOpNotePdf still rebuilds its opts as { patient } only, dropping any date it was given');
+  assert(/Object\.assign\(\{\}, opts \|\| \{\}, \{ patient: patient \|\| \(opts && opts\.patient\) \|\| '' \}\)/.test(code) &&
+      /return exportPdf\(String\(t\), opts\)/.test(code),
+    '__mlsOpNotePdf no longer preserves the caller options (including the note-record date) through exportPdf');
 
   const hist = stripComments(HIST);
   assert(/__mlsOpNotePdf\(function \(\) \{ return txt; \}, opts\.patient, opts\)/.test(hist),

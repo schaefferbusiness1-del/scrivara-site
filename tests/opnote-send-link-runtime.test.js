@@ -145,9 +145,11 @@ function runtime(options) {
   };
   const toasts = [];
   const copied = [];
+  const storage = new Map();
+  let uuid = 0;
   const ctx = {
     document,
-    console, JSON, Object, String, Number, Boolean, Math, RegExp, Error, Promise, Array,
+    console, JSON, Object, String, Number, Boolean, Math, Date, RegExp, Error, Promise, Array,
     encodeURIComponent, decodeURIComponent, setTimeout, clearTimeout,
     /* the REAL one, so the giving-up point in _opSurgeonApi is executed here
        rather than feature-detected away into a no-op that never runs */
@@ -155,6 +157,15 @@ function runtime(options) {
     bkBase: () => 'https://synthetic-backend.invalid',
     bkToken: () => 'SYNTHETIC_CLINICIAN_CREDENTIAL',
     toast: (m, k) => toasts.push({ m, k }),
+    localStorage: { getItem: (k) => storage.has(String(k)) ? storage.get(String(k)) : null, setItem: (k, v) => storage.set(String(k), String(v)) },
+    crypto: { randomUUID: () => '00000000-0000-4000-8000-' + String(++uuid).padStart(12, '0') },
+    _opFinalizerRun(i, boundary) {
+      const row = (ctx._opPrep || [])[i] || {};
+      return { ok: true, status: 'ready', boundary, note: String(row.note || ''), issues: [], repairs: [], receipt: { version: 1, status: 'ready' }, context: {} };
+    },
+    _opFinalizerBatch(day, boundary) {
+      return { ok: true, status: 'ready', boundary, rows: (day || []).map((x, i) => ({ rowIndex: x.i == null ? i : x.i, result: ctx._opFinalizerRun(x.i == null ? i : x.i, boundary) })) };
+    },
     navigator: { clipboard: { writeText: (v) => { copied.push(String(v)); return Promise.resolve(); } } },
     fetch(url, init) {
       calls.push({ url: String(url), init: init || {} });

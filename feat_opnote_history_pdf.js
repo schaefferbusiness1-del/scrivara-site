@@ -55,6 +55,8 @@
     if (!txt) { (window.toast||window.alert)('No op-note content found for this entry.'); return; }
     var opts = { patient: patient || (n && n.patient) || '', title: 'Operative Report' };
     if (n && n.created) opts.date = new Date(n.created);
+    if (n && n.patientId) opts.patientId = n.patientId;
+    if (n && n.opFinalizationContext) opts.finalizationContext = n.opFinalizationContext;
     try {
       // Primary: same engine entry the in-app "Save as PDF" button uses.
       if (typeof window.__mlsOpNotePdf === 'function') {

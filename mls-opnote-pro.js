@@ -451,10 +451,10 @@
 
   /* Build the meta (demographics) we know from the app, to backfill the header. */
   function appMeta() {
-    var meta = { patient: '', dob: '', mrn: '', provider: '', spec: '' };
+    var meta = { patient: '', patientId: '', patientVerified: false, dob: '', mrn: '', provider: '', providerNpi: '', spec: '' };
     safe(function () {
       var ap = (typeof activePatient === 'function') ? activePatient() : null;
-      if (ap) { meta.patient = ap.name || ''; meta.dob = ap.dob || ''; meta.mrn = ap.mrn || ''; }
+      if (ap) { meta.patient = ap.name || ''; meta.patientId = ap.id || ''; meta.patientVerified = true; meta.dob = ap.dob || ''; meta.mrn = ap.mrn || ''; }
     });
     /* clinicalProviderName, not getName. getName() is uns('docname') - the
        login/account display name - and this value is printed on an operative note
@@ -471,6 +471,10 @@
     safe(function () {
       if (typeof clinicalProviderName === 'function') { meta.provider = clinicalProviderName() || ''; return; }
       if (typeof getProviderName === 'function') meta.provider = getProviderName() || '';
+    });
+    safe(function () {
+      if (typeof getNpi === 'function') meta.providerNpi = getNpi() || '';
+      else if (typeof getNPI === 'function') meta.providerNpi = getNPI() || '';
     });
     safe(function () { if (typeof getSpec === 'function') meta.spec = getSpec() || ''; });
     return meta;
@@ -580,7 +584,9 @@
     var dob = meta.dob || H.dob || '';
     var mrn = meta.mrn || H.mrn || '';
     var dop = H.dop || meta.dop || '';
-    var provider = H.provider || meta.provider || '';
+    /* Bound chart/practice metadata is authoritative.  Template/model header
+       prose is only a fallback when no verified provider was supplied. */
+    var provider = meta.provider || H.provider || '';
     if (provider && meta.spec && provider.indexOf(meta.spec) < 0) provider = provider; // keep as-is
     var assistant = H.assistant || '';
 
@@ -851,10 +857,61 @@
     return m ? m[1] : null;
   }
 
+  /* opfinal-1.0.0: PDF is an exit boundary even when the incoming document is
+     already normalized.  Run the shared owner BEFORE `isNormalized`, otherwise
+     the exact stale/malformed shape that motivated this lane bypasses review. */
+  function pdfFinalization(rawText, opts, meta) {
+    opts = opts || {}; meta = meta || appMeta();
+    var api = safe(function () { return window.__mlsOpNoteIntegrity; }, null);
+    if (!api || !api.installed || typeof api.finalizeNote !== 'function' || typeof api.finalizationContext !== 'function') {
+      safe(function () { toast('Final safety review is still loading. Wait a moment and try the PDF again.', 'err'); });
+      return null;
+    }
+    var seed = {}, stored = opts.finalizationContext || {};
+    function copy(src) { if (!src) return; Object.keys(src).forEach(function (k) { seed[k] = src[k]; }); }
+    copy(meta); copy(stored);
+    if (opts.patient) { seed.patient = opts.patient; seed.name = opts.patient; }
+    if (opts.patientId) seed.patientId = opts.patientId;
+    if (opts.procedureDate) { seed.procedureDate = opts.procedureDate; seed.dateStr = opts.procedureDate; }
+    var row = opts.row || { note: String(rawText || ''), patientId: seed.patientId || '', appt: { name: seed.patient || seed.name || '', dob: seed.dob || '' }, dateStr: seed.procedureDate || seed.dateStr || '' };
+    var ctx, result;
+    try {
+      ctx = api.finalizationContext(row, seed);
+      result = api.finalizeNote(String(rawText || ''), ctx, { boundary: 'pdf', applyRepairs: true, requirePatient: true, requireProvider: true });
+    } catch (e) { result = null; }
+    try { window.__mlsLastOpFinalization = result || { ok: false, status: 'review', issues: [{ code: 'FINALIZER_UNAVAILABLE', message: 'Final safety review is unavailable.' }] }; } catch (e2) {}
+    if (!result || !result.ok) {
+      var first = result && result.issues && result.issues[0];
+      safe(function () { toast((first && first.message) || 'This op note needs review before it can be exported.', 'err'); });
+      return null;
+    }
+    return result;
+  }
+
+  function pdfBlanksReady(text) {
+    try {
+      if (typeof window.opNoteBlankTokens !== 'function') return true;
+      var unresolved = window.opNoteBlankTokens(String(text || ''));
+      if (!unresolved.length) return true;
+      var PRACTICE_RE = /\b(?:npi|facility|practice|clinic|provider[_ ]?name|address|tax[_ ]?id|ptan)\b/i;
+      var practice = [], noteLevel = [];
+      unresolved.forEach(function (x) { var label = String((x && (x.label || x.key)) || ''); (PRACTICE_RE.test(label) ? practice : noteLevel).push(label); });
+      if (practice.length && !noteLevel.length) safe(function () { toast('This note is finished — but your practice details are not. Set ' + practice.slice(0, 4).join(' and ') + ' in Settings, then export.', 'warn'); });
+      else if (practice.length) safe(function () { toast('Not exported: ' + noteLevel.length + ' note field' + (noteLevel.length === 1 ? '' : 's') + ' and ' + practice.length + ' practice field' + (practice.length === 1 ? '' : 's') + ' are still blank.', 'warn'); });
+      else safe(function () { toast('This op note is still a draft — ' + unresolved.length + ' unresolved field' + (unresolved.length === 1 ? '' : 's') + '. Fill them in before exporting a PDF.', 'err'); });
+      return false;
+    } catch (e) { safe(function () { toast('Could not check the remaining fields. Wait a moment and try the PDF again.', 'err'); }); return false; }
+  }
+
   async function exportPdf(rawText, opts) {
     opts = opts || {};
     var meta = appMeta();
     if (opts.patient) meta.patient = opts.patient;
+    var finalReview = pdfFinalization(rawText, opts, meta);
+    if (!finalReview) return false;
+    rawText = finalReview.note;
+    if (finalReview.context && finalReview.context.provider) meta.provider = finalReview.context.provider;
+    if (!pdfBlanksReady(rawText)) return false;
     var pro = isNormalized(rawText) ? String(rawText) : normalize(rawText, meta);
 
     var ns;
@@ -992,62 +1049,8 @@
   window.__mlsOpNotePdf = function (getText, patient, opts) {
     var t = (typeof getText === 'function') ? getText() : getText;
     if (!t || !String(t).trim()) { safe(function () { toast('Generate the op note first.', 'err'); }); return; }
-    /* Fail-closed export gate: a note with ANY unresolved placeholder is a
-       DRAFT — it can be reviewed on screen but never leaves the app as a
-       finished PDF. One canonical parser decides (same as save/routing). */
-    try {
-      if (typeof window.opNoteBlankTokens === 'function') {
-        var unresolved = window.opNoteBlankTokens(String(t));
-        if (unresolved.length) {
-          var labels = unresolved.map(function (x) { return x.label || x.key; });
-          var shown = labels.slice(0, 6).join(', ') + (labels.length > 6 ? (' +' + (labels.length - 6) + ' more') : '');
-          /* 2026-08-07 — MEASURED BY QA ON THE OWNER'S LIVE ACCOUNT: every op-note
-             PDF export is blocked, and filling every blank in the NOTE changes
-             nothing. His `npi` and `facilityName` settings are empty, so
-             attestNote's footer emits [[provider_npi]] and [[facility_name]]
-             rather than inventing them (correct), and this gate then refuses on
-             them. Deterministic, nothing to do with templates, and it means no
-             op note on his account can become a PDF at all.
-
-             THE GATE IS RIGHT AND IS NOT WEAKENED HERE. An operative note
-             leaving the app without an NPI is exactly what it should refuse.
-             What was wrong is that it says "Fill them in" for a field that is
-             NOT IN THE NOTE - the doctor hunts the note text for something that
-             lives in Settings, and every blank he fills leaves the count
-             unchanged. Same "honest refusal, wrong location" class as the
-             op-note identity message.
-
-             A practice-level field is also a different KIND of missing: a note
-             blank is per-note, an NPI is once-ever. They are counted and named
-             separately so "2 unresolved fields" can never appear on a note
-             where he has resolved everything a note can resolve. */
-          var PRACTICE_RE = /\b(?:npi|facility|practice|clinic|provider[_ ]?name|address|tax[_ ]?id|ptan)\b/i;
-          var practice = [], noteLevel = [];
-          unresolved.forEach(function (x) {
-            var lab = String((x && (x.label || x.key)) || '');
-            (PRACTICE_RE.test(lab) ? practice : noteLevel).push(lab);
-          });
-          if (practice.length && !noteLevel.length) {
-            safe(function () {
-              toast('This note is finished — but your practice details are not. Set ' + practice.slice(0, 4).join(' and ') +
-                ' in Settings, then export. Nothing in the note itself is missing.', 'warn');
-            });
-            return;
-          }
-          if (practice.length) {
-            safe(function () {
-              toast('Not exported: ' + noteLevel.length + ' field' + (noteLevel.length === 1 ? '' : 's') + ' still blank in the note (' +
-                noteLevel.slice(0, 4).join(', ') + '), and ' + practice.slice(0, 3).join(' and ') + ' ' +
-                (practice.length === 1 ? 'is' : 'are') + ' not set in Settings.', 'warn');
-            });
-            return;
-          }
-          safe(function () { toast('This op note is still a draft — ' + unresolved.length + ' unresolved field' + (unresolved.length === 1 ? '' : 's') + ' (' + shown + '). Fill them in before exporting a PDF.', 'err'); });
-          return;
-        }
-      }
-    } catch (eGuard) {}
-    exportPdf(String(t), { patient: patient, date: (opts && opts.date) || undefined });
+    opts = Object.assign({}, opts || {}, { patient: patient || (opts && opts.patient) || '' });
+    return exportPdf(String(t), opts);
   };
 
   /* =============================================================
@@ -1126,9 +1129,9 @@
       var btn = mkPdfBtn('🧾 PDF');
       btn.style.marginTop = '6px';
       btn.addEventListener('click', function () {
-        var nm = '';
-        safe(function () { var i = ta.id.split('_')[1]; var r = (window._opPrep || [])[i]; nm = r && r.appt && r.appt.name; });
-        window.__mlsOpNotePdf(function () { return ta.value; }, nm);
+        var nm = '', pdfOpts = {};
+        safe(function () { var i = ta.id.split('_')[1]; var r = (window._opPrep || [])[i]; nm = r && r.appt && r.appt.name; pdfOpts = { row: r, patientId: r && r.patientId, procedureDate: r && r.dateStr, finalizationContext: r && r.opFinalizationContext }; });
+        window.__mlsOpNotePdf(function () { return ta.value; }, nm, pdfOpts);
       });
       // insert right after the textarea
       if (ta.nextSibling) row.insertBefore(btn, ta.nextSibling); else row.appendChild(btn);

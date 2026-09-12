@@ -18,8 +18,8 @@
    through the REAL function lifted out of the shell, never a paraphrase, and
    the payload is measured at the wire.
 
-   Also pinned: the existing card controls do not move (opPrepSave and
-   opPrepSendToAthena are byte-compared against HEAD), the hunk is byte-identical
+   Also pinned: the existing Athena control and canonical blank parser do not
+   move, Save now invokes the shared finalizer, the hunk is byte-identical
    in both 1p twins and present in all four shipped shells, and the link is
    rendered ONCE and is gone from the document when the dialog closes.
 
@@ -94,15 +94,16 @@ for (const page of ALL_PAGES) {
 }
 
 /* =======================================================================
- * 2. THE EXISTING CONTROLS DID NOT MOVE
- * Byte-compared against HEAD, because "additive" is a claim, not a fact.
+ * 2. THE EXISTING ATHENA/PARSER CONTROLS DID NOT MOVE; SAVE IS PREFLIGHTED
  * ===================================================================== */
 {
   const headShell = spawnSync('git', ['show', 'HEAD:1pScribeFlow.html'], { cwd: root, encoding: 'utf8', maxBuffer: 1024 * 1024 * 64, windowsHide: true });
   eq(headShell.status, 0, 'could not read HEAD:1pScribeFlow.html to prove the existing controls are untouched');
-  for (const decl of ['function opPrepSave(i){', 'function opPrepSendToAthena(i){', 'function opNoteBlankTokens(text){']) {
+  for (const decl of ['function opPrepSendToAthena(i){', 'function opNoteBlankTokens(text){']) {
     eq(fn(SHELL, decl), fn(headShell.stdout, decl), decl + ' changed. This lane is additive: the op-note flow the owner already uses must be byte-identical.');
   }
+  ok(/function opPrepSave\(i\)[\s\S]{0,300}_opFinalizerRun\(i,'save',true\)/.test(SHELL),
+    'Save does not invoke the same finalization contract as handoff/export');
 }
 
 /* =======================================================================
@@ -145,13 +146,27 @@ function runtime(options) {
   };
   const toasts = [];
   const copied = [];
+  const storage = new Map();
+  let uuid = 0;
   const ctx = {
     document,
-    console, JSON, Object, String, Number, Boolean, Math, RegExp, Error, Promise, Array,
+    console, JSON, Object, String, Number, Boolean, Math, Date, RegExp, Error, Promise, Array,
     encodeURIComponent, decodeURIComponent, setTimeout, clearTimeout,
     bkBase: () => 'https://synthetic-backend.invalid',
     bkToken: () => 'SYNTHETIC_CLINICIAN_CREDENTIAL',
     toast: (m, k) => toasts.push({ m, k }),
+    localStorage: { getItem: (k) => storage.has(String(k)) ? storage.get(String(k)) : null, setItem: (k, v) => storage.set(String(k), String(v)) },
+    crypto: { randomUUID: () => '00000000-0000-4000-8000-' + String(++uuid).padStart(12, '0') },
+    /* This suite owns transport behavior; finalizer behavior is executed in
+       opnote-integrity-audit-regressions-runtime.test.js.  Keep the boundary
+       present and successful here so a missing call cannot be hidden. */
+    _opFinalizerRun(i, boundary) {
+      const row = (ctx._opPrep || [])[i] || {};
+      return { ok: true, status: 'ready', boundary, note: String(row.note || ''), issues: [], repairs: [], receipt: { version: 1, status: 'ready' }, context: {} };
+    },
+    _opFinalizerBatch(day, boundary) {
+      return { ok: true, status: 'ready', boundary, rows: (day || []).map((x, i) => ({ rowIndex: x.i == null ? i : x.i, result: ctx._opFinalizerRun(x.i == null ? i : x.i, boundary) })) };
+    },
     /* tplcarry-2.0.0: the library lives outside the evaluated block, so it is
        supplied here with the same field names the real store uses. A test that
        left this out would make the template-carry assertions below pass
@@ -236,6 +251,37 @@ function happyReplies(extra) {
       'ordinary bracketed clinical prose was counted as a field the surgeon must fill');
   }
 
+  /* ---- retry identity is opaque, persistent, and intent-sensitive -------- */
+  {
+    const r = runtime({ rows: [] });
+    const payload = {
+      clientId: 'client-a', templateId: 'tpl', templateName: 'Template A', templateText: 'Synthetic template bytes',
+      title: 'Synthetic procedure', noteText: 'Synthetic note bytes', blanks: [{ key: 'field_a', label: 'Field A' }]
+    };
+    const body = (patch) => JSON.stringify(Object.assign({}, payload, patch || {}));
+    const sameIntent = r.ctx._opHandoffIntent('single', body());
+    const first = r.ctx._opIdemFor(sameIntent);
+    const retry = r.ctx._opIdemFor(r.ctx._opHandoffIntent('single', body()));
+    eq(retry, first, 'an exact retry generated a new Idempotency-Key after an uncertain response');
+    const changedNote = r.ctx._opIdemFor(r.ctx._opHandoffIntent('single', body({ noteText: payload.noteText + ' edited' })));
+    assert.notStrictEqual(changedNote, first, 'editing the note reused the prior handoff key'); checks++;
+    const changedClient = r.ctx._opIdemFor(r.ctx._opHandoffIntent('single', body({ clientId: 'client-b' })));
+    assert.notStrictEqual(changedClient, first, 'changing the surgeon reused the prior handoff key'); checks++;
+    const changedTitle = r.ctx._opIdemFor(r.ctx._opHandoffIntent('single', body({ title: payload.title + ' revised' })));
+    assert.notStrictEqual(changedTitle, first, 'changing only the title reused the prior handoff key'); checks++;
+    const changedTemplateName = r.ctx._opIdemFor(r.ctx._opHandoffIntent('single', body({ templateName: 'Template B' })));
+    assert.notStrictEqual(changedTemplateName, first, 'changing only the template name reused the prior handoff key'); checks++;
+    const changedTemplateText = r.ctx._opIdemFor(r.ctx._opHandoffIntent('single', body({ templateText: payload.templateText + ' revised' })));
+    assert.notStrictEqual(changedTemplateText, first, 'changing only the template text reused the prior handoff key'); checks++;
+    const changedBlanks = r.ctx._opIdemFor(r.ctx._opHandoffIntent('single', body({ blanks: [{ key: 'field_b', label: 'Field B' }] })));
+    assert.notStrictEqual(changedBlanks, first, 'changing only the blanks reused the prior handoff key'); checks++;
+    ok(/^intent-[a-z0-9]+-[a-z0-9]+$/.test(sameIntent), 'the intent does not use two independent opaque hashes');
+    ok(first.indexOf('Synthetic') < 0 && first.indexOf('patient') < 0 && first.indexOf('client') < 0, 'the raw idempotency key contains source text or identity');
+    r.ctx._opIdemConfirmed(sameIntent, first);
+    const afterSuccess = r.ctx._opIdemFor(sameIntent);
+    assert.notStrictEqual(afterSuccess, first, 'a new successful handoff did not rotate the key'); checks++;
+  }
+
   /* ---- nothing drafted yet: refused, and NOTHING is posted ---------------- */
   {
     const r = runtime({ rows: [{ note: '   ', proc: 'Right knee arthroscopy' }], replies: happyReplies() });
@@ -273,6 +319,7 @@ function happyReplies(extra) {
     eq(job.length, 1, 'the op note was posted ' + job.length + ' times');
     eq(job[0].init.method, 'POST', 'the job was not posted');
     eq(job[0].init.headers['Content-Type'], 'application/json', 'the job body was sent without saying what it is');
+    ok(/^opnote-[A-Za-z0-9-]+$/.test(job[0].init.headers['Idempotency-Key'] || ''), 'the job was sent without an opaque Idempotency-Key');
     const sent = JSON.parse(job[0].init.body);
     assert.deepStrictEqual(Object.keys(sent).sort(),
       ['blanks', 'clientId', 'noteText', 'templateId', 'templateName', 'templateText', 'title'],
@@ -321,6 +368,56 @@ function happyReplies(extra) {
     r.ctx.opSurgeonClose();
     eq(r.body.children.length, 0, 'the dialog stayed in the document after it was closed');
     ok(r.dialogHtml().indexOf(LINK_URL) === -1, 'the link is still in the document after the dialog closed');
+  }
+
+  /* ---- whole-day creation carries one opaque idempotency key -------------- */
+  {
+    const rows = [
+      { opKey: 'row-a', patientId: 'fixture-a', note: DRAFT, proc: 'Right knee arthroscopy', tplId: 'tpl_knee' },
+      { opKey: 'row-b', patientId: 'fixture-b', note: DRAFT + '\nLATERALITY: right', proc: 'Right knee arthroscopy', tplId: 'tpl_knee' }
+    ];
+    const r = runtime({
+      rows,
+      templates: [KNEE_TEMPLATE],
+      replies: happyReplies({
+        '/api/opnote-jobs/batch POST': { status: 200, body: { created: 2, results: [{ ok: true, id: 'oj_day_1' }, { ok: true, id: 'oj_day_2' }] } }
+      })
+    });
+    await r.ctx.opPrepForSurgeon(0);
+    r.ctx.document.getElementById('opSurgeonPick').value = 'oc_synthetic1';
+    await r.ctx.opSurgeonSendDay();
+    const batch = r.calls.filter((c) => /\/api\/opnote-jobs\/batch$/.test(c.url));
+    eq(batch.length, 1, 'the two-note day did not use one batch request');
+    ok(/^opnote-[A-Za-z0-9-]+$/.test(batch[0].init.headers['Idempotency-Key'] || ''), 'the whole-day request has no opaque Idempotency-Key');
+    const body = JSON.parse(batch[0].init.body);
+    eq(body.jobs.length, 2, 'the whole-day idempotent request skipped a row');
+    eq(rows[0].opJobId, 'oj_day_1', 'the first returned job id was not applied before the day key cleared');
+    eq(rows[1].opJobId, 'oj_day_2', 'the second returned job id was not applied before the day key cleared');
+    eq(Object.keys(r.ctx._opIdemRead()).length, 0, 'the confirmed day key remained after every returned job id was remembered');
+  }
+
+  /* A nominal count without every returned id is not confirmation: keep the
+     exact key so a retry cannot duplicate the jobs whose response was partial. */
+  {
+    const rows = [
+      { opKey: 'row-c', patientId: 'fixture-c', note: DRAFT, proc: 'Right knee arthroscopy', tplId: 'tpl_knee' },
+      { opKey: 'row-d', patientId: 'fixture-d', note: DRAFT + '\nLATERALITY: left', proc: 'Right knee arthroscopy', tplId: 'tpl_knee' }
+    ];
+    const r = runtime({
+      rows,
+      templates: [KNEE_TEMPLATE],
+      replies: happyReplies({
+        '/api/opnote-jobs/batch POST': { status: 200, body: { created: 2, results: [{ ok: true, id: 'oj_day_3' }, { ok: true }] } }
+      })
+    });
+    await r.ctx.opPrepForSurgeon(0);
+    r.ctx.document.getElementById('opSurgeonPick').value = 'oc_synthetic1';
+    await r.ctx.opSurgeonSendDay();
+    const batch = r.calls.filter((c) => /\/api\/opnote-jobs\/batch$/.test(c.url));
+    eq(batch.length, 1, 'the partial-id control did not send its one batch request');
+    eq(Object.keys(r.ctx._opIdemRead()).length, 1, 'the whole-day key was cleared before every returned job id was applied');
+    const retained = Object.values(r.ctx._opIdemRead())[0];
+    eq(retained.key, batch[0].init.headers['Idempotency-Key'], 'the retained whole-day key is not the exact key sent on the uncertain request');
   }
 
   /* ---- a brand-new surgeon is created first, then handed the note --------- */
