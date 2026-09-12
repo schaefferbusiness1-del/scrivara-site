@@ -363,11 +363,22 @@
     }catch(e){ return false; }
   }
 
+  function templatesBoundToSet(set){
+    var templates=cloneTemplates(set&&set.templates);
+    if(!set||S(set.scope)!=='provider')return templates;
+    var providerId=S(set.providerId||set.provider_id).trim(),providerName=S(set.providerName||set.provider_name).trim();
+    if(!providerId||!providerName){var error=new Error('This provider-scoped template set has no complete provider identity, so it was not applied.');error.code='TEMPLATE_PROVIDER_IDENTITY_UNAVAILABLE';throw error;}
+    /* The authenticated set-level binding is authoritative. Imported templates
+       are often ordinary unbound files, so project the exact roster identity
+       onto every usable template before the drafting guard sees it. A stale
+       per-template label or id must not weaken or override the selected set. */
+    return templates.map(function(template){template=template||{};template.providerId=providerId;template.providerName=providerName;return template;});
+  }
   function applySet(set){
-    if(!set||!Array.isArray(set.templates))return;state.applying=true;
-    try{(originals.setTemplates||window.setTemplates)(cloneTemplates(set.templates));if(isFn(window.uns)){localStorage.setItem(window.uns('templateSetActive'),set.id);localStorage.setItem(window.uns('templateSetVersion'),S(set.version));}}
+    if(!set||!Array.isArray(set.templates))return;var applied=templatesBoundToSet(set);state.applying=true;
+    try{(originals.setTemplates||window.setTemplates)(applied);if(isFn(window.uns)){localStorage.setItem(window.uns('templateSetActive'),set.id);localStorage.setItem(window.uns('templateSetVersion'),S(set.version));}}
     finally{state.applying=false;}
-    state.activeSetId=set.id;state.activeVersion=Number(set.version)||0;state.activeTemplates=cloneTemplates(set.templates);state.hydrated=true;
+    state.activeSetId=set.id;state.activeVersion=Number(set.version)||0;state.activeTemplates=cloneTemplates(applied);state.hydrated=true;
     try{if(isFn(window.renderTemplateList))window.renderTemplateList();if(isFn(window.renderTemplateActiveSelect))window.renderTemplateActiveSelect();}catch(e){}
   }
 
@@ -390,7 +401,7 @@
 
   function importBody(custom){
     custom=custom||{};var selected=setFor(custom.targetSetId!==undefined?custom.targetSetId:state.selectedSetId),pending=custom.templates||((window._tplPendingSplit||[]).filter(function(t){return t&&t.keep!==false&&S(t.text).trim();}));if(!Array.isArray(pending))pending=[];var scope=scopeFor(Object.assign({},selected||{},custom));
-    return {targetSetId:selected?selected.id:null,expectedVersion:selected?Number(selected.version):0,setName:S(custom.setName||(byId('tlSetName')&&byId('tlSetName').value)||(selected&&selected.name)||state.sourceFilenames[0]||'Imported templates').replace(/\.[^.]+$/,'').slice(0,120),scope:scope.scope,providerId:scope.providerId||'',providerName:scope.providerName||'',scopeError:scope.ok?'':scope.code,facility:custom.facility!==undefined?custom.facility:((byId('tlFacility')&&byId('tlFacility').value)||(selected&&selected.facility)||''),sourceFilenames:custom.sourceFilenames||state.sourceFilenames,templates:pending.map(function(t){return {id:t.id||'',name:t.name||'Template',text:t.text||'',keywords:t.keywords||[],procedure:t.procedure||'',providerId:t.providerId||'',facilityId:t.facilityId||'',facility:t.facility||'',requiredFields:t.requiredFields||[],optionalFields:t.optionalFields||[],prohibitedFields:t.prohibitedFields||[],validatedFacts:t.validatedFacts===true,created:Number(t.created)||Date.now()};}),removeTemplateIds:custom.removeTemplateIds||[]};
+    return {targetSetId:selected?selected.id:null,expectedVersion:selected?Number(selected.version):0,setName:S(custom.setName||(byId('tlSetName')&&byId('tlSetName').value)||(selected&&selected.name)||state.sourceFilenames[0]||'Imported templates').replace(/\.[^.]+$/,'').slice(0,120),scope:scope.scope,providerId:scope.providerId||'',providerName:scope.providerName||'',scopeError:scope.ok?'':scope.code,facility:custom.facility!==undefined?custom.facility:((byId('tlFacility')&&byId('tlFacility').value)||(selected&&selected.facility)||''),sourceFilenames:custom.sourceFilenames||state.sourceFilenames,templates:pending.map(function(t){return {id:t.id||'',name:t.name||'Template',text:t.text||'',keywords:t.keywords||[],procedure:t.procedure||'',providerId:scope.scope==='provider'?(scope.providerId||''):(t.providerId||''),providerName:scope.scope==='provider'?(scope.providerName||''):(t.providerName||''),facilityId:t.facilityId||'',facility:t.facility||'',requiredFields:t.requiredFields||[],optionalFields:t.optionalFields||[],prohibitedFields:t.prohibitedFields||[],validatedFacts:t.validatedFacts===true,created:Number(t.created)||Date.now()};}),removeTemplateIds:custom.removeTemplateIds||[]};
   }
 
   function countsHtml(counts){var keys=['added','updated','duplicated','rejected','unchanged','removed'];return '<div class="tl-counts">'+keys.map(function(key){return '<span class="tl-count '+(key==='rejected'?'bad':'')+'">'+key+': '+(Number(counts&&counts[key])||0)+'</span>';}).join('')+'</div>';}
@@ -570,6 +581,6 @@
   }
 
   function install(){wrapFunctions();ensurePanel();if(hosted())setTimeout(function(){refresh({silent:true});},0);}
-  window.__mlsTemplateLibrary={installed:true,version:VERSION,state:state,refresh:refresh,previewImport:previewImport,commitPending:commitPending,activateSet:activateSet,applySet:applySet,persistSnapshot:persistSnapshot,render:renderPanel,_request:request,_importBody:importBody,_createEmpty:createEmpty};
+  window.__mlsTemplateLibrary={installed:true,version:VERSION,state:state,refresh:refresh,previewImport:previewImport,commitPending:commitPending,activateSet:activateSet,applySet:applySet,persistSnapshot:persistSnapshot,render:renderPanel,_request:request,_importBody:importBody,_createEmpty:createEmpty,_templatesBoundToSet:templatesBoundToSet};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',install,{once:true});else install();
 })();

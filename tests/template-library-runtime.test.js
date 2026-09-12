@@ -426,7 +426,15 @@ async function providerScopedSetLifecycle() {
   }, { __mlsProviderRoster: roster });
   h.setHosted(true);
   await h.api.refresh();
+  assert.deepStrictEqual(h.getLocal().map(template => [template.providerId, template.providerName]), [['provider-a', 'Alex Kim, MD']],
+    'applying a provider-scoped set did not project its exact identity onto each draftable template');
   assert.deepStrictEqual(h.api._importBody({ scope: 'provider', providerId: 'provider-a', templates: [] }).providerName, 'Alex Kim, MD', 'rehydrated provider set lost its provider name');
+  const boundImport = h.api._importBody({ scope: 'provider', providerId: 'provider-a', templates: [{ id: 'plain', name: 'Plain upload', text: 'text' }] });
+  assert.deepStrictEqual([boundImport.templates[0].providerId, boundImport.templates[0].providerName], ['provider-a', 'Alex Kim, MD'],
+    'a plain imported template was not bound to its provider-scoped set before persistence');
+  assert.throws(() => h.api._templatesBoundToSet({ scope: 'provider', providerId: '', providerName: '', templates: [{ id: 'unsafe' }] }),
+    error => error && error.code === 'TEMPLATE_PROVIDER_IDENTITY_UNAVAILABLE',
+    'an unbound provider-scoped set was allowed into the device template library');
   await h.api.previewImport({ scope: 'provider', providerId: 'provider-a', templates: [{ id: 'new', name: 'New', text: 'new' }] });
   await h.api.commitPending();
   await h.api.persistSnapshot([{ id: 'edit', name: 'Edited', text: 'edited' }]);
