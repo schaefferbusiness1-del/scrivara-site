@@ -13529,6 +13529,17 @@
       return c;
     }, 0);
   }
+  /* Automatic work must never infer today's Athena roster from the UI's
+     reusable row cache.  The census is the only date-bound, PHI-free proof. */
+  function upTodayScheduleProof(day) {
+    return safe(function () {
+      var si = window.__mlsSI;
+      if (!si || !isFn(si.appointmentCensusStatusForDay)) return null;
+      var s = si.appointmentCensusStatusForDay(String(day));
+      if (!s || s.day !== String(day) || s.complete !== true) return null;
+      return { empty: s.authoritativeEmpty === true || Number(s.count || s.rows || 0) === 0 };
+    }, null);
+  }
   function upGenerating() {
     if (!Number(_up.generatingAt)) return false;
     if (Date.now() - Number(_up.generatingAt) > UP_GEN_CEILING_MS) { _up.generatingAt = 0; return false; }
@@ -13683,6 +13694,16 @@
     function step() {
       if (idx >= plan.length) return Promise.resolve(finish("scan-limit"));
       var s = plan[idx++];
+      /* Today is special: a stale prior-day DaySwitch snapshot must not drive
+         an automatic history read.  Require a fresh explicit census receipt;
+         an authoritative empty result is terminal and is skipped. */
+      if (!s.future) {
+        var todayProof = upTodayScheduleProof(s.day);
+        if (!todayProof || todayProof.empty) {
+          _up.walk.push({ day: s.day, pulled: false, reason: todayProof ? "verified-empty" : "schedule-unverified" });
+          return continueAfter(s, 0);
+        }
+      }
       /* The setting is authoritative at every day boundary. Finish the day
          already in flight, but never open the next one after the doctor turns
          automatic upcoming pulls off. A forced diagnostic run keeps its

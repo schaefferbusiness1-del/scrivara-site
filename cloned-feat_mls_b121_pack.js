@@ -3163,6 +3163,7 @@
     return STATE.queue.length > 0 || STATE.failed > 0 || STATE.transient > 0;
   }
   function bfFootText() {
+    if (STATE.stopped) return '';
     var left = bfLeft();
     if (STATE.running && left > 0) return BF_FOOT_RUNNING + ' (' + left + ' left)';
     /* Deliberately NOT an instruction. When presence is genuinely absent the
@@ -4854,12 +4855,13 @@
     var cur = String(st.current || '').trim();
     var pct = total ? Math.min(100, Math.round((done / total) * 100)) : 0;
     try {
+      var stopped = !!st.stopped;
       document.getElementById('mlsPP2Line').textContent =
         running ? ((done + 1 <= total ? (done + 1) : total) + ' of ' + total + (cur ? ' — ' + cur : ''))
-                : ('Finished — ' + done + ' of ' + total);
+                : (stopped ? ('Stopped — ' + done + ' of ' + total) : ('Finished — ' + done + ' of ' + total));
       document.getElementById('mlsPP2Bar').style.width = (running ? pct : 100) + '%';
       document.getElementById('mlsPP2Tally').textContent = '✓ ' + ok + ' saved · ✗ ' + failed + ' failed' + (running ? '' : ' · closing…');
-      document.getElementById('mlsPP2Title').textContent = running ? 'Pulling charts from athenaOne…' : 'Pull finished';
+      document.getElementById('mlsPP2Title').textContent = running ? 'Pulling charts from athenaOne…' : (stopped ? 'Pull stopped' : 'Pull finished');
       document.getElementById('mlsPP2Spin').style.display = running ? 'inline-block' : 'none';
     } catch (e) {}
     if (el.style.display === 'none') { el.style.display = 'block'; API.shows++; }
