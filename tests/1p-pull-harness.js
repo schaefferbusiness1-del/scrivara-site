@@ -977,7 +977,10 @@ function makeMonthHarness(options) {
     setNow(v) { nowValue = v; },
     now() { return nowValue; },
     dispatch(type, detail) {
-      Array.from(listeners.get(String(type)) || []).forEach(fn => fn({ type: String(type), detail: detail || {} }));
+      const event = Object.assign({ type: String(type), detail: detail || {} },
+        detail && typeof detail === 'object' ? detail : {});
+      event.type = String(type);
+      Array.from(listeners.get(String(type)) || []).forEach(fn => fn(event));
     },
     manifestKey() { return 'sf_u::' + account + '::p1RangeJobV1'; },
     manifest() {

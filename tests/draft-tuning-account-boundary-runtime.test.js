@@ -99,7 +99,7 @@ for (const token of ['mls:session-boundary', 'storageScope()', 'scopeCurrent(ori
       window.__mlsSessionEpoch = 3;
       setAccount('account-A');
       api.beginSettings();
-      document.getElementById('mlsDtFamily').value = 'hpi';
+      document.getElementById('mlsDtFamily').value = 'opnote';
       document.getElementById('mlsDtFamily').dispatchEvent(new Event('change', { bubbles: true }));
       document.getElementById('mlsDtSectionTemplateText').value = 'A UNSAVED SETTINGS TEMPLATE';
       const beforeSettingsSwitch = snapshot();
@@ -111,7 +111,7 @@ for (const token of ['mls:session-boundary', 'storageScope()', 'scopeCurrent(ori
       // to A cannot revive the old editor session.
       setAccount('account-A');
       api.beginSettings();
-      document.getElementById('mlsDtFamily').value = 'hpi';
+      document.getElementById('mlsDtFamily').value = 'opnote';
       document.getElementById('mlsDtFamily').dispatchEvent(new Event('change', { bubbles: true }));
       document.getElementById('mlsDtSectionTemplateText').value = 'OLD EPOCH SETTINGS TEMPLATE';
       const beforeSettingsEpoch = snapshot();

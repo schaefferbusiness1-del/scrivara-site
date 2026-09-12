@@ -130,8 +130,16 @@ const SHELL_HTML = `<!doctype html><html><body>
   const browser = await chromium.launch({ channel: 'chrome', headless: true });
   try {
     const page = await browser.newPage();
-    await page.route('https://mls-visit-note-templates.test/**', route =>
-      route.fulfill({ status: 200, contentType: 'text/html', body: SHELL_HTML }));
+    await page.route('https://mls-visit-note-templates.test/**', route => {
+      if (new URL(route.request().url()).pathname === '/api/section-templates/derive') {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+          name: 'Derived plan format',
+          templateText: 'PLAN:\nAction:\nFollow-up:',
+          instructions: 'Use documented timing only.'
+        }) });
+      }
+      return route.fulfill({ status: 200, contentType: 'text/html', body: SHELL_HTML });
+    });
     await page.goto('https://mls-visit-note-templates.test/settings');
 
     await page.evaluate(() => {
@@ -145,6 +153,7 @@ const SHELL_HTML = `<!doctype html><html><body>
       window.toast = (message, tone) => { window.__toasts.push([String(message), String(tone || '')]); };
       window.__prefSyncCalls = 0;
       window.syncPrefsToServer = () => { window.__prefSyncCalls++; };
+      window.__mlsPrivateExampleExtractor = async input => ({ text: String(input && input.text || '') });
       /* the op-note library, already populated, exactly as a real account has it */
       localStorage.setItem(window.uns('templates'), JSON.stringify([
         { id: 'tpl1', name: 'Right knee arthroscopy', keywords: ['knee'], text: 'PREOPERATIVE DIAGNOSIS:\nPROCEDURE:\nFINDINGS:' }
@@ -199,12 +208,48 @@ const SHELL_HTML = `<!doctype html><html><body>
     assert.ok(mounted.exists, 'the Visit note templates screen never mounted');
     assert.ok(mounted.first, 'the Visit note templates screen is not the first card in Settings > Notes & AI');
     assert.ok(/Visit note templates/.test(mounted.head), 'the screen lost its name: ' + JSON.stringify(mounted.head));
-    assert.ok(mounted.desc.includes('These shape your visit notes: HPI, ROS, Exam, Assessment, Plan.') &&
+    assert.ok(mounted.desc.includes('These shape your visit notes: Whole visit / SOAP, HPI, ROS, Exam, Assessment, Plan.') &&
       mounted.desc.includes('Operative note templates are separate'),
       'the header sentence that keeps visit and operative templates apart is gone: ' + JSON.stringify(mounted.desc));
     assert.deepStrictEqual(mounted.rows,
-      ['mlsVnTplRow_hpi', 'mlsVnTplRow_ros', 'mlsVnTplRow_exam', 'mlsVnTplRow_assessment', 'mlsVnTplRow_plan'],
-      'the five visit-note sections are not all on the screen, in order');
+      ['mlsVnTplRow_soap', 'mlsVnTplRow_hpi', 'mlsVnTplRow_ros', 'mlsVnTplRow_exam', 'mlsVnTplRow_assessment', 'mlsVnTplRow_plan'],
+      'the whole-visit plus five visit-note sections are not all on the screen, in order');
+    await page.fill('#mlsDtSectionName', 'UNSAVED non-visit edit');
+    const initialPlanProfiles = await page.locator('#mlsVnTplProfile_plan option').count();
+    await page.click('#mlsVnTplAdd_plan');
+    assert.equal(await page.locator('#mlsVnTplProfile_plan option').count(), initialPlanProfiles + 1, 'canonical visit editor Add did not create a profile');
+    const addedPlanId = await page.locator('#mlsVnTplProfile_plan option:last-child').getAttribute('value');
+    assert.equal(await page.inputValue('#mlsVnTplProfile_plan'), addedPlanId, 'Add did not select the new canonical profile');
+    assert.equal(await page.inputValue('#mlsDtSectionName'), 'UNSAVED non-visit edit', 'visit Add discarded an unrelated unsaved Settings edit');
+    await page.locator('#mlsVnTplEditor_plan details').nth(0).locator('summary').click();
+    await page.fill('#mlsVnTplName_plan', 'Configured blank plan');
+    await page.fill('#mlsVnTplWhen_plan', 'when follow-up is discussed');
+    await page.fill('#mlsVnTplComments_plan', 'Keep only documented timing.');
+    await page.click('#mlsVnTplSave_plan');
+    await page.waitForFunction(() => JSON.parse(localStorage.getItem(window.uns('draftTuningV1'))).families.plan.profiles.some(row => row.label === 'Configured blank plan'));
+    await page.click('#mlsVnTplOpen_plan');
+    await page.locator('#mlsVnTplEditor_plan details').nth(1).locator('summary').click();
+    await page.fill('#mlsVnTplExample_plan', 'PATIENT NAME: Jane Doe\nPLAN: continue documented therapy.');
+    await page.click('#mlsVnTplExampleDerive_plan');
+    await page.waitForFunction(() => document.getElementById('mlsVnTplExampleApply_plan').disabled === false);
+    await page.fill('#mlsVnTplExampleName_plan', 'Derived plan format');
+    await page.fill('#mlsVnTplExampleTemplate_plan', 'PLAN:\nAction:\nFollow-up: EDITED');
+    await page.fill('#mlsVnTplExampleComments_plan', 'Use documented timing only. EDITED');
+    await page.click('#mlsVnTplExampleApply_plan');
+    assert.match(await page.inputValue('#mlsVnTplText_plan'), /EDITED/, 'editable derived preview did not populate the canonical editor');
+    await page.fill('#mlsVnTplWhen_plan', 'manual routing stays intact');
+    await page.click('#mlsVnTplSave_plan');
+    const derivedSaved = await page.evaluate(() => JSON.parse(localStorage.getItem(window.uns('draftTuningV1'))).families.plan.profiles.find(row => row.label === 'Derived plan format'));
+    assert.equal(derivedSaved.when, 'manual routing stays intact', 'manual routing was lost during derived Apply/Save');
+    const boundary = await page.evaluate(async () => {
+      const importer = window.__mlsDraftTuning.exampleImporter('plan', 'my_template');
+      window.__testAccount = 'account-switched-during-preview';
+      const result = importer.apply({ name: 'Should not land', templateText: 'SHOULD NOT LAND', instructions: '' });
+      return { result, stored: localStorage.getItem(window.uns('draftTuningV1')) || '' };
+    });
+    assert.equal(boundary.result, false, 'canonical example preview crossed an account boundary');
+    assert.doesNotMatch(boundary.stored, /SHOULD NOT LAND/, 'cross-account canonical preview mutated storage');
+    await page.evaluate(() => { window.__testAccount = 'account-vntpl'; });
     for (const preview of mounted.previews) {
       assert.strictEqual(preview, 'No template - MLS writes this section from what was said.',
         'a section with no template must say so in plain words, not show an empty line');
@@ -252,22 +297,22 @@ const SHELL_HTML = `<!doctype html><html><body>
     await page.fill('#mlsVnTplText_plan', PLAN_TEMPLATE);
     await page.check('#mlsVnTplMode_plan_adapt');
     await page.click('#mlsVnTplSave_plan');
-    await page.waitForFunction(() => {
+    await page.waitForFunction(profileId => {
       try {
         const raw = localStorage.getItem(window.uns('draftTuningV1'));
-        return !!raw && JSON.parse(raw).families.plan.activeProfile === 'my_template';
+        return !!raw && JSON.parse(raw).families.plan.activeProfile === profileId;
       } catch (e) { return false; }
-    }, null, { timeout: 8000 });
+    }, addedPlanId, { timeout: 8000 });
 
     /* ---- (a) the EXISTING contract carries it ---- */
-    const stored = await page.evaluate(() => {
+    const stored = await page.evaluate(profileId => {
       const plan = JSON.parse(localStorage.getItem(window.uns('draftTuningV1'))).families.plan;
-      const mine = plan.profiles.filter(row => row.id === 'my_template')[0] || null;
+      const mine = plan.profiles.filter(row => row.id === profileId)[0] || null;
       return { activeProfile: plan.activeProfile, familyTemplateMode: plan.templateMode, mine: mine, count: plan.profiles.length };
-    });
-    assert.strictEqual(stored.activeProfile, 'my_template', 'Save did not make the doctor\'s template the active one');
+    }, addedPlanId);
+    assert.strictEqual(stored.activeProfile, addedPlanId, 'Save did not keep the selected saved format active');
     assert.ok(stored.mine, 'the saved template has no home in the stored contract');
-    assert.strictEqual(stored.mine.label, 'My template', 'the saved template lost its plain name');
+    assert.strictEqual(stored.mine.label, 'Derived plan format', 'the saved template lost its edited plain name');
     assert.strictEqual(stored.mine.templateMode, 'adapt', 'the chosen follow-mode did not land on the saved template');
     assert.strictEqual(stored.familyTemplateMode, 'adapt',
       'the section-level follow-mode did not mirror the saved template - the server reads this one');
@@ -286,7 +331,7 @@ const SHELL_HTML = `<!doctype html><html><body>
         hpiTemplate: tuning.families.hpi.templateText
       };
     });
-    assert.strictEqual(resolved.activeProfile, 'my_template', 'the generation tuning did not pick up the saved template');
+    assert.strictEqual(resolved.activeProfile, addedPlanId, 'the generation tuning did not pick up the selected saved format');
     assert.strictEqual(resolved.templateMode, 'adapt', 'the generation tuning lost the follow-mode');
     for (const label of ['DIAGNOSIS:', 'RECOMMENDATIONS:', 'DISCUSSION:']) {
       assert.ok(resolved.templateText.includes(label),
@@ -329,27 +374,37 @@ const SHELL_HTML = `<!doctype html><html><body>
       assert.ok(visible.includes(plain), 'the screen lost the plain control "' + plain + '"');
     }
 
-    /* ---- (e) Remove restores what MLS shipped ---- */
+    /* ---- metadata-only Save, Clear, and Delete are distinct actions ---- */
     await page.click('#mlsVnTplOpen_plan');
-    await page.click('#mlsVnTplRemove_plan');
-    await page.waitForFunction(() => {
+    await page.fill('#mlsVnTplName_plan', 'Blank configured plan');
+    await page.fill('#mlsVnTplWhen_plan', 'when follow-up is discussed');
+    await page.fill('#mlsVnTplComments_plan', 'Keep only documented timing.');
+    await page.click('#mlsVnTplSave_plan');
+    await page.waitForFunction(() => JSON.parse(localStorage.getItem(window.uns('draftTuningV1'))).families.plan.profiles.some(row => row.label === 'Blank configured plan'));
+    await page.click('#mlsVnTplOpen_plan');
+    await page.click('#mlsVnTplClear_plan');
+    await page.waitForFunction(() => JSON.parse(localStorage.getItem(window.uns('draftTuningV1'))).families.plan.profiles.some(row => row.label === 'Blank configured plan' && row.templateText === ''));
+    /* ---- (e) Delete restores what MLS shipped ---- */
+    await page.click('#mlsVnTplOpen_plan');
+    await page.click('#mlsVnTplDelete_plan');
+    await page.waitForFunction(profileId => {
       try {
         const plan = JSON.parse(localStorage.getItem(window.uns('draftTuningV1'))).families.plan;
-        return plan.activeProfile !== 'my_template';
+        return plan.activeProfile !== profileId && !plan.profiles.some(row => row.id === profileId);
       } catch (e) { return false; }
-    }, null, { timeout: 8000 });
-    const afterRemove = await page.evaluate(() => {
+    }, addedPlanId, { timeout: 8000 });
+    const afterRemove = await page.evaluate(profileId => {
       const plan = JSON.parse(localStorage.getItem(window.uns('draftTuningV1'))).families.plan;
       const tuning = window.__mlsDraftTuning.forStructured({});
       return {
         activeProfile: plan.activeProfile,
-        stillMine: plan.profiles.some(row => row.id === 'my_template'),
+        stillMine: plan.profiles.some(row => row.id === profileId),
         ids: plan.profiles.map(row => row.id),
         tuningText: tuning.families.plan.templateText,
         preview: document.getElementById('mlsVnTplPreview_plan').textContent,
         now: document.getElementById('mlsVnTplNow_plan').textContent
       };
-    });
+    }, addedPlanId);
     assert.strictEqual(afterRemove.activeProfile, 'routine',
       'Remove did not put the shipped Plan format back in charge: ' + JSON.stringify(afterRemove));
     assert.strictEqual(afterRemove.stillMine, false, 'Remove left the removed template behind');
@@ -358,6 +413,27 @@ const SHELL_HTML = `<!doctype html><html><body>
     assert.strictEqual(afterRemove.preview, 'No template - MLS writes this section from what was said.',
       'the row does not say, in plain words, that the section has no template again');
     assert.strictEqual(afterRemove.now, '', 'a removed template left its follow-mode line on screen');
+
+    /* Choosing a saved format is itself the clinician's activation action.
+       It must update the generation owner without forcing them to reopen the
+       format editor and press Save when no fields changed. */
+    await page.selectOption('#mlsVnTplProfile_plan', 'escalation');
+    await page.waitForFunction(() => JSON.parse(localStorage.getItem(window.uns('draftTuningV1'))).families.plan.activeProfile === 'escalation');
+    const selectedOnly = await page.evaluate(() => ({
+      stored: JSON.parse(localStorage.getItem(window.uns('draftTuningV1'))).families.plan.activeProfile,
+      resolved: window.__mlsDraftTuning.forStructured({}).families.plan.activeProfile
+    }));
+    assert.deepStrictEqual(selectedOnly, { stored: 'escalation', resolved: 'escalation' },
+      'choosing an existing saved format changed only the visible dropdown, not the next generated note');
+    await page.evaluate(() => {
+      const old = document.getElementById('mlsVisitNoteTemplatesSection');
+      if (old) old.remove();
+      window.__mlsDraftTuning.beginSettings();
+    });
+    assert.strictEqual(await page.inputValue('#mlsVnTplProfile_plan'), 'escalation',
+      'a fresh Settings mount ignored the persisted saved format and displayed the first format instead');
+    await page.selectOption('#mlsVnTplProfile_plan', 'routine');
+    await page.waitForFunction(() => JSON.parse(localStorage.getItem(window.uns('draftTuningV1'))).families.plan.activeProfile === 'routine');
 
     const opAfterRemove = await page.evaluate(() => ({
       templates: localStorage.getItem(window.uns('templates')),
@@ -372,21 +448,22 @@ const SHELL_HTML = `<!doctype html><html><body>
        profileEditor persists immediately, while the AI-output-formats panel
        saves a snapshot taken when Settings opened. Without a re-snapshot the
        next press of Save settings silently reverts the doctor's template. */
+    const hpiProfileId = await page.inputValue('#mlsVnTplProfile_hpi');
     await page.click('#mlsVnTplOpen_hpi');
     await page.fill('#mlsVnTplText_hpi', 'ONSET:\nWHAT MAKES IT WORSE:');
     await page.check('#mlsVnTplMode_hpi_strict');
     await page.click('#mlsVnTplSave_hpi');
-    await page.waitForFunction(() => {
-      try { return JSON.parse(localStorage.getItem(window.uns('draftTuningV1'))).families.hpi.activeProfile === 'my_template'; }
+    await page.waitForFunction(profileId => {
+      try { return JSON.parse(localStorage.getItem(window.uns('draftTuningV1'))).families.hpi.activeProfile === profileId; }
       catch (e) { return false; }
-    }, null, { timeout: 8000 });
+    }, hpiProfileId, { timeout: 8000 });
     await page.evaluate(() => { window.__mlsDraftTuning.saveFromUi(); });
-    const afterSettingsSave = await page.evaluate(() => {
+    const afterSettingsSave = await page.evaluate(profileId => {
       const hpi = JSON.parse(localStorage.getItem(window.uns('draftTuningV1'))).families.hpi;
-      const mine = hpi.profiles.filter(row => row.id === 'my_template')[0] || null;
+      const mine = hpi.profiles.filter(row => row.id === profileId)[0] || null;
       return { activeProfile: hpi.activeProfile, text: mine && mine.templateText, mode: hpi.templateMode };
-    });
-    assert.strictEqual(afterSettingsSave.activeProfile, 'my_template',
+    }, hpiProfileId);
+    assert.strictEqual(afterSettingsSave.activeProfile, hpiProfileId,
       'pressing Save settings reverted the template saved on the simple screen');
     assert.ok(String(afterSettingsSave.text || '').includes('ONSET:'),
       'pressing Save settings threw away the template text saved on the simple screen');

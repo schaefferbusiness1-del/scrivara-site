@@ -100,7 +100,7 @@ try {
   assert.strictEqual(await page.evaluate(() => JSON.stringify(Object.keys(localStorage).sort().map(key => [key, localStorage.getItem(key)]))), storageBeforeReset,
     'Reset persisted before the Settings footer was saved');
 
-  await page.selectOption('#mlsDtFamily', 'hpi');
+  await page.selectOption('#mlsDtFamily', 'opnote');
   for (const id of CONTROL_IDS) {
     assert.strictEqual(await page.locator('#' + id).count(), 1, 'HPI example control is not mounted: ' + id);
   }
@@ -126,14 +126,15 @@ try {
   await page.click('#mlsDtSectionImportCancel');
   assert.strictEqual(await page.getAttribute('#mlsDtSectionImportOpen', 'aria-expanded'), 'false',
     'Cancel did not expose the importer as collapsed');
-  const familyIds = await page.evaluate(() => window.__mlsDraftTuning.familyIds.slice());
+  const familyIds = await page.evaluate(() => window.__mlsDraftTuning.familyIds.filter(family =>
+    !['soap', 'hpi', 'ros', 'exam', 'assessment', 'plan'].includes(family)));
   for (const family of familyIds) {
     await page.selectOption('#mlsDtFamily', family);
     await page.click('#mlsDtSectionImportOpen');
     assert.ok(await page.locator('#mlsDtSectionImportPanel').isVisible(), family + ' Configure/import button did not open');
     await page.click('#mlsDtSectionImportCancel');
   }
-  await page.selectOption('#mlsDtFamily', 'hpi');
+  await page.selectOption('#mlsDtFamily', 'opnote');
   await page.click('#mlsDtSectionImportOpen');
 
   const profileId = await page.evaluate(() => {
@@ -297,10 +298,10 @@ try {
   assert.ok(await page.locator('#mlsDtSectionImportApply').isVisible(), 'Apply control is not visible');
   assert.ok(await page.locator('#mlsDtSectionImportCancel').isVisible(), 'Cancel control is not visible');
 
-  // Prove the user-facing Settings path, not just the lower-level importer.
-  // Assessment and Plan must each derive, Apply, persist on Settings Save, and
-  // reach the real SOAP prompt as separate format scaffolds. Neither may call
-  // or alter the operative/procedure template library.
+  // Prove the canonical user-facing Visit note templates path, not just the
+  // lower-level importer. Assessment and Plan must each derive, Apply, save,
+  // and reach the real SOAP prompt as separate format scaffolds. Neither may
+  // call or alter the operative/procedure template library.
   await page.click('#mlsDtSectionImportCancel');
   const sectionCases = [
     {
@@ -319,27 +320,23 @@ try {
     }
   ];
   for (const testCase of sectionCases) {
-    await page.selectOption('#mlsDtFamily', testCase.family);
-    assert.match(await page.textContent('#mlsDtSectionImportOpen') || '', new RegExp(testCase.label, 'i'),
-      testCase.family + ' importer button does not name its exact destination');
-    const scope = await page.textContent('#mlsDtSectionImportScope') || '';
-    assert.match(scope, new RegExp('selected ' + testCase.label + ' saved format', 'i'),
-      testCase.family + ' importer does not explain its saved-format scope');
-    assert.match(scope, /does not use or change procedure\/op-note templates/i,
-      testCase.family + ' importer does not distinguish itself from Op Notes templates');
-    await page.click('#mlsDtSectionImportOpen');
-    await page.fill('#mlsDtSectionImportExample', testCase.example);
-    await page.click('#mlsDtSectionImportDerive');
+    await page.click('#mlsVnTplOpen_' + testCase.family);
+    const exampleDetails = page.locator('#mlsVnTplEditor_' + testCase.family + ' details').nth(1);
+    await exampleDetails.locator('summary').click();
+    assert.match(await exampleDetails.locator('summary').textContent() || '', /past example/i,
+      testCase.family + ' canonical importer is not clearly named');
+    await page.fill('#mlsVnTplExample_' + testCase.family, testCase.example);
+    await page.click('#mlsVnTplExampleDerive_' + testCase.family);
     await page.waitForFunction(expected => {
-      const preview = document.getElementById('mlsDtSectionImportTemplatePreview');
-      return preview && String(preview.value || '').includes(expected);
-    }, testCase.template);
-    await page.click('#mlsDtSectionImportApply');
-    assert.match(await page.inputValue('#mlsDtSectionTemplateText'), new RegExp(testCase.template),
+      const preview = document.getElementById('mlsVnTplExampleTemplate_' + expected.family);
+      return preview && String(preview.value || '').includes(expected.template);
+    }, { family: testCase.family, template: testCase.template });
+    await page.click('#mlsVnTplExampleApply_' + testCase.family);
+    assert.match(await page.inputValue('#mlsVnTplText_' + testCase.family), new RegExp(testCase.template),
       testCase.family + ' Apply did not update its visible saved-format field');
-    assert.match(await page.inputValue('#mlsDtInstructions'), new RegExp(testCase.comment),
+    assert.match(await page.inputValue('#mlsVnTplComments_' + testCase.family), new RegExp(testCase.comment),
       testCase.family + ' Apply did not update its visible AI comments');
-    await page.click('#settingsModal button[onclick*="saveSettings"]');
+    await page.click('#mlsVnTplSave_' + testCase.family);
   }
 
   const scopedUiResult = await page.evaluate(() => {

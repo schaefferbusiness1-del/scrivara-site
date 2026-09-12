@@ -1018,6 +1018,7 @@ const tests = [
      must survive CRUD, profile switching, automatic routing, one-visit
      overrides and both generation transports. */
   'section-format-profile-editor-contract.test.js',
+  'visit-template-canonical-contract.test.js',
   /* Example documents are format references only: choose draft/file/image,
      reuse private extraction/OCR, derive a bounded preview, and apply it only
      to the chosen section/profile after an explicit confirmation. */
@@ -1152,6 +1153,8 @@ const tests = [
      max-width rule by append order. */
   'templates-panel-scrolls.test.js',
   'pull-rows-say-done-not-warning.test.js',
+  'pull-visible-entrypoints-exact-route.test.js',
+  'staff-provider-pull-route-runtime.test.js',
   'runtime-skin-cannot-outrank-responsive.test.js',
   'checklist-cannot-accuse-on-uncertainty.test.js',
   /* The op-note + Templates rebuild. The grip fence comes FIRST because it is
@@ -1770,6 +1773,11 @@ const tests = [
   'extension-reload-helper-contract.test.js',
   'portal-staff-booking-contract.test.js',
   'settings-cleanup-contract.test.js',
+  /* extowner-1.0.0 (2026-09-12): Settings owns the Web Store and pinned
+     package actions once; Integrations keeps health/pull controls and one
+     route back to that owner. The suite runs the shipped cleanup pass in a
+     real DOM and pins idempotent rerendering. */
+  '1p-settings-extension-owner-runtime.test.js',
   'study-natural-request-report.test.js',
   'study-academic-paper.test.js',
   'comp-report-contract.test.js',
@@ -2544,7 +2552,7 @@ const tests = [
      needs-attention queue is a scan of those rows, and the one-click Retry
      re-reads only them. */
   'schedimport-verdict-census-and-durable-refusals.test.js',
-  /* NEW 2026-09-11 - upnext-1.0.0, owner: "it always has to pull the to-be
+  /* NEW 2026-09-11 - upnext-1.1.0, owner: "it always has to pull the to-be
      visits as to make good op notes". The quiet upcoming-days lane keeps the
      next scheduled days' charts in MLS ahead of time, so an operative note is
      drafted against a chart that is already here.

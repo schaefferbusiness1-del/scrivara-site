@@ -155,7 +155,7 @@ function makeSandbox() {
 {
   /* extract and EXECUTE the owner helpers from the shipped bytes */
   const start = connect.indexOf('function dsBeginPullEpoch(sessionSerial) {');
-  const end = connect.indexOf('function startPull(autoRetry) {', start);
+  const end = connect.indexOf('function startPull(autoRetry, providerOverride) {', start);
   assert(start > 0 && end > start, 'the shared epoch owner left the day strip');
   const dispatches = [];
   const fakeWin = {

@@ -80,14 +80,14 @@ function eq(actual, expected, message) { assert.strictEqual(actual, expected, me
     'the Tools menu row shape changed - the overlay mirrors it');
   ok(/id: 'practice', label: 'Practice'/.test(groups), 'the Practice group the overlay targets is gone');
 
-  /* THE CLOSE TRAP. openTools keeps a private toolsClose handle and its next
-     call begins by toggling on it. A row that closes the menu by detaching the
-     node leaves that handle set over a detached menu, and the doctor's next
-     Tools press is swallowed. The overlay must therefore close through the
-     shell's exported go(), and these two assertions are what will say so if
-     either half of that contract moves. */
-  ok(/if \(toolsClose\) \{ toolsClose\(\); return; \}/.test(openSrc),
-    'openTools no longer toggles on a private toolsClose handle - re-check how the overlay closes the menu');
+  /* THE CLOSE TRAP. openTools keeps a private toolsClose handle. A row that
+     closes the menu by detaching the node leaves that handle set over a
+     detached menu; the shell must release that stale callback and continue
+     opening instead of swallowing the doctor's next Tools press. The overlay
+     still closes an attached menu through the shell's exported go(), and these
+     assertions say so if either half of that contract moves. */
+  ok(/if \(toolsClose\) \{[\s\S]*?var trackedMenu = qs\('#mlsToolsMenu'\);[\s\S]*?var wasOpen = !!\(trackedMenu && trackedMenu\.parentNode\);[\s\S]*?toolsClose\(\);[\s\S]*?if \(wasOpen\) return;[\s\S]*?\}/.test(openSrc),
+    'openTools no longer distinguishes an attached toggle from a stale detached close handle - re-check how the overlay closes the menu');
   ok(/if \(destId === 'tools'\) \{\s*openTools\(/.test(shared),
     "the shell's exported go('tools') no longer reaches openTools - the overlay closes through it");
   ok(/go: go,/.test(shared), 'the calm shell no longer exports go() - the overlay closes through it');

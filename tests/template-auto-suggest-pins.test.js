@@ -475,7 +475,7 @@ DT_FILES.forEach(file => {
     ok(await page.evaluate(() => typeof window._mlsTplSuggestFor === 'function'),
       'runtime: the shell extractor did not publish itself on window');
 
-    await page.selectOption('#mlsDtFamily', 'plan');
+    await page.selectOption('#mlsDtFamily', 'general_draft');
     await page.locator('#mlsDtAdvanced').evaluate(el => { el.open = true; });
     await page.click('#mlsDtSectionAdd');
     const profileId = await page.inputValue('#mlsDtSectionProfile');
@@ -487,8 +487,8 @@ DT_FILES.forEach(file => {
       'Genicular nerve block discussed.\nRadiofrequency ablation offered.\nGenicular block scheduled.\n'
       + 'Radiofrequency ablation consent reviewed.');
     /* leave and come back: loadUi runs and the EMPTY rule is offered one */
-    await page.selectOption('#mlsDtFamily', 'exam');
-    await page.selectOption('#mlsDtFamily', 'plan');
+    await page.selectOption('#mlsDtFamily', 'avs');
+    await page.selectOption('#mlsDtFamily', 'general_draft');
     await page.selectOption('#mlsDtSectionProfile', profileId);
 
     const filled = await page.inputValue('#mlsDtSectionWhen');
@@ -508,7 +508,7 @@ DT_FILES.forEach(file => {
     await page.fill('#mlsDtSectionWhen', '');
     await page.evaluate(() => window.__mlsDraftTuning.saveFromUi());
     const savedRow = await page.evaluate(id => {
-      const rows = window.__mlsDraftTuning.read().families.plan.profiles;
+      const rows = window.__mlsDraftTuning.read().families.general_draft.profiles;
       return rows.find(r => r.id === id) || null;
     }, profileId);
     ok(savedRow, 'runtime: the format disappeared on save');
@@ -528,7 +528,7 @@ DT_FILES.forEach(file => {
     await page.addScriptTag({ content: SUGGESTER_SRC });
     await page.addScriptTag({ path: path.resolve(root, 'feat_mls_draft_tuning.js') });
     await page.evaluate(() => window.__mlsDraftTuning.beginSettings());
-    await page.selectOption('#mlsDtFamily', 'plan');
+    await page.selectOption('#mlsDtFamily', 'general_draft');
     await page.locator('#mlsDtAdvanced').evaluate(el => { el.open = true; });
     await page.selectOption('#mlsDtSectionProfile', profileId);
     eq(await page.inputValue('#mlsDtSectionWhen'), '',

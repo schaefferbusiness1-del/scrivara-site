@@ -269,6 +269,7 @@ function firstUseAsset(connectSource, markerName, route) {
     document: {
       querySelector() { return null; },
       createElement() { return script; },
+      addEventListener() {},
       body: { appendChild(node) { appended = node; } },
       head: null,
       documentElement: null

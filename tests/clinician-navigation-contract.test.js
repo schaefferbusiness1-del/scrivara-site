@@ -45,7 +45,7 @@ const navigation = between(
        Copilot's action router, voice, a custom tool's navigate action)
      - the Calm Shell's Tools menu, as "Practice trends (AI Studio)"
      - the AI Studio section switcher itself */
-assert(/PRIMARY_NAV\s*=\s*\[\s*\{id:'nav_visit',label:'Today'\},\s*\{id:'nav_patients',label:'Patients'\},\s*\{id:'nav_calendar',label:'Calendar'\},\s*\{id:'nav_studio',label:'Tools'\}/.test(navigation),
+assert(/PRIMARY_NAV\s*=\s*\[\s*\{id:'nav_visit',label:'Today'\},\s*\{id:'nav_patients',label:'Patients'\},\s*\{id:'nav_calendar',label:'Calendar'\},\s*\{id:'nav_studio',label:'AI Studio'\}/.test(navigation),
   'clinician lead routes lost their exact order or labels');
 assert(/FOLDED_NAV=\['nav_history','nav_analysis'\]/.test(navigation),
   'History and Analysis must be deliberately folded, not accidentally dropped');
@@ -227,7 +227,7 @@ assert.deepStrictEqual(nav.children.slice(0, 4).map(node => node.id), [
   'nav_visit', 'nav_patients', 'nav_calendar', 'nav_studio'
 ]);
 assert.deepStrictEqual(nav.children.slice(0, 4).map(node => node.childNodes[0].data.trim()), [
-  '🎙️ Today', '👥 Patients', '📅 Calendar', '✨ Tools'
+  '🎙️ Today', '👥 Patients', '📅 Calendar', '✨ AI Studio'
 ]);
 assert.strictEqual(nodes.nav_history.getAttribute('data-mlsrd-folded'), '1',
   'History must be folded deliberately (marked), not dropped');

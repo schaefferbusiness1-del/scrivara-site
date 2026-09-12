@@ -190,7 +190,7 @@ function harness() {
           disabled: !!el.disabled || el.getAttribute('aria-disabled') === 'true',
           chip: !!(field && field.querySelector('.mlsT2Now')),
           hasField: !!field,
-          reason: !!(field && /Premium|not available|unavailable|cannot|sign in/i.test(field.innerText || '')),
+          reason: !!(field && /Premium|not available|unavailable|cannot|sign in|add or import a template before choosing/i.test(field.innerText || '')),
           footer: !sec && !!el.closest('.modal > .row'),
           isLink: el.tagName === 'A'
         };
@@ -198,9 +198,11 @@ function harness() {
     },
     /* A control is not inert because the page's TEXT did not change. Adding an
        empty intake row changes no characters; opening a fold changes many. The
-       signature is text length AND element count AND how many disclosures are
-       open AND whatever a toast is saying — measured over the whole document,
-       because half the Settings buttons open a surface outside the modal. */
+       signature is text length AND element count AND which controls are
+       expanded AND whatever a toast is saying — measured over the whole
+       document, because half the Settings buttons open a surface outside the
+       modal. Identity matters: switching between two same-sized inline
+       template editors changes neither text length nor node count. */
     sig: function () {
       var toast = '';
       Array.prototype.slice.call(document.querySelectorAll('.toast,#toast,[class*=toast]')).forEach(function (t) {
@@ -210,6 +212,9 @@ function harness() {
         chars: (document.body.innerText || '').length,
         nodes: document.getElementsByTagName('*').length,
         open: document.querySelectorAll('details[open]').length,
+        expanded: Array.prototype.slice.call(document.querySelectorAll('[aria-expanded="true"]'))
+          .map(function (el) { return el.id || el.getAttribute('aria-controls') || el.tagName; })
+          .sort().join('|'),
         /* COUNT, not text. Two neighbouring buttons that raise the SAME message
            ("Sign in first.") are indistinguishable by text, and REMOVING the
            stale toast node is worse: the app reuses one node, so deleting it

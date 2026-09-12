@@ -12,7 +12,7 @@
  *
  *   item 1  Athena sheet, UNBOUND step strip     -> PART 2A
  *   item 10 Settings late stylesheet             -> PART 1B + PART 2E
- *   item 25 Sign & Save offered but always refuses -> PART 2B
+ *   item 25 legacy Sign & Save path must stay visibly manual -> PART 2B
  *   item 69 phone notice shelf                   -> PART 2C
  *   perf    .opr-tplmode title churn             -> PART 2D
  *
@@ -126,12 +126,14 @@ for (const name of SHELLS) {
     'the e2e suite no longer asserts the legacy stx skin is gone - re-argue the fix for item 10');
 }
 
-/* ===== PART 1C: item 25 - the two halves PART 2B cannot open a sheet for ===
+/* ===== PART 1C: item 25 - dormant ready-path defense in depth =============
  *
- * PART 2B measures the lock on a sign row it injects into a real (unbound)
- * card, because opening a BOUND review stalls this harness's renderer. Two
- * things therefore have to be pinned against the write-flow's own source
- * instead, or the fixture could drift into measuring nothing:
+ * Current policy keeps signing manual even when a legacy extension advertises
+ * athenaFinalActionsV1. PART 2B proves that public manifest contract, then
+ * measures the old selectable-row lock only as defense in depth by injecting
+ * its exact dormant markup into a real (unbound) card. Two things therefore
+ * remain pinned against the write-flow's own source so that synthetic probe
+ * cannot drift into measuring invented markup:
  *
  *   1. the MARKUP a ready row really emits - every selector the overlay and
  *      the fixture depend on;
@@ -541,11 +543,12 @@ async function runtime() {
      * 15-minute run.
      *
      * What is still measured here, and how:
-     *   OFFERED  - buildUnifiedManifest() is pure: it builds the manifest and
-     *              touches no DOM and no bridge, so it proves the sign row is
-     *              handed out as capability 'ready' without opening anything.
-     *   REFUSES  - pinned in PART 1 against the write-flow's own source.
-     *   THE FIX  - measured on a REAL card with a REAL live state: the
+     *   MANUAL   - buildUnifiedManifest() is pure: it builds the manifest and
+     *              touches no DOM and no bridge, so it proves a legacy
+     *              capability flag cannot make signing selectable.
+     *   DORMANT  - the historical ready-path refusal is pinned in PART 1 and
+     *              its lock is exercised below as defense in depth.
+     *   THE UI   - measured on a REAL card with a REAL live state: the
      *              UNBOUND review opens safely (2A drove it), so the sign row
      *              markup is injected into that open card. The markup shape
      *              is not invented - PART 1 pins every selector this depends
@@ -555,7 +558,7 @@ async function runtime() {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       const out = {};
 
-      /* ---- OFFERED: the manifest, with no sheet and no bridge ---------- */
+      /* ---- MANUAL POLICY: the manifest, with no sheet and no bridge ---- */
       window.__mlsExtensionCapabilities = { athenaFinalActionsV1: true, supervisedOrderPlacementV2: true };
       const capable = window.__mlsWriteFlow.buildUnifiedManifest({
         patient: pt, sections: [{ key: 'note', text: note }], expectedContext: bound
@@ -565,7 +568,7 @@ async function runtime() {
       out.signAction = capableSign ? capableSign.action : '';
       out.noteCapability = ((capable && capable.rows || []).filter((r) => r.id === 'write-note')[0] || {}).capability || '';
 
-      /* and without a capable extension it is not offered as ready at all */
+      /* Removing the legacy capability flag must not change that policy. */
       window.__mlsExtensionCapabilities = null;
       const older = window.__mlsWriteFlow.buildUnifiedManifest({
         patient: pt, sections: [{ key: 'note', text: note }], expectedContext: bound
@@ -648,14 +651,14 @@ async function runtime() {
     }, [PATIENT, NOTE, BOUND]), 120000, 'the sign-and-save lock (item 25)');
 
     measured.sign = sign;
-    /* OFFERED */
-    eq(sign.signCapability, 'ready',
-      `with a capable extension the sign row is "${sign.signCapability}" - item 25's premise (offered as ready) is gone`);
-    eq(sign.signAction, 'sign_encounter', 'the ready sign row carries no sign_encounter action');
+    /* PUBLIC POLICY: legacy capability flags never make signing selectable. */
+    eq(sign.signCapability, 'manual',
+      `with a legacy capability advertisement the sign row is "${sign.signCapability}" instead of manual`);
+    eq(sign.signAction, '', 'the manual sign row unexpectedly carries an executable action');
     eq(sign.noteCapability, 'ready',
       'the bound fixture did not produce a ready note row, so "offered beside the note write" is not being measured');
-    ok(sign.olderSignCapability !== 'ready',
-      `without a capable extension the sign row is still "${sign.olderSignCapability}" - the capability gate is not what makes it selectable`);
+    eq(sign.olderSignCapability, 'manual',
+      `without the legacy capability advertisement the sign row is "${sign.olderSignCapability}" instead of manual`);
     /* THE FIX */
     ok(sign.opened, 'the unbound card did not open, so the lock could not be measured on a real card');
     /* the MANUAL sign row is left alone - the overlay speaks only where the

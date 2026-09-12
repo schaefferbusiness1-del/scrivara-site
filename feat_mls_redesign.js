@@ -500,13 +500,13 @@
      rebuild is removing.
      It is FOLDED, not deleted: showView('analysis') still works and lands on
      the merged surface with Practice open, and the Calm Shell's Tools menu
-     offers it as "Practice trends (AI Studio)". nav_studio keeps the label
-     "Tools" it already had; renaming it is a separate decision. */
+     offers it as "Practice trends (AI Studio)". nav_studio is the AI Studio
+     destination; the Calm Shell owns the separate Tools launcher. */
   var PRIMARY_NAV=[
     {id:'nav_visit',label:'Today'},
     {id:'nav_patients',label:'Patients'},
     {id:'nav_calendar',label:'Calendar'},
-    {id:'nav_studio',label:'Tools'}
+    {id:'nav_studio',label:'AI Studio'}
   ];
   var FOLDED_NAV=['nav_history','nav_analysis'];
   var SECONDARY_NAV=['nav_staffpull','mlsPtab_reviews','mlsPtab_send','nav_help'];

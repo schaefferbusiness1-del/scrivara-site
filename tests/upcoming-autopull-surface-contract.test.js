@@ -1,6 +1,6 @@
 'use strict';
 /* =============================================================================
- * upcoming-autopull-surface-contract.test.js  -  upnext-1.0.0
+ * upcoming-autopull-surface-contract.test.js  -  upnext-1.1.0
  *
  * The two doctor-visible halves of the quiet upcoming-days lane:
  *
@@ -95,6 +95,50 @@ SHELLS.forEach(function (rel) {
   /* the key the SHELL writes has to be the key the ENGINE reads */
   ok(/window\.uns\('upcomingAutoPull'\)/.test(src),
     label + ': the setting writes some key other than the one the engine reads');
+
+  /* A verified write wakes the already-running scheduler. Failed writes return
+     before this event, so the toast and the engine can never disagree. */
+  const renderFn = balancedFunction(src, 'function renderUpcomingAutoPullSetting()',
+    label + ' renderUpcomingAutoPullSetting');
+  const events = [];
+  const cb = {
+    checked: true, dataset: {}, onChange: null,
+    addEventListener(type, fn) { if (String(type) === 'change') this.onChange = fn; }
+  };
+  const ui = {
+    localStorage: ctx.localStorage,
+    document: { getElementById: id => String(id) === 'setUpcomingAutoPull' ? cb : null },
+    CustomEvent: function CustomEvent(type, init) { this.type = type; this.detail = init && init.detail; },
+    toast: () => {}
+  };
+  ui.window = ui;
+  ui.window.uns = ctx.window.uns;
+  ui.window.dispatchEvent = event => { events.push(event); return true; };
+  vm.runInNewContext(prefFn + '\n' + renderFn +
+    '\nthis.__renderUpcoming = renderUpcomingAutoPullSetting;', ui, { filename: label + '-setting' });
+  ui.__renderUpcoming();
+  ok(typeof cb.onChange === 'function', label + ': the setting did not wire its change handler');
+  eq(cb.checked, false, label + ': the rendered checkbox ignored the stored OFF value');
+  cb.checked = true;
+  cb.onChange();
+  eq(store.get('sf_u::doc@example.invalid::upcomingAutoPull'), '1',
+    label + ': turning the setting on did not persist ON');
+  eq(events.length, 1, label + ': a successful setting write did not emit exactly one scheduler wake');
+  eq(events[0].type, 'mls:upcoming-setting-changed', label + ': the setting emitted the wrong wake event');
+  eq(events[0].detail.on, true, label + ': the ON wake did not carry the saved state');
+  cb.checked = false;
+  cb.onChange();
+  eq(store.get('sf_u::doc@example.invalid::upcomingAutoPull'), '0',
+    label + ': turning the setting off did not persist OFF');
+  eq(events.length, 2, label + ': a successful OFF write did not emit one scheduler wake');
+  eq(events[1].detail.on, false, label + ': the OFF wake did not carry the saved state');
+  const realSetItem = ui.localStorage.setItem;
+  ui.localStorage.setItem = () => { throw new Error('synthetic quota refusal'); };
+  cb.checked = true;
+  cb.onChange();
+  eq(cb.checked, false, label + ': a refused write did not repaint the authoritative stored value');
+  eq(events.length, 2, label + ': a refused write still emitted a scheduler wake');
+  ui.localStorage.setItem = realSetItem;
 });
 
 /* the engine's own name for that key, so the two halves cannot drift */

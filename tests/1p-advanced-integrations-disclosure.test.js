@@ -13,14 +13,15 @@
  *     end boundary of a between() slice in
  *     tests/athena-fhir-fallback-frontend.test.js:20 (production shell today,
  *     these shells after promotion).
- *   - the four setup steps are the ONLY in-app install path for the extension
- *     the entire Athena lane rides on, and genApiKey() called with no arguments
- *     is the only way to mint the unscoped key the card itself documents.
+ *   - the four setup steps are load-bearing, but the canonical extension card
+ *     now owns them once; Integrations links there instead of carrying a second
+ *     installer. genApiKey() called with no arguments remains the only way to
+ *     mint the unscoped key its advanced card documents.
  *
  * So the change is a RESTYLE: same controls, same ids, same handlers, gathered
- * behind one closed disclosure in physician language. This suite pins BOTH
- * halves — the developer vocabulary is behind the disclosure, and every anchor
- * above is still exactly where it was.
+ * behind the right closed disclosure in physician language. This suite pins
+ * both owners: install/update vocabulary lives only in the extension card,
+ * while API and bulk-import vocabulary remains under Advanced integrations.
  */
 
 const assert = require('assert');
@@ -46,10 +47,12 @@ function span(src, open, close, label) {
 const OPEN = '<!-- ===== advint-1.0.0';
 const CLOSE = '<!-- ===== end advint-1.0.0 ===== -->';
 
-/* the vocabulary that must not be in the open, and where it now lives */
-const DEV_VOCAB = [
+/* Each kind of advanced vocabulary has one semantic owner. */
+const INSTALL_VOCAB = [
   'Developer mode',
-  'Load unpacked',
+  'Load unpacked'
+];
+const INTEGRATION_VOCAB = [
   'Generate API key',
   'Paste your old system’s export'
 ];
@@ -62,6 +65,7 @@ for (const name of SHELLS) {
   eq(src.split(OPEN).length - 1, 1, `${name}: advint-1.0.0 must open exactly once`);
   eq(src.split(CLOSE).length - 1, 1, `${name}: advint-1.0.0 must close exactly once`);
   const block = span(src, OPEN, CLOSE, `${name} advint block`);
+  const extensionOwner = span(src, '<div class="set-section" id="extensionDownloadSettings">', '\n    <div class="set-section">', `${name} extension owner`);
   spans.push(block);
 
   /* -- ONE disclosure, titled in physician language ----------------------- */
@@ -75,13 +79,27 @@ for (const name of SHELLS) {
   ok(!/<details id="advIntegrations"[^>]*\sopen[\s>]/.test(block),
     `${name}: the Advanced integrations disclosure ships open`);
 
-  /* -- every developer string is INSIDE it ------------------------------- */
+  /* -- each developer string is inside its one semantic owner ------------ */
   const outside = src.split(OPEN)[0] + src.split(CLOSE)[1];
-  for (const term of DEV_VOCAB) {
+  for (const term of INTEGRATION_VOCAB) {
     ok(block.indexOf(term) >= 0, `${name}: "${term}" is not inside the Advanced integrations disclosure`);
     eq(outside.indexOf(term), -1,
       `${name}: "${term}" is still in the open in Settings, outside the disclosure`);
   }
+  const integrationsCard = span(src, '<!-- Developer API key + MLS Assist', '<div id="emrPullBox"', `${name} integrations card`);
+  const integrationsMarkup = integrationsCard.replace(/<!--[\s\S]*?-->/g, '');
+  const extensionMarkup = extensionOwner.replace(/<!--[\s\S]*?-->/g, '');
+  for (const term of INSTALL_VOCAB) {
+    ok(extensionMarkup.indexOf(term) >= 0, `${name}: "${term}" is not inside the canonical extension setup owner`);
+    eq(integrationsMarkup.indexOf(term), -1,
+      `${name}: "${term}" is duplicated in Integrations instead of living only in extension setup`);
+  }
+  ok(/<details(?![^>]*\sopen[\s>])[^>]*>[\s\S]*Developer mode/.test(extensionOwner),
+    `${name}: direct-download setup does not start inside a closed disclosure`);
+  ok(/data-mls-setup-target="extensionDownloadSettings"/.test(integrationsMarkup),
+    `${name}: Integrations route lost its canonical extension-owner target`);
+  ok(/onclick="mlsOpenExtensionSetup\(\);/.test(integrationsMarkup),
+    `${name}: Integrations route does not activate its Settings group before scrolling`);
   /* The three headings the audit named are gone from the surface outside the
      disclosure. Scoped to `outside` on purpose: the block's own header QUOTES
      all three as the thing it exists to gather, and a scanner that cannot tell
@@ -126,19 +144,13 @@ for (const name of SHELLS) {
     ['mls-assist-extension', 'the folder the doctor is told to pick']
   ]) {
     eq(src.split(needle).length - 1, 1, `${name}: ${needle} (${why}) was lost or duplicated by the restyle`);
-    ok(block.indexOf(needle) >= 0, `${name}: ${needle} (${why}) is not inside the Advanced integrations disclosure`);
+    if (needle === 'mls-assist-extension') ok(extensionOwner.indexOf(needle) >= 0, `${name}: ${needle} (${why}) is not inside canonical extension setup`);
+    else ok(block.indexOf(needle) >= 0, `${name}: ${needle} (${why}) is not inside the Advanced integrations disclosure`);
   }
-  /* The install page is named three more times elsewhere in the shell (a setup
-     guide card and a runtime "MLS Assist is not responding" toast) and those
-     are out of this change's scope — so the pin is on the INTEGRATIONS card
-     only: the install path survives inside the disclosure, and the card no
-     longer shows a chrome:// URL in the open. */
-  ok(block.indexOf('chrome://extensions') >= 0,
-    `${name}: the in-app install path for the extension the whole Athena lane rides on is no longer inside the disclosure`);
-  const integrationsCard = span(src, '<!-- Developer API key + MLS Assist', '<div id="emrPullBox"', `${name} integrations card`);
-  const cardOutsideBlock = integrationsCard.split(OPEN)[0];
-  eq(cardOutsideBlock.indexOf('chrome://extensions'), -1,
-    `${name}: the Integrations card still shows a chrome:// URL on its open surface`);
+  ok(extensionOwner.indexOf('chrome://extensions') >= 0,
+    `${name}: the in-app direct-download setup path disappeared from its canonical owner`);
+  eq(integrationsMarkup.indexOf('chrome://extensions'), -1,
+    `${name}: the Integrations card duplicates the extension setup path`);
   /* the clinical action stays OUTSIDE the disclosure */
   ok(block.indexOf('id="emrPullBox"') < 0,
     `${name}: "Pull a patient from my EMR" is a clinical action and was swept behind the advanced disclosure`);

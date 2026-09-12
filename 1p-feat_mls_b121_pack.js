@@ -4533,50 +4533,7 @@
   }
 
   /* --------------------------------- UI ------------------------------------ */
-  var _engineNameGateFixed = false; try { _engineNameGateFixed = !!(window.__mlsProvMonthPull && window.__mlsProvMonthPull.nameGateFixed); } catch (e) {}
-  var DEFAULT_NOTE = 'Imports that day’s schedule for the Doctor picked above, then pulls chart history (DOB + history + visits) for the day’s patients. Read-only in athenaOne; re-clicking never doubles anything. ' + (_engineNameGateFixed
-    ? 'Every real name shape is pulled - suffixes (“Hatton, Jr”), ALL-CAPS, apostrophes/hyphens (O’Hare, Smith-Jones), two-word first names and “(Bob)” nicknames; only placeholder rows (FROZEN / OPEN / Hold) and staff credential rows (“…, MD / PA-C / RN”) are skipped, and the status line names anything skipped.'
-    : 'Heads-up: the chart engine currently skips a few name shapes (a known filter bug) - if that hits this day you’ll be told exactly which patients.');
-  /* padprov-1.0.0 (measured 2026-09-02 05:5x, Staff prep): pressing this
-     button for a day athenaOne showed a full column of appointments reported
-     the false empty "athenaOne shows no appointments" - nothing imported, no
-     charts to pull. Root cause: the month card's live "Pulling for" label
-     (#ez3PullFor) is painted from activeProviderLabel() in the mls-connect
-     asset, which prints the constant DEFAULT_PROVIDER_SCOPE_LABEL ("Your
-     athenaOne view (default)", ~line 21009) when no one doctor is selected -
-     and this handler forwarded that ENGLISH SENTENCE to runFlow() as a
-     literal provider name, so the schedule filter matched zero athenaOne
-     rows against a doctor named "Your athenaOne view (default)". Neither
-     activeProviderLabel() nor the constant is on window - both are
-     closure-private to that asset - so this cannot call them directly;
-     label comparison is the only reachable option.
-     Fix: treat that exact wording (and the older "All providers" wording) as
-     the 'all' scope, and never forward a name the roster
-     (window.__mlsProviderRoster.providers(), when installed and populated)
-     does not recognize - when in doubt this resolves to 'all', never a
-     made-up provider filter. An older card's #ez3sPullProv dropdown, when
-     present with a value, still wins outright (unchanged behavior). */
-  function resolvePadScope() {
-    var provEl = document.getElementById('ez3sPullProv');
-    var explicit = provEl && provEl.value ? String(provEl.value).trim() : '';
-    if (explicit) return explicit;
-    var pf = document.getElementById('ez3PullFor');
-    var t = pf ? String(pf.textContent || '').trim() : '';
-    var norm = t.toLowerCase().replace(/\s+/g, ' ').trim();
-    if (!norm || norm === 'all providers' || norm === 'your athenaone view (default)') return 'all';
-    try {
-      var rp = window.__mlsProviderRoster;
-      var list = (rp && typeof rp.providers === 'function') ? (rp.providers() || []) : null;
-      if (list && list.length) {
-        var found = false;
-        for (var i = 0; i < list.length; i++) {
-          if (String(list[i] || '').toLowerCase().replace(/\s+/g, ' ').trim() === norm) { found = true; break; }
-        }
-        if (!found) return 'all'; /* roster reachable and populated but silent on this name - never invent a filter */
-      }
-    } catch (e) {}
-    return t;
-  }
+  var DEFAULT_NOTE = 'Uses the same verified day pull as the Visit screen, including your Full visit notes choice, exact appointment matching, retries, and the shared progress screen. Read-only in athenaOne; re-running safely checks what is already saved.';
   function css() {
     if (document.getElementById('mlsPadCss')) return;
     var s = document.createElement('style'); s.id = 'mlsPadCss';
@@ -4622,10 +4579,37 @@
       var btn = row.querySelector('#mlsPadBtn');
       btn.disabled = !!api.state.running;
       btn.onclick = function () {
-        /* provider = the SAME scope the schedule pull above uses - see
-           resolvePadScope() (padprov-1.0.0) for why a raw label compare is
-           not enough on its own. */
-        runFlow(inp.value, resolvePadScope());
+        /* padcanon-1.0.0: this used to start the b121 schedule importer and
+           its provider-month chart leg, a second engine behind a button that
+           looked identical to the current Visit pull. Besides producing two
+           different receipts for one doctor intent, that leg could pass a
+           full YYYY-MM-DD value to a month compatibility path. The visible
+           button is now only a date-setting proxy for the ONE guarded pull.
+           The DaySwitch owns provider scope, Full visit notes, preflight,
+           exact identities, retries, progress, and the terminal verdict. */
+        var day = String(inp.value || '').slice(0, 10);
+        var ds = null;
+        try { ds = window.__mlsDaySwitch || null; } catch (eDs) {}
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) { note('Pick a date first.'); return false; }
+        if (!ds || !isFn(ds.setDay) || !isFn(ds.pullDay)) {
+          note('The verified Visit pull is still loading. Give it a moment, then try again.');
+          return false;
+        }
+        if (isFn(ds.isBusy) && ds.isBusy()) {
+          note('A pull is already running. Follow the shared progress screen, then try another day.');
+          return false;
+        }
+        if (ds.setDay(day) !== true) {
+          note('That day could not be selected. Finish any open recording or draft, then try again.');
+          return false;
+        }
+        api._date = day;
+        note('Starting the verified pull for ' + esc(prettyDay(day)) + '&hellip;');
+        try { ds.pullDay(); } catch (ePull) {
+          note('The verified pull could not start. Give the Visit screen a moment, then try again.');
+          return false;
+        }
+        return true;
       };
       row.querySelector('#mlsPadNote').innerHTML = api._noteHtml || DEFAULT_NOTE;
     } catch (e) {}

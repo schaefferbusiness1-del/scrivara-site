@@ -1,6 +1,6 @@
 'use strict';
 /* =============================================================================
- * upcoming-autopull-runtime.test.js  -  upnext-1.0.0
+ * upcoming-autopull-runtime.test.js  -  upnext-1.1.0
  *
  * Owner 2026-09-11: "it always has to pull the to-be visits as to make good op
  * notes." An operative note is written from what came BEFORE, so the next
@@ -9,8 +9,8 @@
  * harness (no network, no extension, no Athena, synthetic identities only) and
  * measures the whole lane:
  *
- *   1. after boot, TODAY is read once, then TOMORROW is read once, and the walk
- *      stops at the first future day whose schedule is empty
+ *   1. after boot, TODAY is read once and empty calendar days are skipped until
+ *      the next two scheduled days are warm, inside a bounded horizon
  *   2. progress reaches the corner pill's ONE source
  *      (window.__mlsDayHistoryPull.state) and nothing else: no dialog is
  *      opened, and a clean walk says nothing at all
@@ -26,11 +26,13 @@
  * ========================================================================== */
 
 const assert = require('assert');
-const { makeMonthHarness } = require('./1p-pull-harness.js');
+const { makeMonthHarness, flush } = require('./1p-pull-harness.js');
 
 const TODAY = '2026-09-11';
 const TOMORROW = '2026-09-12';
 const DAY_AFTER = '2026-09-13';
+const MONDAY = '2026-09-14';
+const TUESDAY = '2026-09-15';
 
 let checks = 0;
 function ok(cond, msg) { checks++; assert.ok(cond, msg); }
@@ -93,8 +95,68 @@ function world(options) {
   };
 }
 
+function unscopedBodyReads(w) {
+  return w.h.posted.filter(m => m && m.type === 'mlsAppReadAllVisits' &&
+    !String(m.hint && m.hint.onlyDate || '')).length;
+}
+
 function recordingButton() {
   return { id: 'captureBtn', classList: { contains: c => String(c) === 'recording' } };
+}
+
+/* Capture only this lane's four documented delays. The engine has many other
+   bounded safety deadlines; those keep using the shared harness's host timer
+   so this proof measures the scheduler without rewriting unrelated runtime. */
+function captureUpcomingTimers(w) {
+  const cfg = w.si._upcomingConfig();
+  const delays = new Set([cfg.tickMs, cfg.bootDelayMs, cfg.wakeDelayMs, cfg.afterPullMs]);
+  const realSetTimeout = w.h.rt.setTimeout;
+  const realClearTimeout = w.h.rt.clearTimeout;
+  const realSetInterval = w.h.rt.setInterval;
+  const realClearInterval = w.h.rt.clearInterval;
+  const all = [];
+  const documentListeners = new Map();
+  let seq = 0;
+  let intervalCalls = 0;
+
+  w.h.rt.setTimeout = function (fn, ms) {
+    const delay = Number(ms) || 0;
+    if (!delays.has(delay)) return realSetTimeout(fn, ms);
+    const id = { upcomingTimer: ++seq };
+    all.push({ id, fn, ms: delay, canceled: false, fired: false });
+    return id;
+  };
+  w.h.rt.clearTimeout = function (id) {
+    const timer = all.find(one => one.id === id);
+    if (timer) { timer.canceled = true; return; }
+    return realClearTimeout(id);
+  };
+  w.h.rt.setInterval = function () { intervalCalls++; return realSetInterval.apply(this, arguments); };
+  w.h.rt.clearInterval = function () { return realClearInterval.apply(this, arguments); };
+  w.h.rt.document.addEventListener = function (type, fn) {
+    const key = String(type);
+    if (!documentListeners.has(key)) documentListeners.set(key, new Set());
+    documentListeners.get(key).add(fn);
+  };
+  w.h.rt.document.removeEventListener = function (type, fn) {
+    const set = documentListeners.get(String(type));
+    if (set) set.delete(fn);
+  };
+
+  return {
+    active() { return all.filter(one => !one.canceled && !one.fired); },
+    all,
+    intervalCalls: () => intervalCalls,
+    fire(timer) {
+      if (!timer || timer.canceled || timer.fired) return false;
+      timer.fired = true;
+      timer.fn();
+      return true;
+    },
+    dispatchDocument(type) {
+      Array.from(documentListeners.get(String(type)) || []).forEach(fn => fn({ type: String(type) }));
+    }
+  };
 }
 
 /* The harness unrefs every engine deadline on purpose, so a suite that got
@@ -106,35 +168,40 @@ let stage = 'start';
 
 (async function main() {
   /* =========================================================================
-     1-3. the walk itself: today, then tomorrow, then stop on the empty day
+     1-3. the walk itself: today, skip an empty weekend, then two scheduled days
      ====================================================================== */
   {
     stage = '1-3 walk';
     const w = world();
     w.h.seedDay(TODAY, 3);
-    w.h.seedDay(TOMORROW, 2);
+    w.h.seedDay(TOMORROW, 0);
     w.h.seedDay(DAY_AFTER, 0);
+    w.h.seedDay(MONDAY, 2);
+    w.h.seedDay(TUESDAY, 1);
 
     const cfg = w.si._upcomingConfig();
-    eq(cfg.version, 'upnext-1.0.0', 'the upcoming lane did not install');
+    eq(cfg.version, 'upnext-1.1.0', 'the upcoming lane did not install');
     eq(cfg.freshMs, 6 * 60 * 60 * 1000, 'the freshness window is no longer six hours');
-    eq(cfg.futureDays, 2, 'the lane no longer looks at today plus the next two days');
+    eq(cfg.futureDays, 2, 'the lane no longer warms the next two scheduled days');
+    eq(cfg.scanDays, 14, 'the scheduled-day search lost its bounded two-week horizon');
 
     const before = w.si._upcomingState();
     eq(before.on, true, 'the upcoming lane is not ON by default');
-    eq(before.days.length, 3, 'the plan is not today plus the next two days');
+    eq(before.days.length, 15, 'the bounded plan is not today plus fourteen calendar days');
     eq(before.days[0].day, TODAY, 'the plan does not start at the account day');
     eq(before.days[1].day, TOMORROW, 'the second planned day is not tomorrow');
-    eq(before.days.filter(d => d.due).length, 3, 'a never-pulled day is not due');
+    eq(before.days.filter(d => d.due).length, 15, 'a never-pulled day is not due');
 
     const run = await w.si._upcomingRunNow({});
-    eq(run.ran, 3, 'the walk did not read today, tomorrow and the day it had to test');
-    eq(run.reason, 'empty-day', 'the walk did not stop on the first empty future day');
+    eq(run.ran, 5, 'the walk did not read today, skip the weekend, and reach two scheduled days');
+    eq(run.reason, 'complete', 'the walk did not stop after warming two scheduled future days');
 
     const charts = w.chartsPerDay();
     eq(charts[TODAY], 3, 'today was not read exactly once, in full');
-    eq(charts[TOMORROW], 2, 'tomorrow was not read exactly once, in full');
-    eq(charts[DAY_AFTER], undefined, 'an empty future day still opened charts');
+    eq(charts[TOMORROW], undefined, 'an empty Saturday opened a chart');
+    eq(charts[DAY_AFTER], undefined, 'an empty Sunday opened a chart');
+    eq(charts[MONDAY], 2, 'Monday was hidden behind the empty weekend');
+    eq(charts[TUESDAY], 1, 'the second scheduled future day was not warmed');
 
     /* the pill, and ONLY the pill */
     ok(w.pill.transitions.filter(t => t === true).length >= 2,
@@ -147,11 +214,14 @@ let stage = 'start';
 
     /* the receipt, and the second walk */
     const after = w.si._upcomingState();
-    eq(after.days.filter(d => d.due).length, 0, 'a just-pulled day is still due');
+    eq(after.days.slice(0, 5).filter(d => d.due).length, 0, 'a just-checked day is still due');
     eq(after.days[0].rows, 3, 'the ledger did not record how many rows today had');
-    eq(after.days[2].rows, 0, 'the ledger did not record the empty future day');
+    eq(after.days[1].rows, 0, 'the ledger did not record the empty Saturday');
+    eq(after.days[2].rows, 0, 'the ledger did not record the empty Sunday');
     eq(w.si._upcomingDayReady(TODAY).ready, true, 'today is not reported ready after its pull');
-    eq(w.si._upcomingDayReady(TOMORROW).ready, true, 'tomorrow is not reported ready after its pull');
+    eq(w.si._upcomingDayReady(MONDAY).ready, true, 'Monday is not reported ready after its pull');
+    eq(w.si._upcomingDayReady(TUESDAY).ready, true, 'Tuesday is not reported ready after its pull');
+    eq(w.si._upcomingDayReady(TOMORROW).ready, false, 'an empty future day claims charts are ready');
 
     const gotoBefore = w.h.gotoDates.length;
     const chartsBefore = w.h.chartCalls.length;
@@ -162,11 +232,46 @@ let stage = 'start';
 
     /* 4. new rows on an already-fresh day put it back in the queue */
     const led = JSON.parse(w.h.store.get(w.key('mlsUpcomingPullV1')));
-    led[TOMORROW + '|all'].rows = 0;
+    led[MONDAY + '|all'].rows = 0;
     w.h.store.set(w.key('mlsUpcomingPullV1'), JSON.stringify(led));
-    const reDue = w.si._upcomingState().days.find(d => d.day === TOMORROW);
+    const reDue = w.si._upcomingState().days.find(d => d.day === MONDAY);
     eq(reDue.due, true, 'new rows on a fresh day do not make it due again');
     eq(reDue.why, 'new-rows', 'a day due for new rows names some other cause');
+    eq(w.si._upcomingDayReady(MONDAY).ready, false,
+      'the strip still claims ready after the engine detected a new appointment');
+  }
+
+  /* =========================================================================
+     4b. a day-facts cache cannot satisfy a later Full visit notes ON request
+     ====================================================================== */
+  {
+    stage = '4b read mode change';
+    const w = world({ visitNotesOn: false });
+    w.h.seedDay(TODAY, 1);
+    w.h.seedDay(TOMORROW, 1);
+    w.h.seedDay(DAY_AFTER, 1);
+    const first = await w.si._upcomingRunNow({});
+    eq(first.ran, 3, 'the OFF control did not warm its three scheduled days');
+    eq(unscopedBodyReads(w), 0, 'the OFF control made a full-history body read');
+    let led = JSON.parse(w.h.store.get(w.key('mlsUpcomingPullV1')));
+    eq(led[TODAY + '|all'].readMode, 'day-facts', 'the warm ledger lost the frozen OFF read mode');
+
+    w.h.rt.__mlsVisitNotesPref.read = () => ({ state: 'on', on: true, settled: true });
+    w.h.rt.__mlsVisitNotesPref.ensureChosenForBulkPull = () =>
+      Promise.resolve({ ok: true, on: true, reason: 'synthetic-on' });
+    const due = w.si._upcomingState().days.find(d => d.day === TODAY);
+    eq(due.due, true, 'turning Full visit notes ON left the OFF-warmed day fresh');
+    eq(due.why, 'read-mode-changed', 'the OFF-to-ON refresh names some other cause');
+    eq(w.si._upcomingDayReady(TODAY).ready, false,
+      'the strip claims an OFF-warmed day is ready after Full visit notes turns ON');
+
+    const second = await w.si._upcomingRunNow({});
+    eq(second.ran, 3, 'the ON walk reused the incompatible OFF cache');
+    ok(unscopedBodyReads(w) > 0, 'the ON refresh made no full-history body reads');
+    led = JSON.parse(w.h.store.get(w.key('mlsUpcomingPullV1')));
+    eq(led[TODAY + '|all'].readMode, 'full', 'the refreshed ledger does not record full mode');
+    eq(w.si._upcomingDayReady(TODAY).ready, false,
+      'the harness full reader returned partial, but the refreshed day still claims ready');
   }
 
   /* =========================================================================
@@ -205,6 +310,87 @@ let stage = 'start';
       eq(w.h.gotoDates.length, 0, 'the lane navigated athenaOne while ' + reason);
       eq(w.h.chartCalls.length, 0, 'the lane opened a chart while ' + reason);
     }
+  }
+
+  /* =========================================================================
+     11. one cancellable wake at a time: no permanent poll, no hidden/off leak
+     ====================================================================== */
+  {
+    stage = '11 timer lifecycle';
+    const w = world();
+    const timers = captureUpcomingTimers(w);
+    const cfg = w.si._upcomingConfig();
+    w.el('captureBtn', recordingButton()); /* the fired synthetic wake must fail closed */
+
+    eq(w.si._upcomingBoot(), true, 'the timer proof could not boot the lane');
+    eq(timers.intervalCalls(), 0, 'boot created a permanent interval instead of one cancellable wake');
+    eq(timers.active().length, 1, 'boot did not create exactly one pending wake');
+    eq(timers.active()[0].ms, cfg.bootDelayMs, 'the first wake did not preserve the sign-in settling delay');
+    eq(w.h.gotoDates.length, 0, 'arming the boot wake synchronously navigated Athena');
+
+    const bootWake = timers.active()[0];
+    ok(timers.fire(bootWake), 'the boot wake could not be fired by the proof');
+    await flush();
+    eq(w.h.gotoDates.length, 0, 'a scheduler wake ignored the recording gate');
+    eq(timers.active().length, 1, 'a settled wake did not leave exactly one successor');
+    eq(timers.active()[0].ms, cfg.tickMs, 'the settled wake did not return to the low-frequency cadence');
+
+    w.h.store.set(w.key('upcomingAutoPull'), '0');
+    w.h.dispatch('mls:upcoming-setting-changed', { on: false });
+    eq(timers.active().length, 0, 'turning the setting off left a wake armed');
+    eq(w.si._upcomingState().armed, false, 'the receipt still calls the disabled lane armed');
+    w.h.dispatch('mls:upcoming-setting-changed', { on: false });
+    eq(timers.active().length, 0, 'a repeated OFF event recreated a wake');
+    w.h.dispatch('mls:upcoming-setting-changed', { on: true });
+    eq(timers.active().length, 0, 'event detail overrode the authoritative stored OFF value');
+
+    w.h.store.set(w.key('upcomingAutoPull'), '1');
+    const gotoBeforeOn = w.h.gotoDates.length;
+    w.h.dispatch('mls:upcoming-setting-changed', { on: false });
+    eq(w.h.gotoDates.length, gotoBeforeOn, 'turning the setting on synchronously drove Athena');
+    eq(timers.active().length, 1, 'turning the setting on did not queue one guarded wake');
+    eq(w.si._upcomingState().on, true, 'event detail overrode the authoritative stored ON value');
+    eq(timers.active()[0].ms, cfg.wakeDelayMs, 'the setting wake did not leave the checkbox event stack');
+    w.h.dispatch('mls:upcoming-setting-changed', { on: true });
+    eq(timers.active().length, 1, 'repeating the ON event created duplicate wakes');
+
+    w.h.rt.document.hidden = true;
+    w.h.rt.document.visibilityState = 'hidden';
+    timers.dispatchDocument('visibilitychange');
+    eq(timers.active().length, 0, 'hiding the tab left its upcoming wake armed');
+    w.h.rt.document.hidden = false;
+    w.h.rt.document.visibilityState = 'visible';
+    timers.dispatchDocument('visibilitychange');
+    timers.dispatchDocument('visibilitychange');
+    eq(timers.active().length, 1, 'returning visible created anything other than one catch-up wake');
+    eq(timers.active()[0].ms, cfg.wakeDelayMs, 'the visible return waited a full polling interval');
+
+    eq(w.si._upcomingScheduleAfterPull(), true, 'the post-pull follow-up was not armed');
+    eq(w.si._upcomingScheduleAfterPull(), false, 'the post-pull follow-up was duplicated');
+    eq(timers.active().filter(one => one.ms === cfg.afterPullMs).length, 1,
+      'the post-pull hook did not keep exactly one distinct short follow-up');
+
+    w.h.dispatch('mls:session-boundary', {});
+    eq(timers.active().length, 1, 'an account boundary did not replace old-account timers with one clean wake');
+    eq(timers.active()[0].ms, cfg.bootDelayMs, 'an account boundary skipped the sign-in settling delay');
+
+    w.h.store.set(w.key('upcomingAutoPull'), '0');
+    w.h.dispatch('storage', { key: w.key('upcomingAutoPull'), newValue: '0' });
+    eq(timers.active().length, 0, 'a cross-tab OFF change left a wake armed');
+    w.h.store.set(w.key('upcomingAutoPull'), '1');
+    w.h.dispatch('storage', { key: w.key('upcomingAutoPull'), newValue: '1' });
+    eq(timers.active().length, 1, 'a cross-tab ON change did not queue exactly one wake');
+
+    const stale = timers.active()[0];
+    eq(w.si._upcomingShutdown(), true, 'shutdown did not run');
+    eq(timers.active().length, 0, 'shutdown left a scheduler timer alive');
+    stale.fn(); /* even a callback already queued by the browser must retire */
+    await flush();
+    eq(timers.active().length, 0, 'a stale callback re-armed after shutdown');
+    eq(w.h.gotoDates.length, 0, 'a stale callback drove Athena after shutdown');
+    w.h.dispatch('mls:upcoming-setting-changed', { on: true });
+    timers.dispatchDocument('visibilitychange');
+    eq(timers.active().length, 0, 'shutdown left a setting or visibility listener wired');
   }
 
   /* =========================================================================
@@ -293,6 +479,30 @@ let stage = 'start';
   }
 
   /* =========================================================================
+     6b. turning the setting OFF mid-walk finishes the current day and stops
+         before the next chart is opened
+     ====================================================================== */
+  {
+    stage = '6b setting off mid-walk';
+    const w = world();
+    w.h.seedDay(TODAY, 2);
+    w.h.seedDay(TOMORROW, 2);
+    const passthrough = w.h.rt.postMessage;
+    let todayGotos = 0;
+    w.h.rt.postMessage = msg => {
+      if (msg && msg.type === 'mlsAppGotoDate' && String(msg.date) === TODAY) {
+        todayGotos++;
+        if (todayGotos === 2) w.h.store.set(w.key('upcomingAutoPull'), '0');
+      }
+      return passthrough(msg);
+    };
+    const run = await w.si._upcomingRunNow({});
+    eq(run.ran, 1, 'turning the setting off did not let the day already in flight finish');
+    eq(run.reason, 'setting-off', 'the mid-walk setting change did not name why the walk stopped');
+    eq(w.chartsPerDay()[TOMORROW], undefined, 'the lane opened tomorrow after the doctor turned it off');
+  }
+
+  /* =========================================================================
      7. rows that could not be read produce exactly ONE line, once
      ====================================================================== */
   {
@@ -303,12 +513,48 @@ let stage = 'start';
     w.h.chartFail.add(TODAY + '|' + rows[0].patient_external_id);
     const run = await w.si._upcomingRunNow({});
     ok(run.ran >= 1, 'the walk never reached the day with an unreadable chart');
+    eq(w.si._upcomingDayReady(TODAY).ready, false,
+      'a partial day is reported ready merely because one chart was read');
     eq(w.toasts.length, 1, 'a day with unreadable rows said something other than one line');
     ok(/could not be read/.test(w.toasts[0].text),
       'the one line does not say, in plain words, that a chart could not be read');
+    ok(!/charts?[^.]*\bare ready\b/i.test(w.toasts[0].text),
+      'the partial-day warning still claims the charts are ready');
     ok(!/\bpull\b.*\bfail/i.test(w.toasts[0].text) && !/receipt|gate|lease|batch/i.test(w.toasts[0].text),
       'the doctor-visible line carries developer words');
     eq(w.dialogs(), 0, 'a walk with a failed row opened a dialog');
+  }
+
+  /* =========================================================================
+     7b. a chart success with an unread pulled-day note is not ready
+     ====================================================================== */
+  {
+    stage = '7b own-day note debt';
+    const w = world({ legacyAllVisits: true });
+    w.h.seedDay(TODAY, 1);
+    w.h.rt.__mlsVisitSavePref.runForPatient = (p, _onStatus, opts) => {
+      w.h.noteCalls.push({ patientId: p && p.id, onlyDate: opts && opts.onlyDate, syntheticFailure: true });
+      return Promise.resolve({ ok: false, reason: 'identity-mismatch' });
+    };
+    const post = w.h.rt.postMessage;
+    let todayGotos = 0;
+    w.h.rt.postMessage = message => {
+      if (message && message.type === 'mlsAppGotoDate' && message.date === TODAY && ++todayGotos === 2) {
+        w.h.store.set(w.key('upcomingAutoPull'), '0');
+      }
+      return post(message);
+    };
+    const run = await w.si._upcomingRunNow({});
+    eq(run.ran, 1, 'the own-day note fixture did not finish its chart day');
+    const led = JSON.parse(w.h.store.get(w.key('mlsUpcomingPullV1')));
+    const entry = led[TODAY + '|all'];
+    eq(entry.complete, false, 'a failed pulled-day note was stored as complete');
+    eq(entry.attention, 1, 'the failed pulled-day note is absent from needs attention');
+    eq(w.si._upcomingDayReady(TODAY).ready, false,
+      'a chart with its pulled-day note still owed is reported ready');
+    eq(w.toasts.length, 1, 'the pulled-day note debt did not produce exactly one quiet-walk warning');
+    ok(/could not be read/.test(w.toasts[0].text),
+      'the pulled-day note warning does not explain that one patient could not be read');
   }
 
   /* =========================================================================

@@ -48,7 +48,7 @@ assert(!message.includes('not-safe-to-display'), 'untrusted backend issue text l
 assert(!message.includes('<transcript>'), 'inline quality error must not expose arbitrary response text');
 
 const fallback = context.mlsDraftFailureMessage({ mlsAi: { code: 'draft_quality_failed', issues: [] } });
-assert.match(fallback, /Nothing changed/, 'quality failure fallback must explicitly preserve the draft');
+assert.match(fallback, /prior draft was retained/i, 'quality failure fallback must explicitly preserve the draft');
 assert.match(fallback, /Retry Generate/, 'quality failure fallback must give a safe retry action');
 
 console.log('PASS generation quality error: backend issue codes survive safely and are shown beside Generate');

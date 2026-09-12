@@ -1068,7 +1068,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         '🩺 Visit — home base: record, generate, sign.',
         '🧾 Review — every note you have generated.',
         '✨ Studio — the AI Studio and Copilot.',
-        '🧰 Tools — everything else, including the Classic layout switch if you ever want the old look.'
+        '🧰 Tools — everything else, grouped by when you need it.'
       ])
     },
     {
@@ -5195,7 +5195,20 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function ppHumanWhy(raw) {
     var head = String(raw || '').replace(/\s*[\{\[].*$/, '').trim();
     if (/^identity-mismatch/.test(head)) return 'chart identity could not be verified';
-    if (/^open-failed$/.test(head)) return 'not on the athenaOne schedule';
+    /* exactpull-reason-1.0.0: open-failed is only the bridge's generic
+       fallback. It does NOT prove the person was absent from the schedule;
+       the row may have changed, Athena may not have painted its results, or
+       the opener may have refused without a closed reason. Name only what the
+       receipt actually proved, and preserve precise safe reasons when the
+       extension supplied one. */
+    if (/^appointment-id-not-found$/.test(head)) return 'the scheduled appointment row could not be found';
+    if (/^row-identity-changed$/.test(head)) return 'the schedule row changed before it could be opened';
+    if (/^schedule-date-(?:missing-after-recovery|restore-failed)$/.test(head)) return 'the scheduled day could not be verified';
+    if (/^(?:name-not-found|no-results|no-name-match)$/.test(head)) return 'athenaOne could not find a matching chart';
+    if (/^ambiguous$/.test(head)) return 'more than one matching chart was found';
+    if (/^(?:dob-mismatch|search-target-unverified)$/.test(head)) return 'chart identity could not be verified';
+    if (/^(?:findpatient-no-load|results-timeout|fill-not-sticking|no-content-frame|rows-not-rendered|blank-error|no-find-button)$/.test(head)) return 'athenaOne did not finish showing the chart search';
+    if (/^open-failed$/.test(head)) return 'athenaOne could not safely open this chart';
     if (/^read-failed$/.test(head)) return 'chart read timed out';
     /* dnw-1.0.0 (owner 2026-08-17, verbatim: "comments like this would scare a
        user, so if they are fixed, update them"). Nothing clinical was lost -
@@ -5446,7 +5459,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        is untouched. The second line is the belt: `hidden` is now DERIVED from
        the gesture, so no leftover false can paint the dialog by itself. */
     if (newRun && (userOpened || replacedWhileRunning)) { userOpened = false; hidden = true; }
-    if (replacedWhileRunning) {
+    /* runlife-1.0.0: EVERY new run owns a fresh timer, maximum and Stop
+       request. The replacement-run case already did this, but an ordinarily
+       observed terminal tick returns from renderDone() before the cleanup
+       below. The next run therefore inherited the prior startedAt,
+       watchedMaxTotal and stopRequested values. Reset on the shared newRun
+       boundary; same-run sweeps never cross it. */
+    if (newRun) {
       startedAt = 0; watchedMaxTotal = 0; doneDismissed = false; stopRequested = false;
       (function () { var oldPanel = document.getElementById(PANEL); if (oldPanel) oldPanel.remove(); })();
     }
@@ -7842,10 +7861,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     '#mlsEz3 .ez3-modeseg{display:none !important;}',
     /* quiet label over the doctor secondary actions: instant comprehension */
     '#mlsEz3Body .ez3-row2:has(#ez3Change)::before{content:"GET THE DAY READY";flex-basis:100%;font-size:10.5px;font-weight:700;letter-spacing:.07em;color:#8A8F86;margin-bottom:2px;}',
-    /* the batch "Pull day histories" action lives in Staff day-prep now (owner:
-       a floating button bottom corner made no sense) — real button stays in the
-       DOM (hidden) and the flow layer proxies it from the staff tools row */
-    'body #mlsDayHistBtn{display:none !important;}',
+    /* exactpull-route-1.0.0: these fixed-position buttons belong to retired
+       pull engines. Keep them out of the visible control surface at every
+       paint, including the gap between their independent mount timers. The
+       Staff shortcut below now presses the canonical verified-day control. */
+    'body #mlsDayHistBtn,body #cfxBulkHistBtn{display:none !important;}',
     /* injected staff entry + back button */
     '#mlsEz3 .ez3fl-staffLink{display:inline-flex;align-items:center;gap:7px;margin-top:2px;background:transparent;border:0;color:#79837C;font-size:12px;font-weight:600;cursor:pointer;padding:4px 2px;}',
     '#mlsEz3 .ez3fl-staffLink:hover{color:#1A211C;text-decoration:underline;}',
@@ -10017,16 +10037,20 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         })[0];
         if (sub2) sub2.textContent = 'Pull schedules, scope by provider, prep the day - then head back to the doctor view to record.';
       } catch (e) {}
-      /* (2b) Pull day histories moved home: proxy the real (hidden) FAB from
-         the Practice tools row — batch history pulls are a staff-prep task */
+      /* (2b) Pull day histories moved home. exactpull-route-1.0.0: this used
+         to press #mlsDayHistBtn, a retired name-only engine that remains in
+         the DOM (hidden) for old state consumers. Press the Staff panel's
+         canonical verified-day control instead. That control owns the Full
+         visit notes choice, provider scope, pre-flight and __mlsSI.dayPull;
+         this shortcut owns no Athena route or identity rule of its own. */
       var toolsCard = [].slice.call(body.querySelectorAll('.ez3-card')).filter(function (c) { return /practice tools/i.test(c.textContent || ''); })[0];
       var tools = toolsCard ? toolsCard.querySelector('.ez3-row2') : null;
-      if (tools && !body.querySelector('.ez3fl-dayhist') && $('mlsDayHistBtn')) {
+      if (tools && !body.querySelector('.ez3fl-dayhist') && $('ez3sPullToday')) {
         var dh = document.createElement('button');
         dh.type = 'button'; dh.className = 'ez3-sm ez3fl-dayhist';
         dh.innerHTML = '&#128218; Pull day histories';
-        dh.title = 'Batch-pull visit histories for a whole day';
-        dh.addEventListener('click', function () { try { $('mlsDayHistBtn').click(); } catch (e) {} });
+        dh.title = 'Run the verified exact-day pull for today';
+        dh.addEventListener('click', function () { try { var current = $('ez3sPullToday'); if (current) current.click(); } catch (e) {} });
         tools.appendChild(dh);
       }
       /* honor a day preset chosen from the doctor-view chip */
@@ -36976,8 +37000,15 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     return bits.join(' · ');
   }
 
+  function canonicalDayPullReady() {
+    var ds = null;
+    try { ds = window.__mlsDaySwitch || null; } catch (eDsReady) {}
+    return !!(ds && isFn(ds.setDay) && isFn(ds.pullDayFor));
+  }
+
   function renderHome() {
     var nx = nextPatient(), rows = dayRows(todayLocal());
+    var todayPullReady = canonicalDayPullReady();
     var h = '<div class="ez3-h1">MLS Easy</div>' +
             '<p class="ez3-sub">Pick a patient, record, generate the note, send. Nothing else in the way.</p>';
     h += provSelectHtml();
@@ -36993,7 +37024,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     h += '<button type="button" class="ez3-big ok" id="ez3Choose">👥 Choose patient' +
          (rows.length ? '<small>' + rows.length + ' on today’s schedule</small>' : '') + '</button>';
     h += '<div class="ez3-row2">' +
-         (findBtnByText(/pull today.?s patients/i) ? '<button type="button" class="ez3-sm" id="ez3PullToday">📥 Pull today’s patients</button>' : '') +
+         (todayPullReady ? '<button type="button" class="ez3-sm" id="ez3PullToday">📥 Pull today’s patients</button>' : '') +
          (hasPrep() ? '<button type="button" class="ez3-sm" id="ez3Prep" title="Draft operative / procedure notes from your uploaded op-note templates">💉 Draft op notes</button>' : '') +
          '<button type="button" class="ez3-sm" id="ez3Hist">📚 View completed notes</button>' +
          '</div>';
@@ -37021,9 +37052,33 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     }, 'Completed notes / history opened in the full app.');
   }
   function pullTodayProxy() {
-    var p = findBtnByText(/pull today.?s patients/i);
-    if (!p) { toast('Pull control not found on this build.'); return; }
-    handOff(function () { p.click(); }, 'Pulling today’s schedule — tap ⚡ MLS Easy when it’s done.');
+    /* Staff's provider selector is a scope control. Re-enter the canonical
+       DaySwitch lane so that the selected scope is frozen before the
+       full-notes gate, preflight, status, and receipt machinery starts. */
+    var ds = null;
+    try { ds = window.__mlsDaySwitch || null; } catch (eDs) {}
+    if (!ds || !isFn(ds.setDay) || !isFn(ds.pullDayFor)) {
+      toast('The verified Staff pull is still loading. Try again in a moment.');
+      return;
+    }
+    var day = todayLocal();
+    var dayText = String(day || '');
+    if (dayText.length !== 10 || dayText.charAt(4) !== '-' || dayText.charAt(7) !== '-') {
+      toast('Today’s date is not ready yet. Try again in a moment.');
+      return;
+    }
+    if (isFn(ds.isBusy) && ds.isBusy()) {
+      toast('A schedule pull is already running.');
+      return;
+    }
+    if (ds.setDay(day) !== true) {
+      toast('Today’s schedule day could not be selected.');
+      return;
+    }
+    var providerTarget = String(activeProvider() || '').trim() || 'all';
+    handOff(function () {
+      ds.pullDayFor(providerTarget);
+    }, 'Pulling today’s Staff schedule — watch the verified progress lane.');
   }
 
   /* ---- patient rows (clean, DOB always, expand-in-place) ------------------ */
@@ -37298,7 +37353,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var rb = staffRangeBounds();
     var all = rowsInRange(rb.from, rb.to);
     var shown = all.slice(0, S.showCount);
-    var todayBtn = findBtnByText(/pull today.?s patients/i);
+    var todayBtn = canonicalDayPullReady();
     var monthBtn = findBtnByText(/pull whole month/i);
     var prog = $('mls-month-progress');
     var errEl = document.querySelector('.mls-pull-error, #mlsPullError');
@@ -39080,7 +39135,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     { k:'find search command palette feature patient screen', name:'Find anything', where:'Top bar -> Find (or press /)', how:'Search patients, screens, and every feature in this directory from one place.', route:'find', common:true },
     { k:'help where how guide question tour', name:'Help and guided tour', where:'Top navigation -> Help', how:'Open the guided tour, or ask a feature-specific question answered from this same directory.', route:'help' },
     { k:'studio ai custom tool widget builder', name:'AI Studio and custom tools', where:'Top navigation -> AI Studio', how:'Use the simple builder at the top to ask Copilot, build a custom tool, or run a study.', route:'view:studio', common:true },
-    { k:'study cohort research outcomes custom study build procedure 30 page report', name:'Build and run a custom study', where:'AI Studio -> natural-language study builder at the top', how:'Type the cohort, question, and date range in plain language and press Enter. MLS uses stored evidence to create a limited-data draft, scrubs common direct identifiers where detectable, and expands only to the evidence-supported length (up to 30 pages); clinician and privacy review are still required.', route:'study' },
+    { k:'study cohort research outcomes custom study build procedure 60 page report', name:'Build and run a custom study', where:'AI Studio -> natural-language study builder at the top', how:'Type the cohort, question, and date range in plain language and press Enter. MLS uses stored evidence to create a limited-data draft, scrubs common direct identifiers where detectable, and expands only to the evidence-supported length (up to 60 pages); clinician and privacy review are still required.', route:'study' },
     { k:'custom widget card tool build', name:'Build a custom widget', where:'Menu -> Custom widget (also at the top of AI Studio)', how:'Describe the tool, review the generated widget, then pin it if useful.', route:'widget' },
     { k:'calendar schedule appointment new booking', name:'Calendar and appointments', where:'Calendar tab - your front desk turns this on for the practice; there is no doctor-side switch', how:'View the schedule or create a new appointment.', route:'view:calendar' },
     { k:'booking link patient scheduling share', name:'Patient booking link', where:'Patients workspace -> scheduling tools', how:'Generate the practice booking link and share it with patients.', route:'view:patients' },
@@ -41004,7 +41059,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     { t: "\u{1F4C5} Calendar", p: "Month, week and day views of the real pulled schedule, scoped to you or any provider. The Pay Reports button lives here too.", go: "calendar", sel: "#calendarView .mls-b34-pay" },
     { t: "\u{1F4B5} Pay Reports (Premium)", p: "Per-provider patient counts, half-day credits, days × rate and clearly-labeled AI-estimated collections — with Excel export. Find it at the top of Calendar and AI Studio.", },
     { t: "✨ AI Studio (Premium)", p: "Ask the MLS Copilot anything about your practice — it reads your own data. “Build a custom tool” turns a sentence into a working dashboard, calculator or worklist; every build saves to My creations, and the Improve box refines it.", go: "studio", sel: "#copilotCard" },
-    { t: "\u{1F4CA} Study Groups (advanced)", p: "Down at the bottom of AI Studio: build a named patient cohort, then run a study that outputs a graph, an Excel file and a PDF. Collapsed until you need it.", sel: "#mlsB39SgWrap" },
+    { t: "\u{1F4CA} Study procedure (Premium)", p: "In AI Studio, choose Study & build. Study procedure is the first tool at the top: describe the cohort, question, and date range in plain language, then MLS builds the evidence-supported report and export files. Named Study Groups remain under Advanced.", go: "studio", sel: "#mlsStudyRequest" },
     { t: "📣 Marketing (Free · Draft-only)", p: "Build editable listing, review-reply, neutral campaign, and ads-budget drafts. Open it from Tools → Marketing; nothing publishes, contacts patients, connects an account, or spends money.", },
     { t: "\u{1F916} ONE assistant for everything", p: "The MLS Assistant (bottom-left) is your single helper: chat or tap \u{1F3A4} and talk. It pulls schedules, answers questions like “how many patients did Dr. X see this month”, opens charts, and can change where notes write back — just ask.", sel: "#mlsAsstFab" },
     { t: "❓ Help, any time", p: "The Help button (top-right) opens the written step-by-step guide, and this tour is always in Menu → \u{1F4D8} How-To Guide. That's it — go see patients, MLS handles the paperwork. \u{1F389}", sel: "#nav_help" }
@@ -55923,7 +55978,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         statusNode.textContent = dsTerminalReceiptLine(hydratedTerminal);
         dsSyncDiagBtn(hydratedTerminal.status === 'failed');
       } else if (paintable && quiet) {
-        /* upnext-1.0.0: a day MLS has already read on its own says so, in the
+        /* upnext-1.1.0: a day MLS has already read on its own says so, in the
            same words Today has always used ("your patients are ready"), on the
            same line an explicit pull's receipt uses. A day with a receipt of
            its own keeps that receipt - this only fills the silence. */
@@ -55937,7 +55992,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     try { syncAttentionControl(); } catch (eAttSync) {}
     try { syncIdentityControl(); } catch (eIdSync) {}
   }
-  /* upnext-1.0.0: the doctor-facing sentence for a day the quiet upcoming-days
+  /* upnext-1.1.0: the doctor-facing sentence for a day the quiet upcoming-days
      lane has already brought in. Returns '' for every other day, so nothing
      else on the strip changes. No new vocabulary: "ready" is the word Today's
      own finished pull has always used. */
@@ -57551,7 +57606,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       lastRefusal: null
     };
   } catch (eLeasePub) {}
-  function startPull(autoRetry) {
+  function startPull(autoRetry, providerOverride) {
     var automaticRetry = autoRetry === DS_AUTO_RETRY;
     var preferenceReady = autoRetry === DS_PREF_READY;
     /* 2026-07-29 (measured live): this guard used to return SILENTLY, so a
@@ -57625,7 +57680,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           return;
         }
         DS.pullVisitBodies = choice.on === true;
-        startPull(DS_PREF_READY);
+        startPull(DS_PREF_READY, providerOverride);
       }, function () {
         DS.preferenceGatePending = false;
         var refused = dsPreferenceRefusal('choice-check-failed');
@@ -57637,6 +57692,30 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     /* A new clinician action never inherits the capability captured by an
        older chain. Automatic retries are the only calls allowed to reuse it. */
     if (!automaticRetry) { DS.pullSerial++; DS.pullProviderScope = null; }
+    /* A Staff pull passes an explicit frozen target. Keep it through the
+       preference gate and let the same importer resolve/validate it. */
+    if (!automaticRetry && providerOverride !== undefined && providerOverride !== null && providerOverride !== '') {
+      DS.pullProviderScope = typeof providerOverride === 'string'
+        ? providerOverride.trim()
+        : providerOverride;
+    }
+    /* p1-provider-owner-1.1.0: freeze the visible Visit provider before the
+       relay/local fork. The office-computer relay and this browser must receive
+       the same selected-provider (or explicit All) capability, and automatic
+       retries must reuse that exact reference instead of rereading mutable UI. */
+    if (!automaticRetry && providerOverride === undefined) {
+      try {
+        var easyProviderOwner = window.__mlsEasyV32;
+        if (easyProviderOwner && typeof easyProviderOwner.providerTarget === 'function') {
+          var visibleProviderTarget = easyProviderOwner.providerTarget();
+          var visibleProviderTargetValid = (typeof visibleProviderTarget === 'string')
+            ? !!visibleProviderTarget.trim()
+            : !!(visibleProviderTarget && typeof visibleProviderTarget === 'object' && !Array.isArray(visibleProviderTarget) &&
+              String(visibleProviderTarget.name || visibleProviderTarget.displayName || visibleProviderTarget.provider || '').trim());
+          if (visibleProviderTargetValid) DS.pullProviderScope = visibleProviderTarget;
+        }
+      } catch (eProviderOwner) { DS.pullProviderScope = null; }
+    }
     /* 2026-07-28 cross-tab refusal: two engines over one store is how "N
        saves not confirmed" happens. If another tab's pull owns the shared
        shield, say so instead of starting a second engine. */
@@ -57705,6 +57784,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       try {
         window.__mlsRelayLink.pullDay(rday, {
         pullVisitBodies: DS.pullVisitBodies,
+        provider: DS.pullProviderScope,
         onStatus: function (m) { if (sessionSerial !== DS.sessionSerial) return; try { if (rstat) rstat.textContent = String(m); } catch (e) {} dsStatusLog(m); try { paintRelayBar(m); } catch (e2) {} },
         onDone: function (ok, msg) {
           if (sessionSerial !== DS.sessionSerial) return;
@@ -57949,28 +58029,6 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          the previous single call, made synchronously on the click. */
       var dpOpts = { date: day, includeHistory: true, onStatus: dsOnStatus };
       if (typeof DS.pullVisitBodies === 'boolean') dpOpts.pullVisitBodies = DS.pullVisitBodies;
-      /* p1-provider-owner-1.0.0: the Visit provider selector is the visible
-         owner of this Day pull. Leaving provider absent made dayPull fall
-         back to the signed-in account provider even while the UI explicitly
-         showed All providers. On a legacy multi-column grid that account
-         target could not resolve, so the engine eventually read all rows but
-         correctly withheld the Day-only provider-unknown census grant because
-         the ORIGINAL request had been selected-provider. Freeze the visible
-         selector now; selected providers remain selected and explicit All is
-         the only scope that can enter the 1p census lane. */
-      if (!automaticRetry) {
-        try {
-          var easyProviderOwner = window.__mlsEasyV32;
-          if (easyProviderOwner && typeof easyProviderOwner.providerTarget === 'function') {
-            var visibleProviderTarget = easyProviderOwner.providerTarget();
-            var visibleProviderTargetValid = (typeof visibleProviderTarget === 'string')
-              ? !!visibleProviderTarget.trim()
-              : !!(visibleProviderTarget && typeof visibleProviderTarget === 'object' && !Array.isArray(visibleProviderTarget) &&
-                String(visibleProviderTarget.name || visibleProviderTarget.displayName || visibleProviderTarget.provider || '').trim());
-            if (visibleProviderTargetValid) DS.pullProviderScope = visibleProviderTarget;
-          }
-        } catch (eProviderOwner) { DS.pullProviderScope = null; }
-      }
       /* The exact reference captured by the manual click owns every retry.
          `all` remains explicitly all; selected/missing scopes can never be
          widened by rereading mutable UI or by a later-attempt override. */
@@ -58538,11 +58596,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   api.resetSession = resetDaySwitchSession;
   api.rowsFor = rowsFor;
   api.pullDay = startPull;
+  /* Staff uses this explicit-target entrypoint; it is the same pull engine,
+     with the target frozen before any preference/preflight work begins. */
+  api.pullDayFor = function (providerTarget) { return startPull(false, providerTarget); };
   /* dayresume-1.0.0: read-only. The same answer the button label and the
      status line use, so a live probe and a proof read ONE function. */
   api.resumeState = function (day) { return dsResumeState(day); };
   api.pullVerb = function (day) { return dsPullVerb(day); };
-  /* upnext-1.0.0: '' unless MLS has already brought that day in on its own. */
+  /* upnext-1.1.0: '' unless MLS has already brought that day in on its own. */
   api.pulledLine = function (day) { return dsQuietPulledState(day); };
   api.renderList = renderList;
   api.isBusy = function () { return !!(DS.pulling || DS.retrying || DS.__autoRetrying); };

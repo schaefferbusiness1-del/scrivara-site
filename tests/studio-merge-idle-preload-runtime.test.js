@@ -42,6 +42,14 @@ const mergeSource = fs.readFileSync(MERGE_PATH, 'utf8');
 const studySource = fs.readFileSync(STUDY_PATH, 'utf8');
 const studyGroupsSource = fs.readFileSync(STUDY_GROUPS_PATH, 'utf8');
 
+assert.ok(/up to 60 pages/.test(connectSource),
+  'the feature directory still understates the current evidence-supported Study report cap');
+assert.ok(/Study procedure \(Premium\)/.test(connectSource) &&
+  /Study procedure is the first tool at the top/.test(connectSource),
+  'the guided tour no longer points doctors to the top Study procedure');
+assert.ok(!/Down at the bottom of AI Studio/.test(connectSource),
+  'the guided tour still sends doctors to the retired bottom-of-Studio Study location');
+
 const studyLoaderMarker = "var A='feat_mls_study_request.js',V='sr-2.4.4',LV='srl-1.0.4'";
 const studyLoaderAt = connectSource.indexOf(studyLoaderMarker);
 const studyLoaderStart = connectSource.lastIndexOf(';(function(){try{', studyLoaderAt);

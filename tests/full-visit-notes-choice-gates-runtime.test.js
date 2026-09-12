@@ -163,7 +163,7 @@ async function resolverCases() {
 }
 
 function staticGateCases() {
-  const day = balancedFunction(CONNECT, 'function startPull(autoRetry)', 'day entrypoint');
+  const day = balancedFunction(CONNECT, 'function startPull(autoRetry, providerOverride)', 'day entrypoint');
   const cal = balancedFunction(CONNECT, 'function runHeroPull(el, isAutoRetry, choiceAdmitted)', 'calendar entrypoint');
   const month = balancedFunction(CONNECT, 'function startMonthPull(retryOnly, rosterRetried, choiceAdmitted, fullNotesChoice)', 'legacy month entrypoint');
   const dayLegacy = balancedFunction(CONNECT, 'function startDayPull(retryOnly, rosterRetried, choiceAdmitted, fullNotesChoice)', 'legacy day entrypoint');
@@ -271,12 +271,14 @@ function receiptCases() {
   assert(relay.includes('dsStatusLog(m)'), 'relay status is not retained in the local status log');
   assert(relay.includes('ownAttemptResult({ ok: ok === true'), 'relay completion does not create a local receipt');
   assert(relay.includes('pullVisitBodies: DS.pullVisitBodies'), 'relay payload does not carry the frozen full-notes choice');
+  assert(relay.includes('provider: DS.pullProviderScope'), 'relay payload does not carry the frozen provider scope');
 
   const statusLog = [], captured = {};
   const status = { style: {}, textContent: '', parentNode: { insertBefore() {} }, nextSibling: null };
   const button = { disabled: false, innerHTML: '', parentNode: { insertBefore() {} }, nextSibling: null };
   const doc = { getElementById(id) { return id === 'mlsDsStatus' ? status : (id === 'mlsDsPullBtn' ? button : null); }, createElement() { return { style: {}, firstElementChild: { style: {}, textContent: '' }, innerHTML: '' }; } };
-  const DS = { sessionSerial: 0, pulling: false, pullStartedAt: 0, pullId: '', day: '2026-08-22', pullVisitBodies: false };
+  const selectedProvider = { name: 'Dr Synthetic' };
+  const DS = { sessionSerial: 0, pulling: false, pullStartedAt: 0, pullId: '', day: '2026-08-22', pullVisitBodies: false, pullProviderScope: selectedProvider };
   const ctx = vm.createContext({
     window: { __mlsRelayLink: { shouldRelay: () => true, pullDay(day, opts) { captured.day = day; captured.opts = opts; } }, toast() {} },
     document: doc, DS, sessionSerial: 0, Date, String, Number, Math, JSON,
@@ -291,11 +293,16 @@ function receiptCases() {
   });
   vm.runInContext('(function(){' + relay + '\n}).call(this);', ctx, { filename: 'relay-receipt-branch' });
   assert.strictEqual(captured.day, '2026-08-22', 'relay branch did not freeze the requested day');
+  assert.strictEqual(captured.opts.provider, selectedProvider, 'relay branch widened a selected provider instead of passing the frozen target');
   captured.opts.onStatus('History 1 of 2');
   captured.opts.onDone(false, 'office computer refused the pull');
   assert.strictEqual(statusLog.includes('History 1 of 2'), true, 'relay status did not persist locally');
   assert.strictEqual(DS.lastAttemptResult.reason, 'relay-failed', 'relay failure did not persist a durable local receipt');
   assert.strictEqual(DS.lastAttemptResult.target, '2026-08-22', 'relay receipt was not bound to the requested day');
+  DS.pullProviderScope = 'all';
+  captured.opts = null;
+  vm.runInContext('(function(){' + relay + '\n}).call(this);', ctx, { filename: 'relay-all-provider-branch' });
+  assert.strictEqual(captured.opts.provider, 'all', 'relay branch replaced explicit All with an account provider or an omitted scope');
 }
 
 /* dayfacts-1.0.1: runForPatient is THE door every pulled-day encounter note

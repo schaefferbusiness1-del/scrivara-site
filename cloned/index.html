@@ -5431,7 +5431,16 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         <p class="note" style="margin:0 0 8px">Current version: <b id="extDlVersion">3.0.112</b> · requires Chrome 116+</p>
         <a class="btn-primary" id="extStoreBtn" href="https://chromewebstore.google.com/detail/mls-assist/mpeidpagiccfdehcgfanlkibpafhogfg" target="_blank" rel="noopener noreferrer" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px;margin:0 8px 8px 0">🧩 Open MLS Assist in the Chrome Web Store</a>
         <a class="btn-ghost" id="extDlBtn" href="MLS_Assist_v3.0.112.bin" download="MLS_Assist_v3.0.112.zip" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇️ Download MLS Assist v<span id="extDlVersionBtn">3.0.112</span> (.zip)</a>
-        <p class="note" style="margin:10px 0 0"><b>Easiest:</b> install from the Chrome Web Store with the first button — Chrome keeps it updated. The direct download is the second option (exact pinned version). If you download it, then follow the four setup steps under <b>Integrations → Advanced integrations</b> in this dialog — or the illustrated guide at <a href="get-extension.html" target="_blank" rel="noopener">mlsscribe.com/get-extension</a>. Already have it? Updating is the same four steps over the old folder.</p>
+        <p class="note" style="margin:10px 0 6px"><b>Easiest:</b> install from the Chrome Web Store with the first button — Chrome keeps it updated. The direct download is the second option (exact pinned version).</p>
+        <details style="margin:8px 0 0"><summary style="cursor:pointer;font-weight:600">Direct-download setup or update — four steps</summary>
+          <ol style="margin:8px 0 0 18px;padding:0;font-size:12.5px;color:#204034;line-height:1.6">
+            <li>Download the .zip and unzip it. Open <code>chrome://extensions</code> and turn on <b>Developer mode</b> (top-right).</li>
+            <li>Click <b>Load unpacked</b> and pick the unzipped <code>mls-assist-extension</code> folder. To update later, replace the folder and click ↻ Reload.</li>
+            <li>Make sure you're <b>signed in to MLS in a tab</b> — the extension uses that login automatically. <b>No key to paste.</b></li>
+            <li>Keep a signed-in athenaOne tab open. MLS then uses the same verified pull and review controls shown in the app.</li>
+          </ol>
+          <p class="note" style="margin:6px 0 0">Your practice IT can do this for you. The illustrated guide and exact digest are at <a href="get-extension.html" target="_blank" rel="noopener">mlsscribe.com/get-extension</a>.</p>
+        </details>
         <details style="margin:10px 0 0">
           <summary style="cursor:pointer;font-weight:600">What changed in this update (v<span id="extDlVersionNotes">3.0.112</span>)</summary>
           <p class="note" id="extDlNotes" style="margin:6px 0 0">v3.0.112 - MLS Assist writes reviewed note sections and saves drafts in athenaOne. Signing, orders and billing stay with the clinician. This release closes older action paths at the extension bridge, worker and chart driver while preserving patient identity checks, trusted confirmation and read-back verification. Includes the section-paint wait and encounter Save support from v3.0.111. Requires Chrome 116+.</p>
@@ -5599,7 +5608,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     <!-- Developer API key + MLS Assist (browser extension) -->
     <div class="field" style="border-top:1px solid var(--line);padding-top:14px;margin-top:4px">
       <label style="font-size:15px">🔌 MLS Assist — your athenaOne connection</label>
-      <p class="note" style="margin:2px 0 10px"><b>MLS Assist works automatically off your MLS login</b> — no key, no setup code, just stay signed in here. Everything else a practice might need — first-time setup, connecting another system, and bringing patients in from an old one — is under <b>Advanced integrations</b> below.</p>
+      <p class="note" style="margin:2px 0 10px"><b>MLS Assist works automatically off your MLS login</b> — no key or setup code, just stay signed in here. Use <b>Open extension setup</b> below to install or update it. Connections to other systems and bulk import are under <b>Advanced integrations</b>.</p>
       <div style="margin-top:4px;background:#f2f8ff;border:1px solid #dcebfb;border-radius:10px;padding:12px 14px">
         <!-- The badge starts UNKNOWN and stays unknown until the extension itself
              answers. It used to ship the literal words "Latest version" in a green
@@ -5616,7 +5625,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
                update_url and MLS Assist is loaded unpacked from a folder, so
                Chrome cannot update it and neither can this app: the automatic
                claim was the false one, and it is the one that goes. -->
-          <b>Already installed?</b> MLS Assist does not update itself. When a new version ships, download it and repeat the same four setup steps over the old folder; the badge above says which version this browser is running. If a pull ever looks stuck, there is a one-click reload step under <b>Advanced integrations</b> below.
+          <b>Already installed?</b> The badge above says which version this browser is running. Use <b>Open extension setup</b> below for the one update path and reload instructions.
         </div>
         <label style="display:flex;align-items:center;gap:8px;margin:0 0 10px;font-size:13px;cursor:pointer">
           <input type="checkbox" id="athenaFollowToggle" checked>
@@ -5633,7 +5642,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <input type="checkbox" id="setPullVisitBodies" style="margin-top:2px">
           <span><b>📖 Pull full visit notes</b> — during a DAY or bulk Athena pull, open each scheduled chart and save every dated prior visit note as well (slower, most complete). Off: pulls still open each scheduled chart and save its identity, chart facts (problems, medications, allergies) and the pulled day's own visit note — only OLDER visit notes are skipped. The single-patient pull button still reads the one patient you explicitly chose.</span>
         </label>
-        <!-- upnext-1.0.0 (owner 2026-09-11, "it always has to pull the to-be
+        <!-- upnext-1.1.0 (owner 2026-09-11, "it always has to pull the to-be
              visits as to make good op notes"): an operative note is written
              from what came BEFORE, so the next days' charts have to already be
              here when the doctor starts writing. Default ON; unchecking it
@@ -5643,9 +5652,9 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <input type="checkbox" id="setUpcomingAutoPull" style="margin-top:2px" checked>
           <span><b>📅 Pull upcoming visits automatically</b> — MLS quietly brings in the charts for your next scheduled days, so a note you write tomorrow already has that patient's earlier visits, imaging and procedures.</span>
         </label>
-        <a href="https://mlsscribe.com/get-extension.html" target="_blank" rel="noopener" data-eds-primary="1" class="btn-primary" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇ Download MLS Assist (latest)</a>
-        <a href="https://mlsscribe.com/MLS_Assist_v3.0.112.zip" download="MLS_Assist_v3.0.112.zip" style="display:inline-block;margin-left:8px;text-decoration:none;font-size:13px;padding:9px 13px;border:1.5px solid var(--line);border-radius:10px;font-weight:700;color:var(--ink)">📦 Direct package (v3.0.112 ZIP)</a>
-        <span class="note" style="display:block;margin:6px 0 0">The published version and release notes load automatically from the MLS Assist release feed. <a href="https://mlsscribe.com/get-extension.html" target="_blank" rel="noopener">Install options &amp; SHA-256 digest</a> (the digest is printed there for the exact released build, same bytes as the Web Store)</span>
+        <button type="button" id="mlsExtensionSetupLink" class="btn-ghost" data-mls-setup-link="1" data-mls-setup-target="extensionDownloadSettings" style="font-size:14px;padding:9px 15px" onclick="mlsOpenExtensionSetup();var setup=document.getElementById('extensionDownloadSettings');if(setup){try{setup.scrollIntoView({behavior:'smooth',block:'start'});}catch(e){try{setup.scrollIntoView();}catch(_){}}var store=document.getElementById('extStoreBtn');if(store){try{store.focus({preventScroll:true});}catch(_){try{store.focus();}catch(__){}}}}">⚙ Open extension setup</button>
+        <span class="note" id="mlsExtensionSetupStatus" role="status" style="display:block;margin:6px 0 0"></span>
+        <span class="note" style="display:block;margin:6px 0 0">The published version and release notes load automatically from the MLS Assist release feed. Extension setup above has the install options and exact SHA-256 digest.</span>
       </div>
       <!-- ===== advint-1.0.0 — one disclosure for everything a physician never needs =====
            The Settings dialog is one click from the doctor and it carried, in the open,
@@ -5654,25 +5663,13 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
              * a card headed "MLS Assist &amp; Developer API key"
              * a fold headed "Advanced: Developer API key (FHIR API / server use)"
              * "Paste a JSON export below - shape: {...}"
-           None of it is deletable - the four setup steps are the only
-           in-app install path for the extension the whole Athena lane rides on, and
-           genApiKey() with no arguments is the only way to mint the unscoped key the card
-           itself documents. So this is a RESTYLE: same controls, same ids, same handlers,
-           gathered behind one closed disclosure a physician can read the title of and
-           correctly ignore. Nothing outside this block moved except the copy that named
-           the developer vocabulary. -->
+           The extension section above now owns its one install/update path, including
+           the four direct-download steps. This disclosure retains the genuinely advanced
+           API-key, background-note, connection and bulk-import tools. genApiKey() with no
+           arguments remains the only way to mint the unscoped key the card documents. -->
       <details id="advIntegrations" style="margin-top:12px">
-        <summary style="cursor:pointer;font-size:13.5px;font-weight:700;color:var(--ink);padding:6px 0">🔧 Advanced integrations <span class="note" style="font-weight:400">— setup steps, connecting other systems, and bulk import</span></summary>
+        <summary style="cursor:pointer;font-size:13.5px;font-weight:700;color:var(--ink);padding:6px 0">🔧 Advanced integrations <span class="note" style="font-weight:400">— connection tools, other systems, and bulk import</span></summary>
         <div style="margin-top:10px;border-left:3px solid var(--line);padding-left:12px">
-
-          <b style="font-size:13.5px">Setting up MLS Assist on this computer</b>
-          <p class="note" style="margin:4px 0 6px">Four steps, once per computer. Your practice IT can do this for you; the illustrated version is at <a href="get-extension.html" target="_blank" rel="noopener">mlsscribe.com/get-extension</a>. If a pull ever looks stuck afterwards, open the same <code>chrome://extensions</code> page and press <b>↻</b> on the MLS Assist card.</p>
-          <ol style="margin:10px 0 0 18px;padding:0;font-size:12.5px;color:#204034;line-height:1.6">
-            <li>Download the .zip and unzip it. Open <code>chrome://extensions</code> and turn on <b>Developer mode</b> (top-right).</li>
-            <li>Click <b>Load unpacked</b> and pick the unzipped <code>mls-assist-extension</code> folder. (To update later, replace the folder and click ↻ Reload.)</li>
-            <li>Make sure you're <b>signed in to MLS in a tab</b> — the extension uses that login automatically. <b>No key to paste.</b></li>
-            <li>On your EMR, click the 🩺 badge (bottom-right) → Dictate or select text → ✨ Generate → Insert, or run Autopilot.</li>
-          </ol>
 
           <!-- ===== notes-idle-1.0.0 — the leftover visit notes, and their receipt ==
                A pull reads each patient's chart history and then the pulled day's own
@@ -10325,6 +10322,39 @@ function mlsBuildSettingsTabs(){
   });
   mlsSelectSettingsTab(0);
 }
+/* extsetup-1.0.0 - the Integrations handoff must reveal the canonical owner
+   before it scrolls. The organized rail uses semantic group keys; the legacy
+   fallback uses the same direct-section index as mlsBuildSettingsTabs(). */
+function mlsOpenExtensionSetup(){
+  var setup=document.getElementById('extensionDownloadSettings');
+  if(!setup) return false;
+  var bar=document.getElementById('settingsTabBar'), activated=false;
+  try{
+    if(window.__mlsUiUnification&&window.__mlsUiUnification.installed&&
+       typeof window.__mlsUiUnification.reconcileSettings==='function'){
+      window.__mlsUiUnification.reconcileSettings();
+    }
+  }catch(eReconcile){}
+  try{
+    var modern=bar&&bar.querySelector('[data-mls-settings-group="integrations"]');
+    if(modern){ modern.click(); activated=true; }
+  }catch(eModern){}
+  if(!activated){
+    try{
+      var sections=typeof _setVisibleSections==='function' ? _setVisibleSections() :
+        (document.getElementById('settingsModal')||document).querySelectorAll('.modal > .set-section');
+      var idx=Array.prototype.indexOf.call(sections,setup);
+      if(idx>=0&&typeof mlsSelectSettingsTab==='function'){
+        mlsSelectSettingsTab(idx); activated=true;
+      }
+    }catch(eLegacy){}
+  }
+  try{
+    var status=document.getElementById('mlsExtensionSetupStatus');
+    if(status) status.textContent='Extension setup is shown above — choose the Chrome Web Store or direct download.';
+  }catch(eStatus){}
+  return activated;
+}
 /* vntpl-1.0.0 - the visit room and Settings both reach ONE screen. It is owned
    by feat_mls_draft_tuning.js (the module that already owns the visit-note
    section templates), and that module is lazily loaded, so ensure it before
@@ -10478,7 +10508,7 @@ function openSettings(opts){
   if(typeof loadAthenaSettings==='function') loadAthenaSettings();
   renderTwofaSettings();
   renderPullVisitBodiesSetting();
-  if(typeof renderUpcomingAutoPullSetting==='function') renderUpcomingAutoPullSetting(); /* upnext-1.0.0 */
+  if(typeof renderUpcomingAutoPullSetting==='function') renderUpcomingAutoPullSetting(); /* upnext-1.1.0 */
   /* The unified Settings owner keeps one tab model. Re-running the legacy
      builder here wiped the bar and reset the scroll position during opening. */
   if(!(window.__mlsUiUnification&&window.__mlsUiUnification.installed)) mlsBuildSettingsTabs();
@@ -10892,7 +10922,7 @@ function renderPullVisitBodiesSetting(){
   }catch(e){}
 }
 
-/* upnext-1.0.0 — "Pull upcoming visits automatically", the Settings view of
+/* upnext-1.1.0 — "Pull upcoming visits automatically", the Settings view of
    the quiet upcoming-days lane (the engine reads the stored key, never this
    node). DEFAULT ON: an account that has never opened Settings still gets the
    next days' charts, so only an explicit '0' turns the lane off. The write is
@@ -10923,6 +10953,10 @@ function renderUpcomingAutoPullSetting(){
         try{ toast('That change did not save — nothing changed.','warn'); }catch(e){}
         return;
       }
+      /* Tell the already-running scheduler only after the stored value reads
+         back correctly. The event itself never reads Athena: OFF cancels its
+         pending wake and ON queues one guarded, off-stack check. */
+      try{ window.dispatchEvent(new CustomEvent('mls:upcoming-setting-changed',{detail:{on:want}})); }catch(e){}
       try{ toast(want?'MLS will bring in your next scheduled days on its own.':'MLS will only bring in a day when you press Pull.','ok'); }catch(e){}
     });
   }catch(e){}
@@ -61264,9 +61298,9 @@ html.mls-clunky-hdr #mslToday{ padding:4px 10px; }
          #athApiSettingsCard (380px of "Exact redirect URI" / "client
          credentials and refresh tokens") and #schedApiCard (369px of
          "GET /fhir/Appointment?_lastUpdated=gt<last sync>") open by default.
-       * THREE download controls for one file: #extDlBtn "Download MLS Assist
-         v3.0.63 (.zip)", "Download MLS Assist (latest)", "Direct package
-         (v3.0.63 ZIP)".
+       * The extension Settings section owns the two install actions (#extStoreBtn
+         and #extDlBtn); Integrations retains connection health and one route back
+         to that canonical setup owner, never another download/package action.
        * Display carried two dropdowns that both read as "where navigation
          lives": "Navigation layout (this device)" and "Navigation bar".
        * Practice: #googleBusinessUrl 178x22 among 770x38 siblings, and
@@ -61610,7 +61644,9 @@ html #settingsModal #advIntegrations #mlsClunkySetVendor{ margin-top:14px; }
   var NOW_IDS = ['swSharedToggle', 'navLayoutSel', 'qolMslMode', 'qolDockSide', 'qolDockAutoHide',
     'qolPtLayout', 'qolGroupProc', 'mlsShowPerformanceTools', 'athenaFollowToggle',
     'setPullVisitBodies', 'mlsPcTgl', 'r44cVoiceSA', 'r44cVoice', 'r44cBday', 'r44cErr',
-    'r44cQp', 'defaultComment', 'noteModelSel'];
+    'r44cQp', 'defaultComment', 'noteModelSel',
+    'mlsVnTplProfile_soap', 'mlsVnTplProfile_hpi', 'mlsVnTplProfile_ros',
+    'mlsVnTplProfile_exam', 'mlsVnTplProfile_assessment', 'mlsVnTplProfile_plan'];
   var NOW_HOSTS = ['#navFeatToggles', '#mlsDrCard'];
   var NOW_WORDS = 'Applies right away';
 

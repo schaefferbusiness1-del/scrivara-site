@@ -159,13 +159,31 @@ ok(/pp-bad/.test(FAILED) && FAILED.indexOf(WARN) >= 0,
   'A GENUINE FAILURE STILL WARNS',
   'the point of quieting progress is that the remaining amber MEANS something\n        got: ' + FAILED);
 
-[['open-failed', /not on the athenaOne schedule/],
+[['open-failed', /athenaOne could not safely open this chart/],
  ['read-failed', /chart read timed out/],
  ['identity-mismatch:someone-else', /chart identity could not be verified/]
 ].forEach(function (pair) {
   const html = render([{ name: 'Aaa Bbb', ok: false, reason: pair[0] }]);
   ok(pair[1].test(html), 'failure "' + pair[0] + '" is explained in plain words', 'got: ' + html);
   ok(/pp-bad/.test(html), 'failure "' + pair[0] + '" still carries the failure class');
+});
+
+/* A generic transport fallback must never be promoted into a claim that the
+   appointment was absent. Precise closed reasons may say what they proved. */
+ok(!/not on the athenaOne schedule/i.test(FAILED),
+  'generic open-failed does not falsely claim the appointment was absent from the schedule');
+[
+  ['appointment-id-not-found', /scheduled appointment row could not be found/],
+  ['row-identity-changed', /schedule row changed before it could be opened/],
+  ['schedule-date-restore-failed', /scheduled day could not be verified/],
+  ['no-name-match', /could not find a matching chart/],
+  ['ambiguous', /more than one matching chart was found/],
+  ['dob-mismatch', /chart identity could not be verified/],
+  ['rows-not-rendered', /did not finish showing the chart search/]
+].forEach(function (pair) {
+  const html = render([{ name: 'Aaa Bbb', ok: false, reason: pair[0] }]);
+  ok(pair[1].test(html), 'precise failure "' + pair[0] + '" keeps an honest plain-language label', 'got: ' + html);
+  ok(/pp-bad/.test(html), 'precise failure "' + pair[0] + '" remains a visible failure');
 });
 
 ok(/could not read/.test(render([{ name: 'Aaa Bbb', ok: false }])),

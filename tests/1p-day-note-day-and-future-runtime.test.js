@@ -62,26 +62,13 @@
  * hard-disabled, tnAggregate short-circuiting on the checkbox) is CLOSED:
  * dayfacts-1.0.1 runs the real per-row tally in day-facts mode too.
  *
- * ===== OPEN ENGINE GAP (reported, NOT forced green) =========================
- * The same contract says the legacy ladder NEVER fires for a row whose direct
- * read SUCCEEDED (at most one scoped read per row per day). The engine bytes
- * under test still run the inline fold-in lane after a successful direct read:
- *   1p-feat_mls_schedimport_exact.js:5930  the inline lane's condition has no
- *     `one.todayNote == null` guard (the tail pass has one at :6479/:6517);
- *   1p-feat_mls_schedimport_exact.js:5633  the direct-read success stamps only
- *     the receipt row (todayNote/todayNoteReadAt), never the day ledger;
- *   1p-feat_mls_schedimport_exact.js:4690  dnAlreadyReadToday reads that
- *     ledger, which is persisted at finalization - so it cannot dedupe
- *     INTRA-batch and the "already-read" rung never catches the row.
- * MEASURED on this suite's fixture: every settled-OFF row gets its one scoped
- * bridge read AND a second scoped vp read (one.todayNoteAttempts === 1 on
- * every row) - 2*rows scoped reads where the contract allows one. See the
- * TODO(dfc-1.1.0-double-read) block in
- * testDayFactsOpensChartsAndSkipsHistoricalBodies: the direct lane is pinned
- * EXACTLY (one bridge-transport read per row, todayNote true, the saved
- * same-day body) and every EXTRA read is pinned to the pulled-day scope, but
- * total noteCalls is deliberately NOT pinned at 2*rows - that would freeze
- * the gap.
+ * ===== dfc-1.1.1: direct success closes the legacy ladder ===================
+ * The legacy inline and tail ladders now both require todayNote to remain
+ * unsettled. A successful direct scoped bridge read stamps todayNote=true, so
+ * the batch performs exactly one pulled-day read per row instead of opening
+ * every chart a second time. The runtime assertions below pin both the total
+ * call count and the absence of legacy-attempt counters so this slowdown
+ * cannot quietly return.
  *
  * Everything runs the REAL importer against a fake extension. Synthetic
  * names/DOB/MRN only; no network, no PHI.
@@ -253,23 +240,10 @@ async function testDayFactsOpensChartsAndSkipsHistoricalBodies() {
   eq(receipt.todayNoteNotRequested, 0,
     'the day-facts receipt still reports pulled-day notes as not-requested - the retired checkbox short-circuit is back');
 
-  /* ===== TODO(dfc-1.1.0-double-read) - OPEN ENGINE GAP ==================== *
-   * Contract: on direct-read SUCCESS the legacy vp/tn/defer/idle ladder never
-   * fires for that row - at most ONE scoped read per row per day. The engine
-   * bytes under test still run the inline fold-in lane after a successful
-   * direct read: 1p-feat_mls_schedimport_exact.js:5930 has no
-   * `one.todayNote == null` guard (the tail pass has one at :6479/:6517), and
-   * dnAlreadyReadToday (:4690) cannot dedupe intra-batch because the ledger it
-   * reads is only persisted at finalization while the direct read (:5633)
-   * stamps just the receipt row. MEASURED on this fixture: 2 scoped reads per
-   * row (one bridge + one vp), one.todayNoteAttempts === 1 on every row, and
-   * mls-connect's real runForPatient (dayScoped + settled) would drive Athena
-   * again for each. The pins above bound the harm - every extra read is still
-   * scoped to the pulled day, never unscoped, and the receipt never
-   * over-counts - and total noteCalls is deliberately NOT pinned at 2*ROWS
-   * (that would freeze the gap). When the guard lands, tighten to:
-   *   eq(h.noteCalls.length, ROWS, ...)
-   * ======================================================================== */
+  eq(h.noteCalls.length, ROWS,
+    'a successful direct pulled-day read was followed by a redundant legacy chart read');
+  ok(receipt.patients.every(p => Number(p.todayNoteAttempts || 0) === 0),
+    'the legacy day-note ladder ran after direct scoped success');
 }
 
 /* --------------- 2. day-facts is NOT full notes (the differential control) */
@@ -425,7 +399,7 @@ async function main() {
   testFutureDayIsStaticallyRefused();
   testOneRowCannotStallTheBatch();
   await flush(5);
-  console.log('PASS 1p-day-note-day-and-future: ' + checks + ' checks - dayfacts-1.0.0 + dfc-1.1.0: day-facts opens EVERY scheduled chart, saves its facts, makes exactly one scoped AllVisits bridge read per row and saves the pulled day\'s OWN encounter body (never a historical one), ON adds the full unscoped traversal, an unchosen preference blocks every read, ON retry rows retain the frozen pull day, and the future-day + per-row deadline guards still stand. OPEN GAP: the legacy inline vp lane still re-reads the same scoped day AFTER a successful direct read (see TODO(dfc-1.1.0-double-read)).');
+  console.log('PASS 1p-day-note-day-and-future: ' + checks + ' checks - dayfacts-1.0.0 + dfc-1.1.1: day-facts opens EVERY scheduled chart, saves its facts, makes exactly one scoped AllVisits bridge read per row with no legacy duplicate, and saves the pulled day\'s OWN encounter body (never a historical one); ON adds the full unscoped traversal, an unchosen preference blocks every read, ON retry rows retain the frozen pull day, and the future-day + per-row deadline guards still stand.');
 }
 
 const watchdog = setTimeout(() => { console.error(new Error('1p-day-note-day-and-future did not finish')); process.exit(1); }, 60000);

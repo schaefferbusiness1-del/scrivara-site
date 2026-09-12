@@ -1399,7 +1399,7 @@
       '</details>' +
       '<div class="field" id="mlsDtResetField"><div class="row"><button type="button" class="btn-ghost" id="mlsDtReset" aria-describedby="mlsDtResetStatus">Reset this draft type</button><span class="mini" id="mlsDtResetStatus" role="status"></span></div></div>';
     var family = sec.querySelector('#mlsDtFamily');
-    FAMILY_IDS.forEach(function (id) {
+    FAMILY_IDS.filter(function (id) { return SECTION_FAMILIES.indexOf(id) < 0 && id !== 'soap'; }).forEach(function (id) {
       var o = document.createElement('option'); o.value = id; o.textContent = FAMILY_LABELS[id]; family.appendChild(o);
     });
     var saveRow = null;
@@ -1717,13 +1717,11 @@
          per saved format, that is a real feature and it starts in the
          generator - not here. */
       selected.templateMode = enumValue('templateMode', q('mlsDtSectionTemplate').value, selected.templateMode);
-      /* opnk-1.0.0: and for op notes, write THROUGH to the key the generator
-         actually reads, so choosing a mode here changes the next draft instead
-         of only changing a stored value nothing consults. Same three-value
-         vocabulary, same read-back-before-believing discipline the Op Note Room
-         rail uses; a storage write that does not land is reported, never
-         assumed. */
-      if (id === 'opnote') opnoteRoomTemplateModeSet(selected.templateMode);
+      /* opnk-1.1.0: keep the generator-owned op-note mode staged with the rest
+         of Settings. Writing its separate compatibility key here made any
+         unrelated keystroke (and even Reset) persist before Save Settings.
+         saveFromUi() writes it through only after the bounded Settings snapshot
+         itself lands. */
       selected.when = cleanReusableText(q('mlsDtSectionWhen').value, 180);
       /* tplauto-1.0.0: once a rule has been PROPOSED for this format, his
          next save is his decision about it - including a decision to leave
@@ -1748,7 +1746,9 @@
     working = readForScope(workingScope);
     if (!working) { workingScopeInvalid = true; return false; }
     templateModeExplicit = Object.create(null);
-    activeFamily = 'soap';
+    /* Visit note/SOAP families are owned by the first, per-section Visit note
+       templates surface below. Keep this editor focused on non-visit outputs. */
+    activeFamily = 'opnote';
     mountSettings();
     mountVisitTemplates();
     loadUi(activeFamily);
@@ -1806,7 +1806,16 @@
     captureUi(activeFamily);
     if (!scopeCurrent(workingScope)) return settingsScopeFailure();
     var saved = writeForScope(working, workingScope);
-    return saved || settingsScopeFailure();
+    if (!saved) return settingsScopeFailure();
+    /* The op-note generator still reads its established compatibility key.
+       Mirror the saved active profile only at the explicit Save Settings
+       boundary, so editing or resetting this panel never persists early. */
+    try {
+      var op = saved.families && saved.families.opnote;
+      var activeOp = op && activeSectionProfile('opnote', op.profiles, op.activeProfile);
+      if (activeOp) opnoteRoomTemplateModeSet(activeOp.templateMode);
+    } catch (eOpMode) {}
+    return saved;
   }
   function discardUi() {
     resetSectionImport(true);
@@ -1814,7 +1823,7 @@
     workingScope = null;
     workingScopeInvalid = false;
     templateModeExplicit = Object.create(null);
-    activeFamily = 'soap';
+    activeFamily = 'opnote';
   }
   function onSessionBoundary() {
     storageBoundaryEpoch++;
@@ -1867,6 +1876,7 @@
   var VISIT_TEMPLATE_PROFILE_ID = 'my_template';
   var VISIT_TEMPLATE_PROFILE_LABEL = 'My template';
   var VISIT_TEMPLATE_SECTIONS = [
+    ['soap', 'Whole visit note / SOAP', 'The complete visit note shape, when you want one reusable format for the whole note.'],
     ['hpi', 'HPI', 'The story of what brought the patient in today.'],
     ['ros', 'ROS', 'The symptoms you asked about.'],
     ['exam', 'Exam', 'What you found when you examined the patient.'],
@@ -1884,7 +1894,7 @@
 
   function visitTemplateFamily(id) {
     var clean = String(id || '');
-    return SECTION_FAMILIES.indexOf(clean) >= 0 ? clean : '';
+    return (clean === 'soap' || SECTION_FAMILIES.indexOf(clean) >= 0) ? clean : '';
   }
   /* THE SHARED READER. The op-note uploader's own per-file dispatcher
      (_tplReadAnyFile in the shell: PDF text layer, .docx through the pinned
@@ -1913,6 +1923,22 @@
       templateMode: has(['strict', 'adapt', 'guide'], active.templateMode) ? String(active.templateMode) : SECTION_TEMPLATE_DEFAULT
     };
   }
+  function visitTemplateProfiles(family) {
+    family = visitTemplateFamily(family);
+    if (!family) return [];
+    try { return visibleSectionProfiles(family, (read().families[family] || {}).profiles); }
+    catch (e) { return []; }
+  }
+  function visitTemplateSelectedProfile(family) {
+    family = visitTemplateFamily(family);
+    var sel = q('mlsVnTplProfile_' + family), state = (read().families[family] || familyDefaults(family));
+    var profiles = visibleSectionProfiles(family, state.profiles);
+    /* A freshly mounted selector has no value until its options are painted.
+       Fall back to the persisted owner, not the first row, so reopening
+       Settings displays and edits the same format generation is using. */
+    var requested = sel && sel.value ? String(sel.value) : String(state.activeProfile || '');
+    return activeSectionProfile(family, profiles, requested);
+  }
   function visitTemplatePreviewText(text) {
     var lines = String(text || '').split('\n').map(function (line) { return line.trim(); })
       .filter(function (line) { return !!line; }).slice(0, 2);
@@ -1927,13 +1953,19 @@
   }
   /* The ONE hazard this screen has to close. saveFromUi() writes the `working`
      snapshot taken when Settings opened; a direct profileEditor write made
-     while that panel is mounted would be silently overwritten by the next
-     press of "Save settings". Re-taking the snapshot after every write is what
-     keeps the two doors from fighting over one stored value. */
-  function visitTemplateResync() {
+     while that panel is mounted would otherwise be overwritten by the next
+     press of "Save settings". Merge only the just-persisted visit family into
+     that snapshot so unrelated unsaved Settings edits remain exactly as typed. */
+  function visitTemplateResync(family) {
     try {
-      var modal = q('settingsModal');
-      if (modal && modal.classList && modal.classList.contains('show')) beginSettings();
+      var pending = working ? clone(working) : null, fresh = read();
+      if (pending && fresh && family && pending.families && fresh.families && fresh.families[family]) {
+        pending.families[family] = fresh.families[family];
+        working = pending;
+      } else {
+        var modal = q('settingsModal');
+        if (modal && modal.classList && modal.classList.contains('show')) beginSettings();
+      }
     } catch (e) {}
     try { if (typeof window.syncPrefsToServer === 'function') window.syncPrefsToServer({ notify: false }); } catch (eSync) {}
     paintVisitTemplates();
@@ -1944,22 +1976,35 @@
     var editor = profileEditor(family);
     if (!editor) return false;
     var clean = cleanTemplate(text, MAX_SECTION_TEMPLATE);
-    if (!clean) return false;
     var wanted = has(['strict', 'adapt', 'guide'], mode) ? String(mode) : SECTION_TEMPLATE_DEFAULT;
-    var mine = editor.list().filter(function (row) { return row.id === VISIT_TEMPLATE_PROFILE_ID; })[0];
+    var selected = visitTemplateSelectedProfile(family) || {};
+    var targetId = String(selected.id || VISIT_TEMPLATE_PROFILE_ID);
+    var name = q('mlsVnTplName_' + family), when = q('mlsVnTplWhen_' + family), section = q('mlsVnTplSectionMode_' + family), comments = q('mlsVnTplComments_' + family);
+    var label = cleanReusableText(name ? name.value : selected.label, 80) || VISIT_TEMPLATE_PROFILE_LABEL;
+    var useWhen = cleanReusableText(when ? when.value : selected.when, 180);
+    var sectionMode = section && section.value ? String(section.value) : String(selected.sectionMode || (SECTION_MODES[family] || [])[0] && SECTION_MODES[family][0][0] || 'default');
+    var instructions = cleanReusableText(comments ? comments.value : selected.instructions, MAX_INSTRUCTIONS);
+    var mine = editor.list().filter(function (row) { return row.id === targetId; })[0];
     var saved;
     if (mine) {
-      saved = editor.update(VISIT_TEMPLATE_PROFILE_ID, {
-        label: VISIT_TEMPLATE_PROFILE_LABEL, templateText: clean, templateMode: wanted
+      saved = editor.update(targetId, {
+        label: label, when: useWhen, sectionMode: sectionMode, instructions: instructions, templateText: clean, templateMode: wanted
       });
-      if (saved) saved = editor.select(VISIT_TEMPLATE_PROFILE_ID);
+      if (saved) saved = editor.select(targetId);
     } else {
       saved = editor.add({
-        id: VISIT_TEMPLATE_PROFILE_ID, label: VISIT_TEMPLATE_PROFILE_LABEL, when: '',
-        templateText: clean, templateMode: wanted, instructions: ''
+        id: targetId, label: label, when: useWhen, sectionMode: sectionMode,
+        templateText: clean, templateMode: wanted, instructions: instructions
       });
     }
     return saved ? true : false;
+  }
+  function visitTemplateClear(family) {
+    family = visitTemplateFamily(family);
+    if (!family) return false;
+    var editor = profileEditor(family), selected = visitTemplateSelectedProfile(family) || {};
+    var targetId = String(selected.id || VISIT_TEMPLATE_PROFILE_ID);
+    return !!(editor && targetId && editor.update(targetId, { templateText: '', templateMode: 'guide' }));
   }
   function visitTemplateRemove(family) {
     family = visitTemplateFamily(family);
@@ -1967,17 +2012,17 @@
     var editor = profileEditor(family);
     if (!editor) return false;
     var rows = editor.list();
-    var mine = rows.filter(function (row) { return row.id === VISIT_TEMPLATE_PROFILE_ID; })[0];
+    var selected = visitTemplateSelectedProfile(family) || {};
+    var selectedId = String(selected.id || VISIT_TEMPLATE_PROFILE_ID);
+    var mine = rows.filter(function (row) { return row.id === selectedId; })[0];
     var shipped = sectionProfiles(family);
     var fallback = String((shipped[0] || {}).id || '');
     if (mine && rows.length > 1) {
-      if (!editor.remove(VISIT_TEMPLATE_PROFILE_ID)) return false;
+      if (!editor.remove(selectedId)) return false;
       if (fallback && editor.list().some(function (row) { return row.id === fallback; })) editor.select(fallback);
       return true;
     }
-    var target = mine ? VISIT_TEMPLATE_PROFILE_ID : String((editor.active() || {}).id || '');
-    if (!target) return false;
-    return editor.update(target, { templateText: '', templateMode: 'guide' }) ? true : false;
+    return false;
   }
   function visitTemplateEditorClose(family) {
     var host = q('mlsVnTplEditor_' + family);
@@ -1993,9 +2038,14 @@
     var wasOpen = host.getAttribute('data-open') === '1';
     VISIT_TEMPLATE_SECTIONS.forEach(function (row) { visitTemplateEditorClose(row[0]); });
     if (wasOpen) { visitTemplateStatus(''); return; }
-    var current = visitActiveTemplate(family);
+    var current = visitTemplateSelectedProfile(family) || visitActiveTemplate(family);
     var box = q('mlsVnTplText_' + family);
     if (box) box.value = current.templateText;
+    var name = q('mlsVnTplName_' + family), when = q('mlsVnTplWhen_' + family), section = q('mlsVnTplSectionMode_' + family), comments = q('mlsVnTplComments_' + family);
+    if (name) name.value = String(current.label || VISIT_TEMPLATE_PROFILE_LABEL);
+    if (when) when.value = String(current.when || '');
+    if (section) section.value = String(current.sectionMode || ((SECTION_MODES[family] || [])[0] || [])[0] || 'default');
+    if (comments) comments.value = String(current.instructions || '');
     var picked = current.templateText ? current.templateMode : SECTION_TEMPLATE_DEFAULT;
     VISIT_TEMPLATE_MODES.forEach(function (row) {
       var radio = q('mlsVnTplMode_' + family + '_' + row[0]);
@@ -2022,7 +2072,15 @@
     VISIT_TEMPLATE_SECTIONS.forEach(function (row) {
       var preview = q('mlsVnTplPreview_' + row[0]);
       if (!preview) return;
-      var current = visitActiveTemplate(row[0]);
+      var family = row[0], profiles = visitTemplateProfiles(family), current = visitTemplateSelectedProfile(family) || visitActiveTemplate(family);
+      var selector = q('mlsVnTplProfile_' + family);
+      if (selector) {
+        while (selector.firstChild) selector.removeChild(selector.firstChild);
+        profiles.forEach(function (profile) { var option = document.createElement('option'); option.value = String(profile.id || ''); option.textContent = String(profile.label || profile.id || ''); selector.appendChild(option); });
+        selector.value = current.id || (profiles[0] && profiles[0].id) || '';
+      }
+      var del = q('mlsVnTplDelete_' + family);
+      if (del) { del.disabled = profiles.length <= 1; del.setAttribute('aria-disabled', del.disabled ? 'true' : 'false'); }
       preview.textContent = visitTemplatePreviewText(current.templateText);
       var note = q('mlsVnTplNow_' + row[0]);
       if (!note) return;
@@ -2047,22 +2105,24 @@
           '<p class="mini" id="mlsVnTplPreview_' + family + '" style="margin:0;white-space:pre-wrap;font:12px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace"></p>' +
           '<p class="mini" id="mlsVnTplNow_' + family + '" style="margin:4px 0 0;display:none;color:#8A5A00"></p>' +
         '</div>' +
-        '<button type="button" class="btn-ghost" id="mlsVnTplOpen_' + family + '" aria-expanded="false" aria-controls="mlsVnTplEditor_' + family + '">Paste or upload a template</button>' +
+        '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><label for="mlsVnTplProfile_' + family + '" class="mini">Saved format</label><select class="sf-select" id="mlsVnTplProfile_' + family + '" aria-label="Choose a saved ' + title + ' format"></select><button type="button" class="btn-ghost" id="mlsVnTplAdd_' + family + '" aria-label="Add a ' + title + ' format">＋ Add</button><button type="button" class="btn-ghost" id="mlsVnTplDelete_' + family + '" aria-label="Delete the selected ' + title + ' format">Delete format</button><button type="button" class="btn-ghost" id="mlsVnTplOpen_' + family + '" aria-label="Paste or upload a ' + title + ' template" aria-expanded="false" aria-controls="mlsVnTplEditor_' + family + '">Paste or upload a template</button></div>' +
       '</div>' +
       '<div id="mlsVnTplEditor_' + family + '" data-open="0" hidden style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">' +
         '<label for="mlsVnTplText_' + family + '">Paste your template here, or upload the file you already use.</label>' +
         '<textarea class="note-box" id="mlsVnTplText_' + family + '" maxlength="' + MAX_SECTION_TEMPLATE + '" placeholder="Type or paste the headings and wording you want MLS to use for this section." style="min-height:140px;box-sizing:border-box"></textarea>' +
         '<div class="row" style="margin-top:8px;gap:8px;align-items:center;flex-wrap:wrap">' +
-          '<button type="button" class="btn-ghost" id="mlsVnTplUpload_' + family + '">Upload a file</button>' +
+          '<button type="button" class="btn-ghost" id="mlsVnTplUpload_' + family + '" aria-label="Upload a ' + title + ' template file">Upload a file</button>' +
           '<span class="mini" id="mlsVnTplFileName_' + family + '" style="color:var(--muted)"></span>' +
         '</div>' +
         '<p class="mini" style="margin:6px 0 0;color:var(--muted)">Word, PDF or plain text. Keep patient facts out of it - this is only the shape of the section.</p>' +
+        '<details style="margin-top:10px"><summary style="cursor:pointer;font-weight:700">Advanced format settings</summary><div style="display:grid;gap:8px;margin-top:8px"><label>Format name<input class="sf-input" id="mlsVnTplName_' + family + '" type="text" maxlength="80"></label><label>Use automatically when<input class="sf-input" id="mlsVnTplWhen_' + family + '" type="text" maxlength="180" placeholder="Optional trigger or context"><button type="button" class="btn-ghost" id="mlsVnTplWhenSuggest_' + family + '" style="margin-top:6px">Suggest from this template</button><p class="mini" id="mlsVnTplWhenWhy_' + family + '" role="status" style="display:none;color:#8A5A00"></p></label><label>Section format<select class="sf-select" id="mlsVnTplSectionMode_' + family + '"></select></label><label>AI comments for this format<textarea class="note-box" id="mlsVnTplComments_' + family + '" maxlength="' + MAX_INSTRUCTIONS + '" style="min-height:60px"></textarea></label></div></details>' +
+        '<details style="margin-top:10px"><summary style="cursor:pointer;font-weight:700">Create from a past example</summary><p class="mini">Paste a de-identified example and MLS will make a PHI-stripped reusable preview. Nothing is saved until you apply it and save the format.</p><textarea class="note-box" id="mlsVnTplExample_' + family + '" maxlength="20000" style="min-height:90px" placeholder="Paste an example visit note here"></textarea><div class="row" style="margin-top:6px;gap:8px"><button type="button" class="btn-ghost" id="mlsVnTplExampleDerive_' + family + '">Create preview</button><button type="button" class="btn-green" id="mlsVnTplExampleApply_' + family + '" disabled>Apply preview</button></div><div id="mlsVnTplExamplePreview_' + family + '" hidden><label>Suggested format name<input class="sf-input" id="mlsVnTplExampleName_' + family + '" maxlength="80"></label><label>Reusable template preview<textarea class="note-box" id="mlsVnTplExampleTemplate_' + family + '" maxlength="2000"></textarea></label><label>AI comments preview<textarea class="note-box" id="mlsVnTplExampleComments_' + family + '" maxlength="' + MAX_INSTRUCTIONS + '"></textarea></label></div><p class="mini" id="mlsVnTplExampleStatus_' + family + '" role="status"></p></details>' +
         '<p style="margin:12px 0 4px;font-weight:700">How closely should MLS follow it?</p>' +
         '<div id="mlsVnTplModes_' + family + '"></div>' +
         '<div class="row" style="margin-top:12px;gap:8px;flex-wrap:wrap">' +
-          '<button type="button" class="btn-green" id="mlsVnTplSave_' + family + '">Save</button>' +
-          '<button type="button" class="btn-ghost" id="mlsVnTplRemove_' + family + '">Remove</button>' +
-          '<button type="button" class="btn-ghost" id="mlsVnTplCancel_' + family + '">Cancel</button>' +
+          '<button type="button" class="btn-green" id="mlsVnTplSave_' + family + '" aria-label="Save ' + title + ' template">Save</button>' +
+          '<button type="button" class="btn-ghost" id="mlsVnTplClear_' + family + '" aria-label="Clear ' + title + ' template">Clear template</button>' +
+          '<button type="button" class="btn-ghost" id="mlsVnTplCancel_' + family + '" aria-label="Cancel editing ' + title + ' template">Cancel</button>' +
         '</div>' +
       '</div>';
     var modes = row.querySelector('#mlsVnTplModes_' + family);
@@ -2088,7 +2148,64 @@
       wrap.appendChild(why);
       modes.appendChild(wrap);
     });
+    var sectionMode = row.querySelector('#mlsVnTplSectionMode_' + family);
+    (SECTION_MODES[family] || []).forEach(function (choice) { var option = document.createElement('option'); option.value = choice[0]; option.textContent = choice[1]; sectionMode.appendChild(option); });
+    row.querySelector('#mlsVnTplWhenSuggest_' + family).addEventListener('click', function () {
+      var when = row.querySelector('#mlsVnTplWhen_' + family), why = row.querySelector('#mlsVnTplWhenWhy_' + family), selected = visitTemplateSelectedProfile(family) || {};
+      var result = suggestWhen(family, selected.id, (row.querySelector('#mlsVnTplName_' + family) || {}).value, (row.querySelector('#mlsVnTplText_' + family) || {}).value);
+      if (result.error === 'empty') { why.textContent = 'Add the template first - the suggestion is read from its headings.'; why.style.display = ''; return; }
+      if (result.error || !result.result) { why.textContent = 'Suggestions are not available here. Type the rule yourself.'; why.style.display = ''; return; }
+      when.value = result.result.terms.join(', '); why.textContent = result.result.why || ''; why.style.display = result.result.why ? '' : 'none';
+    });
+    var examplePreview = null, exampleImporterSession = null;
+    row.querySelector('#mlsVnTplExampleDerive_' + family).addEventListener('click', async function () {
+      var status = row.querySelector('#mlsVnTplExampleStatus_' + family), text = row.querySelector('#mlsVnTplExample_' + family).value;
+      var selected = visitTemplateSelectedProfile(family) || {}, importer = exampleImporter(family, selected.id);
+      if (!importer || !String(text || '').trim()) { status.textContent = 'Paste an example first.'; return; }
+      status.textContent = 'Creating a private preview...';
+      try { var extracted = await importer.extract({ kind: 'draft', text: text }); examplePreview = importer.preview(await importer.derive(extracted)); exampleImporterSession = importer; row.querySelector('#mlsVnTplExampleName_' + family).value = examplePreview.name || ''; row.querySelector('#mlsVnTplExampleTemplate_' + family).value = examplePreview.templateText || ''; row.querySelector('#mlsVnTplExampleComments_' + family).value = examplePreview.instructions || ''; row.querySelector('#mlsVnTplExamplePreview_' + family).hidden = !examplePreview; row.querySelector('#mlsVnTplExampleApply_' + family).disabled = !examplePreview; status.textContent = examplePreview ? 'Preview ready. Review and edit it, then apply.' : ''; }
+      catch (error) { status.textContent = String(error && error.message || 'Preview unavailable.'); }
+    });
+    row.querySelector('#mlsVnTplExampleApply_' + family).addEventListener('click', function () {
+      var status = row.querySelector('#mlsVnTplExampleStatus_' + family);
+      if (!exampleImporterSession || !exampleImporterSession.scopeCurrent() || !examplePreview) { status.textContent = 'Create a preview first.'; return; }
+      examplePreview = { name: row.querySelector('#mlsVnTplExampleName_' + family).value, templateText: row.querySelector('#mlsVnTplExampleTemplate_' + family).value, instructions: row.querySelector('#mlsVnTplExampleComments_' + family).value };
+      if (!String(examplePreview.templateText || '').trim()) { status.textContent = 'The reusable template preview cannot be blank.'; return; }
+      row.querySelector('#mlsVnTplName_' + family).value = examplePreview.name || '';
+      row.querySelector('#mlsVnTplText_' + family).value = examplePreview.templateText || '';
+      row.querySelector('#mlsVnTplComments_' + family).value = examplePreview.instructions || '';
+      status.textContent = 'Preview applied to the editor. Review it, then save.';
+    });
     row.querySelector('#mlsVnTplOpen_' + family).addEventListener('click', function () { visitTemplateEditorOpen(family); });
+    row.querySelector('#mlsVnTplProfile_' + family).addEventListener('change', function () {
+      examplePreview = null; exampleImporterSession = null;
+      row.querySelector('#mlsVnTplExampleApply_' + family).disabled = true;
+      visitTemplateEditorClose(family);
+      var selector = row.querySelector('#mlsVnTplProfile_' + family);
+      var editor = profileEditor(family);
+      var picked = selector && String(selector.value || '');
+      if (!editor || !picked || !editor.select(picked)) {
+        paintVisitTemplates();
+        visitTemplateStatus('That saved format could not be selected on this device. Try again.', true);
+        return;
+      }
+      visitTemplateResync(family);
+      visitTemplateStatus('Selected. MLS will use this saved format for ' + title + '.');
+    });
+    row.querySelector('#mlsVnTplAdd_' + family).addEventListener('click', function () {
+      var editor = profileEditor(family), profiles = visitTemplateProfiles(family);
+      if (!editor || profiles.length >= MAX_SECTION_PROFILES) { visitTemplateStatus('You can keep up to ' + MAX_SECTION_PROFILES + ' saved formats per section.', true); return; }
+      var next = editor.add({ id: 'visit_' + (profiles.length + 1), label: 'New ' + title + ' format', templateText: '', templateMode: SECTION_TEMPLATE_DEFAULT, sectionMode: profiles[0] && profiles[0].sectionMode });
+      if (!next) { visitTemplateStatus('That format could not be added on this device. Try again.', true); return; }
+      visitTemplateResync(family);
+      var selector = q('mlsVnTplProfile_' + family); if (selector) selector.value = next.id;
+      visitTemplateEditorClose(family);
+      visitTemplateEditorOpen(family);
+    });
+    row.querySelector('#mlsVnTplDelete_' + family).addEventListener('click', function () {
+      if (!visitTemplateRemove(family)) { visitTemplateStatus('The final format cannot be deleted.', true); return; }
+      visitTemplateResync(family); visitTemplateEditorClose(family);
+    });
     row.querySelector('#mlsVnTplCancel_' + family).addEventListener('click', function () { visitTemplateEditorClose(family); visitTemplateStatus(''); });
     row.querySelector('#mlsVnTplUpload_' + family).addEventListener('click', function () {
       var input = q('mlsVnTplFile');
@@ -2100,30 +2217,26 @@
     row.querySelector('#mlsVnTplSave_' + family).addEventListener('click', function () {
       var box = q('mlsVnTplText_' + family);
       var text = box ? box.value : '';
-      if (!cleanTemplate(text, MAX_SECTION_TEMPLATE)) {
-        visitTemplateStatus('Nothing to save yet - paste or upload a template first.', true);
-        return;
-      }
       if (!visitTemplateSave(family, text, visitTemplatePickedMode(family))) {
         visitTemplateStatus('That template could not be saved on this device. Try again.', true);
         return;
       }
       visitTemplateEditorClose(family);
-      visitTemplateResync();
+      visitTemplateResync(family);
       visitTemplateStatus('Saved. MLS will use this for your ' + title + ' section.');
       try { if (typeof window.toast === 'function') window.toast('Visit note template saved for ' + title + '.', 'ok'); } catch (eToast) {}
     });
-    row.querySelector('#mlsVnTplRemove_' + family).addEventListener('click', function () {
-      if (!visitTemplateRemove(family)) {
+    row.querySelector('#mlsVnTplClear_' + family).addEventListener('click', function () {
+      if (!visitTemplateClear(family)) {
         visitTemplateStatus('That template could not be removed on this device. Try again.', true);
         return;
       }
       var box = q('mlsVnTplText_' + family);
       if (box) box.value = '';
       visitTemplateEditorClose(family);
-      visitTemplateResync();
-      visitTemplateStatus('Removed. MLS writes your ' + title + ' section from what was said.');
-      try { if (typeof window.toast === 'function') window.toast('Visit note template removed for ' + title + '.', 'ok'); } catch (eToast2) {}
+      visitTemplateResync(family);
+      visitTemplateStatus('Cleared. MLS writes your ' + title + ' section from what was said.');
+      try { if (typeof window.toast === 'function') window.toast('Visit note template cleared for ' + title + '.', 'ok'); } catch (eToast2) {}
     });
     return row;
   }
@@ -2137,7 +2250,7 @@
     sec.id = 'mlsVisitNoteTemplatesSection';
     sec.innerHTML =
       '<p class="set-head">📋 Visit note templates</p>' +
-      '<p class="set-desc">These shape your visit notes: HPI, ROS, Exam, Assessment, Plan. Operative note templates are separate - find them under Templates.</p>' +
+      '<p class="set-desc">These shape your visit notes: Whole visit / SOAP, HPI, ROS, Exam, Assessment, Plan. Operative note templates are separate - find them under Templates.</p>' +
       '<button type="button" class="btn-ghost" id="mlsVnTplOpNoteLink" style="margin:-4px 0 12px">Open operative note templates</button>' +
       '<div id="mlsVnTplRows"></div>' +
       '<p class="mini" id="mlsVnTplStatus" role="status" style="margin:6px 0 0;color:var(--muted)"></p>' +

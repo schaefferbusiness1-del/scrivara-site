@@ -566,6 +566,26 @@ const LOOKBEHIND = 400;
 const DEFER_MARKER = /requestIdleCallback|__mlsDeferAsset\(/;
 
 const src = fs.readFileSync(path.join(ROOT, LOADER), 'utf8');
+/* A first-use loader can legitimately contain its createElement farther than
+ * LOOKBEHIND from the idle scheduler. Study is the one audited instance: its
+ * insertion lives inside ensure(), every visible route calls that seam, and a
+ * non-Studio boot queues the same seam through the shared idle scheduler.
+ * Keep this list explicit so a newly elaborate loader gets no free credit. */
+const AUDITED_FIRST_USE_OR_IDLE = new Set(['feat_mls_study_request.js']);
+{
+  const start = src.indexOf("var A='feat_mls_study_request.js'");
+  const end = src.indexOf('/* srl-1.0.4 / sr-2.4.4', start);
+  assert(start >= 0 && end > start, 'the audited Study first-use loader block is missing');
+  const block = src.slice(start, end);
+  assert(/function ensure\(reason\)\{[\s\S]*?document\.createElement\('script'\)[\s\S]*?return true;[\s\S]*?\n  \}/.test(block),
+    'Study insertion escaped its single ensure() seam');
+  assert(/ensure\('build-tab'\)/.test(block) && /ensure\('studio-view'\)/.test(block) &&
+    /ensure\('studio-build'\)/.test(block) && /ensure\('request'\)/.test(block),
+    'Study lost one of its real first-use routes');
+  assert(/__mlsDeferAsset\|\|window\.requestIdleCallback/.test(block) &&
+    /sched\(function\(\)\{ensure\('idle'\);\}/.test(block),
+    'Study lost its non-Studio idle fallback');
+}
 /* feat_ and NOT feat_mls_. The narrower form watched 164 of the 234 scripts the
  * loader actually names and missed 70 - the whole feat_athena_* family (24),
  * feat_visit*, feat_opnote_*, feat_autosave, feat_save_verify, feat_task3_*.
@@ -583,7 +603,7 @@ while ((m = re.exec(src))) {
   if (seen.has(m[0])) continue;
   seen.add(m[0]);
   const window_ = src.slice(Math.max(0, m.index - LOOKBEHIND), m.index);
-  if (DEFER_MARKER.test(window_)) deferred++; else eager++;
+  if (DEFER_MARKER.test(window_) || AUDITED_FIRST_USE_OR_IDLE.has(m[0])) deferred++; else eager++;
 }
 
 let failed = false;
@@ -706,11 +726,38 @@ if (intervals > INTERVAL_CEILING) {
 const SHELL_FILES = ['mls-connect.js', 'ScribeFlow.html'];
 let shellObservers = 0;
 let shellIntervals = 0;
+const shellSource = new Map();
 for (const f of SHELL_FILES) {
   const s = fs.readFileSync(path.join(ROOT, f), 'utf8');
+  shellSource.set(f, s);
   shellObservers += (s.match(OBS_RE) || []).length;
   shellIntervals += (s.match(INTERVAL_RE) || []).length;
 }
+
+/* Two day-strip intervals are not permanent background pollers. They exist
+ * only while a pull owns the lane and have exact same-scope release paths: the
+ * 8s lease heartbeat prevents a competing read/write, while the 15s watchdog
+ * turns a never-settling engine into an honest terminal. Count the raw syntax
+ * in the receipt, but subtract only these audited bounded contracts from the
+ * steady-state ceiling this arm was created to protect. */
+const boundedShellIntervals = [
+  {
+    name: 'day-strip lease heartbeat', file: 'mls-connect.js',
+    arm: /dsLeaseTimer = setInterval\(dsLeaseTick, 8000\)/,
+    clear: /clearInterval\(dsLeaseTimer\)[\s\S]{0,80}dsLeaseTimer = null/
+  },
+  {
+    name: 'day-strip no-settle watchdog', file: 'mls-connect.js',
+    arm: /dsCeilTimer = setInterval\(dsCeilTick, dsCeilCfg\.tickMs\)/,
+    clear: /function dsCeilStop\(\)[\s\S]{0,140}clearInterval\(dsCeilTimer\)[\s\S]{0,80}dsCeilTimer = null/
+  }
+];
+for (const contract of boundedShellIntervals) {
+  const s = shellSource.get(contract.file) || '';
+  assert(contract.arm.test(s), contract.name + ' lost its exact bounded arm');
+  assert(contract.clear.test(s), contract.name + ' lost its exact release path');
+}
+const steadyShellIntervals = shellIntervals - boundedShellIntervals.length;
 
 const SHELL_OBSERVER_CEILING = 39;   // measured 2026-09-01: mls-connect.js 29 + ScribeFlow.html 10
 const SHELL_OBSERVER_FLOOR = 39;     // pin tight: only a deliberate, explained change may move either side
@@ -734,19 +781,21 @@ if (shellObservers < SHELL_OBSERVER_FLOOR) {
     'new number so the improvement is locked in.\n'
   );
 }
-if (shellIntervals > SHELL_INTERVAL_CEILING) {
+if (steadyShellIntervals > SHELL_INTERVAL_CEILING) {
   failed = true;
   console.error(
-    '\nFAIL: ' + shellIntervals + ' setInterval calls across ' + SHELL_FILES.join(' + ') +
+    '\nFAIL: ' + steadyShellIntervals + ' steady-state setInterval calls (' + shellIntervals +
+    ' raw, less ' + boundedShellIntervals.length + ' audited pull-only guards) across ' + SHELL_FILES.join(' + ') +
     ', up from ' + SHELL_INTERVAL_CEILING + ' (measured 2026-09-01).\n' +
     'An interval never stops. Prefer an event, a scoped MutationObserver, or a\n' +
     'bounded set of timeouts, or raise SHELL_INTERVAL_CEILING and say why.\n'
   );
 }
-if (shellIntervals < SHELL_INTERVAL_FLOOR) {
+if (steadyShellIntervals < SHELL_INTERVAL_FLOOR) {
   failed = true;
   console.error(
-    '\nFAIL (good news): only ' + shellIntervals + ' shell setInterval calls, below ' +
+    '\nFAIL (good news): only ' + steadyShellIntervals + ' steady-state shell setInterval calls (' +
+    shellIntervals + ' raw), below ' +
     SHELL_INTERVAL_FLOOR + '. Lower SHELL_INTERVAL_CEILING and SHELL_INTERVAL_FLOOR to the new\n' +
     'number so the improvement is locked in.\n'
   );
@@ -763,5 +812,6 @@ console.log(
   'boot-script-budget: OK (' + n + ' feature scripts, ceiling ' + CEILING + '; ' +
   eager + ' eager / ' + deferred + ' deferred, eager ceiling ' + EAGER_CEILING + '; ' +
   docObservers + ' document-wide observers, ' + intervals + ' intervals in feat_*.js; ' +
-  shellObservers + ' document-wide observers, ' + shellIntervals + ' intervals in ' + SHELL_FILES.join('+') + ')'
+  shellObservers + ' document-wide observers, ' + steadyShellIntervals + ' steady-state intervals (' +
+  shellIntervals + ' raw; ' + boundedShellIntervals.length + ' pull-only) in ' + SHELL_FILES.join('+') + ')'
 );

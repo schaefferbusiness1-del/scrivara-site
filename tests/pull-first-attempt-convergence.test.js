@@ -63,7 +63,7 @@ function part2() {
 
   /* ---- 3. auto-convergence, EXECUTED ---- */
   const s = connect.indexOf('var DS_BODIES_REASON');
-  const e = connect.indexOf('function startPull(autoRetry)');
+  const e = connect.indexOf('function startPull(autoRetry, providerOverride)');
   assert(s > 0 && e > s, 'dsAutoConvergeBodies block missing');
   const block = connect.slice(s, e);
 

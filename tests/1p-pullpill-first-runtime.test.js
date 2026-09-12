@@ -66,6 +66,9 @@ function eq(actual, expected, message) { assert.strictEqual(actual, expected, me
     mod.includes('var newRun = running && (!wasRunning || replacedWhileRunning);') &&
     mod.includes('if (newRun && (userOpened || replacedWhileRunning)) { userOpened = false; hidden = true; }'),
     'the run-boundary re-arm is gone - a replacement run could inherit an open card');
+  ok(mod.includes('if (newRun) {') &&
+    mod.includes('startedAt = 0; watchedMaxTotal = 0; doneDismissed = false; stopRequested = false;'),
+    'a normally observed new run can inherit the prior timer, maximum or Stop request');
   ok(mod.includes('if (!userOpened && !hidden) hidden = true;'),
     '`hidden` is no longer derived from the doctor gesture');
   const added = mod.slice(mod.indexOf('/* ===== pillfirst-1.0.0'), mod.indexOf('var wasRunning'));
@@ -245,6 +248,12 @@ async function runtime() {
     await clickPill();
     await page.waitForTimeout(TICK * 2);
     ok((await read()).dialogVisible, 'the card could not be re-opened, so the boundary below is unmeasured');
+    const opensBeforeObservedBoundary = (await read()).opens;
+    await page.evaluate(() => { const b = document.getElementById('mlsPullProgStop'); if (b) b.click(); });
+    await page.waitForTimeout(TICK);
+    s = await read();
+    eq(s.stopUsable, false, 'the old run did not carry a Stop request into the boundary fixture');
+    ok(/Stopping after this chart/.test(s.stopText), `the old run did not paint its Stop request: "${s.stopText}"`);
     await endRun(five);
     await page.waitForTimeout(SETTLE);
     ok((await read()).dialogVisible, 'the DONE card did not stay open for the doctor who opened it (dn-1.0)');
@@ -254,6 +263,16 @@ async function runtime() {
     eq(s.dialog, false, 'a NEW run inherited the open card and painted the big dialog with nobody asking - the defect');
     ok(s.pill && /show details/.test(s.pillText),
       `the new run left no corner pill to work from: "${s.pillText}"`);
+    eq(s.opens, opensBeforeObservedBoundary + 1,
+      'an ordinarily observed new run inherited the prior run timer/lifecycle');
+    await clickPill();
+    await page.waitForTimeout(TICK * 2);
+    s = await read();
+    eq(s.stopText, 'Stop pull', `the new run inherited the prior Stop label: "${s.stopText}"`);
+    ok(s.stopUsable, 'the new run inherited the prior disabled Stop control');
+    await clickHide();
+    await page.waitForTimeout(TICK * 2);
+    s = await read();
     measured.d_newRunPill = s.pillText;
 
     /* ===== (g) a run that ENDS needing attention says so IN THE PILL ==== */

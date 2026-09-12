@@ -18,7 +18,7 @@
  * That is why this file can add a whole new shell without touching clinical
  * logic: every action still runs through the control the app already trusts.
  *
- * Escape hatch: ?ui=classic, or Tools -> "Classic layout". One click, no reload.
+ * Escape hatch: ?ui=classic. The classic shell offers the return control.
  */
 (function () {
   'use strict';
@@ -1348,7 +1348,15 @@
        hidden wrapper *because* that row was "offered". Offered in the
        spec list is not offered on screen. */
     if (!available(el) || (!spec.as && !textOf(el))) return null;
-    return { el: el, label: spec.as || controlLabel(el), last: !!spec.last, reveal: spec.reveal || '' };
+    return {
+      el: el,
+      label: spec.as || controlLabel(el),
+      last: !!spec.last,
+      reveal: spec.reveal || '',
+      /* Stable across producer-node replacement, so an in-place Tools refresh
+         can keep keyboard focus on the same declared capability. */
+      key: spec.id ? ('id:' + spec.id) : ('within:' + spec.within + ':' + (spec.as || String(spec.label)))
+    };
   }
 
   /* Flat, in section order, so the row index used by the click handler is one
@@ -1405,48 +1413,93 @@
     menu.id = 'mlsToolsMenu';
     menu.setAttribute('role', 'menu');
     menu.setAttribute('aria-label', 'Tools');
-    /* ONE resolution pass. toolsSections() and toolsItems() would each walk the
-       live DOM, and a control that appeared between the two calls would shift
-       every row index after it - the click handler reads data-i, so the doctor
-       would press one row and run another. */
-    var sections = toolsSections();
-    var items = [];
-    sections.forEach(function (s) {
-      s.rows.concat(s.tailRows).forEach(function (it) { items[it.i] = it; });
-    });
+    var items = [], refreshObserver = null, refreshTimer = null, awayTimer = null;
     function row(it) {
       /* 2026-07-28 owner order: Tools is a windows-style launcher - icon above, name below. Same rows, same data-i indexing, same resolver; only the cell presentation changed. */
       var nm = it.label.replace(/[<>&]/g, '');
       var ic = it.icon || ({'Dictate':'🎙️','MLS Assistant':'🤖','Draft op note':'📝','Snapshot':'📸','Prep op notes':'📋','Schedule':'📅','Pre-visit intake forms':'🧾','Templates':'📄','Custom widget':'🧩','Pull activity':'📥','Analysis':'📊','Team':'👥','Staff prep':'👩‍⚕️','Legal requests':'⚖️','Verify saved data':'🛡️','Share / Export':'📤','Export everything for EMR':'💾','Chart import settings':'⚙️','Copy every visit from athenaOne':'📋','Add a visit':'➕','Settings':'⚙️','Admin':'🔐','Help':'🎓','Troubleshoot Athena':'🩺','Log out':'🚪'})[nm] || '🔧';
       return '<div class="r" role="menuitem" tabindex="0" data-i="' + it.i + '"><span class="ri" aria-hidden="true">' + ic + '</span><span class="rn">' + nm + '</span></div>';
     }
-    menu.innerHTML = sections.map(function (s) {
-      var body = s.rows.map(row).join('');
-      var tail = s.tailRows.map(row).join('');
-      /* The escape hatch rides the App section rather than floating under the
-         whole menu: it is an app-level choice like Settings, and a row with no
-         section was the last thing left in the flat list. */
-      if (s.id === 'app') {
-        /* 2026-07-28 owner order: the Classic layout row is gone - it was a one-way door. ?ui=classic stays as the un-advertised recovery path. */
+    function sameItems(next) {
+      if (next.length !== items.length) return false;
+      for (var i = 0; i < next.length; i++) {
+        if (next[i].el !== items[i].el || next[i].key !== items[i].key || next[i].label !== items[i].label ||
+            next[i].last !== items[i].last || next[i].reveal !== items[i].reveal) return false;
       }
-      if (!body && !tail) return '';
-      /* Log out is separated from what precedes it, and only when both exist -
-         a rule under nothing is a line for its own sake. */
-      var sep = (body && tail) ? '<div class="sep"></div>' : '';
-      return '<div class="grp" role="group" aria-label="' + s.label + '">' +
-        '<div class="gh" aria-hidden="true">' + s.label + '</div>' +
-        body + sep + tail + '</div>';
-    }).join('');
+      return true;
+    }
+    function positionMenu() {
+      if (!menu.parentNode) return;
+      var rect = anchor.getBoundingClientRect();
+      menu.style.left = Math.max(10, Math.min(rect.left - 40, W.innerWidth - menu.offsetWidth - 10)) + 'px';
+      menu.style.bottom = (W.innerHeight - rect.top + 10) + 'px';
+    }
+    function bindRows() {
+      qsa('.r', menu).forEach(function (menuRow) {
+        menuRow.addEventListener('click', function () {
+          /* 2026-07-28: data-classic rows no longer render; recovery stays at ?ui=classic. */
+          var it = items[parseInt(menuRow.getAttribute('data-i'), 10)];
+          close();
+          if (!it) return;
+          if (it.reveal) { revealSetting(it); return; }
+          runControl(it.el);
+        });
+        menuRow.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); menuRow.click(); }
+        });
+      });
+    }
+    function renderMenu(force) {
+      /* Resolve sections and their click targets in ONE live-DOM pass. A late
+         producer can insert a row ahead of another row; rebuilding both the
+         markup and this exact item array together prevents index drift. */
+      var sections = toolsSections(), nextItems = [];
+      sections.forEach(function (s) {
+        s.rows.concat(s.tailRows).forEach(function (it) { nextItems[it.i] = it; });
+      });
+      if (!force && sameItems(nextItems)) return false;
+      var activeRow = menu.contains(D.activeElement) && D.activeElement.closest ? D.activeElement.closest('.r') : null;
+      var activeIndex = activeRow ? parseInt(activeRow.getAttribute('data-i'), 10) : -1;
+      var activeKey = activeIndex >= 0 && items[activeIndex] ? items[activeIndex].key : '';
+      items = nextItems;
+      menu.innerHTML = sections.map(function (s) {
+        var body = s.rows.map(row).join('');
+        var tail = s.tailRows.map(row).join('');
+        /* The escape hatch rides the App section rather than floating under the
+           whole menu: it is an app-level choice like Settings, and a row with no
+           section was the last thing left in the flat list. */
+        if (s.id === 'app') {
+          /* 2026-07-28 owner order: the Classic layout row is gone - it was a one-way door. ?ui=classic stays as the un-advertised recovery path. */
+        }
+        if (!body && !tail) return '';
+        /* Log out is separated from what precedes it, and only when both exist -
+           a rule under nothing is a line for its own sake. */
+        var sep = (body && tail) ? '<div class="sep"></div>' : '';
+        return '<div class="grp" role="group" aria-label="' + s.label + '">' +
+          '<div class="gh" aria-hidden="true">' + s.label + '</div>' +
+          body + sep + tail + '</div>';
+      }).join('');
+      bindRows();
+      positionMenu();
+      if (activeRow) safe(function () {
+        var rows = Array.prototype.slice.call(qsa('.r', menu)), target = null;
+        for (var i = 0; i < items.length; i++) if (items[i].key === activeKey) { target = rows[i] || null; break; }
+        if (!target && rows.length) target = rows[Math.max(0, Math.min(activeIndex, rows.length - 1))];
+        if (target) target.focus();
+      });
+      return true;
+    }
+    renderMenu(true);
     (D.body || D.documentElement).appendChild(menu);
-
-    var rect = anchor.getBoundingClientRect();
-    menu.style.left = Math.max(10, Math.min(rect.left - 40, W.innerWidth - menu.offsetWidth - 10)) + 'px';
-    menu.style.bottom = (W.innerHeight - rect.top + 10) + 'px';
+    positionMenu();
 
     function close() {
+      if (refreshObserver) { refreshObserver.disconnect(); refreshObserver = null; }
+      if (refreshTimer) { clearTimeout(refreshTimer); refreshTimer = null; }
+      if (awayTimer) { clearTimeout(awayTimer); awayTimer = null; }
       if (menu.parentNode) menu.parentNode.removeChild(menu);
       D.removeEventListener('click', away, true);
-      toolsClose = null;
+      if (toolsClose === close) toolsClose = null;
     }
     toolsClose = close;
     /* contains(), not identity: the click lands on the icon or the label inside
@@ -1466,23 +1519,75 @@
         safe(function () { rowsK[nK].focus(); });
       }
     }
-    setTimeout(function () { D.addEventListener('click', away, true); }, 0);
+    awayTimer = setTimeout(function () {
+      awayTimer = null;
+      if (toolsClose === close && menu.parentNode) D.addEventListener('click', away, true);
+    }, 0);
     menu.addEventListener('keydown', esc);
     safe(function () { var first = qs('.r', menu); if (first) first.focus(); });
-
-    qsa('.r', menu).forEach(function (row) {
-      row.addEventListener('click', function () {
-        /* 2026-07-28: data-classic rows no longer render; recovery stays at ?ui=classic. */
-        var it = items[parseInt(row.getAttribute('data-i'), 10)];
-        close();
-        if (!it) return;
-        if (it.reveal) { revealSetting(it); return; }
-        runControl(it.el);
+    /* Tool producers are intentionally allowed to mount after the shell. Watch
+       only while this short-lived menu is open, coalesce page churn, and repaint
+       only when the resolved element/label set truly changed. This keeps a menu
+       opened early from permanently omitting Pull activity or Troubleshoot
+       Athena without adding another permanent whole-document observer. */
+    if (W.MutationObserver) {
+      function nodeCanChangeTools(node) {
+        if (!node || node.nodeType !== 1 || menu.contains(node)) return false;
+        return TOOLS_SOURCES.some(function (spec) {
+          try {
+            if (spec.id) {
+              var idSel = '#' + spec.id;
+              return node.id === spec.id || (node.closest && node.closest(idSel)) ||
+                (node.querySelector && node.querySelector(idSel));
+            }
+            return !!(spec.within && ((node.matches && node.matches(spec.within)) ||
+              (node.closest && node.closest(spec.within)) ||
+              (node.querySelector && node.querySelector(spec.within))));
+          } catch (_toolWatchSelectorError) { return false; }
+        });
+      }
+      function mutationCanChangeTools(mutation) {
+        if (menu.contains(mutation.target)) return false;
+        /* Attribute records come only from declared producer candidates; the
+           body registration below deliberately observes child lists only. */
+        if (mutation.type === 'attributes') return true;
+        if (nodeCanChangeTools(mutation.target)) return true;
+        var changed = Array.prototype.slice.call(mutation.addedNodes || []).concat(
+          Array.prototype.slice.call(mutation.removedNodes || []));
+        return changed.some(nodeCanChangeTools);
+      }
+      function armRefreshObserver() {
+        if (!refreshObserver || !menu.parentNode) return;
+        refreshObserver.disconnect();
+        /* The document-wide leg sees insert/remove only. Attribute churn is
+           watched on the small declared candidate set below, never body-wide. */
+        refreshObserver.observe(D.body || D.documentElement, { childList: true, subtree: true });
+        TOOLS_SOURCES.forEach(function (spec) {
+          var candidates = [];
+          if (spec.id) {
+            var exact = D.getElementById(spec.id); if (exact) candidates.push(exact);
+          } else if (spec.within) {
+            qsa(spec.within).forEach(function (root) {
+              candidates = candidates.concat(qsa('button,.navtab', root));
+            });
+          }
+          candidates.forEach(function (candidate) {
+            refreshObserver.observe(candidate, {
+              attributes: true,
+              attributeFilter: ['hidden', 'disabled', 'aria-disabled', 'style']
+            });
+          });
+        });
+      }
+      refreshObserver = new W.MutationObserver(function (mutations) {
+        if (!mutations.some(mutationCanChangeTools) || refreshTimer || !menu.parentNode) return;
+        refreshTimer = setTimeout(function () {
+          refreshTimer = null;
+          if (menu.parentNode && toolsClose === close) { renderMenu(false); armRefreshObserver(); }
+        }, 50);
       });
-      row.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); row.click(); }
-      });
-    });
+      armRefreshObserver();
+    }
   }
 
   /* Opens the canonical Copilot by clicking the control the app already owns,

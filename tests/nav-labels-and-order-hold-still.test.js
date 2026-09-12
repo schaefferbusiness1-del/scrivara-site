@@ -8,7 +8,7 @@
  *   nav_visit     26 flips   "Today"      <-> "🎙️ Today"
  *   nav_patients  26 flips   "Patients 0" <-> "👥 Patients 0"
  *   nav_calendar  26 flips   "Calendar"   <-> "📅 Calendar"
- *   nav_studio    26 flips   "✦ Tools"    <-> "✨ Tools"
+ *   nav_studio    26 flips   "✦ AI Studio" <-> "✨ AI Studio"
  *   child order   22 flips   between exactly two orders
  *
  * ~1.3Hz, forever, with nobody touching the machine. The emoji changes each
@@ -101,10 +101,10 @@ const START = {
   nav_visit: '🎙️ Today ',
   nav_patients: '👥 Patients ',
   nav_calendar: '📅 Calendar ',
-  nav_studio: '✨ Tools ',
+  nav_studio: '✨ AI Studio ',
   nav_help: '❓ Help ',
 };
-const REDESIGN_LABELS = { nav_visit: 'Today', nav_patients: 'Patients', nav_calendar: 'Calendar', nav_studio: 'Tools' };
+const REDESIGN_LABELS = { nav_visit: 'Today', nav_patients: 'Patients', nav_calendar: 'Calendar', nav_studio: 'AI Studio' };
 const OWNED = new Set(PRIMARY);
 
 const tabs = {};

@@ -87,7 +87,7 @@
      other writes into — so neither has a fixpoint and it never settles.
      MEASURED on an idle signed-in app: all four labels oscillated 26 times in
      20 seconds (~1.3Hz) between "Today"/"🎙️ Today", "Patients"/"👥 Patients",
-     "Calendar"/"📅 Calendar", "✦ Tools"/"✨ Tools". The emoji changes the
+     "Calendar"/"📅 Calendar", "✦ AI Studio"/"✨ AI Studio". The emoji changes the
      label's width, so the whole nav row re-laid out on every flip: visible
      jitter, and a tab that can move out from under the cursor between aiming
      and pressing. Each module's own "did it change?" guard was useless here,

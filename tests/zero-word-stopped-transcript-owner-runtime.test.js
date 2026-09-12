@@ -17,7 +17,8 @@ assert(ownerStart >= 0 && ownerEnd > ownerStart, 'visible transcript ownership g
 const ownerBlock = source.slice(ownerStart, ownerEnd);
 assert(ownerBlock.includes('topLaneIsVisible(laneCandidate)'),
   'transcript ownership still follows DOM attachment instead of visible geometry');
-assert(ownerBlock.includes('var wantOwns = !staff && laneVisible'),
+assert(/var wantOwns = [^;\n]*laneVisible/.test(ownerBlock) &&
+  !/var wantOwns = [^;\n]*laneMounted/.test(ownerBlock),
   'hidden easy lanes can still hide the engine transcript');
 
 function functionBlock(input, name) {
