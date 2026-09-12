@@ -34,6 +34,14 @@ const root = path.resolve(__dirname, '..');
 const connect = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
 const shell = fs.readFileSync(path.join(root, 'ScribeFlow.html'), 'utf8');
 
+/* Saving MLS history provides no evidence of filing to an external chart. */
+for (const file of ['1pScribeFlow.html', '1p/index.html', 'ScribeFlow.html',
+  'cloned/index.html', 'ScribeFlow-staging.html', 'ScribeFlow_test.html']) {
+  const html = fs.readFileSync(path.join(root, file), 'utf8');
+  assert(!html.includes('Signed & filed to the chart'), file + ' claims chart filing without a receipt');
+  assert(html.includes('Signed and saved in MLS. What next?'), file + ' must name the proven save destination');
+}
+
 /* 1. the unconditional claim must not exist anywhere */
 const unconditional = (connect.match(/sb\.click\(\); S\.signedAt = Date\.now\(\);/g) || []).length;
 assert.strictEqual(unconditional, 0,

@@ -6892,7 +6892,7 @@ function _dismissVisitRestore(){ _wipeVisitDraft(); }
 function _showNextActions(kind){
   try{
     var bar=document.getElementById('nextActionsBar'); if(!bar) return;
-    var msg = (kind==='signed') ? '✅ Signed & filed to the chart. What next?' : '💾 Saved to history. What next?';
+    var msg = (kind==='signed') ? '✅ Signed and saved in MLS. What next?' : '💾 Saved to history. What next?';
     var btns='';
     btns+='<button class="btn-green" style="font-size:13px;padding:7px 12px" onclick="var b=document.getElementById(\'nextActionsBar\');if(b)b.style.display=\'none\';newVisit();">➕ Next patient</button>';
     if(navFeatOn('orders')) btns+='<button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="showView(\'orders\')">📋 Create orders</button>';

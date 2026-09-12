@@ -287,6 +287,12 @@ assert(/attributeFilter:\s*\['style', 'class'\]/.test(src),
   'screen is a churn defect waiting to happen; only its style/class matter, ' +
   'because setting a textarea .value mutates no DOM at all.');
 
+/* Next patient must survive both the row fold and its child fold. */
+assert(cssText.includes('.ez3-row2:not(:has(#ez3Prep)):not(:has(#ez3Prep2)):not(:has(#ez3NextPt))'),
+  'Next patient is hidden inside a folded row until shortcuts are opened');
+assert(cssText.includes('.ez3-row2 > *:not(#ez3Prep):not(#ez3Prep2):not(#ez3NextPt)'),
+  'Next patient itself is hidden even though its row survives');
+
 /* the op-note exemption is an owner order, so it is pinned as one */
 assert(/\.ez3-row2:not\(:has\(#ez3Prep\)\):not\(:has\(#ez3Prep2\)\)/.test(src) &&
        /\.ez3-row2 > \*:not\(#ez3Prep\):not\(#ez3Prep2\)/.test(src),
