@@ -286,6 +286,79 @@
     return ctx;
   }
 
+  /* b1262: the scheduling note is admissible only from the exact schedule
+     appointment already pinned to this row.  A missing/incomplete receipt is
+     deliberately UNKNOWN: do not turn it into a claim that Athena's field was
+     empty.  The text itself is never copied into a receipt or a UI status. */
+  function schedulingAppointmentId(row) {
+    var keys = ['athenaAppointmentId', 'athena_appointment_id', 'appointmentId', 'appointment_id', 'apptId', 'appt_id'];
+    for (var i = 0; i < keys.length; i++) {
+      var value = trim(row && row[keys[i]]);
+      if (value) return value;
+    }
+    return '';
+  }
+  function schedulingPatientOwner(row, strictAllAliases) {
+    var values = [], keys = ['patient_external_id', '_mlsTargetPatientId'];
+    if (strictAllAliases) keys.push('patientId');
+    for (var i = 0; i < keys.length; i++) {
+      var value = trim(row && row[keys[i]]);
+      if (value && values.indexOf(value) < 0) values.push(value);
+    }
+    if (!strictAllAliases && !values.length) {
+      var fallback = trim(row && row.patientId);
+      if (fallback) values.push(fallback);
+    }
+    return { ok: values.length === 1, id: values.length === 1 ? values[0] : '' };
+  }
+  function schedulingAppointmentDay(row) {
+    return trim(row && (row.appt_date || row.date || S(row.start_at || row.startAt || '').slice(0, 10)));
+  }
+  function schedulingAppointmentMoment(row) {
+    var raw = trim(row && (row.start_at || row.startAt));
+    var parsed = raw ? Date.parse(raw) : NaN;
+    if (isFinite(parsed)) return parsed;
+    var day = schedulingAppointmentDay(row), text = trim(row && (row.start_local || row.time));
+    var m = /(\d{1,2}):(\d{2})\s*(am|pm)?/i.exec(text), hour = m ? Number(m[1]) : 12, minute = m ? Number(m[2]) : 0;
+    if (m && m[3]) { if (hour === 12) hour = 0; if (m[3].toLowerCase() === 'pm') hour += 12; }
+    parsed = day ? Date.parse(day + 'T' + ('0' + hour).slice(-2) + ':' + ('0' + minute).slice(-2) + ':00') : NaN;
+    return isFinite(parsed) ? parsed : Number.MAX_SAFE_INTEGER;
+  }
+  function nextExactPatientAppointment(rows, patientId, fromDay, fromMoment) {
+    var best = null, bestMoment = Number.MAX_SAFE_INTEGER, bestTie = '';
+    var cutoff = Number(fromMoment);
+    rows = Array.isArray(rows) ? rows : [];
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i], owner = schedulingPatientOwner(row, false), day = schedulingAppointmentDay(row), tie = schedulingAppointmentId(row);
+      if (!owner.ok || owner.id !== trim(patientId) || !tie || !day || day < fromDay) continue;
+      var moment = schedulingAppointmentMoment(row);
+      if (isFinite(cutoff) && moment < cutoff) continue;
+      if (!best || moment < bestMoment || (moment === bestMoment && tie < bestTie)) {
+        best = row; bestMoment = moment; bestTie = tie;
+      }
+    }
+    return best;
+  }
+  function admitSchedulingNote(ctx, appt) {
+    var out = ctx || {}, receipt = appt && appt.schedulingNoteReceipt;
+    var note = appt && appt.schedulingNote != null ? S(appt.schedulingNote) : '';
+    var owner = schedulingPatientOwner(appt, true), rowPatientId = owner.id;
+    if (!receipt || receipt.version !== 1 || receipt.complete !== true ||
+        (receipt.status !== 'captured' && receipt.status !== 'empty') ||
+        (receipt.source !== 'schedule-reason-field' && receipt.source !== 'schedule-reason-snapshot') ||
+        typeof receipt.chars !== 'number' || receipt.chars !== note.length ||
+        !schedulingAppointmentId(appt) || !owner.ok || !rowPatientId || rowPatientId !== trim(out.patientId) ||
+        note.length > 16000 || (receipt.status === 'captured' && !note) || (receipt.status === 'empty' && note)) {
+      out.schedulingNoteKnown = false;
+      return out;
+    }
+    out.schedulingNoteKnown = true;
+    out.schedulingNote = note;
+    out.schedulingNoteReceipt = { version: 1, source: receipt.source, status: receipt.status, complete: true, chars: note.length };
+    out.schedulingAppointmentId = schedulingAppointmentId(appt);
+    return out;
+  }
+
   /* =========================================================================
    * (2)(3) PROVIDER + FACILITY PANEL — the deterministic statement of who
    * operated, their identifiers, and where. This is SCAFFOLDING, and as of
@@ -463,6 +536,12 @@
   // (day match + non-empty resulting name), so they line up 1:1 with the prep rows.
   function rawApptsForKey(key) {
     var all = (window._calAppts || []) || [], out = [];
+    /* Rehydrate the account-local exact-appointment field on every ordinary
+       calendar read, not only immediately after a fresh Athena pull. */
+    try {
+      var bridge = window.__mlsSchedulingNoteBridge;
+      if (bridge && isFn(bridge.apply)) bridge.apply(all);
+    } catch (e0) {}
     for (var i = 0; i < all.length; i++) {
       var a = all[i]; var dk = S(a.appt_date || S(a.start_at || '').slice(0, 10));
       if (dk !== key) continue;
@@ -522,6 +601,9 @@
             for (var i = 0; i < rows.length; i++) {
               rows[i].athenaId = S(raw[i].patient_external_id || raw[i].athenaId || raw[i].mrn || '');
               rows[i].location = S(raw[i].location || raw[i].department || raw[i].dept || raw[i].facility || '');
+              rows[i].schedulingNote = S(raw[i].schedulingNote || '');
+              rows[i].schedulingNoteReceipt = raw[i].schedulingNoteReceipt || null;
+              rows[i].appointmentId = S(rows[i].appointmentId || schedulingAppointmentId(raw[i]));
             }
           }
         } catch (e) {}
@@ -564,7 +646,7 @@
         } else {
           base._idStatus = 'id-match'; base._idWarnings = []; base._resolvedId = suppliedId;
         }
-        return enrichCtx(name, base, appt);
+        return admitSchedulingNote(enrichCtx(name, base, appt), appt);
       };
     });
 
@@ -608,20 +690,28 @@
           var rows = window._opPrep || [];
           if (rows.length === 1 && rows[0] && rows[0].appt) {
             rows[0].appt.patientId = trim(rows[0].appt.patientId || rows[0].patientId || pid);
-            var nm = rows[0].appt.name, wantDob = normDob(rows[0].appt.dob), exactRowId = trim(rows[0].patientId || rows[0].appt.patientId || pid), best = null;
+            var nm = rows[0].appt.name, exactRowId = trim(rows[0].patientId || rows[0].appt.patientId || pid);
             var all = (window._calAppts || []) || [];
             var todayKey = dayKeyOf(new Date());
-            for (var j = 0; j < all.length; j++) {
-              var a = all[j];
-              var aid = trim(a.patient_external_id || a._mlsTargetPatientId || a.patientId || '');
-              if (exactRowId && aid) { if (aid !== exactRowId) continue; }
-              else if (nname(a.name) !== nname(nm) || (wantDob && normDob(a.dob) !== wantDob)) continue;
-              var dk = S(a.appt_date || S(a.start_at || '').slice(0, 10));
-              if (dk >= todayKey && (!best || dk < best)) best = dk;   // soonest UPCOMING procedure day
-            }
-            if (best) {
-              var dstr = isFn(window._opDayStr) ? window._opDayStr(best) : best;
-              rows[0].dateStr = dstr; rows[0].appt.dob = rows[0].appt.dob || '';
+            try { var bridge = window.__mlsSchedulingNoteBridge; if (bridge && isFn(bridge.apply)) bridge.apply(all); } catch (eB) {}
+            var exactAppt = nextExactPatientAppointment(all, exactRowId, todayKey, Date.now());
+            if (exactAppt) {
+              var best = schedulingAppointmentDay(exactAppt), dstr = isFn(window._opDayStr) ? window._opDayStr(best) : best;
+              var procedure = S(exactAppt.reason || ''), appointmentId = schedulingAppointmentId(exactAppt);
+              var scope = {};
+              try { Object.keys(exactAppt).forEach(function (key) { scope[key] = exactAppt[key]; }); } catch (eC) {}
+              scope.appointmentId = appointmentId;
+              var exactRow = isFn(window._opNewRow)
+                ? window._opNewRow(nm, procedure, rows[0].appt.dob || '', dstr, exactRowId, scope, best, 0)
+                : rows[0];
+              exactRow.dateStr = dstr; exactRow.dateKey = best; exactRow.proc = procedure;
+              exactRow.appointmentId = appointmentId; exactRow.startAt = S(exactAppt.startAt || exactAppt.start_at || '');
+              exactRow.time = S(exactAppt.time || exactAppt.start_local || '');
+              exactRow.appt.reason = procedure; exactRow.appt.appointmentId = appointmentId; exactRow.appt.patientId = exactRowId;
+              exactRow.appt.schedulingNote = S(exactAppt.schedulingNote || '');
+              exactRow.appt.schedulingNoteReceipt = exactAppt.schedulingNoteReceipt || null;
+              window._opPrep[0] = exactRow; rows[0] = exactRow;
+              try { adoptExistingDraft(exactRow); } catch (eD) {}
               if (isFn(window.opPrepRender)) window.opPrepRender();
             }
           }
@@ -659,6 +749,9 @@
               rows[i].appt.patientId = trim(rows[i].patientId || raw[i].patient_external_id || raw[i]._mlsTargetPatientId || raw[i].patientId || '');
               rows[i].appt.location = S(raw[i].location || raw[i].department || raw[i].dept || raw[i].facility || '');
               rows[i].appt.dob = rows[i].appt.dob || S(raw[i].dob || '');
+              rows[i].appt.appointmentId = S(rows[i].appt.appointmentId || schedulingAppointmentId(raw[i]));
+              rows[i].appt.schedulingNote = S(raw[i].schedulingNote || '');
+              rows[i].appt.schedulingNoteReceipt = raw[i].schedulingNoteReceipt || null;
             }
             if (isFn(window.opPrepRender)) window.opPrepRender();
           }
@@ -961,6 +1054,8 @@
     providerIdentityKey: providerIdentityKey,
     attest: attestForCtx, adoptExistingDraft: adoptExistingDraft,
     nextProcedureDay: nextProcedureDay, nextWeekday: nextWeekday,
+    nextExactPatientAppointment: nextExactPatientAppointment,
+    schedulingAppointmentId: schedulingAppointmentId,
     rawApptsForKey: rawApptsForKey,
     selfTest: selfTest, revert: revert,
     // UI helpers referenced by the injected buttons

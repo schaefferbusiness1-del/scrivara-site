@@ -3075,6 +3075,133 @@
   }
 
   /* ---- read-only capture of the latest schedule read (for DOM-scrape fallback) ---- */
+  /* ===== b1262 exact scheduling-note bridge =================================
+     The extension's schedule-reason field is clinical text.  It cannot travel
+     in a progress receipt or be matched back by a display name.  The backend
+     appointment schema has no owned column for it, so retain it only in this
+     account's local store, keyed by the stable Athena appointment id and the
+     resolved immutable MLS patient id.  The public API deliberately exposes
+     the text only to the exact appointment/context owner; all receipts carry
+     status and character counts, never the note itself. */
+  var SCHEDULING_NOTE_MAX = 16000;
+  var SCHEDULING_NOTE_OK = { captured: 1, empty: 1 };
+  var SCHEDULING_NOTE_BAD = {
+    "appointment-unbound": 1, "row-changed": 1, "source-not-rendered": 1,
+    "source-unreadable": 1, "snapshot-truncated": 1, "snapshot-unreadable": 1,
+    "too-large": 1, "conflicting-fields": 1
+  };
+  function schedulingNoteId(row) { return firstField(row, ["athenaAppointmentId", "athena_appointment_id", "appointmentId", "appointment_id", "apptId", "appt_id"]); }
+  function schedulingNoteStoreId(row) { var id = schedulingNoteId(row); return id ? "appointment:" + id : ""; }
+  function schedulingNoteLocalPatient(row) {
+    var explicit = [], keys = ["patient_external_id", "_mlsTargetPatientId"];
+    for (var i = 0; i < keys.length; i++) {
+      var value = row && row[keys[i]] != null ? String(row[keys[i]]).trim() : "";
+      if (value && explicit.indexOf(value) < 0) explicit.push(value);
+    }
+    if (explicit.length > 1) return { ok: false, id: "", explicit: true };
+    if (explicit.length === 1) return { ok: true, id: explicit[0], explicit: true };
+    var fallback = row && row.patientId != null ? String(row.patientId).trim() : "";
+    return { ok: !!fallback, id: fallback, explicit: false };
+  }
+  function schedulingNoteReceipt(row) {
+    var raw = row && row.schedulingNoteReceipt;
+    var text = row && row.schedulingNote != null ? String(row.schedulingNote) : "";
+    var validSource = !!(raw && (raw.source === "schedule-reason-field" || raw.source === "schedule-reason-snapshot"));
+    var source = validSource ? raw.source : "schedule-reason-field";
+    var status = raw && String(raw.status || "") || "source-unreadable";
+    var validChars = !!(raw && typeof raw.chars === "number" && isFinite(raw.chars) && raw.chars >= 0 && Math.floor(raw.chars) === raw.chars);
+    var chars = validChars ? raw.chars : text.length;
+    /* A normalized incomplete receipt deliberately retains the observed source
+       length after its unusable text is quarantined.  It may be persisted
+       again, but it can never be promoted to complete. */
+    var normalizedIncomplete = !!(raw && raw.version === 1 && validSource && raw.complete === false && SCHEDULING_NOTE_BAD[status] && validChars && !text);
+    if (!raw || raw.version !== 1 || !validSource || !validChars || (raw.chars !== text.length && !normalizedIncomplete)) {
+      return { version: 1, source: source, status: "source-unreadable", complete: false, chars: text.length };
+    }
+    if (text.length > SCHEDULING_NOTE_MAX || chars > SCHEDULING_NOTE_MAX) {
+      return { version: 1, source: source, status: "too-large", complete: false, chars: chars };
+    }
+    if (raw.complete === false && SCHEDULING_NOTE_BAD[status]) {
+      return { version: 1, source: source, status: status, complete: false, chars: chars };
+    }
+    if (raw.complete !== true || !SCHEDULING_NOTE_OK[status] ||
+        (status === "captured" && !text) || (status === "empty" && text)) {
+      return { version: 1, source: source, status: "source-unreadable", complete: false, chars: chars };
+    }
+    return { version: 1, source: source, status: status, complete: true, chars: chars };
+  }
+  function schedulingNoteNormalizeBatch(rows) {
+    rows = Array.isArray(rows) ? rows : [];
+    var byId = Object.create(null);
+    rows.forEach(function (row) {
+      if (!row || typeof row !== "object") return;
+      var receipt = schedulingNoteReceipt(row), note = receipt.complete ? String(row.schedulingNote || "") : "";
+      row.schedulingNote = note; row.schedulingNoteReceipt = receipt;
+      /* Compatibility consumers still read `reason`; only a receipt-proven,
+         nonempty field may supply it.  Unknown/incomplete content never turns
+         into a false empty scheduling reason. */
+      if (receipt.complete && receipt.status === "captured" && note) row.reason = note;
+      var id = schedulingNoteStoreId(row); if (!id) return;
+      var old = byId[id];
+      if (!old) { byId[id] = [row]; return; }
+      var same = old[0].schedulingNote === note && JSON.stringify(old[0].schedulingNoteReceipt) === JSON.stringify(receipt);
+      old.push(row);
+      if (!same) old.forEach(function (conflict) {
+        conflict.schedulingNote = "";
+        conflict.reason = ""; /* no conflicting copy may become the legacy value */
+        conflict.schedulingNoteReceipt = { version: 1, source: receipt.source, status: "conflicting-fields", complete: false, chars: 0 };
+      });
+    });
+    return rows;
+  }
+  function schedulingNoteStoreKey() { return safe(function () { return isFn(window.uns) ? String(window.uns("mlsSchedulingNoteV1")) : ""; }, ""); }
+  function schedulingNoteLoad() {
+    var raw = safe(function () { var k = schedulingNoteStoreKey(); return k ? localStorage.getItem(k) : null; }, null);
+    var parsed = safe(function () { return raw ? JSON.parse(raw) : null; }, null);
+    return parsed && parsed.v === 1 && parsed.rows && typeof parsed.rows === "object" ? parsed : { v: 1, rows: {} };
+  }
+  function schedulingNoteWrite(store) { safe(function () { var k = schedulingNoteStoreKey(); if (k) localStorage.setItem(k, JSON.stringify(store)); }); }
+  function schedulingNoteRecord(row, localPatientId) {
+    var id = schedulingNoteStoreId(row), patientId = String(localPatientId || "").trim();
+    if (!id || !patientId) return;
+    var receipt = schedulingNoteReceipt(row), note = receipt.complete ? String(row.schedulingNote || "") : "";
+    var bound = schedulingNoteLocalPatient(row), store = schedulingNoteLoad(), old = store.rows[id];
+    var next = { patientId: patientId, schedulingNote: note, schedulingNoteReceipt: receipt };
+    /* Divergent duplicates in one authoritative response are already refused
+       by normalizeBatch.  A later response for the same patient replaces the
+       old value so corrected/incomplete fields can recover on the next pull. */
+    if ((bound.explicit && (!bound.ok || bound.id !== patientId)) || (old && String(old.patientId || "") !== patientId)) {
+      next.schedulingNote = "";
+      next.schedulingNoteReceipt = { version: 1, source: receipt.source, status: "conflicting-fields", complete: false, chars: 0 };
+    }
+    store.rows[id] = next; schedulingNoteWrite(store);
+  }
+  function schedulingNoteApply(rows) {
+    var store = schedulingNoteLoad();
+    (Array.isArray(rows) ? rows : []).forEach(function (row) {
+      var id = schedulingNoteStoreId(row), old = id && store.rows[id], bound = schedulingNoteLocalPatient(row), patientId = bound.id;
+      if (!old) return;
+      if (!bound.ok || !patientId || patientId !== String(old.patientId || "")) {
+        row.schedulingNote = "";
+        row.schedulingNoteReceipt = { version: 1, source: "schedule-reason-field", status: "appointment-unbound", complete: false, chars: 0 };
+        return;
+      }
+      var stored = { schedulingNote: String(old.schedulingNote || ""), schedulingNoteReceipt: old.schedulingNoteReceipt || null };
+      var receipt = schedulingNoteReceipt(stored);
+      row.schedulingNote = receipt.complete ? stored.schedulingNote : "";
+      row.schedulingNoteReceipt = receipt;
+      if (row.schedulingNoteReceipt.complete === true && row.schedulingNoteReceipt.status === "captured" && row.schedulingNote) row.reason = row.schedulingNote;
+    });
+    return rows;
+  }
+  window.__mlsSchedulingNoteBridge = {
+    maxChars: SCHEDULING_NOTE_MAX,
+    normalizeBatch: schedulingNoteNormalizeBatch,
+    record: schedulingNoteRecord,
+    apply: schedulingNoteApply,
+    receipt: schedulingNoteReceipt
+  };
+  /* ===== end b1262 exact scheduling-note bridge ============================= */
   var lastResp = null, lastRespAt = 0;
   function onSchedMsg(e) {
     safe(function () {
@@ -3089,7 +3216,7 @@
   /* map the extension DOM scrape rows {time,name,provider} into the app appt shape */
   function domApptsFromResp(resp, confirmedDay) {
     return safe(function () {
-      var a = (resp && resp.appts) || [];
+      var a = schedulingNoteNormalizeBatch((resp && resp.appts) || []);
       var out = [];
       for (var i = 0; i < a.length; i++) {
         var nm = String((a[i] && a[i].name) || "").trim();
@@ -3108,6 +3235,8 @@
           date: normDate(a[i].date || a[i].appt_date || "") || String(confirmedDay || ""),
           time: normTime(a[i].start_local || a[i].time || a[i].time_display || ""),
           reason: String(a[i].reason || ""),
+          schedulingNote: String(a[i].schedulingNote || ""),
+          schedulingNoteReceipt: a[i].schedulingNoteReceipt || null,
           /* status-1.0.0: ext 3.0.98+ emits the row's athena status; this map
              rebuilds rows field-by-field, so an unnamed field is a DROPPED
              field (the provider and DOB bugs above were this same class). */
@@ -3716,6 +3845,10 @@
             }
           }
           if (existing && existing.id) { ext = String(existing.id); a.patient_external_id = ext; }
+          /* Persist receipt-proven schedule text only after this source row is
+             bound to one immutable local patient.  Never use a name as a
+             storage or merge key. */
+          schedulingNoteRecord(a, ext);
           /* padopt-1.0.0: stamp the proven LOCAL id on the source row so every
              reader that ORs the two alias fields agrees by construction. An
              existing valid id is never overwritten - a row exposing two
@@ -3998,6 +4131,9 @@
           }
         });
       }
+      function stampSchedulingNotes() {
+        safe(function () { schedulingNoteApply(window._calAppts); });
+      }
 
       /* --------------------------------------------------------------------
          b749 HONEST COUNTS + REFRESH AFTER PULL.
@@ -4087,11 +4223,12 @@
             safe(function () { if (isFn(window.toast)) window.toast("Your schedule was saved, but this tab could not reload it \u2014 refresh the page to see every appointment for the day.", "err"); });
           }
           stampProviders();
+          stampSchedulingNotes();
           safe(function () { if (window.__mlsWhosNext && isFn(window.__mlsWhosNext.render)) window.__mlsWhosNext.render(); });
           /* FIX 2026-07-01: loadCalendar repopulates _calAppts asynchronously, so a single
              stamp can run before the rows exist (or be overwritten). Re-stamp on short timers
              so provider reliably lands regardless of loadCalendar's async timing. */
-          [700, 1800, 3500].forEach(function (ms) { setTimeout(function () { safe(function () { stampProviders(); if (window.__mlsWhosNext && isFn(window.__mlsWhosNext.render)) window.__mlsWhosNext.render(); }); }, ms); });
+          [700, 1800, 3500].forEach(function (ms) { setTimeout(function () { safe(function () { stampProviders(); stampSchedulingNotes(); if (window.__mlsWhosNext && isFn(window.__mlsWhosNext.render)) window.__mlsWhosNext.render(); }); }, ms); });
           window._heroNowIdx = -1;
           var todayKey = estTodayKey();
           var todays = appts.filter(function (a) { return (a._date || normDate(a.date) || target) === todayKey && String(a.name || "").trim(); });
@@ -10786,6 +10923,7 @@
           parsed = Array.isArray(parsed) ? parsed : [];
           /* keep each appt OWN parsed date; importAppts scopes to `date` and files each
              appointment on its real day -- no whole-week-onto-one-day smear. */
+          parsed = schedulingNoteNormalizeBatch(parsed);
           var rows = parsed.map(function (a) { return {
             name: a.name,
             dob: a.dob || "",
@@ -10797,6 +10935,8 @@
             date: a.date || readDay,
             time: a.start_local || a.time || a.time_display || "",
             reason: a.reason || "",
+            schedulingNote: a.schedulingNote || "",
+            schedulingNoteReceipt: a.schedulingNoteReceipt || null,
             provider: a.provider || ""
           }; });
           var p1CensusPreScope = p1CensusDecision.ok

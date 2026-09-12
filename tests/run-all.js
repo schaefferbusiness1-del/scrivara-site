@@ -1497,6 +1497,7 @@ const tests = [
   'template-match-real-schedule-text.test.js',
   'athena-pull-notification-ownership.test.js',
   'opnote-exact-patient-binding.test.js',
+  'b1262-scheduling-note-bridge-runtime.test.js',
   'opnote-staging-identity-runtime.test.js',
   'opnote-verified-history-repair-runtime.test.js',
   'opnote-rail-search-caret.test.js',
