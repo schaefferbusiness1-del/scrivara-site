@@ -73,3 +73,20 @@ replace old pending outcomes; do not manually mark them accepted or clear storag
 Compare schedule, chart identity, encounter/body, scheduling-note and final Activity
 receipts. All real-patient operations remain read-only. Dummy clinic/OP saves need
 separate action-time confirmation immediately before submission and readback afterward.
+
+## Live reload receipt — root operator, 2026-09-12
+
+Root reported the documented helper reload clicked exactly once after the verified
+20-file intact package copy. Athena tab 256642751 was refreshed and visibly
+remained signed in; MLS QA tab 256642749 was refreshed to site build b1270.
+
+- Fresh ping: ok=true, version=3.0.124.
+- Build ID: `3.0.124+core-sha256:c8de53d2bd49b7f66c34881fdf0bb05ed3883309e2f5e7955131d58357cd4be0`.
+- Schedule bridge: installed=true, busy=false.
+- Upcoming: on=false, running=false, armed=false, afterPullArmed=false, wired=true.
+- History: running=false; total/done/ok/failed all zero.
+- Notes: reading=false, running=false; queued/open/done/failed all zero.
+
+This is the operator-supplied live reload receipt, not proof of a completed
+date-scoped pull. No note save or publication was performed. Awaiting the first
+explicit-date schedule/read/Activity receipts before further engineering changes.
