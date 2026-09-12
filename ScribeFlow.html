@@ -63791,7 +63791,6 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
      Two more of those measurably shifted the timing of an unrelated block
      (the Staff prep title lost a race with the header's own re-render). One
      pass per frame's worth of mutations is all this needs. */
-  var queued = null;
   function schedule(){
     if (retired) return;
     if (queued !== null) return;
