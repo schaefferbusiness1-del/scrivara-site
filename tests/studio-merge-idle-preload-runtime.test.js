@@ -40,7 +40,7 @@ const shellSource = fs.readFileSync(SHELL_PATH, 'utf8');
 const mergeSource = fs.readFileSync(MERGE_PATH, 'utf8');
 const studySource = fs.readFileSync(STUDY_PATH, 'utf8');
 
-const studyLoaderMarker = "var A='feat_mls_study_request.js',V='sr-2.4.0',LV='srl-1.0.0'";
+const studyLoaderMarker = "var A='feat_mls_study_request.js',V='sr-2.4.1',LV='srl-1.0.1'";
 const studyLoaderAt = connectSource.indexOf(studyLoaderMarker);
 const studyLoaderStart = connectSource.lastIndexOf(';(function(){try{', studyLoaderAt);
 const studyLoaderCloseMarker = '}catch(e){}})();';
@@ -213,7 +213,6 @@ const SHELL_HTML = `<!doctype html><html><body>
           <div class="sx-title">AI Studio</div>
           <div id="copilotCard">Ask</div>
           <div class="sx-right">Build a custom tool</div>
-          <div id="mlsSgPro">Advanced cohort host</div>
         </div><div id="analysisView"></div></div>
       </body></html>`;
       await page.route('https://mls-study-first-use.test/**', route =>
@@ -263,6 +262,19 @@ const SHELL_HTML = `<!doctype html><html><body>
       assert.strictEqual(firstUse.direct, true, 'first-use loading mounted Study outside the Build surface');
       assert.deepStrictEqual(firstUse.sectionEvents, ['build'],
         'the remembered Build section did not publish one first-use admission signal');
+
+      await page.evaluate(() => {
+        const pro = document.createElement('div');
+        pro.id = 'mlsSgPro';
+        const late = document.createElement('button');
+        late.id = 'lateLegacyStudyControl';
+        late.textContent = 'Late legacy control';
+        pro.appendChild(late);
+        document.getElementById('studioView').appendChild(pro);
+      });
+      await page.waitForFunction(() => !!document.querySelector('#mlsStudyAdvancedBody #lateLegacyStudyControl'), null, { timeout: 5000 });
+      assert.strictEqual(await page.locator('#studioView > #mlsStudyRequest').count(), 1,
+        'late cohort-host adoption moved or duplicated the primary Study composer');
 
       await page.evaluate(() => window.__mlsStudioMerge.select('build'));
       await page.evaluate(() => window.__deferredStudyCallback());

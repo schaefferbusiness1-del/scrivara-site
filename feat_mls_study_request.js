@@ -1,6 +1,6 @@
 /* =============================================================================
  * MLS Scribe natural-language study request surface
- * __mlsStudyRequest sr-2.4.0 (site only, additive, reversible)
+ * __mlsStudyRequest sr-2.4.1 (site only, additive, reversible)
  *
  * One sentence is enough: the deterministic parser turns it into a strict
  * StudySpec, the existing __mlsSgFix/__mlsStudyGroups engines build and run the
@@ -33,7 +33,7 @@
   (typeof globalThis !== 'undefined' ? globalThis : this), function (root) {
   'use strict';
 
-  var VERSION = 'sr-2.4.0';
+  var VERSION = 'sr-2.4.1';
   var CSS_ID = 'mlsStudyRequestCss';
   var UI_ID = 'mlsStudyRequest';
   var ADV_ID = 'mlsStudyAdvanced';
@@ -2142,18 +2142,30 @@
     return true;
   }
   function mount() {
-    var doc = root.document, pro = doc && doc.getElementById('mlsSgPro');
-    if (!doc || !pro || !doc.getElementById('studioView')) return false;
+    var doc = root.document, studio = doc && doc.getElementById('studioView');
+    if (!doc || !studio) return false;
+    var pro = doc.getElementById('mlsSgPro');
     var existing = doc.getElementById(UI_ID);
-    if (existing) return placePrimary(doc, pro, existing);
-    injectCss(doc);
-    var section = buildUi(doc);
-    var details = doc.createElement('details'); details.id = ADV_ID;
-    var summary = doc.createElement('summary'); summary.textContent = 'Advanced options and named cohorts';
-    var body = doc.createElement('div'); body.id = ADV_BODY_ID;
-    details.appendChild(summary); details.appendChild(body);
-    pro.insertBefore(details, pro.firstChild);
-    placePrimary(doc, pro, section);
+    if (!existing) {
+      injectCss(doc);
+      existing = buildUi(doc);
+    }
+    placePrimary(doc, pro, existing);
+    /* The sentence-first composer is primary and must not wait for the legacy
+       cohort module to create #mlsSgPro. Keep observing after the composer is
+       live; when that optional host eventually arrives, wire its Advanced
+       disclosure without moving or rebuilding the primary surface. */
+    if (!pro) return false;
+    var details = doc.getElementById(ADV_ID), body = doc.getElementById(ADV_BODY_ID);
+    if (!details) {
+      details = doc.createElement('details'); details.id = ADV_ID;
+      var summary = doc.createElement('summary'); summary.textContent = 'Advanced options and named cohorts';
+      body = doc.createElement('div'); body.id = ADV_BODY_ID;
+      details.appendChild(summary); details.appendChild(body);
+    } else if (!body) {
+      body = doc.createElement('div'); body.id = ADV_BODY_ID; details.appendChild(body);
+    }
+    if (details.parentNode !== pro) pro.insertBefore(details, pro.firstChild);
     adoptLegacy(pro, details, body); mountedPro = pro;
     if (childObserver) childObserver.disconnect();
     childObserver = new MutationObserver(function (mutations) {

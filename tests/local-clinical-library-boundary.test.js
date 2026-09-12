@@ -38,12 +38,7 @@ const freshHardcodedLoaderTags = new Map([
   ['feat_mls_assistant_exact.js', '20260820asst220perf2'],
   ['feat_mls_outcome_pdf.js', '20260807lib7'],
   ['feat_mls_studygroups.js', '20260804sg1c8'],
-  ['feat_comp_report.js', '20260718pr5'],
-  /* libtag-1.0.0, again: srcontrast-1.0.0 (2026-09-01) rewrote the study
-     panel's stylesheet, so its loader tag advances with sr-2.4 in the same
-     change. A cache tag that does not move republishes the old hidden surface
-     to every browser that already has it. */
-  ['feat_mls_study_request.js', '20260912sr240']
+  ['feat_comp_report.js', '20260718pr5']
 ]);
 
 const stagingAdjunctRequirements = new Map([
@@ -196,6 +191,11 @@ const stagingConnect = fs.readFileSync(path.join(root, 'mls-connect.staging.js')
 for (const [file, tag] of freshHardcodedLoaderTags) {
   assert(connect.includes(`${file}?v=${tag}`) || connect.includes(`${file}\";`) && connect.includes(`\"?v=${tag}\"`), `${file} loader cache tag was not advanced to ${tag}`);
 }
+const studyLoaderAt = connect.indexOf("var A='feat_mls_study_request.js'");
+const studyLoader = studyLoaderAt >= 0 ? connect.slice(studyLoaderAt, studyLoaderAt + 5000) : '';
+assert(studyLoader.includes("V='sr-2.4.1'") &&
+  studyLoader.includes("s.src=A+'?v='+(window.__MLS_AV||Date.now());"),
+  'Study must follow the current app build instead of returning to a hand-maintained cache tag');
 const afterVisitLoader = connect.match(/var A='feat_after_visit_summary\.js'[\s\S]{0,3000}?\/\* action-time AVS readiness:[^\n]*/)?.[0] || '';
 assert(afterVisitLoader, 'after-visit summary action-time loader must remain reachable');
 assert(/s\.src='\/'\+A\+'\?v='\+\(window\.__MLS_AV\|\|Date\.now\(\)\)/.test(afterVisitLoader),
