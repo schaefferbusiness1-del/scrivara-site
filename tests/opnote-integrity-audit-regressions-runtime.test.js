@@ -261,6 +261,28 @@ async function main() {
   assert.strictEqual(trailingHistoricalAge.ok, true, 'a directly attached historical cue after the age was missed');
   assert.strictEqual(trailingHistoricalAge.note, trailingHistoricalText, 'the age with its following historical cue was not preserved byte-for-byte');
 
+  const pastDuringText = [
+    'Patient: Fixture Patient 01', 'Provider: Alex Morgan, MD',
+    'HISTORY: The patient, aged 20 during her prior surgery in 2010, recovered uneventfully.',
+    'FINDINGS: Stable.'
+  ].join('\n');
+  const pastDuringAge = api.finalizeNote(pastDuringText, directCtx,
+    { boundary: 'save', applyRepairs: true, requirePatient: true, requireProvider: true });
+  assert.strictEqual(pastDuringAge.ok, true, 'an explicit prior-event qualifier stopped being historical');
+  assert.strictEqual(pastDuringAge.note, pastDuringText, 'the explicit prior-event age was changed');
+
+  for (const currentAgeLine of [
+    'The patient is a 99-year-old during this encounter.',
+    'The patient is a 99-year-old when seen today.'
+  ]) {
+    const currentAgeText = 'Patient: Fixture Patient 01\nProvider: Alex Morgan, MD\nHISTORY: ' + currentAgeLine;
+    const currentAge = api.finalizeNote(currentAgeText, directCtx,
+      { boundary: 'save', applyRepairs: true, requirePatient: true, requireProvider: true });
+    assert.strictEqual(currentAge.ok, false, currentAgeLine + ' was mislabeled historical');
+    assert(currentAge.issues.some(x => x.code === 'AGE_CLAIM_AMBIGUOUS'), currentAgeLine + ' lost its age-review reason');
+    assert.strictEqual(currentAge.proposedNote, currentAgeText, currentAgeLine + ' was mutated instead of being reviewed');
+  }
+
   const crossSentenceHistory = [
     'Patient: Fixture Patient 01', 'Provider: Alex Morgan, MD',
     'HISTORY: The patient is a 20-year-old adult. In 2010, she underwent a prior procedure.',

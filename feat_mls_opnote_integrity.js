@@ -13,7 +13,7 @@
   'use strict';
   if (window.__mlsOpNoteIntegrity && window.__mlsOpNoteIntegrity.installed) return;
 
-  var VERSION = 'oni-2.18.2';
+  var VERSION = 'oni-2.18.3';
   var S = function (x) { return x == null ? '' : String(x); };
   var isFn = function (f) { return typeof f === 'function'; };
   var originals = {};
@@ -1972,7 +1972,7 @@
       .replace(/\[([^\[\]\n]{1,60})\]/g,function(m,k){ return isDateSlotName(k)?value:m; });
   }
 
-  /* oni-2.18.2 FINALIZATION PREFLIGHT ========================================
+  /* oni-2.18.3 FINALIZATION PREFLIGHT ========================================
      A generated note used to pass several strong, independent checks and then
      leave through four weaker doors: the editor/save path, PDF export, and the
      single/day surgeon handoffs.  That is how an already-normalized stale note,
@@ -2189,7 +2189,16 @@
       var ageAt=/^(?:aged\s+\d{1,3}|\d{1,3}[ -]year[ -]old)(?:\s+patient)?\b/i.exec(after);
       if(!ageAt)return false;
       var tail=after.slice(ageAt[0].length);
-      return /^\s*,?\s*(?:at\s+(?:that|the)\s+time\b|during\b|in\s+(?:18|19|20)\d{2}\b|when\b)/i.test(tail);
+      if(/^\s*,?\s*in\s+(?:18|19|20)\d{2}\b/i.test(tail))return true;
+      var qualifier=/^\s*,?\s*(?:at\s+(?:that|the)\s+time\b|during\b|when\b)([^.!?;]*)/i.exec(tail);
+      if(!qualifier)return false;
+      var detail=S(qualifier[1]).toLowerCase();
+      /* `during` and `when` are not inherently historical: "during this
+         encounter" and "when seen today" are explicit current-age claims.
+         A trailing qualifier earns historical treatment only when it carries
+         concrete past-event evidence in the same sentence. */
+      if(/\b(?:(?:this|current)\s+(?:encounter|visit|procedure|appointment)|today|now|currently|at\s+present|present\s+encounter)\b/.test(detail))return false;
+      return /\b(?:prior|previous(?:ly)?|earlier|historical(?:ly)?|past|childhood|infancy|adolescence|former)\b|\b(?:18|19|20)\d{2}\b|\b\d+\s+(?:years?|months?)\s+(?:ago|earlier|prior)\b|\blast\s+(?:year|month|week)\b/.test(detail);
     }
     function narrativeAgeClaims(text){
       var out=[],lines=S(text).split(/\r?\n/),re=/\b(\d{1,3})[ -]year[ -]old\b|\baged\s+(\d{1,3})\b/gi,m;
