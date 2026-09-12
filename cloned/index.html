@@ -63602,7 +63602,8 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
   'use strict';
   var VERSION = 'clunky2-rooms-1.0.0';
   if (window.__mlsClunkyRooms) return;
-  var passes = 0;
+  var passes = 0, retired = false, observer = null, interval = null, queued = null;
+  var startupTimers = [], heroClickHandler = null, activePatientHandler = null, viewChangedHandler = null, domReadyHandler = null;
   function el(id){ return document.getElementById(id); }
   function vis(n){
     if (!n) return false;
@@ -63702,13 +63703,14 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
      button is offering something else. */
   function armHero(){
     try {
-      document.addEventListener('click', function(ev){
+      heroClickHandler = function(ev){
         var t = ev.target;
         var hero = t && t.closest ? t.closest('#mlsCvNxt_history') : null;
         if (!hero || hero.getAttribute('data-mls-clunky-hero') !== '1') return;
         ev.preventDefault(); ev.stopPropagation();
         try { if (typeof window.showView === 'function') window.showView('patients'); } catch (e) {}
-      }, true);
+      };
+      document.addEventListener('click', heroClickHandler, true);
     } catch (e) {}
   }
 
@@ -63757,6 +63759,7 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
   }
 
   function pass(){
+    if (retired) return false;
     passes++;
     try {
       var noPt = !activeId();
@@ -63804,27 +63807,46 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
      pass per frame's worth of mutations is all this needs. */
   var queued = null;
   function schedule(){
+    if (retired) return;
     if (queued !== null) return;
     queued = setTimeout(function(){ queued = null; pass(); }, 60);
   }
   function arm(){
+    if (retired || observer || interval) return;
     try {
-      var obs = new MutationObserver(schedule);
-      if (document.body) obs.observe(document.body, { childList: true, subtree: true });
+      observer = new MutationObserver(schedule);
+      if (document.body) observer.observe(document.body, { childList: true, subtree: true });
     } catch (e) {}
-    ['mls:active-patient-changed', 'mls:view-changed'].forEach(function(ev){
-      try { window.addEventListener(ev, schedule); } catch (e) {}
-    });
+    activePatientHandler = schedule;
+    viewChangedHandler = schedule;
+    try { window.addEventListener('mls:active-patient-changed', activePatientHandler); } catch (e) {}
+    try { window.addEventListener('mls:view-changed', viewChangedHandler); } catch (e) {}
     armHero();
-    setInterval(pass, 1200);
-    [200, 700, 1500, 3000].forEach(function(ms){ setTimeout(pass, ms); });
+    interval = setInterval(pass, 1200);
+    [200, 700, 1500, 3000].forEach(function(ms){ startupTimers.push(setTimeout(pass, ms)); });
     pass();
   }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arm); else arm();
+  domReadyHandler = arm;
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', domReadyHandler); else arm();
 
   window.__mlsClunkyRooms = {
-    version: VERSION, pass: pass, passes: function(){ return passes; },
+    version: VERSION, installed: true, pass: pass, passes: function(){ return passes; },
     revert: function(){
+      if (retired) return true;
+      retired = true;
+      if (queued !== null) { try { clearTimeout(queued); } catch (eQ) {} queued = null; }
+      startupTimers.forEach(function (timer) { try { clearTimeout(timer); } catch (eST) {} });
+      startupTimers = [];
+      try { if (domReadyHandler) document.removeEventListener('DOMContentLoaded', domReadyHandler); } catch (eDR) {}
+      domReadyHandler = null;
+      try { if (observer) observer.disconnect(); } catch (eO) {}
+      observer = null;
+      try { if (interval) clearInterval(interval); } catch (eI) {}
+      interval = null;
+      try { if (activePatientHandler) window.removeEventListener('mls:active-patient-changed', activePatientHandler); } catch (eAP) {}
+      try { if (viewChangedHandler) window.removeEventListener('mls:view-changed', viewChangedHandler); } catch (eVC) {}
+      try { if (heroClickHandler) document.removeEventListener('click', heroClickHandler, true); } catch (eHC) {}
+      activePatientHandler = viewChangedHandler = heroClickHandler = null;
       try {
         var s = el('mlsClunkyRoomsCss'); if (s) s.disabled = true;
         document.documentElement.removeAttribute('data-mls-clunky-nopt');
@@ -63835,6 +63857,7 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
           x.removeAttribute('data-mls-clunky-ro'); x.removeAttribute('data-mls-clunky-dupetitle'); x.removeAttribute('data-mls-clunky-suhead');
         });
       } catch (e) {}
+      try { if (window.__mlsClunkyRooms && window.__mlsClunkyRooms.revert) delete window.__mlsClunkyRooms; } catch (eD) {}
       return true;
     }
   };
