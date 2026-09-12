@@ -148,8 +148,8 @@ const root = path.join(__dirname, '..');
    in extension-candidates/ so the published repo bytes stay coherent with the
    live feed; on publish, background.js itself carries these changes and the
    candidate path naturally wins either way. Newest candidate wins. */
-const candidateChain = ['3.0.45', '3.0.44', '3.0.43', '3.0.42', '3.0.41', '3.0.40', '3.0.38', '3.0.37', '3.0.36', '3.0.35', '3.0.34', '3.0.33', '3.0.32'].map(v => path.join(root, 'extension-candidates', v, 'background.js'));
-const backgroundPath = candidateChain.find(p => fs.existsSync(p)) || path.join(root, 'background.js');
+// Candidate acceptance must read the current repo source; historical copies are controls only.
+const backgroundPath = path.join(root, 'background.js');
 const background = fs.readFileSync(backgroundPath, 'utf8');
 
 /* ---- source markers: the receipt + snapshot contract must exist verbatim ---- */
@@ -204,7 +204,7 @@ for (const marker of [
   'var usable = inputs.filter(typableField);',
   'var best = usable[0];',
   "if (!typableField(best)) return { phase: 'fill', filled: false, diag: diag, reason: 'numeric-only-field-refused' };",
-  "reason: (fill && fill.reason) || '',",
+  "reason: (fill && fill.reason) || 'patient-search-control-unavailable',",
   /* rev-8 (3.0.38) invariants: the legacy header harvest excludes row-internal
      candidates at tiers 1 and 2 ONLY, records per-header provenance, and the
      per-container binding rule is untouched (never positional). */
@@ -231,8 +231,10 @@ for (const marker of [
    (unattributedRows and foreignRows both count 0 for a wrongly-bound row). */
 assert(background.includes('          if(local.length!==1)_legacyHeaderProofL=false;'),
   'the per-container single-header proof changed - a row must never be bound positionally');
-assert(background.includes("          var provider=local.length===1?local[0]:(out.diag.singleProviderName||'');"),
-  'the provider binding line changed - a row must bind only to a UNIQUE container header');
+assert(background.includes("          var listProvider=local.length===1?local[0]:(out.diag.singleProviderName||'');"),
+  'the list-wide provider requires a unique header or proven single-provider scope');
+assert(background.includes('var provider=listProvider;') && background.includes('_lgHeadElsL[_lgH].compareDocumentPosition(row)&Node.DOCUMENT_POSITION_FOLLOWING'),
+  'the 3.0.106 per-row heading path must retain its DOM-order evidence instead of binding by array position');
 assert(background.includes('if(localOrder.length!==1){_legacySafe=false;return;}'),
   'the single-provider-scope proof changed - ambiguous containers must stay unsafe');
 assert(!/rows\[\s*\w+\s*\]\s*\.provider\s*=\s*local\[/.test(background),
@@ -1306,13 +1308,17 @@ function plain(value) { return JSON.parse(JSON.stringify(value)); }
         const nowFields = spec.map(field), thenFields = spec.map(field);
         const now = await fillWith(driverOf(background, 'candidate'), nowFields, 'Lee, Roy');
         const then = await fillWith(driverOf(priorSrc37, '3.0.36'), thenFields, 'Lee, Roy');
-        const strip = r => { const c = JSON.parse(JSON.stringify(r)); if (c.diag) delete c.diag.numericFieldsRefused; return c; };
+        if (now.filled) assert.strictEqual(now.diag.searchValueVerified, true, 'a successful current search must verify its field readback');
+        const strip = r => { const c = JSON.parse(JSON.stringify(r)); if (c.diag) { delete c.diag.numericFieldsRefused; delete c.diag.searchValueVerified; } return c; };
         assert.deepStrictEqual(strip(now), strip(then),
           'the normal search path changed for [' + spec.map(s => s.__label).join(' + ') + ']');
         assert.deepStrictEqual(nowFields.map(f => f.value), thenFields.map(f => f.value),
           'a different field was written for [' + spec.map(s => s.__label).join(' + ') + ']');
-        assert.deepStrictEqual(nowFields.map(f => f.typedEvents), thenFields.map(f => f.typedEvents),
-          'the dispatched events changed for [' + spec.map(s => s.__label).join(' + ') + ']');
+        // The current native setter emits input itself; the retained explicit
+        // notification may repeat it. Targets and the ordered event kinds must agree.
+        const eventKinds = fields => fields.map(f => f.typedEvents.filter((event, index, all) => index === 0 || event !== all[index - 1]));
+        assert.deepStrictEqual(eventKinds(nowFields), eventKinds(thenFields),
+          'the dispatched event order/targets changed for [' + spec.map(s => s.__label).join(' + ') + ']');
       }
     }
     console.log('  P0 numeric-field guard: Patient ID fields excluded (12 signals), the outranking Patient ID field no longer wins (3.0.36 types into it - proven), lone numeric field refused by name, all-digits still allowed, pre-write re-assert fires, 5 normal-search fixtures identical to 3.0.36');
@@ -1846,6 +1852,16 @@ function plain(value) { return JSON.parse(JSON.stringify(value)); }
         if (o.diag) delete o.diag.headerProvenance;
         if (o.diag && o.diag.providerRosterReceipt) delete o.diag.providerRosterReceipt.headerProvenance;
         if (o.providerRosterReceipt) delete o.providerRosterReceipt.headerProvenance;
+        // 3.0.121 appointment-note payload is covered independently; these
+        // old header fixtures carry no appointment ID and cannot bind a note.
+        for (const row of o.appts || []) {
+          if (row.schedulingNoteReceipt) {
+            assert.strictEqual(row.schedulingNoteReceipt.status, 'appointment-unbound');
+            assert.strictEqual(row.schedulingNoteReceipt.complete, false);
+          }
+          delete row.schedulingNote; delete row.schedulingNoteReceipt;
+          if (row.status === '') delete row.status;
+        }
         /* 3.0.40 additive diagnostics (er-1.2 served-day provenance + pp-1.2
            census reconciliation + settled-empty proof) - all pinned by their
            own contracts (schedule-empty-day-settle, pull-reconciliation);

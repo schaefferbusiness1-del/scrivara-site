@@ -302,7 +302,8 @@ assert.strictEqual(contextHelpers.expectedContextMatches(fullExpected, Object.as
 
 /* A final action belongs to the one selected top-level Athena document. It
  * must never spray clicks into every frame. */
-assert(/target\s*:\s*\{\s*tabId\s*:\s*(?:tab\.id|tabId)\s*\}/.test(handler), 'driver must target one Athena tab');
+assert(/var target = \{ tabId: tabId \}; if \(clean\(documentId\)\) target\.documentIds = \[clean\(documentId\)\];/.test(handler), 'driver must target one Athena tab and the exact probed document');
+assert(/executeScript\(\{ target: target, world: 'MAIN', args: \[payload\], func: mlsAthenaActionV2DriverFn \}\)/.test(handler), 'driver must use the document-bound target');
 assert(!/target\s*:\s*\{[^}]*allFrames\s*:\s*true[^}]*\}[\s\S]{0,300}func\s*:\s*mlsAthenaActionV2DriverFn/.test(handler), 'final actions must not mutate all frames');
 assert(/allFrames\s*:\s*true[\s\S]{0,300}func\s*:\s*mlsAthenaTeachWatcherFn/.test(handler), 'read-only teaching safety watcher must cover every frame so a cross-origin click cannot slip through');
 

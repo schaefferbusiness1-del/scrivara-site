@@ -24,8 +24,8 @@ const fs = require('fs');
 const path = require('path');
 
 const root = path.join(__dirname, '..');
-const candidateChain = ['3.0.45', '3.0.44', '3.0.43', '3.0.42', '3.0.41', '3.0.40'].map(v => path.join(root, 'extension-candidates', v, 'background.js'));
-const bgPath = candidateChain.find(p => fs.existsSync(p)) || path.join(root, 'background.js');
+// Candidate acceptance must read the current repo source; historical copies are controls only.
+const bgPath = path.join(root, 'background.js');
 const background = fs.readFileSync(bgPath, 'utf8');
 const activeBackgroundPath = path.join(root, 'background.js');
 const activeBackground = fs.readFileSync(activeBackgroundPath, 'utf8');
@@ -98,8 +98,8 @@ function ok(name) { n++; console.log('ok ' + n + ' - ' + name); }
 
 /* ---- 3. autopilot free-typing refused on athenaOne ---- */
 {
-  const gateIdx = background.indexOf("/^(type|pastenote)$/.test(String(action.type || ''))");
-  assert.ok(gateIdx > 0, 'athena type/pastenote gate present');
+  const gateIdx = background.indexOf("String(action.type || '').toLowerCase().trim() !== 'scroll'");
+  assert.ok(gateIdx > 0, 'current Athena generic executor permits only scrolling');
   const execIdx = background.indexOf("const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });");
   const frameRouteIdx = background.indexOf('let _execTarget = { tabId: tab.id };');
   assert.ok(execIdx > 0 && gateIdx > execIdx && gateIdx < frameRouteIdx,

@@ -1433,6 +1433,7 @@ const tests = [
   'provider-day-history-cards-runtime.test.js',
   'full-visit-reader-runtime.test.js',
   'ax-history-census-terminal-runtime.test.js',
+  'ax-encounter-binding-runtime.test.js',
   'visit-reader-minimal-deadline-contract.test.js',
   'visit-request-correlation-runtime.test.js',
   'cohort-request-correlation-runtime.test.js',

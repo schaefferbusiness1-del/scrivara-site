@@ -1,5 +1,8 @@
 'use strict';
-/* qol-2.3 F6 RELEASE-HOLDING PROOF (supervisor blocking question, 2026-08-10):
+/* Historical qol-2.3 proof updated for the 3.0.121/122 safety ordering:
+   identity is now checked BEFORE every scoped and full-history body read,
+   and checked again after capture. Exact encounter routes bind body capture.
+   The original pre-3.0.121 implementation described below is superseded:
    the scoped ax route reads a body BEFORE the identity poll - reading early is
    the speed win, but STORING early would be the 6/24-6/29 cross-patient
    contamination class. This executes the REAL shipped axRouteRun closure with
@@ -56,7 +59,7 @@ function makeHarness(opts) {
     log.push(op);
     if (op === 'axHarvest') return [{ frameId: 7, result: { ok: true, encounters: opts.encounters, surfaceSig: { route: 'sig' } } }];
     if (op === 'axGo') return [{ frameId: 7, result: { ok: true } }];
-    if (op === 'axRead') { const b = readQueue.length > 1 ? readQueue.shift() : readQueue[0]; return [{ frameId: 7, result: b }]; }
+    if (op === 'axRead') { const b = readQueue.length > 1 ? readQueue.shift() : readQueue[0]; return [{ frameId: 7, result: {...b, encounterPath:args[2]} }]; }
     if (op === 'identity') { const idr = idQueue.length > 1 ? idQueue.shift() : idQueue[0]; return [{ frameId: 7, result: idr }]; }
     return [{ frameId: 7, result: null }];
   };
@@ -90,13 +93,12 @@ function makeHarness(opts) {
       frozenHint: { onlyDate: '2026-07-07' }
     });
     const r = await h.run(false);
-    assert.ok(log.indexOf('axRead') >= 0, '(b) the wrong-patient body WAS read (the reorder is real)');
-    assert.ok(log.indexOf('axRead') < log.indexOf('identity'), 'scoped path reads before polling identity');
+    assert.strictEqual(log.indexOf('axRead'), -1, '3.0.121+ refuses a wrong-patient body before reading it');
     const kept = JSON.stringify((r && r.visits) || []);
     assert.ok(kept.indexOf('MALLORY') < 0, '(a) EXECUTED: the wrong-patient body is NOT in the result');
     assert.ok(!(r && r.ok === true && (r.visits || []).length), 'no ok-with-body escape for a refused identity');
-    const g = h.getGate();
-    assert.ok(g && g.ok === false && /1 refused/.test(String(g.reason)), '(c) the discard is COUNTED: ' + String(g && g.reason));
+    assert.strictEqual(r.receipt.axRefused, 1, 'the identity refusal is counted in the scoped receipt');
+    assert.strictEqual(r.receipt.complete, false, 'a refused scoped encounter is not a proven empty day');
   }
 
   /* ---- CASE B: scoped, right patient in-day + out-of-day sibling ---- */
@@ -132,5 +134,5 @@ function makeHarness(opts) {
     assert.strictEqual(r.receipt.onlyDate, '', 'unscoped receipt says so');
   }
 
-  console.log('qol-ax-identity-gate: OK (wrong-patient body read-but-NEVER-kept and counted "1 refused"; single keep-site below the gate; in-day keep carries verified identity; out-of-day counted; unscoped order unchanged - all EXECUTED on the shipped closure)');
+  console.log('qol-ax-identity-gate: OK (wrong-patient body NEVER read/kept, refusal counted, exact encounter binding, both scoped and unscoped identity before capture - executed shipped closure)');
 })().catch(e => { console.error(e); process.exit(1); });

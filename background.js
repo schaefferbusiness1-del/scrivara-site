@@ -12349,6 +12349,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       try { location.assign(gHref); return { ok: true }; } catch (eGo) { return { ok: false, reason: 'ax-nav-failed' }; }
     }
     if (op === 'axRead') {
+      /* axbind-30122: navigation acceptance is not a landed encounter.
+         Bind this synchronous capture to the exact requested route twice. */
+      var axExpectedPath = String(idx || '');
+      if (!/^\/\d+\/\d+\/ax\/encounter\/\d+\/\w+$/.test(axExpectedPath)) return {ok:false,reason:'ax-read-unbound'};
+      if (String(location.pathname || '') !== axExpectedPath) return {ok:false,reason:'ax-encounter-not-settled'};
       /* Visibility-aware body capture (hc-1.0 discipline) + shadow-root text merge. */
       var axParts = [];
       try {
@@ -12365,8 +12370,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         for (var ti = 0; ti < all.length; ti++) { if (all[ti].shadowRoot) { axSN++; axParts.push((function (sr) { /* cx-1.0: strip non-rendered nodes from shadow text too */ try { var st = sr.querySelectorAll('script,style,noscript,template'); if (st.length) { var acc = '', kids = sr.childNodes; for (var ki = 0; ki < kids.length; ki++) { var kn = kids[ki]; if (kn.nodeType === 1 && /^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE)$/.test(kn.tagName)) continue; if (kn.nodeType === 1 && kn.querySelector && kn.querySelector('script,style,noscript,template')) { var kc = kn.cloneNode(true); var kj = kc.querySelectorAll('script,style,noscript,template'); for (var kx = 0; kx < kj.length; kx++) { try { kj[kx].parentNode.removeChild(kj[kx]); } catch (e0) {} } acc += kc.textContent || ''; } else { acc += kn.textContent || ''; } } return String(acc).replace(/[ \t]+/g, ' '); } } catch (eSr) {} return String(sr.textContent || '').replace(/[ \t]+/g, ' '); })(all[ti].shadowRoot)); axTxtWalk(all[ti].shadowRoot, depth + 1); } }
       })(document, 0);
       var axRaw = axParts.join('\n').slice(0, 90000);
-      var axDm = axRaw.match(/\b(\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4})\b/);
-      return { ok: axRaw.length > 0, raw: axRaw, headerDate: axDm ? axDm[1] : '', len: axRaw.length };
+      /* A first page date may be DOB. Only a labeled encounter date can
+         prove a scoped-day inclusion/exclusion; conflicting dates stay unknown. */
+      var axDateRe = /\b(?:encounter date|date of (?:service|visit|encounter)|visit date|service date|DOS)\s*[:#-]?\s*(\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4})\b/gi;
+      var axDates = [], axDm; while ((axDm = axDateRe.exec(axRaw))) { if (axDates.indexOf(axDm[1]) < 0) axDates.push(axDm[1]); }
+      if (String(location.pathname || '') !== axExpectedPath) return {ok:false,reason:'ax-encounter-changed'};
+      return { ok: axRaw.length > 0, raw: axRaw, headerDate: axDates.length === 1 ? axDates[0] : '', len: axRaw.length, encounterPath: axExpectedPath };
     }
     if (op === 'surfaceProbe') {
       /* fb-1.1: read-only surface triage from the TOP frame. The 2026-08-08
@@ -13893,11 +13902,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               continue;
             }
             var axBody = null;
-            if (!axBody) {
-              var axRd = await exec(emrId, [axBestFrame], ['axRead', cfg]);
+            var axBodyDeadline = Math.min(readDeadline - 500, Date.now() + 5200);
+            do {
+              var axRd = await exec(emrId, [axBestFrame], ['axRead', cfg, axE.hrefPath]);
               axBody = bestResult(axRd, function (r) { return (r && r.ok && r.raw) ? r.raw.length : 0; }).result;
-            }
-            if (!axBody || !axBody.ok) { axRefused++; continue; }
+              if (axBody && axBody.ok) break;
+              if (axBody && axBody.reason && axBody.reason !== 'ax-encounter-not-settled') break;
+              if (Date.now() + 700 >= axBodyDeadline) break;
+              await sleep(700); touchVisitLease();
+            } while (Date.now() < axBodyDeadline);
+            if (!axBody || !axBody.ok || axBody.encounterPath !== axE.hrefPath) { axRefused++; continue; }
+            /* Recheck the patient after capture, before any keep/date decision. */
+            var axAfterIds = await exec(emrId, [axBestFrame], ['identity', cfg]);
+            var axAfterIdent = bestResult(axAfterIds, function (r) { return (r && r.name ? 20 : 0) + (r && r.dob ? 15 : 0) + (r && r.mrn ? 10 : 0) + ((r && r.score) || 0); }).result || null;
+            if (!axAfterIdent || !visitIdentityGate(frozenHint, axAfterIdent).ok) { axRefused++; continue; }
+            axIdent = axAfterIdent;
             /* scoped-census-30121: identity precedes every date decision.
                Unknown dates cannot prove that an encounter is out of scope. */
             if (axOnlyDate) {

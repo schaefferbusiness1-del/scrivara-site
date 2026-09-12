@@ -34,8 +34,8 @@ const root = path.join(__dirname, '..');
    in extension-candidates/ so the published repo bytes stay coherent with the
    live feed; on publish, background.js itself carries these changes and the
    candidate path naturally wins either way. Newest candidate wins. */
-const candidateChain = ['3.0.45', '3.0.44', '3.0.43', '3.0.42', '3.0.41', '3.0.40', '3.0.38', '3.0.37', '3.0.36', '3.0.35', '3.0.34', '3.0.33', '3.0.32'].map(v => path.join(root, 'extension-candidates', v, 'background.js'));
-const background = fs.readFileSync(candidateChain.find(p => fs.existsSync(p)) || path.join(root, 'background.js'), 'utf8');
+// Candidate acceptance must read the current repo source; historical copies are controls only.
+const background = fs.readFileSync(path.join(root, 'background.js'), 'utf8');
 
 for (const marker of [
   'function _legacyHeaderTextsL(list)',

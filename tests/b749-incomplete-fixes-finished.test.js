@@ -110,7 +110,7 @@ const bg = fs.readFileSync(path.join(root, 'background.js'), 'latin1');
 
 /* ---- 4. the one consumer of the repaired fields respects dateUnverified ---- */
 {
-  const guard = bg.match(/return value\.done === true[^;]*;/);
+  const guard = bg.match(/return value && value\.done === true[^;]*;/);
   assert(guard, 'the post-recovery re-ground guard must still exist');
   assert(/dateUnverified !== true/.test(guard[0]),
     'the ONLY consumer of out.done/out.schedDate in the extension is this re-ground guard. ' +

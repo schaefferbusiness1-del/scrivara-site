@@ -96,12 +96,12 @@ function makeRail(focusedWin, tabsById) {
   /* ---- F6: the ax route is day-scoped ---- */
   const axIdx = bg.indexOf('var axOnlyDate = String((frozenHint && frozenHint.onlyDate) || "");');
   assert.ok(axIdx > 0, 'F6: the ax route reads the scoped-day hint');
-  const earlyRead = bg.indexOf('axBodyEarly', axIdx);
+  const bodyRead = bg.indexOf("['axRead', cfg, axE.hrefPath]", axIdx);
   const idPoll = bg.indexOf('var axIdOk = false, axIdent = null;', axIdx);
-  assert.ok(earlyRead > 0 && earlyRead < idPoll, 'F6: the body is read and date-gated BEFORE the identity poll');
+  assert.ok(idPoll > 0 && bodyRead > idPoll, 'F6: patient identity precedes the exact-encounter body read');
   assert.ok(bg.indexOf('axDateSkipped++; continue;') > 0, 'F6: out-of-day encounters are dropped, counted, never kept');
-  assert.ok(/onlyDate: axOnlyDate, axDateSkipped: axDateSkipped/.test(bg), 'F6: the receipt names the scope and the skips');
-  assert.ok(/axOnlyDate && axScannedAll && axRefused === 0 && axShapeUnknown === 0/.test(bg), 'F6: a cleanly-scanned empty day is an honest success, not a refusal');
+  assert.ok(/onlyDate: axOnlyDate, scopeDate: axOnlyDate/.test(bg) && /axDateSkipped: axDateSkipped/.test(bg), 'F6: the receipt names the scope and the skips');
+  assert.ok(/axKept === axExpected && axRefused === 0 && axShapeUnknown === 0 && axDateUnknown === 0/.test(bg) && /axScannedAll && \(axKept > 0 \|\| axTodayValid\)/.test(bg), 'F6: a clean empty day also requires zero-gap census and calendar authority');
 
   /* F6 EXECUTED: the date key the gate compares with, incl. fail-closed junk */
   const dkStart = bg.indexOf('function mlsVisitDateKeyForHint(sv)');

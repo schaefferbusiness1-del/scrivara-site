@@ -88,10 +88,10 @@ const mkEl = function (tag, href, testid) {
 const stubDoc = {
   els: [mkEl('A', '/22724/6/ax/encounter/111/summary'), mkEl('A', '/22724/6/ax/encounter/111/summary'), mkEl('A', '/22724/6/ax/encounter/222/summary'), mkEl('DIV', null, 'patient-header')],
   querySelectorAll: function () { return this.els; },
-  visibilityState: 'visible', body: { innerText: 'HEADER 01/02/2026 body text' }
+  visibilityState: 'visible', body: { innerText: 'Encounter date: 01/02/2026 body text' }
 };
 function runOp(op, idx) {
-  const ctx = { op: op, idx: idx, cfg: {}, document: stubDoc, location: { pathname: '/22724/6/ax/briefing/9990001', assign: function (h) { ctx.__navigatedTo = h; } } };
+  const ctx = { op: op, idx: idx, cfg: {}, document: stubDoc, location: { pathname: op === 'axRead' ? '/22724/6/ax/encounter/111/summary' : '/22724/6/ax/briefing/9990001', assign: function (h) { ctx.__navigatedTo = h; } } };
   vm.createContext(ctx);
   return { out: vm.runInContext('(function(){\n' + opBody + '\nreturn null;})()', ctx), ctx: ctx };
 }
@@ -104,7 +104,7 @@ const go = runOp('axGo', '/22724/6/ax/encounter/111/summary');
 ok(go.out && go.out.ok === true && go.ctx.__navigatedTo === '/22724/6/ax/encounter/111/summary', 'vm: axGo navigates the clean form');
 const goBad = runOp('axGo', 'https://evil.example/x');
 ok(goBad.out && goBad.out.ok === false && goBad.out.reason === 'ax-nav-href-rejected', 'vm: axGo refuses a foreign URL');
-const rd = runOp('axRead');
+const rd = runOp('axRead', '/22724/6/ax/encounter/111/summary');
 ok(rd.out && rd.out.ok === true && rd.out.headerDate === '01/02/2026' && rd.out.raw.indexOf('body text') > 0, 'vm: axRead captures body + header date');
 
 /* arm 5: CONTROL - the pre-fix source shape must fail the pin set */

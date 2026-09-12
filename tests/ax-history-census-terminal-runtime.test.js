@@ -26,7 +26,7 @@ function finish(result) {
 }
 
 async function run(options) {
-  let now = 10000, current = '';
+  let now = 10000, current = '', settleReads = 0, captured = false;
   const identity = { name: 'Synthetic Patient', dob: '01/02/1960', mrn: '700777' };
   const encountered = [], read = [];
   const context = {
@@ -48,12 +48,14 @@ async function run(options) {
       let result;
       if (op === 'axHarvest') result = { ok: true, surfaceSig: {}, encounters: options.ids.map(eid => ({ eid, hrefPath: '/1/2/ax/encounter/' + eid + '/summary' })) };
       else if (op === 'axGo') {
-        current = args[2].match(/encounter\/(\d+)/)[1]; encountered.push(current);
+        current = args[2].match(/encounter\/(\d+)/)[1]; encountered.push(current); captured = false;
         result = { ok: current !== options.failedNavigation };
-      } else if (op === 'identity') result = identity;
+      } else if (op === 'identity') result = captured && current === options.postCaptureMismatch ? null : identity;
       else if (op === 'axRead') {
         read.push(current);
-        result = { ok: true, headerDate: options.dates && Object.prototype.hasOwnProperty.call(options.dates, current) ? options.dates[current] : '08/01/2026', raw: 'Synthetic encounter ' + current + ': history, examination and plan.' };
+        captured = true;
+        result = { ok: true, encounterPath: current === options.foreignBody ? '/1/2/ax/encounter/999/summary' : args[2], headerDate: options.dates && Object.prototype.hasOwnProperty.call(options.dates, current) ? options.dates[current] : '08/01/2026', raw: 'Synthetic encounter ' + current + ': history, examination and plan.' };
+        if (current === options.unsettled || (current === options.lateSettle && settleReads++ < 2)) result = {ok:false,reason:'ax-encounter-not-settled'};
       } else throw new Error('Unexpected operation: ' + op);
       return [{ frameId: 5, result }];
     }
@@ -84,7 +86,10 @@ async function run(options) {
   assert.strictEqual(shorter.result.receipt.indexRowsKnown, 6, 'known index count was lost');
   assert.strictEqual(shorter.result.receipt.notAttempted, 2, 'known encounters absent from the harvest were not accounted for');
 
-  for (const variation of [{ cap: 2 }, { failedNavigation: '102' }, { wrongIdentity: '103' }, { deadline: 19000 }]) {
+  const recovered = await run({known:4,ids,lateSettle:'102'});
+  assert.strictEqual(recovered.result.receipt.complete,true,'late exact-route paint did not recover');
+  assert.strictEqual(recovered.read.filter(id=>id==='102').length,3,'settle retry was not exercised');
+  for (const variation of [{ cap: 2 }, { failedNavigation: '102' }, { wrongIdentity: '103' }, { foreignBody:'102' }, { postCaptureMismatch:'102' }, { unsettled:'102' }, { deadline: 19000 }]) {
     const partial = await run({ known: 4, ids, ...variation });
     assert.strictEqual(partial.result.receipt.complete, false, JSON.stringify(variation) + ' became complete');
     assert.strictEqual(partial.result.receipt.fullDetail, false);

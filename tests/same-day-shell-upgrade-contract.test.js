@@ -102,9 +102,8 @@ const FULL_BODY = 'Diagnoses: lumbar radiculopathy\nPlan: continue conservative 
 
 /* ---- 5. px-e1: candidate date-key treats dash/dot dates as the same day ---- */
 {
-  const candPath = path.join(root, 'extension-candidates', '3.0.45', 'background.js');
   const rootPath = path.join(root, 'background.js');
-  const bgSource = fs.readFileSync(fs.existsSync(candPath) ? candPath : rootPath, 'latin1');
+  const bgSource = fs.readFileSync(rootPath, 'latin1');
   const i = bgSource.indexOf('function mlsVisitDateKeyForHint');
   assert(i >= 0, 'mlsVisitDateKeyForHint not found');
   const j = bgSource.indexOf('function freezeVisitHint', i);

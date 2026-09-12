@@ -236,11 +236,11 @@ function sourceContracts() {
   const diagnostics = between(
     CONTENT,
     "var openedSafe = (opened && typeof opened === 'object') ? opened : {};",
-    'if (chartBootstrapIdentity && !(opened.appointmentIdBound === true',
+    'if ((chartBootstrapIdentity || chartMessage.appointmentRecovery) && !(opened.appointmentIdBound === true',
     'chart-open diagnostics'
   );
-  ok(diagnostics.includes("function openCode(value) { return mlsStr(value, 40).toLowerCase().replace(/[^a-z0-9_-]/g, ''); }"),
-    'chart-open diagnostic codes are no longer closed and length bounded');
+  ok(diagnostics.includes('function openCode(value) {') && diagnostics.includes('mlsStr(value, 64).toLowerCase()') && diagnostics.includes(".test(code) ? code : '';"),
+    'chart-open diagnostic codes must use the current closed-vocabulary projection');
   ok(diagnostics.includes("['scanned', 'scrollers', 'topScore', 'inputCount', 'numericFieldsRefused', 'apptIdMatches', 'rowDobKnown']"),
     'the closed numeric chart-open diagnostic allowlist changed');
   ok(diagnostics.includes('safeDiag.rowMrnMatched = openedDiag.rowMrnMatched === true;'),

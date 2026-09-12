@@ -1,0 +1,1748 @@
+{
+  "candidate": "3.0.122",
+  "coreSha256": "9ac2233ae0e238d55c5484ff57c20fa3c2f74ca21b713c8f2046bd643dffab6a",
+  "zipSha256": "60f1a46de17ef60c10c95b58cbbec2c37da03ad3ba689929b50b368e236c3f8e",
+  "fullSweep": {
+    "executed": 189,
+    "initialPassed": 170,
+    "initialFailed": 19,
+    "reconciledPassed": 177
+  },
+  "rechecks": {
+    "executed": 26,
+    "passed": 25
+  },
+  "supplementalWorkflow": {
+    "executed": 15,
+    "passed": 14
+  },
+  "explicitExtensionAcceptance": {
+    "executed": 92,
+    "passed": 92,
+    "suites": [
+      "appointment-id-bootstrap-contract.test.js",
+      "appointment-nonclinical-route-guard.test.js",
+      "already-open-appointment-short-circuit.test.js",
+      "athena-action-contract.test.js",
+      "athena-action-token-session-runtime.test.js",
+      "athena-active-launcher-tab-runtime.test.js",
+      "athena-adversarial-contract.test.js",
+      "athena-draft-only-execution.test.js",
+      "athena-keepalive-pull-busy-runtime.test.js",
+      "athena-legacy-executor-closed.test.js",
+      "athena-live-unbound-discovery-runtime.test.js",
+      "athena-name-search-format-contract.test.js",
+      "athena-named-section-placement-runtime.test.js",
+      "athena-native-persistence-proof-contract.test.js",
+      "athena-native-persistence-runtime.test.js",
+      "athena-order-action-runtime.test.js",
+      "athena-overlay-lifecycle-contract.test.js",
+      "athena-probe-exact-candidate-foreground-runtime.test.js",
+      "athena-procedure-note-placement-runtime.test.js",
+      "athena-session-health-runtime.test.js",
+      "athena-session-preservation-contract.test.js",
+      "athena-tab-lease-over-pin.test.js",
+      "athena-window-guard-contract.test.js",
+      "athena-write-contract.test.js",
+      "athena-write-verification-contract.test.js",
+      "ax-encounter-binding-runtime.test.js",
+      "ax-history-census-terminal-runtime.test.js",
+      "ax-native-reader.test.js",
+      "background-all-visits-cleanup-serialization.test.js",
+      "background-final-patient-timeout-runtime.test.js",
+      "briefing-problem-capture-runtime.test.js",
+      "candidate-3045-diagnostics-contract.test.js",
+      "chart-capture-excludes-script-text.test.js",
+      "chart-open-failure-diagnostics-contract.test.js",
+      "chart-request-deadline-runtime.test.js",
+      "content-read-relay-watchdog.test.js",
+      "day-navigation-observes-the-header.test.js",
+      "destination-teaching-runtime.test.js",
+      "encounter-index-names-its-surface.test.js",
+      "encounter-index-stability-survives-frame-reload.test.js",
+      "enumerate-all-events-is-not-the-row-count.test.js",
+      "enumerate-evidence-crosses-the-hop.test.js",
+      "enumerate-gives-up-when-provably-stuck.test.js",
+      "enumerate-noise-surface-exclusion.test.js",
+      "enumerate-refusal-evidence.test.js",
+      "exact-row-recovery-runtime.test.js",
+      "ext-3063-athena-tab-resilience-contract.test.js",
+      "ext-3064-hidden-safe-sleep-contract.test.js",
+      "extension-backend-origin-security.test.js",
+      "extension-host-scope-contract.test.js",
+      "extension-mac-sleep-and-legacy-review-runtime.test.js",
+      "extension-manifest-text-integrity.test.js",
+      "extension-orphan-neutralization-contract.test.js",
+      "extension-package.test.js",
+      "extension-read-path.test.js",
+      "fatigue-breaker.test.js",
+      "frame-url-binds-appointment.test.js",
+      "full-visit-reader-runtime.test.js",
+      "history-absolute-deadline-runtime.test.js",
+      "history-preopened-same-tab-contract.test.js",
+      "history-retry-foreground-contract.test.js",
+      "manual-history-exact-open-mrn-contract.test.js",
+      "per-read-session-liveness-contract.test.js",
+      "qol-ax-identity-gate.test.js",
+      "qol-batch-scoped-focus-restore.test.js",
+      "qol-focus-comes-home.test.js",
+      "savenamed-active-surface-runtime.test.js",
+      "savenamed-slate-editor-reader-runtime.test.js",
+      "schedule-chip-name-capture-contract.test.js",
+      "schedule-complete-note-runtime.test.js",
+      "schedule-dom-text-echo-regression.test.js",
+      "schedule-empty-day-proof-contract.test.js",
+      "schedule-empty-day-settle-contract.test.js",
+      "schedule-mutating-row-reverify-contract.test.js",
+      "schedule-nonpatient-row-guard.test.js",
+      "schedule-packaged-reader-regression.test.js",
+      "schedule-pull-integrity.test.js",
+      "schedule-pull-reconciliation-contract.test.js",
+      "schedule-read-declares-its-freshness.test.js",
+      "schedule-row-demographics-adversarial.test.js",
+      "schedule-scrape-deadline-searchopen-runtime.test.js",
+      "schedule-time-contract.test.js",
+      "schedule-weektab-provider-header-variant.test.js",
+      "surface-recycle-rebind.test.js",
+      "test-content-production-boundary.test.js",
+      "visit-accordion-body-runtime.test.js",
+      "visit-body-identity-302-contract.test.js",
+      "visit-reader-minimal-deadline-contract.test.js",
+      "visit-request-correlation-runtime.test.js",
+      "visits-rail-scoped-click.test.js",
+      "visits-surface-and-cleanup-pins.test.js",
+      "writeflow-presence-port-contract.test.js"
+    ]
+  },
+  "union": {
+    "executed": 203,
+    "passed": 190,
+    "remainingFailed": 13
+  },
+  "suites": [
+    {
+      "name": "1p-athena-write-readiness-and-probe-only.test.js",
+      "pass": false,
+      "evidence": "full-sweep",
+      "sourceSha256": "4d75b518ceb889c32f245bf7d417a141a9b40a16dd6d6eb969cc63f93a2f24b2",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": "site report projection omits current reason codes"
+    },
+    {
+      "name": "1p-athena-write-unlock-frozen-contract-runtime.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "000df8669e5af32ae1fcda8a53db31d6edce1a8ec4b918fb7c8952a36dd56d04",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "1p-avatar-landmark-evidence.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "c91d064c0e1925aca968725518134139a7c0aa281f27eb3f2a8dfdb1363eb4d5",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "1p-cross-patient-door.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "2211d616597cfd228a81077863a35dbcf2062abe6146e8a99645c283cd6d416b",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "1p-day-note-day-and-future-runtime.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "066dd7d41816c87444511a0489fc31013c2830976e1f02f4a3b02e82ec4e2f18",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "1p-long-read-progress.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "9d6f8e343ecc7acf997e87bb349201bfd49cbe51abbd56f24b2660371c64db06",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "1p-preview-contract.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "aa69010fb4b69bd818e692a95f07ec1bf8ff70453839122cdedfb38b0cbae871",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "1p-progress-honesty-contract.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "2c3d6d7f08a874c59cbbf669e53ca9e460ee44cfa497b13f6bbbac39f7ad2094",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "1p-pull-resume-skip-and-cost-runtime.test.js",
+      "pass": true,
+      "evidence": "supplemental-workflow",
+      "sourceSha256": "480bec8d294a9e519f45f507b6eff90b35f7d40722ce334c91032c1b7db317d5",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "1p-pull-stop-and-find-census-runtime.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "37ac38d016ed0131d74b918b68e35bef8956a8fb538c9727e444e3447e4e1216",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "1p-single-pull-visit-accounting.test.js",
+      "pass": true,
+      "evidence": "supplemental-workflow",
+      "sourceSha256": "0ab097a8b3b657d41f0c744aa08b8f2ccb75c8060d4c9adff2580c651dd06068",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "1p-writeflow-opnote-clarity-progress.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "da902eb2c418d63bfd1843b72652d7ba6a231d9da5bf46c5836bd7317f9f644b",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "all-providers-means-all-providers.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "b2029d31a1693a2e82c2a8d825e5353d08ce56a9dfc436b050a6e710816b38c8",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "already-open-appointment-short-circuit.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "329a022974f9650624d233f852ea76eefff8c6ce6e688f4135d26110bcceed51",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "appointment-id-bootstrap-contract.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "9461aa9913e1c46f135dec3bda3999646de52c8364312faec9b29566313b0e03",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "appointment-nonclinical-route-guard.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "0a93b40eeff9320e952aa0e90b9fc2f6644ca9810b338e2a3852a20414f4e295",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "assessment-probe-proof.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "2bd4ee5a463504d5d649ea775bca01407d155c3b40b4969f8f3d7fae55ee2d45",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "athena-action-contract.test.js",
+      "pass": true,
+      "evidence": "final-recheck",
+      "sourceSha256": "1cb6bc5f6d43a0b940b796fd25c7e57f25d07f5f8da95ffde4f58e60053ae596",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "athena-action-token-session-runtime.test.js",
+      "pass": true,
+      "evidence": "final-recheck",
+      "sourceSha256": "480e546af1e864640f0be62c44908f15a0e82cf74cf918a840df7bb3a8debff9",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "athena-active-launcher-tab-runtime.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "d9d7359267388f98013e2acf81a62cc2dcf56af76ba8f419f649a0800048ddba",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "athena-advanced-unified-entry-contract.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "7371dd932ea3770648e9ca4d771ba8bf197960d198b23961749029675225a321",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "athena-adversarial-contract.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "3a1a4bd0904fee62b0336eb7006d1c5872c4c7cf1cc7ae2211b14691c8f9529d",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "athena-autopull-partial-provenance.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "cce8a56d22432e6152f739af0aa5970f1bcc16ea8abc78222058b6e67f17ab73",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "athena-autopull-terminal-receipt-runtime.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "08997eff753dd1a36e4fcb458208f624cbf86d5ef84e7e9c9038eb7a6e67f6b9",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "athena-confirmation-runtime.test.js",
+      "pass": false,
+      "evidence": "full-sweep",
+      "sourceSha256": "87a51f7912eb4b13297fd0bdb712b7154f119764ab17b5785fff96b28f2fc4fe",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": "site controller returns the current manual-only-final-action policy instead of old capability refusal"
+    },
+    {
+      "name": "athena-confirmed-billing-contract.test.js",
+      "pass": false,
+      "evidence": "full-sweep",
+      "sourceSha256": "65bcbafcac04c425ec06fc15736a6603151b4a4b16257ce1953d90197610231f",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": "site test expects old billing capability/UI behavior"
+    },
+    {
+      "name": "athena-crosslayer-bridge-payload-runtime.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "52be126de9c97f227d7648b1da824ef3b5c57516ad5168e5dd0ce96a4b3935c1",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "athena-draft-only-execution.test.js",
+      "pass": true,
+      "evidence": "final-recheck",
+      "sourceSha256": "9558095ffdae7bb5c0b2646788e20fad7baebf58a34039aae41c3634e7ca6cbe",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "athena-dual-note-contract.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "aae1a9e5fd1dfdead4b6c8486a8e18fc98eaf0890b7ac34ce6ff141c55681eb2",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "athena-dual-note-state-runtime.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "799b78eca581d1dcaf2724351275765b735dbbda8f2c26804ef298983b36850d",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "athena-fhir-fallback-frontend.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "7392bc35e45c5cedbcfec30a853dd1c0f9490ab5166350c2e8766fa6e1dd6ebb",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "athena-final-action-truth-contract.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "30224e0b88fb7a5b138f105ffd478c4b3c0840c9d7b0a67a8e4b319d76544d0b",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "athena-follow-bidirectional-contract.test.js",
+      "pass": false,
+      "evidence": "full-sweep",
+      "sourceSha256": "e5953b9d87c83b2b8c96983e0b75703526768bbaa838ac20c4b806e1ff229953",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": "mixed release test equates published stable 3.0.112 with isolated candidate 3.0.122"
+    },
+    {
+      "name": "athena-generated-soap-provenance-runtime.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "ca41aa5f506003e485e3f184f2dce05dec2775ed90ac8b8c831ef0651e84d33a",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "athena-generated-soap-staging-runtime.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "080bb55cde64c678a3b79512231e46c924d0194edb7715e2b509609e4f593cf6",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "athena-import-backup-truth-contract.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "3716698aca8596d7a12096883e414d7049229d536d517ad057f1cb912f5916a3",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "athena-inline-canonical-generation-runtime.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "f05aed70b84548aa91b60884b7b149d4c4f435906fd75acea8b5aa2db1a7044e",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "athena-keepalive-pull-busy-runtime.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "11f58f66a925df4e82e35e513044beaf322cabf9e8d6227ea60515e827a10771",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "athena-launcher-clarity-contract.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "e62db61be0c05227f325d21cffab52c498be0055a9353bee29b781e4e51bcb40",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "athena-legacy-executor-closed.test.js",
+      "pass": true,
+      "evidence": "final-recheck",
+      "sourceSha256": "c42733454962858cb5358a0a10c481c38c15607286f829dc5f1c3f650f72c713",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "athena-live-unbound-discovery-runtime.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "4fe3980620c209670b128c3225d9cc4336d97d7b15cf7848f643ead0c87e0c7e",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "athena-mixed-procedure-staging-runtime.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "8d1489f44f7edb095cfeb672fd416453f3b51a810f3cfae43b5f049f3383a6a3",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "athena-name-search-format-contract.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "9ceac708e7195296117d6fc7cfc065f4675793df2368b55819efa4a1c74f9a0c",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "athena-named-section-placement-runtime.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "ec52043c931a3c9ac79b3475b28b37b22e57d2c25e1af06252266a9004dfa77d",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "athena-native-persistence-proof-contract.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "75c228d69ba7ee93e2f9e66d25abb61cf52413a56003820d2138042f788fb495",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "athena-native-persistence-runtime.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "948484800d857baaebfe931aed6d9ff4efb6c8aa8f4b9e06bc9c59974665755c",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "athena-opnote-loader-boundary-contract.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "7386d1d4662ebb9d340782be81945653a79fd171ab22884a88eaa8993b806cac",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "athena-order-action-runtime.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "4eb971906704bdb57d961426be06560bfcdcffdc8566eeb3d25511287d8061a1",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "athena-overlay-lifecycle-contract.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "7476459e1fd3822682ca4e84601e83e81e986237f40edd2c0f1f9c50d81345b3",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "athena-panel-duplicate-section-runtime.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "aec3d22df34c4787a4e2536b100b8b24cb976de61ce78b5bf97b1e051f2dc434",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "athena-probe-exact-candidate-foreground-runtime.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "4a81f0b29d3bf67bb745afef319ce5041a537f6482770f90b0d73b140c3c0760",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "athena-problem-list-is-not-comma-shredded.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "addcd2ae0d56dcd6ffbcc7c5401829faec47782b595caa7d42797006445a3adc",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "athena-procedure-note-placement-runtime.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "6770ec4dea1035259bc2d4a9955476099cd072cbf0b049f1ab549b517c7ea18f",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "athena-pull-notification-ownership.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "11e934a9c7625be3b7618d507a99a4f9831f67cef08ad7483548bf5f56a33ab4",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "athena-pull-toast-lifecycle.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "ed65d69d60ddb94640c2db5a8c285bb05cb87861671aeb9a114ba9f278e4e5c6",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "athena-read-indicator.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "4900708fd574e38eaa1f0711cee6b03c667fdc222b74deb71948825c29c1dbd4",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "athena-reviewed-display-source-runtime.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "b4ce2327c04b21e15cdd36abf3b120a19ce2e0152060f0d0896b9e71fbc22d3c",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "athena-session-health-runtime.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "719296c87c530a5b5170501b6227f02c6e895a975a0504e24a171b6e6aa5d4bd",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "athena-session-preservation-contract.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "39105ddf4fe423ea830bcfaf2cbd7225553319fe0959d67c66c3fd2e3c9f7124",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "athena-sidecar-degrades-route-not-note.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "70a5c9d7ea2af6d23ece4fbac0458359fc798bc2ce33b1c9732edf9ebc33fc69",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "athena-tab-lease-over-pin.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "f2b05c84e79f43a19b3ac9fa9d7a4b01218102a53e4041fabc2a46b6fc1f199a",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "athena-unified-confirmation-contract.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "9148e0156126e4b7a775902353c55f7ba694cb24c1f8d2be37b1c36b7706de20",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "athena-unified-confirmation-runtime.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "7f41c9ab9e475a4a22e744af6844731964c6ba1aabf9bbb750d45fe067fab7f3",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "athena-unified-manifest-contract.test.js",
+      "pass": false,
+      "evidence": "full-sweep",
+      "sourceSha256": "0cad6b9edd8b91829aa727e9c9cd83342068209d42735e1d8b0232b04fa13aed",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": "site manifest test expects old billing capability/cure"
+    },
+    {
+      "name": "athena-what-goes-where-runtime.test.js",
+      "pass": false,
+      "evidence": "full-sweep",
+      "sourceSha256": "67c630edcd7203493cefe732813bbb00446028539cc08454ceeffb5e4b5c4c68",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": "site fixture expects an executable READY order although policy is draft-only"
+    },
+    {
+      "name": "athena-window-guard-contract.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "527f1a3c003170fea44f4a991af3cd0936337dcc932f4ecc64868a31f149ca29",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "athena-write-contract.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "6b68a16d9f6a8e192d609a137644e342e741774ef3cddbd70e3cb93c0b721dd2",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "athena-write-verification-contract.test.js",
+      "pass": true,
+      "evidence": "final-recheck",
+      "sourceSha256": "65372a47ebf2af81b7abc66105ac309e78e58b961e8a83afca12680cd5b05460",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "ax-encounter-binding-runtime.test.js",
+      "pass": true,
+      "evidence": "final-recheck",
+      "sourceSha256": "2fa04d49b3fad832498987764006f412c5294a206ba88cc9f8cf6b72a9c5ef41",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "ax-history-census-terminal-runtime.test.js",
+      "pass": true,
+      "evidence": "final-recheck",
+      "sourceSha256": "6662d1677328448eeea1d6bad932d672f0f9298cfdd2f5fc7e54b755c3446cc6",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "ax-native-reader.test.js",
+      "pass": true,
+      "evidence": "final-recheck",
+      "sourceSha256": "6d96b370d36d7c71c42cf31c6b4c10ff3c62c0dd0b2b865cef89647ba377bf5a",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "b749-incomplete-fixes-finished.test.js",
+      "pass": true,
+      "evidence": "final-recheck",
+      "sourceSha256": "5a55e9a61839ded7f82852ff781fefca95248cfc75758cf794e477436a8b81ef",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "background-all-visits-cleanup-serialization.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "e2216ecd0bf5dc3f24e59b5a7f665bd9b48b5917a9c1630a338b46686c7de3ed",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "background-final-patient-timeout-runtime.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "77387cbc4dd5c63276bb5774b42456486c61a0cc58394722c0c8ae9be18a5db3",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "beadwait-splice-proof.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "833319044704f7e0ada163d84977aca11bdb4d1feea94f2d64c8a61c61458f77",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "briefing-problem-capture-runtime.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "5b3c2cffff27b18d379db413a16c98f531e084b222deea6fcc32dc3cb3a3a0a7",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "candidate-3045-diagnostics-contract.test.js",
+      "pass": true,
+      "evidence": "final-recheck",
+      "sourceSha256": "43d6659e031c80e519e20651143ec8410058065b5885f2695283506b06910825",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "capture-mrn-normalize-pins.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "ad41c26d3992bca0b280342b0c01512e9c979e3a900adec6bc3c9ff7fcda37b0",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "chart-capture-excludes-script-text.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "1580e4a7eea135e3dd12a6ecd76203af91d9d35d594b5ba66a0e7f328cc8737e",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "chart-open-failure-diagnostics-contract.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "d410cdceeba89eebf6f0c30c540135acc691c51fca88a261ba65b5ac39349aaa",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "chart-request-deadline-runtime.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "fb3d2bef146dee911c7b885f1784c8c9c7342cd029a87e38e1df05e0e0e4f385",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "chart-row-status-glyphs-are-not-mojibake.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "127e3929c3f5c3cf99b6bffc000294d040c9fe0b0532c8802a01f01e848af35d",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "conn-status-truth-contract.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "675e593dca09cb3e87434b13067f6cd9979a15bed1284f31381868ed29852b57",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "content-read-relay-watchdog.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "862b82ff6bc367974a8bb687e4695a479f06368fc666953657e1c675fab9b022",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "convergence-admission-pins.test.js",
+      "pass": true,
+      "evidence": "supplemental-workflow",
+      "sourceSha256": "bafb78b93ccdbadbb02bb1803fbe7374580ad98a0c15049aa52a840651eb20e1",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "convergence-interim-outcome-pins.test.js",
+      "pass": true,
+      "evidence": "supplemental-workflow",
+      "sourceSha256": "a1ca43214c8eae22e6298bb351b3b90fbfe3df7d69e3c8f776953a14abefa11e",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "day-navigation-observes-the-header.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "9e30fa64f8a2b270bba6b2f6bf8dee045cd943fc9de7f71b95c04d807b6a3aaa",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "day-pull-lane-convergence.test.js",
+      "pass": true,
+      "evidence": "supplemental-workflow",
+      "sourceSha256": "cc06b9d48c5913237ba83e9f4ac0b10cd09bcf888bee1572bf4b44594061b4e2",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "day-pull-terminal-receipt-runtime.test.js",
+      "pass": true,
+      "evidence": "supplemental-workflow",
+      "sourceSha256": "7b670d99e7bb6a6bef44d2959e2bb4ad75fb082d61eed616058dc1873b6c45f2",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "day-schedule-absolute-deadline-runtime.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "16343ce47ca6f0d3862d71e3bed3156b72f90a03a25d3539cffc7fc29a8c3473",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "department-scope-primitives.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "6c6f835eb3ea04bc7d0a6824cc07ca9ad01b9211726e59007d24fa8de40090f6",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "destination-teaching-runtime.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "7d9f5e78a0e1d3532592945c1a724ea42ec7ecacf188937495db829903973b3c",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "duplicate-render-is-not-ambiguity.test.js",
+      "pass": true,
+      "evidence": "final-recheck",
+      "sourceSha256": "913d63270d9fedbae8cb7fcd142d3d7f3792b94e91447dd451532e921a1417f4",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "encounter-index-names-its-surface.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "eaccb7811d276d1422201eb347c093a49270af2d02a4a53297be178d35dec6a7",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "encounter-index-stability-survives-frame-reload.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "a46cc56ebb4e3d6f7c141a6275b96ec87f22805a6155e5be6e3cd43beb225b52",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "enumerate-all-events-is-not-the-row-count.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "9d95218cdbb30dddafeb7d69955fbab575151a074ec6d4954f2dca49d61c8460",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "enumerate-evidence-crosses-the-hop.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "488d5e90d315c470c1a7670ee1066ad949aa2f5c8d8304545a64b0a9d2471b32",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "enumerate-gives-up-when-provably-stuck.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "162eee4564d470a74bbd3db90b66b44d6072dad588a63e51c641e4d34f59adaa",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "enumerate-noise-surface-exclusion.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "c267843401152a79c220364ca243b300f03ea990ceca06abaa30d4355c009201",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "enumerate-refusal-evidence.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "dd5043f2b2b55b7e3ddd1838722dc1684a2024fa44fe7ab47ad1a1f197c7f654",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "exact-row-recovery-runtime.test.js",
+      "pass": true,
+      "evidence": "final-recheck",
+      "sourceSha256": "3d32b70c3582f3b310a40ea692fc57424384bbad74034c4cd9addd0284b7f9fa",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "ext-3063-athena-tab-resilience-contract.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "782ce765823631bb2533cd81ae3e113880764d71cd9a05d39e9ec36bd7492795",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "ext-3064-hidden-safe-sleep-contract.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "3e1428b8286dd976d2d459648c819c273e84dde20872ab62f506f219ff31e2c3",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "extension-backend-origin-security.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "9cf0fd5192f7d2d825d9370ce9641f112a6a61f43e75080c135b0aa8f410a1c0",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "extension-badge-never-claims-currency.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "3cbf7056cc692151aa2e3bc983700fcb6b1a01900ee40be34638a324062f7702",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "extension-health-contract.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "574347139c04ecd152abe041f25641d199215eb3f43a224df6bbc603178f797a",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "extension-host-scope-contract.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "3d3a7db30c233abfa80ea5c398821d23aa776db682f11777472949b9d94253d8",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "extension-mac-sleep-and-legacy-review-runtime.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "329973a4f414a87a64930bb5418969073597199b1173b9b9e6ce317b3bec714f",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "extension-manifest-text-integrity.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "eaf10605cb751dc599cfd693d1bde0518dfb34b6768cd7e143814d22f3e4d02c",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "extension-orphan-neutralization-contract.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "57587ee5b331841172a90cc351fc8ff7f80b8cab383673b092375b0ee38801e2",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "extension-package.test.js",
+      "pass": true,
+      "evidence": "final-recheck",
+      "sourceSha256": "35f8563d1a34a9f1cfbbeb938d696a4be03be82a49ff5891844a7d7d8507d79a",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "extension-popup-accessibility-contract.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "57cfe36dd3f37ea9cb38747bde0c04d8b344027ffe73b9aafa563d81c81c9abe",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "extension-read-path.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "12deb2e5d2d4710c49ba5dff044d13ee77d8d6d69b0c895b5fbcc62f20f60055",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "extension-reload-helper-contract.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "be592ab627f433483313322308991e4880540eadcbb7d97d07ffd4d216422013",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "extension-schedule-support-diagnostic.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "889ac1847e98faf695bbc4e11d3063d559893fe2079756b045b9c57590f51a73",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "fast-lane-saves-todays-note.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "f1fc636046cd5a24bf5a51b1659159367fdd81201652a1b6079268537354865a",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "fast-release-gate-contract.test.js",
+      "pass": false,
+      "evidence": "full-sweep",
+      "sourceSha256": "fcfd928005a3875416210f47db28efbbd6a9afd48cb7b346abf21778b7d1574b",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": "shared test registry has two pre-existing unregistered site suites"
+    },
+    {
+      "name": "fatigue-breaker.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "6c7f7ff561c37dceebfe77f20b22ad262b0fad371ba5fe5957c83e8241131422",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "frame-url-binds-appointment.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "2b6fb83e0665b6ad05cedfedcdc57d6fc9d92b9ad88300e5deec40f6b27af613",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "full-visit-notes-choice-gates-runtime.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "a2beaa929c457e6f31bb645576b0b4fc955420b47cafc883edd4cd6f71e9189a",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "full-visit-reader-runtime.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "863d8540a808cbbe6c3ba612273c1c3c008e251002ccb4f29ca6173adce2989a",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "het-stage-context-pins.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "fb335d979335ca5a6c9ecd3ee1c6b7d031b39e45cb6cee590b5d1ae972571f14",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "hex-colour-integrity.test.js",
+      "pass": false,
+      "evidence": "full-sweep",
+      "sourceSha256": "91b5e72d76a433ab99110441c558016cdc5b9a5175878d070c2e7abd9d664636",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": "whole-site color-count pins differ; extension color bytes are unchanged"
+    },
+    {
+      "name": "history-absolute-deadline-runtime.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "c9ff1275554c9acd8bdb015d2f151ca9b5256e137312d52d854095db81be14af",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "history-duplicate-name-binding.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "07a227bf644cfda215f277b0a35bf24794231c5673350973ab9ffaa7c287886d",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "history-preopened-same-tab-contract.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "1348e185660e306428209298ab8e5beb921868635e21a4aa4a6195ae673c3d7d",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "history-retry-foreground-contract.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "d11227f1aadb4876056bbc106134f45e6f62a8639481453ef65408f25eab3677",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "history-verdict-census-pins.test.js",
+      "pass": true,
+      "evidence": "supplemental-workflow",
+      "sourceSha256": "ecebe515cc3443a51d5270e88ae9473c5946041055eb0517292af8d2c889a41b",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "legacy-grid-attribution-fixtures.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "33dfc6e5b7631ee755ac7aaf4287761c12d7302fd635f36a20fa51c8b201f751",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "mac-sleep-recovery-contract.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "e5f731f7c9794a7160b812be7fa5b10f5e8b1cfb65ca323f3c07ec3b3fdbe47c",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "manual-history-exact-open-mrn-contract.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "920fa297d6aefa5e275c9647a49352b80cc5d88b0e7099145ff6e4cab638d7c6",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "named-omission-taxonomy-pins.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "0eff80f83976bae00d66e3f04e5c20ec42f4a50ca9ffe8d465be61734f726452",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "native-persistence-clarity-proof.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "1bc1c5cf4bdf459011b29ffe2d166a343c480de2782ae005ad021dd029e667c9",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "nav-ladder-recovery-pins.test.js",
+      "pass": true,
+      "evidence": "supplemental-workflow",
+      "sourceSha256": "f825c608100c63dd611b83ae9be4d534de0da36bbf3c001146267111604a33f9",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "nightly-backup-tab-safety.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "c14a728d4271f627f184c4854427f93a4b2747a522a04a56eeef65774f4db269",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "one-product-name.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "703b2598320047a7de0ecaa647754e6b86cc84fe6c52c750c53f81af0a3bb19f",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "onheal-on-mode-self-heal-runtime.test.js",
+      "pass": false,
+      "evidence": "supplemental-workflow",
+      "sourceSha256": "8f4f2b9cdd710f8f06d8b9d383be7294c3319081464b6e52ce22326b276a2474",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": "site importer no longer carries the queued-for-automatic-recheck literal"
+    },
+    {
+      "name": "open-athena-patient-control-runtime.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "27023b03a5f248f3a19f07e3e8304f37d78e5a5a10a58c9500c3efc2e8b90267",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "opnote-day-brain-drafts-only-real-procedures.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "f033d708172ec646d51e0cb3470cad0d0198ced9ad71206420965966c8c6af93",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "per-read-session-liveness-contract.test.js",
+      "pass": true,
+      "evidence": "final-recheck",
+      "sourceSha256": "99aff039c3e0081cc4f2561334c63dd5476bdea4a98e28c84feec3b52d52c01e",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "phone-app-www-build-is-faithful.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "275e847a263d1d62fe1d7ce7005ca3acb023057bf7d052efd0a2850743b81c71",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "phone-secure-lifecycle.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "53d762f353356f303e8d050db65b7f1c21699e447f3ee293c231132a9143c2cc",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "phone-surface.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "b0023464e9fd1f74381fde2ce247c316e0619c61da1190035797f309ba6ad6fd",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "pick-census-pins.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "3c2934420a5123183906f99af560880163897ee23ef4142dac14fded29d0ef77",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "provider-incomplete-diagnostics-contract.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "217b41f7f6f5c867771b8fcb6d337002ad6a62352d6b15ae99283969488b8b00",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "provider-roster-provenance.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "97a74509bda6b82e66c6b0a1fbd418c4269005b6b3a0a990abc68cd7bffc1b75",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "public-publication-boundary.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "a32fcfe777b4cd72147c219afbf9e4063581d835ba8226ef7cc044f0c9ba9beb",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "public-release-truth-boundary.test.js",
+      "pass": false,
+      "evidence": "full-sweep",
+      "sourceSha256": "75b07d8c3bd02041759d6151d12dabcad8de63af5d1d923cf5e32259faae6a47",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": "mixed publication test equates current candidate with the stable download channel"
+    },
+    {
+      "name": "pull-3064-fast-path-golden-contract.test.js",
+      "pass": false,
+      "evidence": "final-recheck",
+      "sourceSha256": "42ad51c21e452b585fda1711868c180424567cf5d895420eb1d23d0baed9a570",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": "extension diagnostics now pass; site importer no longer carries the queued-for-automatic-recheck literal"
+    },
+    {
+      "name": "pull-first-attempt-convergence.test.js",
+      "pass": true,
+      "evidence": "supplemental-workflow",
+      "sourceSha256": "08d13393b569fcd1a58cbd44c287d7c1c7daee834e0dd467c7c4175e335d77c8",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "pull-resume-contract.test.js",
+      "pass": true,
+      "evidence": "supplemental-workflow",
+      "sourceSha256": "3be13f4ce52b7d4b8933c1effbccaa604d4350285d2d210a00ab5dd505e64026",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "pull-self-recovery.test.js",
+      "pass": true,
+      "evidence": "supplemental-workflow",
+      "sourceSha256": "cda7a634e17811408b01fff15b5108b1d672612776cb8143c36303a2fd0f3fc9",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "pull-terminal-scope-blocks.test.js",
+      "pass": true,
+      "evidence": "supplemental-workflow",
+      "sourceSha256": "0f3b10551019b60d6855c8ad5b1f49e6986ede3b8483c012efe4550806640aa0",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "pull-terminal-seam-runtime.test.js",
+      "pass": true,
+      "evidence": "supplemental-workflow",
+      "sourceSha256": "c2e55f201cb10b5700cf611dcdb18f7dd0b3fe3ca4cdcc6f430db87fb34da53b",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "qg-latch-has-no-reader-yet.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "17ba6c2be51e7905bd075a9dcb8659889c7b17b8ab5df29101134f1ac301f00d",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "qol-ax-identity-gate.test.js",
+      "pass": true,
+      "evidence": "final-recheck",
+      "sourceSha256": "43a60cb3eed4b899a5b793b348befc178958654ae2543bc14ba8468b8f28be35",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "qol-batch-scoped-focus-restore.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "333e76172cb2ab7fb3864fda2d8ad68d55c54cba0a8c9e8f0036b0e642f8907f",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "qol-focus-comes-home.test.js",
+      "pass": true,
+      "evidence": "final-recheck",
+      "sourceSha256": "f1976fac383f3ec3d059f72314fc3f27955827d38ae737a7e6c8a999766833cc",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "qol-one-resolver-guard.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "65062a11237fb31a9db242718182fcad0a77847e7efed3934dd48b19871e88a9",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "quiet-pull-pending-release-runtime.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "39383b0334ab9fad33650390a9992c44cb4ecb91522baf5dd7af0d793cb5e303",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "same-day-census-pins.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "9298713994860602f0ab6d76a68c62f2219ebc28a81bfb25511534e1343e9eb0",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "same-day-shell-upgrade-contract.test.js",
+      "pass": true,
+      "evidence": "final-recheck",
+      "sourceSha256": "8a131953017c88cfc95517e60c99618bc5a41af99c82938310f4ef7a38313807",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "save-press-truth-proof.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "1dc6233113037835fb5d1c04ecbf280959edae98654ffc5cbe2e1926e026ac9b",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "savenamed-active-surface-runtime.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "f49b6148203b48919d8c9b0b286d901bda4762fd4c29236c6b02df691b93ac9a",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "savenamed-slate-editor-reader-runtime.test.js",
+      "pass": true,
+      "evidence": "final-recheck",
+      "sourceSha256": "a078297f901350d66cb895c5af102d9177343b3e455ff0cbb46da1b7e1210fee",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "savenamed-splice-proof.js",
+      "pass": false,
+      "evidence": "full-sweep",
+      "sourceSha256": "6ffb700ae3aa57774fd27d57dca62b70f8e9cd355157c769311e239ac3cb6a9b",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": "historical 3.0.111 splice reconstruction requires its old helper to be unchanged; approved 3.0.114/current active-surface helper intentionally differs"
+    },
+    {
+      "name": "schedule-chip-name-capture-contract.test.js",
+      "pass": true,
+      "evidence": "final-recheck",
+      "sourceSha256": "27341f0eb6307ec1eb6b11091b185eb78bdec83926763e958ff6cf04827ea603",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "schedule-complete-note-runtime.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "269a6f67e734b29d1ac62e90933f6198ae78f9170d1f8296c0773c70849ca316",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "schedule-dom-text-echo-regression.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "05ed214b558ae9d77e9d1632ba7034ae7e81fdf900c40e022b744bb23b087e41",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "schedule-empty-day-proof-contract.test.js",
+      "pass": true,
+      "evidence": "final-recheck",
+      "sourceSha256": "c3fa1ad113a80f20e0261659c4bce61a9dbe996dc67353e2f63c2e4747d8a1eb",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "schedule-empty-day-settle-contract.test.js",
+      "pass": true,
+      "evidence": "final-recheck",
+      "sourceSha256": "1b343149cd0f163e4a1ddf34d36c578c4fd6eda46a55214c3b7051669402a06e",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "schedule-identity-adversarial-runtime.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "e65826d51bddbfe4694dca4a8f486ecc477d55fd8d7f0f7b875ba71ee0ce9c63",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "schedule-incomplete-cause-pins.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "d9cbef7653ac4e29fc8c5fb6bffa968c7b75ca2527b3ab29ec2baef890067fbf",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "schedule-mutating-row-reverify-contract.test.js",
+      "pass": true,
+      "evidence": "final-recheck",
+      "sourceSha256": "c7ce0173474bdc23b0e03fe277f5dcfa1cd1b80d30329298a08922c0e3cad12b",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "schedule-nonpatient-row-guard.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "84b53e237b9259346969f7c65d435afdc436284e918bd2bea34bf5eb635f21f3",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "schedule-packaged-reader-regression.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "893e38f1f85118d9ae4f1e627c99df8f3c61fc6b98f473cfc668dd59e6dc338b",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "schedule-pull-integrity.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "e4968510090d7ba51878743ce5f385f03962b3d51816b3a917bb506bd873391a",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "schedule-pull-reconciliation-contract.test.js",
+      "pass": true,
+      "evidence": "final-recheck",
+      "sourceSha256": "97d21f2c1312b44c843e705fb9febd93c50c3ac393ed4b2632f0b84d502876cb",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "schedule-read-declares-its-freshness.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "c0489b54dc3fa57f3f87d915991d6faf9dc6bd2c594e4e4fbf83176933c22935",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "schedule-row-demographics-adversarial.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "893d31565328989cdc517c2a07065ceb19a32951b16762f762e395249720786d",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "schedule-scrape-deadline-searchopen-runtime.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "7f297fcdaee94b7df7e0874b2af1a7a4844deb2920b828a4901bdd6a3b99c586",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "schedule-time-contract.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "fe2ad0c1e7366998bede41fe53e46bb600ab4a1c14b192289ba8f6efb6c4c542",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "schedule-weektab-provider-header-variant.test.js",
+      "pass": true,
+      "evidence": "final-recheck",
+      "sourceSha256": "e9eebb28803e987c7d6fd00e562f7db13668f142ea50afaeb2e0b6b481142357",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "static-site.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "d2290ff7b22abd94c3469f4b78b4d43ea0cdc2f680691792fc51cd90d8b930d5",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "surface-recycle-rebind.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "aa40a82f01f547a8c8163e63f960ff59204a2b00291d9249004e08ab491eb4f4",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "surfnav-splice-proof.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "b419cffc3cbd5e5a4c7a704b82676b37b20740388c14aac4993e86044d576ee3",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "test-content-production-boundary.test.js",
+      "pass": true,
+      "evidence": "final-recheck",
+      "sourceSha256": "9aafe7f5d6cf6b72e0b0391727a8107d11a8372d61ceab9a6b1bb9c2b3d1adfa",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "text-lane-mint-pins.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "751c0ec94b7b3420f5613d1c33a1300c17f89395a56eae01d1060eddc3860f5e",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "ui-control-coverage.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "02bf5af063336c79df23c1d325bca6b1bdcb343fc6736b9f3108b8ee613fee11",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "visit-accordion-body-runtime.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "f712e941575ec2a4b9ca0225ff8eaaa05ebb3e81ff4ccc41304e87f2d7d9bb5b",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "visit-body-identity-302-contract.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "21ae49a0a54c726d8290619702e1f574b2620adca1f59e5a4ecd428daf300b3d",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "visit-reader-minimal-deadline-contract.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "878b55749d9e3556616d6ed1240129f6e21afc4bf62e0eaf43c5203c6bb7d97a",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "visit-request-correlation-runtime.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "147d55a26d618eab750e2dbc923b974516a89c97d44226a6c3faf6ddd4a31e35",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "visit-wire-identity-guard-runtime.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "48ba294434b0a2c480b3bb71c27d280663f2de7da25260f7e577ab71f7013a1e",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "visits-rail-scoped-click.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "660a11f8fe9e7b9247629bf3f91cd1c98fbf8273c04e7ca0cf9e0f505165cf4f",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "visits-surface-and-cleanup-pins.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "c1cc48d8a78781b3982db6cf265104354c92b6391ace7b4c727569df8860d9eb",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    },
+    {
+      "name": "write-claims-need-a-receipt.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "e291a0cbfa63bcd57a27c110f6173edb7856cda6da437cd8e72c174c6fff52f6",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "write-confirm-requires-change.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "9b6268ae2a613db306c02e82ada4534c04928a05ab07aade455f54b48726bc36",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "write-generality.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "989c6b7dbd2706bcad3693151bee93fe2a146c53b04e5774a7792217f5915393",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "write-next-press-proof.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "a15164c83f4f70ce36dfc09d938f724361fe2c091b173fd4a0a8e1614b5f318f",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "write-sheet-agreement-proof.js",
+      "pass": false,
+      "evidence": "full-sweep",
+      "sourceSha256": "fcd4ec49c77a6d4ace6ac5e33171891cd169726a2e9d7b389edb0489905404a7",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": "site review now arrives expanded while the historical test expects collapsed"
+    },
+    {
+      "name": "write-ui-proof.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "d8a1a36eaede6cc2cac4455a69033a4fd8e429a8b6f8633d5b61a727e28cbfe5",
+      "explicitExtensionAcceptance": false,
+      "remainingFailure": null
+    },
+    {
+      "name": "writeflow-presence-port-contract.test.js",
+      "pass": true,
+      "evidence": "full-sweep",
+      "sourceSha256": "046deabaed2ba7f83b32cf98376e6fd45012d6184bde002fae3e1fe3e08ebfe9",
+      "explicitExtensionAcceptance": true,
+      "remainingFailure": null
+    }
+  ]
+}

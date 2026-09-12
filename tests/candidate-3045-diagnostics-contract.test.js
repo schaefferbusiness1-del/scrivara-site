@@ -14,7 +14,8 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 
-const cand = fs.readFileSync(path.join(__dirname, '..', 'extension-candidates', '3.0.45', 'background.js'), 'latin1');
+// Preserve the historical behavior on the current candidate, not an archived ZIP source.
+const cand = fs.readFileSync(path.join(__dirname, '..', 'background.js'), 'latin1');
 
 /* 1. the root fix: outerN/outerMs stripped from the pass-signature key */
 assert(cand.includes(".replace(/;?outerN=[0-9]+/g, '').replace(/;?outerMs=[0-9]+/g, '')"),
@@ -45,9 +46,9 @@ assert(cand.includes('stm\\.esp|globalnav|statusbar|inbox|messag|findpatient\\.e
 /* 7. the wf3 presence port: export + probe-mode-only guarded call */
 assert(cand.includes('self.__mlsFrontAthenaForRead = __mlsFrontAthenaForRead'),
   'the fg front lane must be exported for the write-probe port');
-const call = cand.indexOf("if (mode === 'probe' && msg.foregroundOk === true && typeof self.__mlsFrontAthenaForRead === 'function')");
+const call = cand.indexOf("var __probePresenceRequested = mode === 'probe' && msg.foregroundOk === true && typeof self.__mlsFrontAthenaForRead === 'function';");
 assert(call > 0, 'the action handler must honor foregroundOk on the PROBE path');
-const callRegion = cand.slice(call, call + 260);
+const callRegion = cand.slice(call, cand.indexOf('/* ATHENA_ACTION_V2_EXECUTE_INJECTION */', call));
 assert(callRegion.includes('catch (eFgProbe)'), 'the front attempt must be silent-failure');
 assert(!cand.includes("mode === 'execute' && msg.foregroundOk"),
   'the execute path must never gain presence machinery');

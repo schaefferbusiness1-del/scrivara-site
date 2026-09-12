@@ -76,7 +76,7 @@ const si = fs.readFileSync(path.join(root, 'feat_mls_schedimport_exact.js'), 'ut
     'the fuller main-grid row), not whichever happened to be found first');
 
   /* and the safety that makes it legitimate must still be there */
-  assert(/lname/.test(fn) && /indexOf\(lname\)/.test(fn),
+  assert(/rowNameMatches\(t, true\)/.test(fn) && /function rowNameMatches\(text, idBound\)/.test(bg),
     'the row must STILL be required to contain the expected last name - that requirement is what ' +
     'makes collapsing duplicate renders safe rather than a guess');
 }

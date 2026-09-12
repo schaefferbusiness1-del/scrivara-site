@@ -26,7 +26,7 @@ const root = path.resolve(__dirname, '..');
  * extension-package digest fence enforces that). The app/site halves below
  * are backward-compatible (an absent flag changes nothing) and ship with the
  * site, so they are asserted against the live root files. */
-const background = fs.readFileSync(path.join(root, 'extension-candidates', '3.0.45', 'background.js'), 'utf8');
+const background = fs.readFileSync(path.join(root, 'background.js'), 'utf8');
 const app = fs.readFileSync(path.join(root, 'ScribeFlow.html'), 'utf8');
 const staging = fs.readFileSync(path.join(root, 'ScribeFlow-staging.html'), 'utf8');
 const sched = fs.readFileSync(path.join(root, 'feat_mls_schedimport_exact.js'), 'utf8');
