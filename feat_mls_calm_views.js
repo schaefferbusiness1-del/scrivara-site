@@ -475,6 +475,22 @@
     }
   }
 
+  /* nextglow composes its reason onto the control's current accessible name.
+     Calendar date changes reuse this button, so updating only the visible
+     spans leaves that composed name describing the prior day. Refresh only
+     nextglow's owned prefix and preserve its suffix; an unannotated control
+     keeps its native text-derived name, including the explanatory subline. */
+  function syncNextGlowName(el) {
+    if (!el || el.getAttribute('data-mls-ng-note') !== '1') return;
+    var current = String(el.getAttribute('aria-label') || '');
+    var marker = ' \u2014 next step: ';
+    var at = current.indexOf(marker);
+    if (at < 0) return;
+    var own = String(el.textContent || '').replace(/\s+/g, ' ').trim();
+    var next = own ? (own + current.slice(at)) : current;
+    if (current !== next) el.setAttribute('aria-label', next);
+  }
+
   function mountPrimary(v) {
     if (!v.primary) return { available: false, host: null, el: null };
     var id = 'mlsCvNxt_' + v.key;
@@ -511,6 +527,7 @@
     if (big && big.textContent !== label) big.textContent = label;
     var subText = String(v.primary.sub || '');
     if (sub && sub.textContent !== subText) sub.textContent = subText;
+    syncNextGlowName(el);
     if (el.parentElement !== host || host.firstChild !== el) host.insertBefore(el, host.firstChild);
     return { available: true, host: host, el: el };
   }

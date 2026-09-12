@@ -323,12 +323,29 @@ assert.strictEqual(h.flushRafs(), 1);
 const primary = h.document.getElementById('mlsCvNxt_calendar');
 const more = h.document.getElementById('mlsCvMore_calendar');
 assert(primary && more, 'first cooperative frame did not mount the unchanged primary/More UI');
+assert.strictEqual(primary.getAttribute('aria-label'), null, 'unannotated primary lost its native text-derived accessible name');
 assert.strictEqual(h.totalRects(), preRouteRects, 'Calendar mount forced layout in the interaction frame');
 assert.strictEqual(h.pendingFrames(), 1, 'route mount must defer its real-rect safety check to the next frame');
 assert.strictEqual(h.flushRafs(), 1, 'deferred More visibility check did not run as one cooperative frame');
 assert(h.totalRects() > preRouteRects, 'deferred frame did not verify the More disclosure real rect');
 assert.strictEqual(h.rectReads.historyView || 0, 0, 'calendar reconciliation measured hidden History');
 assert.strictEqual(h.rectReads.teamView || 0, 0, 'calendar reconciliation measured hidden Team');
+
+/* NextGlow annotates the reused hero with the current visible copy plus its
+   reason. A later day change must refresh that prefix without dropping the
+   reason or inventing an aria-label on an unannotated primary. */
+const nextStepSuffix = ' — next step: Read that day’s appointments from Athena';
+primary.setAttribute('aria-label', primary.textContent.replace(/\s+/g, ' ').trim() + nextStepSuffix);
+primary.setAttribute('data-mls-ng-note', '1');
+h.window._calRefDate = '2026-08-10';
+calendarObserver.callback([{ type: 'childList', target: h.calendarGrid, addedNodes: [], removedNodes: [] }]);
+assert.strictEqual(h.pendingFrames(), 1, 'calendar day change did not queue one accessibility repaint');
+h.flushRafs();
+assert.strictEqual(primary.querySelector('.mls-cv-big').textContent, 'Pull Monday, Aug 10');
+assert.strictEqual(primary.getAttribute('aria-label'),
+  'Pull Monday, Aug 10Reads that day’s appointments from athenaOne. Nothing is written.' + nextStepSuffix,
+  'reused calendar hero kept the prior day in its accessible name or lost NextGlow guidance');
+assert.strictEqual(primary.getAttribute('data-mls-ng-note'), '1', 'calendar repaint stole NextGlow ownership');
 
 const settledRects = h.totalRects();
 for (let i = 0; i < 500; i++) {
