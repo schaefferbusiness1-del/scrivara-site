@@ -24,13 +24,13 @@
  *   3. "Pull your first day"
  *        window.__mlsSI.authoritativeStatusForDay(todayIso()).available===true
  *        fallback: any row in window._calAppts
- *   4. "Configure AI note formats"
+ *   4. "Visit note templates"
  *        account-scoped draftTuningV1 contains a saved, valid section state
  *
  * SURFACE B -- an anchored guided tour, __mlsFirstRun.tour() (reworked to
- * fr-2.0.0 on 2026-07-28). Eight coach-mark steps spotlight the ACTUAL
+ * fr-2.0.0 on 2026-07-28). Nine coach-mark steps spotlight the ACTUAL
  * controls -- the dock tabs, Pull today, the Start visit CTA, Start Recording,
- * Generate, Review, Templates, and Settings (including AI note formats) -- with a
+ * Generate, Review, Templates, Settings, and AI Studio -- with a
  * dimmed backdrop, a positioned brand card (title, one to two sentences, step
  * dots, Back / Next / Skip), and keyboard support (Esc closes, arrow keys
  * navigate). Every step looks its anchor up AT SHOW TIME, because these
@@ -455,7 +455,7 @@
     { key: 'conn', label: 'MLS Assist installed and answering', hint: 'Install or enable the MLS Assist extension, then reload this page.' },
     { key: 'ath', label: 'athenaOne signed in', hint: 'Open athenaOne in another tab and sign in there.' },
     { key: 'day', label: 'Pull your first day', hint: '' },
-    { key: 'tuning', label: 'Configure AI note formats', hint: 'Choose and save your reusable HPI, ROS, Exam, Assessment and Plan formats.' }
+    { key: 'tuning', label: 'Visit note templates', hint: 'Optional: choose how your visit notes look. Opens Settings > Notes & AI > Visit note templates.' }
   ];
 
   function mount() {
@@ -478,7 +478,7 @@
         '<span class="mlsfr-text"><span class="mlsfr-label">' + ROWS[i].label + '</span>' +
         (ROWS[i].key === 'day' ? '<button type="button" class="mlsfr-pull" id="mlsFrPullBtn">Pull today</button>' : '') +
         (ROWS[i].key === 'tuning' ? '<button type="button" class="mlsfr-pull" id="mlsFrAiBtn">Configure</button>' : '') +
-        '<span class="mlsfr-hint">' + ROWS[i].hint + '</span></span></div>';
+        '<span class="mlsfr-hint"' + (ROWS[i].key === 'day' ? ' role="status" aria-live="polite"' : '') + '>' + ROWS[i].hint + '</span></span></div>';
     }
     html += '</div><div class="mlsfr-foot">' +
       '<button type="button" class="mlsfr-primary" id="mlsFrTourBtn">Show me how (2 min)</button>' +
@@ -550,8 +550,7 @@
            b1237) rather than the older per-output "AI output formats" editor
            (#mlsDraftTuningSection) it used to target - both live in Notes &
            AI, mounted together by the same beginSettings(), and the new card
-           is the one this checklist row promises ("Configure AI note
-           formats"). */
+           is the one this checklist row names ("Visit note templates"). */
         var section = byId('mlsVisitNoteTemplatesSection');
         var modal = byId('settingsModal');
         if (section && modal && modal.classList.contains('show')) {
@@ -584,7 +583,7 @@
     var row = byId('mlsFrRow_tuning');
     var hint = row && row.querySelector ? row.querySelector('.mlsfr-hint') : null;
     setClass(row, 'mlsfr-row bad');
-    setText(hint, message || 'AI note formats could not be opened. Reload MLS and try again.');
+    setText(hint, message || 'Visit note templates could not be opened. Reload MLS and press Configure again.');
     var button = byId('mlsFrAiBtn');
     if (button) { button.disabled = false; button.removeAttribute('aria-busy'); }
   }
@@ -613,21 +612,48 @@
       showAiConfigureFailure();
     }
   }
+  function pullHint(message) {
+    var row = byId('mlsFrRow_day');
+    setText(row && row.querySelector ? row.querySelector('.mlsfr-hint') : null, message);
+  }
+  function pullBlocked() {
+    if (recording()) {
+      pullHint('A recording is in progress. Stop recording, then press Pull today again.');
+      return true;
+    }
+    if (pullBusy()) {
+      pullHint('An import is already running. Wait for it to finish before pressing Pull today again.');
+      return true;
+    }
+    return false;
+  }
   function onPullClick() {
-    if (pullBusy() || recording()) return;
+    if (pullBlocked()) return;
     var b = byId('mlsDsPullBtn');
     if (b) { clickPull(b); return; }
     /* The pull control lives in the Visit view; if we are elsewhere, go there
        and try once more. One bounded retry, no polling. */
+    pullHint('Finding today\'s import button...');
     safe(function () { if (isFn(window.showView)) window.showView('visit'); });
     later(function () {
+      if (!byId(CARD_ID) || pullBlocked()) return;
       var b2 = byId('mlsDsPullBtn');
-      if (b2 && !pullBusy() && !recording()) clickPull(b2);
+      if (b2) clickPull(b2);
+      else pullHint('The import button could not be found. Reload MLS, then press Pull today again.');
     }, 400);
   }
   function clickPull(b) {
+    if (b.disabled || b.getAttribute('aria-disabled') === 'true') {
+      pullHint('Today\'s import is not ready. Wait a moment, then press Pull today again.');
+      return;
+    }
     safe(function () { b.scrollIntoView({ block: 'center', inline: 'nearest' }); });
-    safe(function () { b.click(); });
+    try {
+      pullHint('Opening today\'s import. Follow any instructions shown.');
+      b.click();
+    } catch (e) {
+      pullHint('Today\'s import could not open. Reload MLS, then press Pull today again.');
+    }
   }
 
   /* ----------------------------------- tour --------------------------------
@@ -645,7 +671,7 @@
       key: 'navigate',
       targets: ['#mlsDock', '.mainnav'],
       title: 'Get around MLS',
-      body: 'Every part of MLS is one tap away here: your day, the patient, the visit, review and tools.'
+      body: 'Use this bar to open your day, patients, visits, review, AI Studio and Tools.'
     },
     {
       key: 'pull',
@@ -667,9 +693,9 @@
     },
     {
       key: 'generate',
-      targets: ['#ez3Adv'],
-      title: 'Generate the note',
-      body: 'When the visit ends, Generate turns what was heard into a structured note with codes, ready for your read.'
+      targets: ['#ez3flGen', '#ez3Gen', '#genBtn'],
+      title: 'Generate one note',
+      body: 'After stopping the recording, press Generate one note. Read the draft and correct anything that needs changing.'
     },
     {
       key: 'review',
@@ -679,15 +705,21 @@
     },
     {
       key: 'templates',
-      targets: ['#templatesBtn', '#oprTabTpls'],
-      title: 'Templates',
-      body: 'Import a blank form and MLS shapes generated notes to match it. Optional, and off by default.'
+      targets: ['#templatesBtn', '#oprTabTpls', '#mlsDock button[data-dest="tools"]'],
+      title: 'Operative note templates',
+      body: 'For procedure and op notes, open Tools > Templates. For regular visit notes, use Visit note templates in Settings.'
     },
     {
       key: 'settings',
-      targets: ['[data-mls-extension-version]', '#mlsDock button[data-dest="tools"]', '#rectab_settings'],
-      title: 'Settings and MLS Assist',
-      body: 'Settings holds the MLS Assist extension link and AI note formats for HPI, ROS, Exam, Assessment and Plan. Keep the bridge installed; choose a saved format only when its documented circumstance applies.'
+      targets: ['#mlsDock button[data-dest="tools"]', '#rectab_settings'],
+      title: 'Visit note templates',
+      body: 'Open Tools > Settings > Notes & AI > Visit note templates. Customize Whole visit / SOAP, HPI, ROS, Exam, Assessment and Plan here. Choose a saved format only when its documented circumstance applies.'
+    },
+    {
+      key: 'study',
+      targets: ['#mlsDock button[data-dest="studio"]', '#nav_studio'],
+      title: 'Study a procedure',
+      body: 'Open AI Studio > Study & build > Study procedure to find patients for a study. Then describe your question in Study & build to create the report.'
     }
   ];
 
@@ -1013,7 +1045,7 @@
        reading; a cached verdict is not evidence of the current state */
     _resetProbeCache: function () { athAt = 0; athInFlight = false; athState = 'wait'; lastConnCheck = 0; },
     describe: function () {
-      return 'first run setup checklist (#mlsFrCard above #visitHero) plus an eight ' +
+      return 'first run setup checklist (#mlsFrCard above #visitHero) plus a nine ' +
         'step anchored guided tour: spotlight ring on the real controls, dimmed ' +
         'backdrop, brand coach card with step dots and Back / Next / Skip, Esc ' +
         'closes and arrow keys navigate. Anchors are looked up at show time and ' +

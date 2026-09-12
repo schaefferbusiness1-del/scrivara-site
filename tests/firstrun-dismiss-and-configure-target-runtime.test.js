@@ -211,11 +211,131 @@ const SHELL_HTML = `<!doctype html><html><body>
 
       await page.close();
     }
+    /* The first-day guide must explain blocked presses and spotlight the real
+     * action. All controls and states below are synthetic; no live import runs. */
+    {
+      const page = await browser.newPage();
+      await page.route('https://mls-firstrun-guide.test/**', route =>
+        route.fulfill({ status: 200, contentType: 'text/html', body: SHELL_HTML }));
+      await page.goto('https://mls-firstrun-guide.test/visit');
+      await page.evaluate(() => {
+        window.pullClicks = 0;
+        window.pullRunning = false;
+        window.__mlsAthenaFollow = { _guards: { pullBusy: () => window.pullRunning } };
+        document.getElementById('visitView').insertAdjacentHTML('beforeend',
+          '<button id="captureBtn">Start Recording</button>' +
+          '<button id="mlsDsPullBtn">Pull today</button>' +
+          '<button id="ez3Adv">Show the review workspace below</button>' +
+          '<button id="ez3flGen">Generate one note</button>' +
+          '<button id="ez3Gen" hidden>Generate one note</button>' +
+          '<nav id="mlsDock"><button data-dest="studio">AI Studio</button><button data-dest="tools">Tools</button></nav>');
+        document.getElementById('mlsDsPullBtn').onclick = () => { window.pullClicks++; };
+      });
+      await page.addScriptTag({ path: FIRSTRUN_PATH });
+      await page.evaluate(() => window.__mlsFirstRun.ensure());
+      const hint = page.locator('#mlsFrRow_day .mlsfr-hint');
+      assert.strictEqual(await hint.getAttribute('role'), 'status', 'pull recovery is not announced accessibly');
+
+      await page.evaluate(() => { window.pullRunning = true; });
+      await page.click('#mlsFrPullBtn');
+      assert.match(await hint.textContent(), /already running.*Wait for it to finish/);
+      await page.evaluate(() => {
+        window.pullRunning = false;
+        document.getElementById('captureBtn').textContent = 'Stop recording';
+      });
+      await page.click('#mlsFrPullBtn');
+      assert.match(await hint.textContent(), /recording is in progress.*Stop recording/);
+      await page.evaluate(() => {
+        document.getElementById('captureBtn').textContent = 'Start Recording';
+        document.getElementById('mlsDsPullBtn').disabled = true;
+      });
+      await page.click('#mlsFrPullBtn');
+      assert.match(await hint.textContent(), /not ready.*press Pull today again/);
+      await page.evaluate(() => {
+        const button = document.getElementById('mlsDsPullBtn');
+        button.disabled = false; button.setAttribute('aria-disabled', 'true');
+      });
+      await page.click('#mlsFrPullBtn');
+      assert.match(await hint.textContent(), /not ready.*press Pull today again/);
+      assert.strictEqual(await page.evaluate(() => window.pullClicks), 0, 'blocked press started an import');
+
+      await page.evaluate(() => { document.getElementById('mlsDsPullBtn').removeAttribute('aria-disabled'); });
+      await page.click('#mlsFrPullBtn');
+      assert.strictEqual(await page.evaluate(() => window.pullClicks), 1, 'ready press did not reach the existing import owner exactly once');
+      assert.match(await hint.textContent(), /Opening today's import/, 'opening the import was falsely reported as completed');
+
+      await page.evaluate(() => { document.getElementById('mlsDsPullBtn').remove(); });
+      await page.click('#mlsFrPullBtn');
+      await page.waitForFunction(() => /could not be found/.test(document.querySelector('#mlsFrRow_day .mlsfr-hint').textContent));
+      assert.match(await hint.textContent(), /Reload MLS.*press Pull today again/);
+      await page.evaluate(() => {
+        window.showView = () => {
+          const b = document.createElement('button');
+          b.id = 'mlsDsPullBtn'; b.textContent = 'Pull today';
+          b.onclick = () => { window.pullClicks++; };
+          document.getElementById('visitView').appendChild(b);
+        };
+      });
+      await page.click('#mlsFrPullBtn');
+      await page.waitForFunction(() => window.pullClicks === 2);
+      assert.strictEqual(await page.evaluate(() => window.pullClicks), 2, 'late import owner did not receive one press');
+
+      // The delayed retry rechecks recording and is cancelled by Dismiss.
+      await page.evaluate(() => {
+        document.getElementById('mlsDsPullBtn').remove();
+        window.showView = () => { document.getElementById('captureBtn').textContent = 'Stop recording'; };
+      });
+      await page.click('#mlsFrPullBtn');
+      await page.waitForFunction(() => /recording is in progress/.test(document.querySelector('#mlsFrRow_day .mlsfr-hint').textContent));
+      assert.strictEqual(await page.evaluate(() => window.pullClicks), 2);
+      await page.evaluate(() => { document.getElementById('captureBtn').textContent = 'Start Recording'; });
+
+      const generateIndex = await page.evaluate(() => window.__mlsFirstRun._steps.findIndex(s => s.key === 'generate'));
+      await page.evaluate(i => window.__mlsFirstRun.tour(i), generateIndex);
+      assert.strictEqual(await page.locator('#mlsFrTourTitle').textContent(), 'Generate one note');
+      const ring = await page.locator('#mlsFrRing').boundingBox();
+      const generate = await page.locator('#ez3flGen').boundingBox();
+      assert(ring && generate && ring.x <= generate.x && ring.x + ring.width >= generate.x + generate.width,
+        'Generate tutorial did not spotlight the visible Generate action');
+      await page.evaluate(() => {
+        window.__mlsFirstRun._closeTour();
+        document.getElementById('ez3flGen').hidden = true;
+        document.getElementById('ez3Gen').hidden = false;
+      });
+      assert.strictEqual(await page.evaluate(i => window.__mlsFirstRun._stepAvailable(i), generateIndex), true,
+        'Generate tutorial has no fallback when only the regular Generate action is visible');
+      await page.evaluate(() => { document.getElementById('ez3Gen').hidden = true; });
+      assert.strictEqual(await page.evaluate(i => window.__mlsFirstRun._stepAvailable(i), generateIndex), false,
+        'review-workspace toggle was mistaken for a Generate action');
+
+      await page.evaluate(() => {
+        const api = window.__mlsFirstRun;
+        api.tour(api._steps.findIndex(s => s.key === 'study'));
+      });
+      assert.match(await page.locator('#mlsFrTourBody').textContent(), /AI Studio > Study & build > Study procedure/);
+      assert.strictEqual(await page.locator('[data-dest="studio"]').count(), 1, 'tour created a duplicate Studio launcher');
+      assert.strictEqual(await page.locator('#mlsStudyProcedure').count(), 0, 'tour created its own Study procedure launcher');
+      await page.evaluate(() => window.__mlsFirstRun._closeTour());
+
+      await page.evaluate(() => {
+        window.showView = () => {
+          const b = document.createElement('button'); b.id = 'mlsDsPullBtn';
+          b.onclick = () => { window.pullClicks++; };
+          document.getElementById('visitView').appendChild(b);
+        };
+      });
+      await page.click('#mlsFrPullBtn');
+      await page.click('#mlsFrDismiss');
+      await page.waitForTimeout(500);
+      assert.strictEqual(await page.evaluate(() => window.pullClicks), 2, 'dismissed checklist started a delayed import');
+      await page.close();
+    }
   } finally {
     await browser.close();
   }
 
   console.log('PASS first-run Dismiss/Configure: Dismiss really removes the card and persists per account; ' +
     'Configure really opens Settings, selects Notes & AI, and reveals #mlsVisitNoteTemplatesSection - and the ' +
-    'card survives the class-only tab switch that a leftover inline style used to defeat permanently');
+    'card survives the class-only tab switch; first-day recovery explains blocked/missing controls, ' +
+    'late imports stay guarded, and Generate/Study guidance uses the existing visible actions');
 })().catch(error => { console.error(error && error.stack || error); process.exit(1); });

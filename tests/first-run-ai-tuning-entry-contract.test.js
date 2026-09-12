@@ -13,8 +13,8 @@ const firstRun = fs.readFileSync(path.join(root, 'feat_mls_firstrun.js'), 'utf8'
 const tuning = fs.readFileSync(path.join(root, 'feat_mls_draft_tuning.js'), 'utf8');
 
 assert(firstRun.includes('id="mlsFrAiBtn"'), 'first-run checklist has no AI formats CTA');
-assert(/key: 'tuning'[\s\S]{0,260}Configure AI note formats/.test(firstRun),
-  'AI formats is not represented as an explicit checklist row');
+assert(/key: 'tuning'[\s\S]{0,260}Visit note templates/.test(firstRun),
+  'template checklist row does not use its Settings destination name');
 assert(/Get MLS working - 0 of 4 done/.test(firstRun) && /done === 4/.test(firstRun),
   'the checklist does not count AI configuration honestly');
 assert(/on\(byId\('mlsFrAiBtn'\),\s*'click',\s*onAiClick\)/.test(firstRun),
@@ -29,7 +29,7 @@ assert(/function focusAiFormats\([\s\S]{0,1400}mlsVisitNoteTemplatesSection/.tes
   'AI formats CTA does not target the mounted visit-note-templates section');
 assert(/data-mls-settings-group=\\?['"]notes/.test(firstRun) && /scrollIntoView/.test(firstRun) && /\.focus/.test(firstRun),
   'AI formats CTA does not select Notes & AI and focus the format controls');
-assert(/AI note formats for HPI, ROS, Exam, Assessment and Plan/.test(firstRun),
+assert(/Whole visit \/ SOAP, HPI, ROS, Exam, Assessment and Plan/.test(firstRun),
   'Settings tour step does not identify all configurable note sections');
 assert(/documented circumstance applies/.test(firstRun),
   'Settings tour step does not explain conditional-format use');
