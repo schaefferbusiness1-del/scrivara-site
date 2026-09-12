@@ -880,7 +880,7 @@ async function verifyServiceWorkerRuntime() {
   let activateWork;
   handlers.activate({ waitUntil(promise) { activateWork = Promise.resolve(promise); } });
   await activateWork;
-   assert.deepStrictEqual(await cacheApi.keys(), ['mls-v266'], 'activation must remove every superseded MLS cache');
+   assert.deepStrictEqual(await cacheApi.keys(), ['mls-v267'], 'activation must remove every superseded MLS cache');
 
   networkOffline = true;
   for (const sensitiveUrl of [
@@ -966,6 +966,5 @@ verifyServiceWorkerRuntime().then(() => {
   console.error(error && error.stack ? error.stack : error);
   process.exit(1);
 });
-
 
 
