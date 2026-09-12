@@ -22253,17 +22253,20 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     return rows;
   }
   function dayRows(dayStr) { return rowsInRange(dayStr, dayStr); }
+  function isArrived(a) {
+    try { if (isFn(window._mlsAppointmentArrived)) return !!window._mlsAppointmentArrived(a); } catch (e) {}
+    return !!(a && a.checked_in_at);
+  }
   function isSeen(a) {
-    if (a && a.checked_in_at) return true;
     /* _seenToday is deliberately date-scoped; never let today's name-only
        marker make a future/past appointment look completed. */
-    try { if (apptDay(a) === todayLocal() && isFn(window._seenToday) && window._seenToday(a.name)) return true; } catch (e) {}
+    try { if (apptDay(a) === todayLocal() && isFn(window._seenToday) && window._seenToday(a, scheduledAppointmentId(a))) return true; } catch (e) {}
     return false;
   }
   function statusOf(a) {
     if (a && a._pt) return isSeen(a) ? 'Seen' : 'Walk-in'; /* picked via search, not on today's schedule */
-    return isSeen(a) ? (a.checked_in_at ? 'Checked in' : 'Seen')
-                     : (a && a.status === 'booked' ? 'Booked' : ((a && a.status) || 'Booked'));
+    return isSeen(a) ? 'Seen'
+                     : (isArrived(a) ? 'Checked in' : (a && a.status === 'booked' ? 'Booked' : ((a && a.status) || 'Booked')));
   }
   function visitType(a) { return (a && (a.reason || '').trim()) || (a && a.source === 'staff' ? 'Office visit' : 'Visit'); }
   function dobOf(a) { var d = (a && a.dob) || ''; return d ? String(d).trim() : ''; }
@@ -22314,6 +22317,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function nextPatient() {
     var rows = dayRows(visitDay()).filter(function (a) { return !isSeen(a); });
     if (!rows.length) return null;
+    var arrived = rows.filter(isArrived); if (arrived.length) return arrived[0];
     var now = Date.now();
     var upcoming = rows.filter(function (a) { try { return new Date(a.start_at).getTime() >= now - 30 * 60000; } catch (e) { return true; } });
     return (upcoming[0] || rows[0]);
@@ -28504,59 +28508,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   /* =======================================================================
    * F2 — local-"today" replacements (evening UTC rollover bugs)
    * ===================================================================== */
-  var seenTodayCache = null;
-  function seenTodayIndex(nm, today) {
-    try {
-      var cacheApi = window.__mlsStoreCache;
-      if (!cacheApi || !isFn(cacheApi.ver) || !isFn(window.uns)) return null;
-      var ver = Number(cacheApi.ver()), key = String(window.uns('patients') || '');
-      if (!isFinite(ver) || ver < 0 || !key) return null;
-      if (!seenTodayCache || seenTodayCache.ver !== ver || seenTodayCache.key !== key || seenTodayCache.day !== today) {
-        var counts = Object.create(null), ids = Object.create(null);
-        var ps = (isFn(window.getPatients) ? window.getPatients() : []) || [];
-        for (var p = 0; p < ps.length; p++) {
-          var pn = String(ps[p] && ps[p].name || '').trim().toLowerCase(); if (!pn) continue;
-          counts[pn] = (counts[pn] || 0) + 1; if (counts[pn] === 1) ids[pn] = String(ps[p].id);
-        }
-        var byId = Object.create(null), noIdName = Object.create(null), anyName = Object.create(null);
-        var notes = (isFn(window.getNotes) ? window.getNotes() : []) || [];
-        for (var n = 0; n < notes.length; n++) {
-          var note = notes[n]; if (!note || note.isDraft) continue;
-          if (localYmd(new Date(note.updated || note.created || 0)) !== today) continue;
-          var nn = String(note.patient || '').trim().toLowerCase(); if (nn) anyName[nn] = 1;
-          if (note.patientId) byId[String(note.patientId)] = 1; else if (nn) noIdName[nn] = 1;
-        }
-        seenTodayCache = { ver: ver, key: key, day: today, counts: counts, ids: ids, byId: byId, noIdName: noIdName, anyName: anyName };
-      }
-      if (seenTodayCache.counts[nm] === 1) return !!(seenTodayCache.byId[seenTodayCache.ids[nm]] || seenTodayCache.noIdName[nm]);
-      return !!seenTodayCache.anyName[nm];
-    } catch (e) { return null; }
-  }
-
   function installF2() {
-    /* _seenToday: same logic as the base app but with LOCAL dates both sides */
+    /* The base completion predicate now owns account-local visit dates and exact
+       appointment identity. Keep the historical F2 marker without restoring its
+       former name/updated-time cache, which could complete a different visit. */
     if (isFn(window._seenToday) && !window._seenToday.__prf) {
       orig._seenToday = window._seenToday;
-      var st = function (name) {
-        try {
-          var nm = String(name || '').trim().toLowerCase(); if (!nm) return false;
-          var today = todayLocal();
-          var cachedSeen = seenTodayIndex(nm, today); if (cachedSeen !== null) return cachedSeen;
-          /* id-reconciled like the base app: a unique name→patient resolution
-             requires the note's patientId to agree; name-only match stays for
-             ambiguous or id-less legacy notes */
-          var matches = ((isFn(window.getPatients) ? window.getPatients() : []) || []).filter(function (p) {
-            return String(p.name || '').trim().toLowerCase() === nm;
-          });
-          var exact = matches.length === 1 ? matches[0] : null;
-          return ((isFn(window.getNotes) ? window.getNotes() : []) || []).some(function (n) {
-            if (!n || n.isDraft) return false;
-            if (localYmd(new Date(n.updated || n.created || 0)) !== today) return false;
-            if (exact && n.patientId) return String(n.patientId) === String(exact.id);
-            return String(n.patient || '').trim().toLowerCase() === nm;
-          });
-        } catch (e) { return false; }
-      };
+      var st = function (target, appointmentId) { try { return !!orig._seenToday(target, appointmentId); } catch (e) { return false; } };
       st.__prf = 1; window._seenToday = st;
     }
     /* _nextClinicDay: original skips weekends locally but returns a UTC date */
@@ -30832,14 +30790,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   function dayRows(dayStr) { return rowsInRange(dayStr, dayStr); }
   function isSeen(a) {
-    if (a && a.checked_in_at) return true;
-    try { if (isFn(window._seenToday) && window._seenToday(a.name)) return true; } catch (e) {}
+    try { if (isFn(window._seenToday) && window._seenToday(a)) return true; } catch (e) {}
     return false;
   }
   function statusOf(a) {
     if (a && a._pt) return isSeen(a) ? 'Seen' : 'Walk-in'; /* picked via search, not on today's schedule */
-    return isSeen(a) ? (a.checked_in_at ? 'Checked in' : 'Seen')
-                     : (a && a.status === 'booked' ? 'Booked' : ((a && a.status) || 'Booked'));
+    return isSeen(a) ? 'Seen'
+                     : ((typeof window._mlsAppointmentArrived === 'function' && window._mlsAppointmentArrived(a)) ? 'Checked in' : (a && a.status === 'booked' ? 'Booked' : ((a && a.status) || 'Booked')));
   }
   function visitType(a) { return (a && (a.reason || '').trim()) || (a && a.source === 'staff' ? 'Office visit' : 'Visit'); }
   function dobOf(a) { var d = (a && a.dob) || ''; return d ? String(d).trim() : ''; }
@@ -30848,6 +30805,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function nextPatient() {
     var rows = dayRows(todayLocal()).filter(function (a) { return !isSeen(a); });
     if (!rows.length) return null;
+    var arrived = rows.filter(function(a){ return typeof window._mlsAppointmentArrived === 'function' ? window._mlsAppointmentArrived(a) : !!(a&&a.checked_in_at); }); if (arrived.length) return arrived[0];
     var now = Date.now();
     var upcoming = rows.filter(function (a) { try { return new Date(a.start_at).getTime() >= now - 30 * 60000; } catch (e) { return true; } });
     return (upcoming[0] || rows[0]);
@@ -33068,14 +33026,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   function dayRows(dayStr) { return rowsInRange(dayStr, dayStr); }
   function isSeen(a) {
-    if (a && a.checked_in_at) return true;
-    try { if (isFn(window._seenToday) && window._seenToday(a.name)) return true; } catch (e) {}
+    try { if (isFn(window._seenToday) && window._seenToday(a)) return true; } catch (e) {}
     return false;
   }
   function statusOf(a) {
     if (a && a._pt) return isSeen(a) ? 'Seen' : 'Walk-in'; /* picked via search, not on today's schedule */
-    return isSeen(a) ? (a.checked_in_at ? 'Checked in' : 'Seen')
-                     : (a && a.status === 'booked' ? 'Booked' : ((a && a.status) || 'Booked'));
+    return isSeen(a) ? 'Seen'
+                     : ((typeof window._mlsAppointmentArrived === 'function' && window._mlsAppointmentArrived(a)) ? 'Checked in' : (a && a.status === 'booked' ? 'Booked' : ((a && a.status) || 'Booked')));
   }
   function visitType(a) { return (a && (a.reason || '').trim()) || (a && a.source === 'staff' ? 'Office visit' : 'Visit'); }
   function dobOf(a) { var d = (a && a.dob) || ''; return d ? String(d).trim() : ''; }
@@ -33084,6 +33041,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function nextPatient() {
     var rows = dayRows(todayLocal()).filter(function (a) { return !isSeen(a); });
     if (!rows.length) return null;
+    var arrived = rows.filter(function(a){ return typeof window._mlsAppointmentArrived === 'function' ? window._mlsAppointmentArrived(a) : !!(a&&a.checked_in_at); }); if (arrived.length) return arrived[0];
     var now = Date.now();
     var upcoming = rows.filter(function (a) { try { return new Date(a.start_at).getTime() >= now - 30 * 60000; } catch (e) { return true; } });
     return (upcoming[0] || rows[0]);
@@ -35061,13 +35019,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   function dayRows(dayStr) { return rowsInRange(dayStr, dayStr); }
   function isSeen(a) {
-    if (a && a.checked_in_at) return true;
-    try { if (isFn(window._seenToday) && window._seenToday(a.name)) return true; } catch (e) {}
+    try { if (isFn(window._seenToday) && window._seenToday(a)) return true; } catch (e) {}
     return false;
   }
   function statusOf(a) {
-    return isSeen(a) ? (a.checked_in_at ? 'Checked in' : 'Seen')
-                     : (a && a.status === 'booked' ? 'Booked' : ((a && a.status) || 'Booked'));
+    return isSeen(a) ? 'Seen'
+                     : ((typeof window._mlsAppointmentArrived === 'function' && window._mlsAppointmentArrived(a)) ? 'Checked in' : (a && a.status === 'booked' ? 'Booked' : ((a && a.status) || 'Booked')));
   }
   function visitType(a) { return (a && (a.reason || '').trim()) || (a && a.source === 'staff' ? 'Office visit' : 'Visit'); }
   function dobOf(a) { var d = (a && a.dob) || ''; return d ? String(d).trim() : ''; }
@@ -35076,6 +35033,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function nextPatient() {
     var rows = dayRows(todayLocal()).filter(function (a) { return !isSeen(a); });
     if (!rows.length) return null;
+    var arrived = rows.filter(function(a){ return typeof window._mlsAppointmentArrived === 'function' ? window._mlsAppointmentArrived(a) : !!(a&&a.checked_in_at); }); if (arrived.length) return arrived[0];
     var now = Date.now();
     var upcoming = rows.filter(function (a) { try { return new Date(a.start_at).getTime() >= now - 30 * 60000; } catch (e) { return true; } });
     return (upcoming[0] || rows[0]);
@@ -36739,13 +36697,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
            ((a && a.dob) || '') + '|' + apptDay(a) + '|' + (a && a.start_local || t12(a));
   }
   function isSeen(a) {
-    if (a && a.checked_in_at) return true;
-    try { if (typeof window._seenToday === 'function' && window._seenToday(a.name)) return true; } catch (e) {}
+    try { if (typeof window._seenToday === 'function' && window._seenToday(a)) return true; } catch (e) {}
     return false;
   }
   function statusOf(a) {
-    return isSeen(a) ? (a.checked_in_at ? 'Checked in' : 'Seen')
-                     : (a && a.status === 'booked' ? 'Booked' : ((a && a.status) || 'Booked'));
+    return isSeen(a) ? 'Seen'
+                     : ((typeof window._mlsAppointmentArrived === 'function' && window._mlsAppointmentArrived(a)) ? 'Checked in' : (a && a.status === 'booked' ? 'Booked' : ((a && a.status) || 'Booked')));
   }
   function visitType(a) { return (a && (a.reason || '').trim()) || (a && a.source === 'staff' ? 'Office visit' : 'Visit'); }
   function dobOf(a) { var d = (a && a.dob) || ''; return d ? String(d).trim() : ''; }
@@ -36753,6 +36710,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function nextPatient() {
     var rows = dayRows(todayLocal()).filter(function (a) { return !isSeen(a); });
     if (!rows.length) return null;
+    var arrived = rows.filter(function(a){ return typeof window._mlsAppointmentArrived === 'function' ? window._mlsAppointmentArrived(a) : !!(a&&a.checked_in_at); }); if (arrived.length) return arrived[0];
     var now = Date.now();
     var upcoming = rows.filter(function (a) { try { return new Date(a.start_at).getTime() >= now - 30 * 60000; } catch (e) { return true; } });
     return (upcoming[0] || rows[0]);
@@ -38668,8 +38626,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     return mine.length ? { prov: prov, appts: mine } : null;
   }
   function isSeen(a) {
-    if (a && a.checked_in_at) return true;
-    try { if (typeof window._seenToday === 'function' && window._seenToday(a.name)) return true; } catch (e) {}
+    try { if (typeof window._seenToday === 'function' && window._seenToday(a)) return true; } catch (e) {}
     return false;
   }
   function t12(a) {
@@ -40170,7 +40127,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     try {
       var r = scopedToday(); if (!r.list.length) return;
       var seen = 0;
-      if (typeof window._seenToday === "function") r.list.forEach(function (a) { try { if (window._seenToday(a.name)) seen++; } catch (e) {} });
+      if (typeof window._seenToday === "function") r.list.forEach(function (a) { try { if (window._seenToday(a)) seen++; } catch (e) {} });
       var want = seen + " / " + r.list.length + " seen · " + Math.max(0, r.list.length - seen) + " remaining" + (r.scoped ? "" : " · all providers");
       if (txtEl.textContent !== want) { txtEl.textContent = want; txtEl.title = r.scoped ? ("Your patients today (" + myName() + ")") : "No provider tags on today's visits yet — showing the whole practice"; }
       var fill = document.querySelector(".mdp-fill");
@@ -40214,7 +40171,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           var mine = (me && withProv.length) ? appts.filter(function (a) { return a.provider && provMatch(a.provider, me); }) : [];
           var scoped = mine.length > 0;
           var use = scoped ? mine : appts;
-          var seen = 0; try { if (typeof window._seenToday === "function") use.forEach(function (a) { if (window._seenToday(a.name)) seen++; }); } catch (e) {}
+          var seen = 0; try { if (typeof window._seenToday === "function") use.forEach(function (a) { if (window._seenToday(a)) seen++; }); } catch (e) {}
           var hh = new Date().getHours(); var greet = hh < 12 ? "Good morning" : hh < 17 ? "Good afternoon" : "Good evening";
           var nextUp = ""; try { var srt = use.slice().sort(function (a, b) { return S(a.start_at).localeCompare(S(b.start_at)); }); var now = Date.now(); var nx = srt.filter(function (a) { return a.start_at && new Date(a.start_at).getTime() >= now - 30 * 60000; })[0]; if (nx) { var d = new Date(nx.start_at); nextUp = " Next: <b>" + esc(S(nx.name).split(" ")[0]) + "</b> at " + fmt12(("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2)) + "."; } } catch (e) {}
           var msg = "☀️ " + greet + (me ? (", " + esc(me)) : "") + " — <b>" + use.length + "</b> appointment" + (use.length === 1 ? "" : "s") + " today" + (scoped ? "" : " <span style='opacity:.75'>(across all providers — no provider tags on today's pull yet)</span>") + (seen ? (", " + seen + " seen") : "") + "." + nextUp;

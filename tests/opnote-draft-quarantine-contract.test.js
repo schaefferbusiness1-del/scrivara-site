@@ -127,101 +127,21 @@ assert(/_mlsIsChartImportNote\(n\)/.test(glance),
   'the at-a-glance visit chip counts pull receipts as visits again - an import would inflate the count ' +
   'and disagree with the canonical counters');
 
-const seenSrc = between(app, 'function _seenToday(name){', 'function _tomorrowAppts(){');
-assert(seenSrc.indexOf('getPatients') >= 0 && seenSrc.indexOf('n.patientId') >= 0, '_seenToday is not id-reconciled');
-{
-  const ctx = {
-    console, Object, Array, String, JSON, Date, Math, Number,
-    _acctTodayKey() { return '2026-07-22'; },
-    _acctDateKeyOf() { return '2026-07-22'; },
-    getPatients() {
-      return [
-        { id: 'p1', name: 'Jane Same' },
-        { id: 'p2', name: 'Only One' }
-      ];
-    },
-    getNotes() {
-      return [
-        /* note carries a DIFFERENT patient's id but the same display name —
-           must NOT mark "Only One" seen, and only marks the exact p-other */
-        { patient: 'Only One', patientId: 'p-other', isDraft: false, updated: 1 },
-        /* drafts never count */
-        { patient: 'Jane Same', patientId: 'p1', isDraft: true, updated: 1 }
-      ];
-    }
-  };
-  vm.createContext(ctx);
-  vm.runInContext(seenSrc + '\nthis.seen = _seenToday;', ctx, { filename: 'seen-today-reconciled.js' });
-  assert.strictEqual(ctx.seen('Only One'), false, 'a same-named different patient marked this one seen');
-  assert.strictEqual(ctx.seen('Jane Same'), false, 'a draft counted as a completed visit');
-}
+const seenSrc = between(app, '/* ===== apptdone-1.0.0 — arrival is not completion', '/* ===== end apptdone-1.0.0');
+assert(seenSrc.includes('!n||n.isDraft'), '_seenToday completion still counts drafts');
+assert(seenSrc.includes('String(n.patientId') && seenSrc.includes('_mlsCompletionPatientId(a)'),
+  '_seenToday completion is not reconciled to the exact local chart id');
+assert(seenSrc.includes('appointmentId===noteAppointmentId') && seenSrc.includes('encounterId===noteEncounterId'),
+  '_seenToday completion lost exact appointment/encounter matching');
+assert(!seenSrc.includes('new Date(n.updated') && !seenSrc.includes('String(n.patient||'),
+  '_seenToday restored updated-time or display-name completion evidence');
 
-/* the mls-connect F2 local-date override must carry the same reconciliation */
-const f2 = between(connect, "/* _seenToday: same logic as the base app but with LOCAL dates both sides */", '_nextClinicDay');
-assert(f2.indexOf('getPatients') >= 0 && f2.indexOf('n.patientId') >= 0, 'F2 _seenToday override lost the id reconciliation');
+/* F2 may retain its historical install marker, but it must delegate to the one
+   exact base predicate rather than rebuilding a second, weaker name cache. */
+const f2 = between(connect, '  function installF2() {', '    /* _nextClinicDay');
+assert(f2.includes('orig._seenToday(target, appointmentId)'),
+  'F2 _seenToday no longer delegates to the exact base completion predicate');
+assert(!f2.includes('seenTodayIndex') && !f2.includes('anyName') && !f2.includes('updated ||'),
+  'F2 restored the ambiguous-name or edit-time completion cache');
 
-/* 2026-07-29: F2 builds one exact seen index per account/day/store version. */
-assert(f2.includes('seenTodayIndex(nm, today)') && f2.includes('cachedSeen !== null'),
-  'F2 _seenToday no longer uses the versioned index before its scan fallback');
-{
-  const helperStart = connect.indexOf('var seenTodayCache = null;');
-  const helperEnd = connect.indexOf('\n  function installF2() {', helperStart);
-  assert(helperStart >= 0 && helperEnd > helperStart, 'F2 seen-today index helper is missing');
-  const helper = connect.slice(helperStart, helperEnd);
-  let version = 1, account = 'synthetic-a', patientReads = 0, noteReads = 0;
-  const patients = [
-    { id: 'same-1', name: 'Synthetic Duplicate' },
-    { id: 'same-2', name: 'Synthetic Duplicate' },
-    { id: 'unique-1', name: 'Synthetic Unique' },
-    { id: 'legacy-1', name: 'Synthetic Legacy' },
-    { id: 'draft-1', name: 'Synthetic Draft' },
-    { id: 'old-1', name: 'Synthetic Old' }
-  ];
-  const notes = [
-    { patient: 'Synthetic Unique', patientId: 'wrong-id', updated: '2026-07-29T12:00:00Z' },
-    { patient: 'Synthetic Duplicate', patientId: 'same-1', updated: '2026-07-29T12:00:00Z' },
-    { patient: 'Synthetic Legacy', updated: '2026-07-29T12:00:00Z' },
-    { patient: 'Synthetic Draft', isDraft: true, updated: '2026-07-29T12:00:00Z' },
-    { patient: 'Synthetic Old', updated: '2026-07-28T12:00:00Z' }
-  ];
-  const indexedCtx = {
-    window: {
-      __mlsStoreCache: { ver() { return version; } },
-      uns(suffix) { return account + '::' + suffix; },
-      getPatients() { patientReads++; return patients; },
-      getNotes() { noteReads++; return notes; }
-    },
-    isFn(f) { return typeof f === 'function'; },
-    localYmd(d) { return d.toISOString().slice(0, 10); },
-    Date, Number, String, Object, isFinite
-  };
-  vm.createContext(indexedCtx);
-  vm.runInContext(helper + '\nthis.seenTodayIndex=seenTodayIndex;', indexedCtx,
-    { filename: 'f2-seen-today-index.js' });
-  const seen = indexedCtx.seenTodayIndex;
-  assert.strictEqual(seen('synthetic unique', '2026-07-29'), false,
-    'a same-name note carrying the wrong unique patient id counted as seen');
-  assert.strictEqual(seen('synthetic duplicate', '2026-07-29'), true,
-    'an ambiguous name lost the historical note.patient fallback');
-  assert.strictEqual(seen('synthetic legacy', '2026-07-29'), true,
-    'an id-less legacy note stopped counting for a unique patient');
-  assert.strictEqual(seen('synthetic draft', '2026-07-29'), false, 'a draft counted as seen');
-  assert.strictEqual(seen('synthetic old', '2026-07-29'), false, 'a prior-day note counted as seen');
-  seen('synthetic duplicate', '2026-07-29'); seen('synthetic legacy', '2026-07-29');
-  assert.strictEqual(patientReads, 1, 'same-version seen checks rebuilt the patient index');
-  assert.strictEqual(noteReads, 1, 'same-version seen checks rebuilt the note index');
-  notes.push({ patient: 'Different display', patientId: 'unique-1', updated: '2026-07-29T13:00:00Z' });
-  assert.strictEqual(seen('synthetic unique', '2026-07-29'), false,
-    'cache changed without a store-version invalidation');
-  version++;
-  assert.strictEqual(seen('synthetic unique', '2026-07-29'), true,
-    'store-version invalidation did not expose a new exact-id note');
-  account = 'synthetic-b';
-  seen('synthetic unique', '2026-07-29');
-  assert.strictEqual(patientReads, 3, 'account-key change did not rebuild the seen index');
-  assert.strictEqual(seen('synthetic unique', '2026-07-30'), false,
-    'day-key change did not exclude the prior-day note');
-  assert.strictEqual(patientReads, 4, 'day-key change did not rebuild the seen index');
-}
-
-console.log('PASS op-note draft quarantine: PDF/routing/sign gates fail closed on unresolved placeholders, and visit counters exclude drafts with id-reconciled seen-today');
+console.log('PASS op-note draft quarantine: PDF/routing/sign gates fail closed on unresolved placeholders, and completion excludes drafts with exact chart/appointment evidence');

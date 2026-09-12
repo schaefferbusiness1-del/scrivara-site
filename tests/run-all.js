@@ -2629,6 +2629,13 @@ const tests = [
      recorded", never "verified" and never a bare blank - and that nothing
      back-fills a verified stamp or erases one. */
   'athena-capture-provenance-receipt.test.js',
+  /* apptdone-1.0.0 (owner-reported 2026-09-12): checked_in_at means the
+     patient arrived, never that their visit note is finished. Completion is
+     now exact local chart + appointment/encounter evidence; a dated legacy
+     note is accepted only for the sole appointment on that chart/day. Pins
+     checked-in priority, same-name charts, two same-day appointments, an old
+     note edited today, drafts/import receipts, and the active Easy status. */
+  'appointment-completion-identity-runtime.test.js',
   /* opclean (b1244): the saved note body is the note. Pins four things that
      reached shipped op-note text but are not clinical content - a positional
      [FILL: ...] marker and its truncated remnant, an NPI/facility block

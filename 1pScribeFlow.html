@@ -31528,23 +31528,125 @@ async function _importPulledSchedule(appts){
   }catch(e){}
   try{ _calLoadNextUp(); }catch(e){}
 }
-/* A patient counts as "seen" today once they have a real (non-draft) saved note dated today. */
-function _seenToday(name){
-  try{ var nm=String(name||'').trim().toLowerCase(); if(!nm) return false; var today=_acctTodayKey();
-    /* Reconcile with the canonical patientId counters: when this name maps to
-       exactly ONE local patient, a note only counts if its patientId agrees
-       (a same-named different patient must not mark this one seen). Name-only
-       matching remains solely for ambiguous or id-less legacy notes. */
-    var matches=((typeof getPatients==='function'?getPatients():[])||[]).filter(function(p){ return String(p.name||'').trim().toLowerCase()===nm; });
-    var exact=matches.length===1?matches[0]:null;
-    return ((typeof getNotes==='function'?getNotes():[])||[]).some(function(n){
-      if(!n||n.isDraft) return false;
-      if(_acctDateKeyOf(new Date(n.updated||n.created||0))!==today) return false;
-      if(exact&&n.patientId) return String(n.patientId)===String(exact.id);
-      return String(n.patient||'').trim().toLowerCase()===nm;
+/* ===== apptdone-1.0.0 — arrival is not completion =========================
+   A checked-in patient is waiting for care; it never proves that MLS saved the
+   visit. Completion needs the saved note's LOCAL chart id plus the exact
+   appointment/encounter identity. Older notes without either id may count only
+   when their clinical visit date matches and that chart has one appointment on
+   the day. Names and note.updated are never completion evidence: both reuse the
+   wrong visit when two people share a name or an older note is edited today. */
+var _mlsCompletionNoteCache=null;
+function _mlsCompletionDay(v){
+  try{
+    var s=String(v||'').trim(); if(!s) return '';
+    if(/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10);
+    if(typeof _normDate==='function') return _normDate(s)||'';
+    if(typeof _mlsAthenaBindDayKey==='function') return _mlsAthenaBindDayKey(s)||'';
+  }catch(e){}
+  return '';
+}
+function _mlsCompletionAppointmentId(a,override){
+  a=a||{};
+  return String(override||a.appointmentId||a.appointment_id||a.apptId||a.appt_id||a.athena_appointment_id||'').trim();
+}
+function _mlsCompletionEncounterId(a){
+  a=a||{};
+  return String(a.encounterId||a.encounter_id||a.athenaEncounterId||a.athena_encounter_id||a.visitId||'').trim();
+}
+function _mlsCompletionPatientId(a){
+  try{
+    if(!a) return '';
+    if(a._pt&&a.id!=null) return String(a.id);
+    if(a._mlsTargetPatientId!=null&&String(a._mlsTargetPatientId).trim()) return String(a._mlsTargetPatientId).trim();
+    if(typeof _calResolveLocalPatient==='function'){
+      var id=_calResolveLocalPatient(a); if(id!=null&&String(id).trim()) return String(id).trim();
+    }
+  }catch(e){}
+  return '';
+}
+function _mlsCompletionNotesByPatient(){
+  var stamp='';
+  try{
+    var sc=window.__mlsStoreCache;
+    if(sc&&typeof sc.ver==='function'&&typeof uns==='function') stamp=String(uns('notes'))+'|'+String(sc.ver());
+    if(stamp&&_mlsCompletionNoteCache&&_mlsCompletionNoteCache.stamp===stamp) return _mlsCompletionNoteCache.byPatient;
+  }catch(e){}
+  var byPatient=Object.create(null);
+  try{
+    ((typeof getNotes==='function'?getNotes():[])||[]).forEach(function(n){
+      if(!n||n.isDraft||!String(n.patientId==null?'':n.patientId).trim()) return;
+      if(typeof _mlsIsChartImportNote==='function'&&_mlsIsChartImportNote(n)) return;
+      var id=String(n.patientId).trim(); (byPatient[id]||(byPatient[id]=[])).push(n);
     });
+  }catch(e){}
+  if(stamp) _mlsCompletionNoteCache={stamp:stamp,byPatient:byPatient};
+  return byPatient;
+}
+function _mlsCompletionTarget(target){
+  if(target&&typeof target==='object') return target;
+  try{
+    var nm=String(target||'').trim().toLowerCase().replace(/\s+/g,' '),today=_acctTodayKey(); if(!nm) return null;
+    var rows=((window._calAppts||[])||[]).filter(function(a){
+      return a&&_apptScheduleDate(a,today)===today&&String(a.name||a.patient||'').trim().toLowerCase().replace(/\s+/g,' ')===nm;
+    });
+    return rows.length===1?rows[0]:null;
+  }catch(e){ return null; }
+}
+function _mlsSameCompletionRow(a,b,aid,bid){
+  if(a===b) return true;
+  if(aid&&bid&&aid===bid) return true;
+  var ar=String((a&&a.id)==null?'':a.id),br=String((b&&b.id)==null?'':b.id);
+  return !!(ar&&br&&ar===br);
+}
+function _mlsSamePatientDayAppointmentCount(target,patientId,day,targetAppointmentId){
+  try{
+    var rows=(window._calAppts||[])||[],keys=Object.create(null),count=0,targetIncluded=false;
+    for(var i=0;i<rows.length;i++){
+      var row=rows[i]; if(!row||_apptScheduleDate(row,day)!==day) continue;
+      var rid=_mlsCompletionPatientId(row); if(!rid||rid!==patientId) continue;
+      var raid=_mlsCompletionAppointmentId(row);
+      if(_mlsSameCompletionRow(target,row,targetAppointmentId,raid)) targetIncluded=true;
+      var key=raid?('a:'+raid):(row.id!=null?('r:'+String(row.id)):('o:'+i));
+      if(!keys[key]){ keys[key]=1; count++; }
+    }
+    if(!targetIncluded) count++;
+    return count;
+  }catch(e){ return 0; }
+}
+function _mlsAppointmentCompleted(target,appointmentIdOverride){
+  try{
+    var a=_mlsCompletionTarget(target); if(!a) return false;
+    var day=_apptScheduleDate(a,_acctTodayKey()),patientId=_mlsCompletionPatientId(a);
+    if(!day||!patientId) return false;
+    var appointmentId=_mlsCompletionAppointmentId(a,appointmentIdOverride),encounterId=_mlsCompletionEncounterId(a);
+    var notes=_mlsCompletionNotesByPatient()[patientId]||[];
+    var uniqueDayCount=null;
+    for(var i=0;i<notes.length;i++){
+      var n=notes[i],noteDay=_mlsCompletionDay(n.visitDate||n.visit_date||n.noteDate||n.appt_date||n.apptDate||'');
+      if(noteDay&&noteDay!==day) continue;
+      var noteAppointmentId=_mlsCompletionAppointmentId(n),noteEncounterId=_mlsCompletionEncounterId(n);
+      if(appointmentId&&noteAppointmentId){ if(appointmentId===noteAppointmentId) return true; continue; }
+      if(encounterId&&noteEncounterId){ if(encounterId===noteEncounterId) return true; continue; }
+      if(noteDay!==day) continue;
+      if(uniqueDayCount===null) uniqueDayCount=_mlsSamePatientDayAppointmentCount(a,patientId,day,appointmentId);
+      if(uniqueDayCount===1) return true;
+    }
+  }catch(e){}
+  return false;
+}
+function _mlsAppointmentArrived(a){
+  try{
+    if(a&&a.checked_in_at) return true;
+    var s=String((a&&a.status)||'').toLowerCase().replace(/[_-]+/g,' ').replace(/\s+/g,' ').trim();
+    return /^(?:checked in|check in|arrived|in room|roomed|ready)(?:\b|$)/.test(s);
   }catch(e){ return false; }
 }
+/* Compatibility name retained for older surfaces; callers should pass the
+   appointment row. A bare name resolves only one schedule row and fails closed
+   for twins or two same-name appointments. */
+function _seenToday(name,appointmentIdOverride){ return _mlsAppointmentCompleted(name,appointmentIdOverride); }
+try{ window._mlsAppointmentCompleted=_mlsAppointmentCompleted; window._mlsAppointmentArrived=_mlsAppointmentArrived; }catch(e){}
+/* ===== end apptdone-1.0.0 ================================================ */
 /* Tomorrow's appointments pulled from the calendar (so they file into a Tomorrow folder). */
 function _tomorrowAppts(){
   try{ var d=new Date(_acctTodayKey()+'T12:00'); d.setDate(d.getDate()+1); var key=_opDayKey(d);
@@ -31566,6 +31668,7 @@ function _heroPatChip(a,onclick,opts){
    (started ≤30 min ago), else the next upcoming, else the first. */
 function _heroAutoPos(pending){
   if(!pending.length) return 0;
+  for(var a=0;a<pending.length;a++){ if(_mlsAppointmentArrived(pending[a].a)) return a; }
   var nowMin=_acctNowMinutes();
   var inRoom=-1, next=-1;
   for(var k=0;k<pending.length;k++){ var m=_calApptMins(pending[k].a); if(m==null) continue; if(m<=nowMin && nowMin-m<=30) inRoom=k; if(m>=nowMin && next<0) next=k; }
@@ -31603,7 +31706,7 @@ function _renderTodayPatients(appts){
   var tom=_tomorrowAppts(); window._heroTomorrowList=tom;
   if((!appts||!appts.length) && !tom.length){ box.style.display='none'; box.innerHTML=''; return; }
   var pending=[], seenCount=0;
-  (appts||[]).forEach(function(a,i){ if(!String(a.name||'').trim()) return; if(_seenToday(a.name)) seenCount++; else pending.push({a:a,i:i}); });
+  (appts||[]).forEach(function(a,i){ if(!String(a.name||'').trim()) return; if(_seenToday(a)) seenCount++; else pending.push({a:a,i:i}); });
   var autoPos=_heroAutoPos(pending);
   var selOrig=(typeof window._heroSelIdx==='number')?window._heroSelIdx:-1;
   var manualPos=-1; if(selOrig>=0){ for(var k=0;k<pending.length;k++){ if(pending[k].i===selOrig){ manualPos=k; break; } } }
