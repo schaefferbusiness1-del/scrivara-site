@@ -108,6 +108,41 @@ var OPN_SHAPE = /^[a-f0-9]{64}$/;
 var opnJobs = [];
 var opnOpen = null;
 var opnTemplates = [];
+/* signin-2.0.1: THE LINK SAYS WHICH SURGEON. THE CODE PROVES THEY ARE THAT ONE.
+
+   The link on its own now reaches exactly two things: a probe that answers "not
+   in yet" with a mask of the address on file, and the door that mails a
+   six-digit code to THAT address. Everything else takes the credential the code
+   buys. opnCred() is what every call carries, and it is the session the moment
+   there is one.
+
+   The session lives in sessionStorage, so a reload does not ask for another
+   code and closing the tab ends it. It is stored beside the first 8 characters
+   of the link it belongs to: a second link opened in the same tab must not be
+   able to walk in on the first one's sign-in. Eight hex characters cannot be
+   walked back to the 64 the link is made of, and the backend already keeps a
+   prefix of its own for the same reason. */
+var OPN_SESS_KEY = 'mlsOpnoteSession';
+var OPN_SESS_RE = /^sess_[a-f0-9]{64}$/;
+var opnSess = '';
+function opnCred() { return opnSess || K; }
+function opnLinkTag() { return String(K || '').slice(0, 8); }
+function opnSessLoad() {
+  try {
+    var raw = window.sessionStorage.getItem(OPN_SESS_KEY);
+    if (!raw) return;
+    var o = JSON.parse(raw);
+    if (o && o.tag === opnLinkTag() && OPN_SESS_RE.test(String(o.s || ''))) opnSess = String(o.s);
+  } catch (e) { opnSess = ''; }
+}
+function opnSessSave() {
+  try { window.sessionStorage.setItem(OPN_SESS_KEY, JSON.stringify({ tag: opnLinkTag(), s: opnSess })); }
+  catch (e) { /* a private window refuses storage; the sign-in still works for this page */ }
+}
+function opnSessDrop() {
+  opnSess = '';
+  try { window.sessionStorage.removeItem(OPN_SESS_KEY); } catch (e) {}
+}
 
 function opnEsc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (m) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[m]; }); }
 function opnEl(id) { return document.getElementById(id); }
@@ -118,7 +153,7 @@ function opnApi(path, opts) {
   var o = {};
   var src = opts || {};
   for (var key in src) { if (Object.prototype.hasOwnProperty.call(src, key)) o[key] = src[key]; }
-  o.headers = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + K };
+  o.headers = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + opnCred() };
   return window.mlsSensitiveFetch(OPN_BASE + path, o);
 }
 
@@ -136,11 +171,104 @@ function opnStopped(sentence) {
 function opnDead() { opnStopped('This link is no longer active. Ask for a new one.'); }
 function opnTrouble() { opnStopped('That did not go through. Try again in a moment.'); }
 
+/* A 401 used to mean one thing. It now means two, and telling them apart is the
+   difference between "sign in again" and "your link is gone" - a surgeon sent
+   to find a new link when all they needed was a fresh code is a surgeon who
+   rings the practice. The server says which: OPNOTE_SIGNIN_REQUIRED is the
+   session, anything else is the link itself. Returns true when it handled it. */
+async function opnHandle401(r) {
+  var code = '';
+  try { var d = await r.json(); code = String(((d || {}).error || {}).code || ''); } catch (e) { code = ''; }
+  if (code === 'OPNOTE_SIGNIN_REQUIRED') { opnSessDrop(); opnSignInCard(''); return true; }
+  opnDead();
+  return true;
+}
+
 function opnSay(id, sentence, bad) {
   var e = opnEl(id);
   if (!e) return;
   e.textContent = sentence;
   e.className = bad ? 'stop' : 'said';
+}
+
+/* ---- signing in --------------------------------------------------------- */
+/* One card, one thing to do at a time: ask for the code, then type it. It is
+   painted into the gate, so nothing of the notes exists on the page until the
+   code has been accepted - not a title, not a count, not a name. */
+var opnHint = '';
+function opnSignInCard(say) {
+  var g = opnEl('gate');
+  if (!g) return;
+  var a = opnEl('app'); if (a) a.className = 'hide';
+  var to = opnHint ? ('We will email a code to ' + opnEsc(opnHint) + '.') : 'We will email you a code.';
+  g.className = 'card';
+  g.innerHTML =
+    '<h2>Sign in to see your op notes</h2>' +
+    '<p class="sub">' + to + ' It is good for a few minutes.</p>' +
+    '<button class="btn" id="opnCodeBtn" onclick="opnAskCode()">Email me a code</button>' +
+    '<div id="opnCodeWrap" class="hide">' +
+      '<label for="opnCode">The six-digit code</label>' +
+      '<input id="opnCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000">' +
+      '<button class="btn" onclick="opnVerify()">Sign in</button>' +
+    '</div>' +
+    '<p class="said hide" id="opnSignMsg"></p>';
+  if (say) { opnSay('opnSignMsg', say, true); opnShow('opnSignMsg', true); }
+}
+
+async function opnAskCode() {
+  var b = opnEl('opnCodeBtn');
+  if (b) { b.disabled = true; b.textContent = 'Sending...'; }
+  try {
+    var r = await opnPost('/api/client/opnotes/code', {});
+    var d = null; try { d = await r.json(); } catch (e) { d = null; }
+    if (b) { b.disabled = false; b.textContent = 'Send another code'; }
+    if (r.ok) {
+      if (d && d.emailHint) opnHint = String(d.emailHint);
+      opnShow('opnCodeWrap', true);
+      opnSay('opnSignMsg', 'Sent. Type the code below.', false);
+      opnShow('opnSignMsg', true);
+      var f = opnEl('opnCode'); if (f && f.focus) { try { f.focus(); } catch (e) {} }
+      return;
+    }
+    /* The server's own sentence is the right one here: it knows whether this is
+       a wait, a missing address, or mail being switched off, and each of those
+       needs a different thing from the surgeon. It is written to be read by
+       one. Anything unrecognised falls back to a sentence of ours. */
+    var said = String(((d || {}).error || {}).message || '');
+    opnSay('opnSignMsg', said || 'That did not go through. Try again in a moment.', true);
+    opnShow('opnSignMsg', true);
+  } catch (e) {
+    if (b) { b.disabled = false; b.textContent = 'Email me a code'; }
+    opnSay('opnSignMsg', 'That did not go through. Try again in a moment.', true);
+    opnShow('opnSignMsg', true);
+  }
+}
+
+async function opnVerify() {
+  var f = opnEl('opnCode');
+  var code = f ? String(f.value || '').replace(/\s+/g, '') : '';
+  if (!/^[0-9]{6}$/.test(code)) {
+    opnSay('opnSignMsg', 'Type the six digits from the email.', true);
+    opnShow('opnSignMsg', true);
+    return;
+  }
+  try {
+    var r = await opnPost('/api/client/opnotes/verify', { code: code });
+    var d = null; try { d = await r.json(); } catch (e) { d = null; }
+    if (r.ok && d && d.session) {
+      opnSess = String(d.session);
+      opnSessSave();
+      if (f) f.value = '';
+      await opnOpenApp(d.client || {});
+      return;
+    }
+    var said = String(((d || {}).error || {}).message || '');
+    opnSay('opnSignMsg', said || 'That code did not work, so ask for a new one and try again.', true);
+    opnShow('opnSignMsg', true);
+  } catch (e) {
+    opnSay('opnSignMsg', 'That did not go through. Try again in a moment.', true);
+    opnShow('opnSignMsg', true);
+  }
 }
 
 /* ---- the list ---------------------------------------------------------- */
@@ -210,7 +338,7 @@ function opnRemember(patch) {
 async function opnOpenJob(id) {
   try {
     var r = await opnGet('/api/client/opnotes/jobs/' + encodeURIComponent(id));
-    if (r.status === 401) { opnDead(); return; }
+    if (r.status === 401) { await opnHandle401(r); return; }
     if (!r.ok) { opnSay('jobMsg', 'That did not go through. Try again in a moment.', true); opnShow('jobMsg', true); return; }
     var d = await r.json();
     opnUndoText = '';
@@ -224,7 +352,7 @@ async function opnSaveJob() {
   try {
     var r = await opnPost('/api/client/opnotes/jobs/' + encodeURIComponent(opnOpen.id) + '/save',
       { noteText: picked.noteText, blanks: picked.blanks, expectedVersion: opnOpen.version });
-    if (r.status === 401) { opnDead(); return; }
+    if (r.status === 401) { await opnHandle401(r); return; }
     if (r.status === 409) { opnSay('jobMsg', 'Someone else changed this note. Reload the page to see the newest one.', true); opnShow('jobMsg', true); return; }
     if (!r.ok) { opnSay('jobMsg', 'That did not go through. Try again in a moment.', true); opnShow('jobMsg', true); return; }
     var d = await r.json();
@@ -241,7 +369,7 @@ async function opnCompleteJob() {
   if (!opnOpen) return;
   try {
     var r = await opnPost('/api/client/opnotes/jobs/' + encodeURIComponent(opnOpen.id) + '/complete', { expectedVersion: opnOpen.version });
-    if (r.status === 401) { opnDead(); return; }
+    if (r.status === 401) { await opnHandle401(r); return; }
     if (r.status === 409) { opnSay('jobMsg', 'Someone else changed this note. Reload the page to see the newest one.', true); opnShow('jobMsg', true); return; }
     if (!r.ok) { opnSay('jobMsg', 'That did not go through. Try again in a moment.', true); opnShow('jobMsg', true); return; }
     var d = await r.json();
@@ -294,7 +422,7 @@ async function opnRefit() {
   try {
     var r = await opnPost('/api/client/opnotes/jobs/' + encodeURIComponent(opnOpen.id) + '/retemplate',
       { templateId: tid, expectedVersion: opnOpen.version });
-    if (r.status === 401) { opnDead(); return; }
+    if (r.status === 401) { await opnHandle401(r); return; }
     var d = null;
     try { d = await r.json(); } catch (e) { d = null; }
     if (go) { go.disabled = false; go.textContent = 'Rewrite it with this template'; }
@@ -412,7 +540,7 @@ function opnSavePastedTemplate() {
 async function opnSendTemplate(name, text) {
   try {
     var r = await opnPost('/api/client/opnotes/templates', { name: name, text: text });
-    if (r.status === 401) { opnDead(); return; }
+    if (r.status === 401) { await opnHandle401(r); return; }
     if (!r.ok) { opnSay('tplMsg', 'That did not go through. Try again in a moment.', true); opnShow('tplMsg', true); return; }
     var d = await r.json();
     opnRenderTemplates(d.templates || []);
@@ -424,19 +552,14 @@ async function opnSendTemplate(name, text) {
 }
 
 /* ---- opening the page -------------------------------------------------- */
-async function opnBoot() {
-  if (!OPN_SHAPE.test(K)) { opnDead(); return; }
-  var who;
-  try {
-    var r = await opnGet('/api/client/opnotes/session');
-    if (r.status === 401 || r.status === 403 || r.status === 404) { opnDead(); return; }
-    if (!r.ok) { opnTrouble(); return; }
-    who = await r.json();
-  } catch (e) { opnTrouble(); return; }
-
-  var client = (who && who.client) || {};
-  var hdr = opnEl('hdr'); if (hdr) hdr.textContent = 'Op notes for ' + (client.name || 'you');
+/* Everything past the sign-in. Called once the credential exists, from the boot
+   probe when the session was still good and from opnVerify when a code has just
+   been accepted. */
+async function opnOpenApp(client) {
+  var c = client || {};
+  var hdr = opnEl('hdr'); if (hdr) hdr.textContent = 'Op notes for ' + (c.name || 'you');
   var sub = opnEl('sub'); if (sub) sub.textContent = 'Everything is written for you. Fill in what only you know, then mark it done.';
+  var g = opnEl('gate'); if (g) g.innerHTML = '';
   opnShow('gate', false);
   opnShow('app', true);
 
@@ -445,15 +568,52 @@ async function opnBoot() {
      first note the surgeon opens no way out of a bad match. */
   try {
     var tr = await opnGet('/api/client/opnotes/templates');
+    if (tr.status === 401) { await opnHandle401(tr); return; }
     if (tr.ok) { var td = await tr.json(); opnRenderTemplates((td && td.templates) || []); }
   } catch (e) { opnRenderTemplates([]); }
 
   try {
     var jr = await opnGet('/api/client/opnotes/jobs');
-    if (jr.status === 401) { opnDead(); return; }
+    if (jr.status === 401) { await opnHandle401(jr); return; }
     if (jr.ok) { var jd = await jr.json(); opnJobs = (jd && jd.jobs) || []; }
   } catch (e) { opnJobs = []; }
   opnRenderList();
+
+  /* Straight into the first one that still needs them. A surgeon who signed in
+     to fill two blanks should not have to choose a row first; if everything is
+     done, the list is the right thing to be looking at. */
+  for (var i = 0; i < opnJobs.length; i++) {
+    var j = opnJobs[i] || {};
+    if (String(j.status || '') === 'completed') continue;
+    if (Number(j.blankCount || 0) <= Number(j.filledCount || 0)) continue;
+    await opnOpenJob(j.id);
+    return;
+  }
+}
+
+async function opnBoot() {
+  if (!OPN_SHAPE.test(K)) { opnDead(); return; }
+  opnSessLoad();
+  var who;
+  try {
+    var r = await opnGet('/api/client/opnotes/session');
+    if (r.status === 401 && opnSess) {
+      /* The stored session is spent or was killed. The LINK may still be
+         perfectly good, so ask again as the link before giving up on it. */
+      opnSessDrop();
+      r = await opnGet('/api/client/opnotes/session');
+    }
+    if (r.status === 401 || r.status === 403 || r.status === 404) { opnDead(); return; }
+    if (!r.ok) { opnTrouble(); return; }
+    who = await r.json();
+  } catch (e) { opnTrouble(); return; }
+
+  if (who && who.needsSignIn) {
+    opnHint = String(who.emailHint || '');
+    opnSignInCard('');
+    return;
+  }
+  await opnOpenApp((who && who.client) || {});
 }
 
 window.opnReady = opnBoot();

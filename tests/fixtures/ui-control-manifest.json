@@ -3,11 +3,11 @@
  "charter": "UI_CHARTER_CALM_SHELL_2026-07-24.md",
  "sources": 331,
  "totals": {
-  "controls": 4796,
+  "controls": 4798,
   "gated": 399,
-  "active": 4397,
+  "active": 4399,
   "byKind": {
-   "button": 4471,
+   "button": 4473,
    "handler": 249,
    "navtab": 76
   }
@@ -51,7 +51,7 @@
   "page:mls-marketing-console.html": 17,
   "page:mls-marketing.html": 17,
   "page:mls-widgets.html": 2,
-  "page:opnotes.html": 7,
+  "page:opnotes.html": 9,
   "page:patient-portal-staging.html": 3,
   "page:patient-portal.html": 27,
   "page:patient-review.html": 8,
@@ -99,7 +99,7 @@
   "page:mls-marketing-console.html": 17,
   "page:mls-marketing.html": 17,
   "page:mls-widgets.html": 2,
-  "page:opnotes.html": 7,
+  "page:opnotes.html": 9,
   "page:patient-portal-staging.html": 3,
   "page:patient-portal.html": 27,
   "page:patient-review.html": 8,
@@ -112,7 +112,7 @@
  "surfaces": {
   "clinician": 3309,
   "1p": 661,
-  "public": 155,
+  "public": 157,
   "cloned": 661,
   "phone": 6,
   "popup": 4
@@ -80427,7 +80427,41 @@
    "handler": "opnSavePastedTemplate()"
   },
   {
-   "id": "opnotes-html-156-button",
+   "id": "opnCodeBtn",
+   "label": "Email me a code",
+   "accessibleName": "Email me a code",
+   "title": "",
+   "kind": "button",
+   "tag": "button",
+   "domId": "opnCodeBtn",
+   "view": "page:opnotes.html",
+   "route": "page:opnotes.html",
+   "surface": "public",
+   "shellChecked": false,
+   "file": "opnotes.html",
+   "line": 208,
+   "gated": false,
+   "handler": "opnAskCode()"
+  },
+  {
+   "id": "opnotes-html-212-sign-in",
+   "label": "Sign in",
+   "accessibleName": "Sign in",
+   "title": "",
+   "kind": "button",
+   "tag": "button",
+   "domId": null,
+   "view": "page:opnotes.html",
+   "route": "page:opnotes.html",
+   "surface": "public",
+   "shellChecked": false,
+   "file": "opnotes.html",
+   "line": 212,
+   "gated": false,
+   "handler": "opnVerify()"
+  },
+  {
+   "id": "opnotes-html-284-button",
    "label": "' + ' ' + ' ' + '",
    "accessibleName": "' + ' ' + ' ' + '",
    "title": "",
@@ -80439,12 +80473,12 @@
    "surface": "public",
    "shellChecked": false,
    "file": "opnotes.html",
-   "line": 156,
+   "line": 284,
    "gated": false,
    "handler": "opnOpenJob(' ')"
   },
   {
-   "id": "opnotes-html-181-save",
+   "id": "opnotes-html-309-save",
    "label": "Save",
    "accessibleName": "Save",
    "title": "",
@@ -80456,12 +80490,12 @@
    "surface": "public",
    "shellChecked": false,
    "file": "opnotes.html",
-   "line": 181,
+   "line": 309,
    "gated": false,
    "handler": "opnSaveJob()"
   },
   {
-   "id": "opnotes-html-182-mark-done",
+   "id": "opnotes-html-310-mark-done",
    "label": "Mark done",
    "accessibleName": "Mark done",
    "title": "",
@@ -80473,7 +80507,7 @@
    "surface": "public",
    "shellChecked": false,
    "file": "opnotes.html",
-   "line": 182,
+   "line": 310,
    "gated": false,
    "handler": "opnCompleteJob()"
   },
@@ -80490,7 +80524,7 @@
    "surface": "public",
    "shellChecked": false,
    "file": "opnotes.html",
-   "line": 279,
+   "line": 407,
    "gated": false,
    "handler": "opnRefit()"
   },
@@ -80507,7 +80541,7 @@
    "surface": "public",
    "shellChecked": false,
    "file": "opnotes.html",
-   "line": 280,
+   "line": 408,
    "gated": false,
    "handler": "opnRefitUndo()"
   },
