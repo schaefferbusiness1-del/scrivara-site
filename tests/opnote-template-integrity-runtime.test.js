@@ -104,6 +104,9 @@ async function main() {
      share a display name; the template must follow the exact appointment id,
      and legacy name matching is allowed only when both records lack ids. */
   const sameNameTemplate = { ...template('provider-bound', 'Lumbar medial branch block'), providerId: 'provider-a', providerName: 'Alex Kim, MD' };
+  const unboundTemplate = template('account-wide', 'Lumbar medial branch block');
+  const unboundWithCurrentProvider = api.templateCompatibility('Lumbar medial branch block', unboundTemplate, { providerId: 'provider-a', providerName: 'Alex Kim, MD' });
+  assert.strictEqual(unboundWithCurrentProvider.pass, true, 'an appointment provider incorrectly turned an unbound account template into a provider-scoped template');
   const exactProvider = api.templateCompatibility('Lumbar medial branch block', sameNameTemplate, { providerId: 'provider-a', providerName: 'Alex Kim, MD' });
   assert.strictEqual(exactProvider.pass, true, 'matching provider ids should accept the same-name clinician');
   const wrongProvider = api.templateCompatibility('Lumbar medial branch block', sameNameTemplate, { providerId: 'provider-b', providerName: 'Alex Kim, MD' });

@@ -399,6 +399,10 @@
     function providerCheck(){
       var templateId=S(tpl.providerId||tpl.provider_id).trim(),currentId=S(ctx.providerId||ctx.provider_id).trim();
       var templateName=scopeValue(tpl.providerName||tpl.provider),currentName=scopeValue(ctx.providerName||ctx.provider);
+      /* An appointment having a provider identity does not make an ordinary
+         account/practice template provider-scoped. Apply this hard identity
+         gate only when the template itself declares a provider binding. */
+      if(!templateId&&!templateName)return;
       if(templateId||currentId){
         if(!templateId||!currentId){errors.push({field:'provider',code:'provider_id_unresolved',message:'The selected template and current appointment do not both carry the required provider identity.'});return;}
         if(templateId!==currentId)errors.push({field:'provider',code:'mismatch_provider_id',message:'The selected template belongs to a different provider identity.'});
