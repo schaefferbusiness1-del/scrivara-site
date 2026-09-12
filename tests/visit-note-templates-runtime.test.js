@@ -553,7 +553,78 @@ const SHELL_HTML = `<!doctype html><html><body>
       assert.equal(await page.evaluate(() => localStorage.getItem(window.uns('draftTuningV1'))), beforeReload,
         'reload or remount changed stored template data');
     }
+    /* Slow file reads cannot cross profile, section, account or mount boundaries. */
+    for (const scenario of ['profile', 'family', 'account', 'aba', 'remount', 'replace', 'superseded', 'reopen']) {
+      await page.evaluate(() => {
+        window.__mlsSessionEpoch = 1;
+        window.__testAccount = 'account-vntpl';
+        window.uns = key => window.__testAccount + '::' + key;
+        window.__mlsDraftTuning.beginSettings();
+        document.getElementById('mlsVnTplOpen_plan').click();
+        window._tplReadAnyFile = () => new Promise(resolve => { window.__finishFile = resolve; });
+        const file = document.getElementById('mlsVnTplFile'); file.click = () => {};
+        document.getElementById('mlsVnTplUpload_plan').click();
+        const transfer = new DataTransfer(); transfer.items.add(new File(['OLD'], 'slow.txt', { type: 'text/plain' }));
+        file.files = transfer.files; file.dispatchEvent(new Event('change'));
+      });
+      await page.waitForFunction(() => typeof window.__finishFile === 'function');
+      await page.evaluate(scenario => {
+        if (scenario === 'profile') {
+          const select = document.getElementById('mlsVnTplProfile_plan');
+          select.value = Array.from(select.options).find(option => option.value !== select.value).value;
+          select.dispatchEvent(new Event('change'));
+        } else if (scenario === 'family') document.getElementById('mlsVnTplOpen_hpi').click();
+        else if (scenario === 'account' || scenario === 'aba') {
+          window.__testAccount = 'other-account'; window.__mlsSessionEpoch++;
+          window.dispatchEvent(new Event('mls:session-boundary'));
+          if (scenario === 'aba') { window.__testAccount = 'account-vntpl'; window.__mlsSessionEpoch++; window.dispatchEvent(new Event('mls:session-boundary')); }
+        } else if (scenario === 'remount') {
+          document.getElementById('mlsVisitNoteTemplatesSection').remove(); window.__mlsDraftTuning.mountVisitTemplates();
+        } else if (scenario === 'replace') {
+          const target = document.getElementById('mlsVnTplText_plan'); target.replaceWith(target.cloneNode(true));
+        } else if (scenario === 'reopen') window.__mlsDraftTuning.beginSettings();
+        else document.getElementById('mlsVnTplUpload_plan').click();
+        document.getElementById('mlsVnTplText_plan').value = 'CURRENT EDITOR CONTENT';
+        window.__storeBeforeCompletion = JSON.stringify(Object.entries(localStorage).sort());
+        window.__finishFile('STALE FILE CONTENT');
+      }, scenario);
+      await page.waitForTimeout(20);
+      assert.equal(await page.inputValue('#mlsVnTplText_plan'), 'CURRENT EDITOR CONTENT', scenario + ' accepted stale file content');
+      assert.equal(await page.evaluate(() => JSON.stringify(Object.entries(localStorage).sort()) === window.__storeBeforeCompletion), true, scenario + ' changed storage');
+      await page.evaluate(() => { delete window.__finishFile; });
+    }
     await page.close();
+
+    /* Exercise the real shell wrapper after a cold load outlives the gesture. */
+    const cold = await browser.newPage();
+    await cold.route('https://mls-cold-template.test/**', route => route.fulfill({ status: 200, contentType: 'text/html', body: SHELL_HTML.replace('class="show"', 'class=""') }));
+    await cold.goto('https://mls-cold-template.test/');
+    await cold.evaluate(() => {
+      window.uns = key => 'cold::' + key; window.getGenLength = () => 'standard'; window.getGenInstr = () => '';
+      window.__messages = []; window.toast = text => window.__messages.push(text);
+      window.openSettings = options => {
+        if (!options || options.userInitiated !== true) return false;
+        document.getElementById('settingsModal').classList.add('show'); return true;
+      };
+      window.__mlsEnsureDraftTuning = () => new Promise(resolve => { window.__finishLoad = resolve; });
+    });
+    await cold.addScriptTag({ content: lift('async function openVisitNoteTemplates(){', '\n/* settingsgate-1.0.0', 'visit template opener') });
+    await cold.evaluate(() => { window.__opening = openVisitNoteTemplates(); });
+    await cold.waitForTimeout(1100);
+    await cold.addScriptTag({ path: MODULE_PATH });
+    await cold.evaluate(() => window.__finishLoad(window.__mlsDraftTuning));
+    assert.equal(await cold.evaluate(() => window.__opening), true, 'cold explicit intent was lost after await');
+    assert.equal(await cold.locator('#mlsVisitNoteTemplatesSection:visible').count(), 1);
+    await cold.evaluate(() => {
+      window.__mlsEnsureDraftTuning = async () => null; window.__mlsDraftTuning = null;
+      document.getElementById('settingsModal').classList.remove('show');
+    });
+    assert.equal(await cold.evaluate(() => openVisitNoteTemplates()), true, 'missing loader did not open Settings fallback');
+    assert.match(await cold.evaluate(() => window.__messages.at(-1)), /Settings is open/);
+    await cold.evaluate(() => { document.getElementById('settingsModal').classList.remove('show'); window.openSettings = () => false; });
+    assert.equal(await cold.evaluate(() => openVisitNoteTemplates()), false, 'refused Settings opening claimed success');
+    assert.match(await cold.evaluate(() => window.__messages.at(-1)), /could not be opened/);
+    await cold.close();
   } finally {
     await browser.close();
     try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (e) {}

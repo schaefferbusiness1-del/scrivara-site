@@ -10354,9 +10354,15 @@ async function openVisitNoteTemplates(){
   try{ if(typeof window.__mlsEnsureDraftTuning==='function') await window.__mlsEnsureDraftTuning(); }catch(eVnLoad){}
   try{
     var dt=window.__mlsDraftTuning;
-    if(dt&&typeof dt.openVisitTemplates==='function'){ dt.openVisitTemplates(); return true; }
+    if(dt&&typeof dt.openVisitTemplates==='function'&&await dt.openVisitTemplates({userInitiated:true})===true) return true;
   }catch(eVnOpen){}
-  try{ if(typeof openSettings==='function'){ openSettings({userInitiated:true}); return true; } }catch(eVnSettings){}
+  try{ if(typeof openSettings==='function'&&openSettings({userInitiated:true})!==false){
+    var modal=document.getElementById('settingsModal');
+    if(modal&&modal.classList.contains('show')){
+      if(typeof toast==='function') toast('Settings is open, but visit note templates could not load. Reload MLS and try again.','err');
+      return true;
+    }
+  } }catch(eVnSettings){}
   try{ if(typeof toast==='function') toast('Visit note templates could not be opened. Reload MLS and try again.','err'); }catch(eVnToast){}
   return false;
 }

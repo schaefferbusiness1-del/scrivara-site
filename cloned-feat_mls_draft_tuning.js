@@ -1769,6 +1769,7 @@
     paintResetState();
   }
   function beginSettings() {
+    visitUploadRequest++;
     workingScope = storageScope();
     workingScopeInvalid = false;
     working = readForScope(workingScope);
@@ -1846,6 +1847,7 @@
     return saved;
   }
   function discardUi() {
+    visitUploadRequest++;
     resetSectionImport(true);
     working = null;
     workingScope = null;
@@ -1919,6 +1921,7 @@
   var VISIT_TEMPLATE_EMPTY = 'No template - MLS writes this section from what was said.';
   var VISIT_TEMPLATE_FILE_ACCEPT = '.txt,.text,.md,.markdown,.rtf,.csv,.tsv,.json,.html,.htm,.doc,.docx,.odt,.pdf,.png,.jpg,.jpeg,.webp,.gif,text/plain,text/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg,image/webp,image/gif';
   var visitUploadFamily = '';
+  var visitUploadRequest = 0, visitMountGeneration = 0;
 
   function visitTemplateFamily(id) {
     var clean = String(id || '');
@@ -2053,6 +2056,7 @@
     return false;
   }
   function visitTemplateEditorClose(family) {
+    visitUploadRequest++;
     var host = q('mlsVnTplEditor_' + family);
     if (!host) return;
     host.setAttribute('data-open', '0');
@@ -2061,6 +2065,7 @@
     if (toggle) toggle.setAttribute('aria-expanded', 'false');
   }
   function visitTemplateEditorOpen(family) {
+    visitUploadRequest++;
     var host = q('mlsVnTplEditor_' + family);
     if (!host) return;
     var wasOpen = host.getAttribute('data-open') === '1';
@@ -2239,6 +2244,7 @@
       var input = q('mlsVnTplFile');
       if (!input) return;
       visitUploadFamily = family;
+      visitUploadRequest++;
       try { input.value = ''; } catch (eClear) {}
       input.click();
     });
@@ -2276,6 +2282,7 @@
     var sec = document.createElement('div');
     sec.className = 'set-section';
     sec.id = 'mlsVisitNoteTemplatesSection';
+    var mountGeneration = ++visitMountGeneration;
     sec.innerHTML =
       '<p class="set-head">📋 Visit note templates</p>' +
       '<p class="set-desc">These shape your visit notes: Whole visit / SOAP, HPI, ROS, Exam, Assessment, Plan. Operative note templates are separate - find them under Templates.</p>' +
@@ -2296,11 +2303,18 @@
       var family = visitTemplateFamily(visitUploadFamily);
       try { ev.target.value = ''; } catch (eReset) {}
       if (!picked || !family) return;
+      var request = ++visitUploadRequest, scope = storageScope();
+      var profile = visitTemplateSelectedProfile(family);
+      var profileId = profile && profile.id;
+      var target = q('mlsVnTplText_' + family), named = q('mlsVnTplFileName_' + family);
       visitTemplateStatus('Reading ' + (picked.name || 'that file') + '...');
       visitTemplateFileText(picked).then(function (text) {
+        var current = visitTemplateSelectedProfile(family);
+        if (request !== visitUploadRequest || !scopeCurrent(scope) ||
+            mountGeneration !== visitMountGeneration || q('mlsVisitNoteTemplatesSection') !== sec ||
+            q('mlsVnTplFile') !== file || q('mlsVnTplText_' + family) !== target ||
+            visitUploadFamily !== family || !current || current.id !== profileId) return;
         var clean = cleanTemplate(text, MAX_SECTION_TEMPLATE);
-        var target = q('mlsVnTplText_' + family);
-        var named = q('mlsVnTplFileName_' + family);
         if (!clean) {
           if (named) named.textContent = '';
           visitTemplateStatus('That file could not be read. Save it as a Word file or a PDF, or paste the text instead.', true);
@@ -2356,8 +2370,8 @@
     return true;
   }
   /* The route the visit room's one-line link takes. */
-  function openVisitTemplates() {
-    try { if (typeof window.openSettings === 'function') window.openSettings(); } catch (e) {}
+  function openVisitTemplates(options) {
+    try { if (typeof window.openSettings === 'function' && window.openSettings(options) === false) return false; } catch (e) { return false; }
     mountVisitTemplates();
     function focus(n) {
       var sec = q('mlsVisitNoteTemplatesSection');
