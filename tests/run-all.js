@@ -2601,7 +2601,16 @@ const tests = [
      record captured before this change reports "captured before this was
      recorded", never "verified" and never a bare blank - and that nothing
      back-fills a verified stamp or erases one. */
-  'athena-capture-provenance-receipt.test.js'
+  'athena-capture-provenance-receipt.test.js',
+  /* opclean (b1244): the saved note body is the note. Pins four things that
+     reached shipped op-note text but are not clinical content - a positional
+     [FILL: ...] marker and its truncated remnant, an NPI/facility block
+     appended to the note, and any other non-clinical residue - by executing
+     the live shipped functions (feat_mls_opnote_integrity.js rebinds the
+     shell's ranker and generator at runtime, so a shell-only fix ships to
+     nobody). Added by b1244 without a run-all.js registration; registered
+     here so the gate's own completeness check does not flag it as missing. */
+  'opnote-body-is-the-note.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
