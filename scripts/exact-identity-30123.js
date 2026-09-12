@@ -3,7 +3,7 @@
 function mlsExactNameKey(value) {
   var raw = String(value || '').trim().toLowerCase();
   try { raw = raw.normalize('NFKD').replace(/[\u0300-\u036f]/g, ''); } catch (e) {}
-  raw = raw.replace(/[.\u2019'`-]/g, '').replace(/\bjunior\b/g, 'jr').replace(/\bsenior\b/g, 'sr');
+  raw = raw.replace(/\s*[\u2018\u2019\u02bc'`\u2010-\u2015-]\s*/g, '').replace(/\./g, '').replace(/\bjunior\b/g, 'jr').replace(/\bsenior\b/g, 'sr');
   var parts = raw.split(',').map(function (part) { return part.trim(); }).filter(Boolean);
   var suffix = '';
   if (parts.length > 1 && /^(jr|sr|ii|iii|iv|v)$/.test(parts[parts.length - 1])) suffix = parts.pop();

@@ -8,8 +8,8 @@ const path = require('path');
 const root = path.resolve(__dirname, '..');
 const background = fs.readFileSync(path.join(root, 'background.js'), 'utf8');
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
-// 3.0.123: unique first/last+DOB identity; native persistence remains verified.
-assert.strictEqual(manifest.version, '3.0.123', 'regression must exercise the 3.0.123 candidate');
+// 3.0.124: identity recovery parity; native persistence remains verified.
+assert.strictEqual(manifest.version, '3.0.124', 'regression must exercise the 3.0.124 candidate');
 const coreSha = (manifest.version_name.match(/core-sha256:([0-9a-f]{64})/) || [])[1];
 assert(coreSha, 'candidate manifest is missing its core hash');
 const computedCoreSha = execFileSync(process.execPath, [path.join(root, 'scripts', 'extension-core-digest.js')], { encoding: 'utf8' }).trim();

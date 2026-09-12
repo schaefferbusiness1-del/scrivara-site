@@ -199,7 +199,7 @@ async function mlsAthenaActionV2DriverFn(req) {
 function mlsExactNameKey(value) {
   var raw = String(value || '').trim().toLowerCase();
   try { raw = raw.normalize('NFKD').replace(/[\u0300-\u036f]/g, ''); } catch (e) {}
-  raw = raw.replace(/[.\u2019'`-]/g, '').replace(/\bjunior\b/g, 'jr').replace(/\bsenior\b/g, 'sr');
+  raw = raw.replace(/\s*[\u2018\u2019\u02bc'`\u2010-\u2015-]\s*/g, '').replace(/\./g, '').replace(/\bjunior\b/g, 'jr').replace(/\bsenior\b/g, 'sr');
   var parts = raw.split(',').map(function (part) { return part.trim(); }).filter(Boolean);
   var suffix = '';
   if (parts.length > 1 && /^(jr|sr|ii|iii|iv|v)$/.test(parts[parts.length - 1])) suffix = parts.pop();
@@ -6012,27 +6012,47 @@ function mlsReadActivePatient() {
 }
 
 // ---- Patient matcher (pure/worker-scope, testable). Conservative: default refuse. ----
+function mlsExactNameKey(value) {
+  var raw = String(value || '').trim().toLowerCase();
+  try { raw = raw.normalize('NFKD').replace(/[\u0300-\u036f]/g, ''); } catch (e) {}
+  raw = raw.replace(/\s*[\u2018\u2019\u02bc'`\u2010-\u2015-]\s*/g, '').replace(/\./g, '').replace(/\bjunior\b/g, 'jr').replace(/\bsenior\b/g, 'sr');
+  var parts = raw.split(',').map(function (part) { return part.trim(); }).filter(Boolean);
+  var suffix = '';
+  if (parts.length > 1 && /^(jr|sr|ii|iii|iv|v)$/.test(parts[parts.length - 1])) suffix = parts.pop();
+  if (parts.length === 2) raw = parts[1] + ' ' + parts[0];
+  else if (parts.length === 1) raw = parts[0];
+  else if (parts.length > 2) return '';
+  raw = raw.replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+  var words = raw.split(' ').filter(Boolean);
+  while (words.length && /^(mr|mrs|ms|miss|dr|prof)$/.test(words[0])) words.shift();
+  while (words.length && /^(jr|sr|ii|iii|iv|v)$/.test(words[words.length-1])) words.pop();
+  return words.length >= 2 ? words[0]+' '+words[words.length-1] : '';
+}
+function mlsExactDobKey(value) {
+  var raw = String(value || '').trim(), m, year, month, day;
+  if ((m = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/.exec(raw))) { year=+m[1]; month=+m[2]; day=+m[3]; }
+  else if ((m = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/.exec(raw))) { year=+m[3]; month=+m[1]; day=+m[2]; }
+  else return '';
+  var date = new Date(Date.UTC(year, month-1, day));
+  return year >= 1850 && date.getUTCFullYear() === year && date.getUTCMonth() === month-1 && date.getUTCDate() === day ? year+'-'+month+'-'+day : '';
+}
+function mlsExactIdentityPair(expected, observed) {
+  expected = expected || {}; observed = observed || {};
+  var name = mlsExactNameKey(expected.name), dob = mlsExactDobKey(expected.dob);
+  if (!name || !dob) return {ok:false,reason:'identity-hint-incomplete'};
+  if (observed.ambiguous === true || Number(observed.exactPairCandidateCount || 0) > 1) return {ok:false,reason:'identity-ambiguous'};
+  if (!mlsExactNameKey(observed.name)) return {ok:false,reason:'same-frame-name-missing'};
+  if (name !== mlsExactNameKey(observed.name)) return {ok:false,reason:'same-frame-name-mismatch'};
+  if (!mlsExactDobKey(observed.dob)) return {ok:false,reason:'same-frame-dob-missing'};
+  if (dob !== mlsExactDobKey(observed.dob)) return {ok:false,reason:'same-frame-dob-mismatch'};
+  return {ok:true,reason:'exact-name+dob',mrnConflict:!!(expected.mrn && observed.mrn && String(expected.mrn) !== String(observed.mrn))};
+}
 function mlsMatchPatients(mls, ath) {
-  function normName(s) { return String(s || '').toLowerCase().replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(function (w) { return w.length > 1; }).sort(); }
-  function normDob(s) { /* isodob-1.1.0 (3.0.117): anchored ISO branch first - the M/D/Y regex matched INSIDE an ISO year, so this merge comparator returned one key for three different decades. The hardcoded >30 two-digit pivot is retired for the dynamic one. The zero-padded MM/DD/YYYY output shape is unchanged. */ var iso = /(^|[^0-9])(\d{4})-([01]\d)-([0-3]\d)(?![0-9])/.exec(String(s || '')); if (iso) return iso[3] + '/' + iso[4] + '/' + iso[2]; var m = /([01]?\d)[\/\-\.]([0-3]?\d)[\/\-\.](\d{2,4})/.exec(String(s || '')); if (!m) return ''; var y = m[3]; if (y.length === 2) y = (Number(y) > ((new Date().getFullYear() % 100) + 1) ? '19' : '20') + y; return ('0' + m[1]).slice(-2) + '/' + ('0' + m[2]).slice(-2) + '/' + y; }
-  function normMrn(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
-  var mDob = normDob(mls && mls.dob), aDob = normDob(ath && ath.dob);
-  var mMrn = normMrn(mls && mls.mrn), aMrn = normMrn(ath && ath.mrn);
-  var mName = normName(mls && mls.name), aName = normName(ath && ath.name);
-  var dobBoth = mDob && aDob, mrnBoth = mMrn && aMrn, nameBoth = mName.length && aName.length;
-  var dobMatch = dobBoth && mDob === aDob;
-  var mrnMatch = mrnBoth && mMrn === aMrn;
-  function nameOverlap() { if (!nameBoth) return 0; var setA = {}; aName.forEach(function (w) { setA[w] = 1; }); var hit = 0; mName.forEach(function (w) { if (setA[w]) hit++; }); return hit; }
-  var nameHits = nameOverlap();
-  var nameMatch = nameBoth && nameHits >= 2;
-  var nameContradict = nameBoth && nameHits === 0;
-  // contradiction on any strong identifier => mismatch
-  if ((dobBoth && !dobMatch) || (mrnBoth && !mrnMatch) || nameContradict) return { status: 'mismatch', dobMatch: dobMatch, mrnMatch: mrnMatch, nameMatch: nameMatch };
-  // confident match needs a strong identifier (DOB or MRN), or a full name + one weak signal
-  if (dobMatch || mrnMatch || (nameMatch && (mDob || mMrn ? false : true) && nameHits >= 2 && (mName.length >= 2))) {
-    if (dobMatch || mrnMatch) return { status: 'match', dobMatch: dobMatch, mrnMatch: mrnMatch, nameMatch: nameMatch };
-  }
-  return { status: 'uncertain', dobMatch: dobMatch, mrnMatch: mrnMatch, nameMatch: nameMatch };
+  mls=mls||{};ath=ath||{};
+  var pair=mlsExactIdentityPair(mls,ath), mn=mlsExactNameKey(mls.name), an=mlsExactNameKey(ath.name), md=mlsExactDobKey(mls.dob), ad=mlsExactDobKey(ath.dob);
+  var normMrn=function(v){return String(v||'').toLowerCase().replace(/[^a-z0-9]/g,'');}, mm=normMrn(mls.mrn), am=normMrn(ath.mrn);
+  var conflict=!!((mn&&an&&mn!==an)||(md&&ad&&md!==ad)||ath.ambiguous===true||Number(ath.exactPairCandidateCount||0)>1);
+  return {status:pair.ok?'match':(conflict?'mismatch':'uncertain'),dobMatch:!!(md&&ad&&md===ad),mrnMatch:!!(mm&&am&&mm===am),nameMatch:!!(mn&&an&&mn===an),reason:pair.reason};
 }
 
 // ---- Procedure-template prep driver (injected, runs per frame) ----
@@ -10334,33 +10354,20 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
            whatever identity some stale/lurking frame still carries. */
         const expectName = want || ((self.__mlsExpectOpen && (Date.now() - self.__mlsExpectOpen.at) < 180000) ? self.__mlsExpectOpen.name : '');
         const nmm = (a, b) => { const nz = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim(); const ta = nz(a).split(' ').filter(x => x.length > 1), tb = nz(b).split(' ').filter(x => x.length > 1); const o = ta.filter(x => tb.indexOf(x) >= 0).length; return o >= 2 || (o >= 1 && Math.min(ta.length, tb.length) === 1); };
-        const bootstrapTokens = (value) => {
-          const suffix = /^(?:jr|sr|ii|iii|iv|v|esq|junior|senior)$/i;
-          return String(value || '').replace(/\([^)]*\)/g, ' ').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).filter((token) => token && !suffix.test(token) && token.length > 1);
-        };
-        const exactBootstrapName = (observed, expected) => {
-          const have = bootstrapTokens(observed), need = bootstrapTokens(expected);
-          if (have.length < 2 || need.length < 2) return false;
-          const counts = {}; have.forEach((token) => { counts[token] = Number(counts[token] || 0) + 1; });
-          for (let index = 0; index < need.length; index++) { if (!counts[need[index]]) return false; counts[need[index]]--; }
-          return true;
-        };
-        const validBootstrapDob = (value) => {
-          const match = /^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/.exec(String(value || '').trim());
-          if (!match) return false;
-          const month = Number(match[1]), day = Number(match[2]), year = Number(match[3]);
-          if (year < 1900 || year > new Date().getFullYear() || month < 1 || month > 12 || day < 1 || day > 31) return false;
-          const parsed = new Date(Date.UTC(year, month - 1, day));
-          return parsed.getUTCFullYear() === year && parsed.getUTCMonth() === month - 1 && parsed.getUTCDate() === day && parsed.getTime() <= Date.now();
+        const exactBootstrapName = (observed, expected) => !!mlsExactNameKey(expected) && mlsExactNameKey(observed) === mlsExactNameKey(expected);
+        const validBootstrapDob = (value) => !!mlsExactDobKey(value) && (!wantDob || mlsExactDobKey(value) === mlsExactDobKey(wantDob));
+        const bootstrapLiveIdsAgree = (selected, candidates) => {
+          const ids = [selected].concat(candidates || []).map((candidate) => String(candidate && candidate.mrn || '').toLowerCase().replace(/[^a-z0-9]/g, '')).filter(Boolean);
+          return new Set(ids).size <= 1 && !(candidates || []).some((candidate) => candidate.ambiguous === true || Number(candidate.exactPairCandidateCount || 0) > 1);
         };
         const bootstrapIdentityReady = (selected, frames) => {
           if (!bootstrapIdentity || !exactOpenLease || !selected || !/^(?:banner|shadow-labels|shadow-banner)$/.test(String(selected.via || '')) || !exactBootstrapName(selected.name, want) || !validBootstrapDob(selected.dob)) return false;
-          const selectedDob = String(selected.dob || '').replace(/\D/g, '');
+          const selectedDob = mlsExactDobKey(selected.dob);
           const visible = (frames || []).map((entry) => {
             const raw = entry && entry.result; if (!raw) return null;
             const copy = Object.assign({}, raw); if (copy.frameId == null && entry && typeof entry.frameId === 'number') copy.frameId = entry.frameId; return copy;
           }).filter((candidate) => candidate && candidate.name && (candidate.score || 0) >= 0 && Number(candidate.w || 0) >= 60 && Number(candidate.h || 0) >= 60 && /^(?:banner|shadow-labels|shadow-banner)$/.test(String(candidate.via || '')));
-          if (!visible.length || !visible.every((candidate) => exactBootstrapName(candidate.name, want) && validBootstrapDob(candidate.dob) && String(candidate.dob || '').replace(/\D/g, '') === selectedDob)) return false;
+          if (!visible.length || !bootstrapLiveIdsAgree(selected, visible) || !visible.every((candidate) => exactBootstrapName(candidate.name, want) && validBootstrapDob(candidate.dob) && mlsExactDobKey(candidate.dob) === selectedDob)) return false;
           return visible.some((candidate) => typeof candidate.frameId === 'number' && exactOpenLease.appointmentNavigationFrameIds.indexOf(candidate.frameId) >= 0);
         };
         /* v2.9.27 SPEED (schedule lane): when round 1 already proves the FULL bootstrap identity (banner-grade, all frames agree, appointment-frame-bound), the mandatory second confirmation round follows after a SHORT settle instead of the full 2.4s  acceptance semantics unchanged (round 2 re-probes and must re-pass). */
@@ -10488,7 +10495,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
           var bannerGrade = !!(ident && /^(?:banner|shadow-labels|shadow-banner)$/.test(String(ident.via || '')));
           var exactNameMatched = !!(bannerGrade && exactBootstrapName(ident.name, want));
           var validBannerDob = !!(bannerGrade && validBootstrapDob(ident.dob));
-          var chosenDobKey = String(ident && ident.dob || '').replace(/\D/g, '');
+          var chosenDobKey = mlsExactDobKey(ident && ident.dob);
           var bannerCandidates = (identityFrameResults || []).map(function (entry) {
             var candidate = entry && entry.result;
             if (!candidate) return null;
@@ -10498,8 +10505,8 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
           }).filter(function (candidate) {
             return candidate && candidate.name && (candidate.score || 0) >= 0 && Number(candidate.w || 0) >= 60 && Number(candidate.h || 0) >= 60 && /^(?:banner|shadow-labels|shadow-banner)$/.test(String(candidate.via || ''));
           });
-          var bannerCandidatesAgree = bannerCandidates.length > 0 && bannerCandidates.every(function (candidate) {
-            var candidateDobKey = String(candidate.dob || '').replace(/\D/g, '');
+          var bannerCandidatesAgree = bannerCandidates.length > 0 && bootstrapLiveIdsAgree(ident, bannerCandidates) && bannerCandidates.every(function (candidate) {
+            var candidateDobKey = mlsExactDobKey(candidate.dob);
             return exactBootstrapName(candidate.name, want) && validBootstrapDob(candidate.dob) && candidateDobKey === chosenDobKey;
           });
           var routeBoundBannerSeen = !!(exactOpenLease && bannerCandidates.some(function (candidate) {
@@ -10603,7 +10610,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
           function mlsExactNameKey(value) {
             var raw = String(value || '').trim().toLowerCase();
             try { raw = raw.normalize('NFKD').replace(/[\u0300-\u036f]/g, ''); } catch (e) {}
-            raw = raw.replace(/[.\u2019'`-]/g, '').replace(/\bjunior\b/g, 'jr').replace(/\bsenior\b/g, 'sr');
+            raw = raw.replace(/\s*[\u2018\u2019\u02bc'`\u2010-\u2015-]\s*/g, '').replace(/\./g, '').replace(/\bjunior\b/g, 'jr').replace(/\bsenior\b/g, 'sr');
             var parts = raw.split(',').map(function (part) { return part.trim(); }).filter(Boolean);
             var suffix = '';
             if (parts.length > 1 && /^(jr|sr|ii|iii|iv|v)$/.test(parts[parts.length - 1])) suffix = parts.pop();
@@ -13342,7 +13349,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 function mlsExactNameKey(value) {
   var raw = String(value || '').trim().toLowerCase();
   try { raw = raw.normalize('NFKD').replace(/[\u0300-\u036f]/g, ''); } catch (e) {}
-  raw = raw.replace(/[.\u2019'`-]/g, '').replace(/\bjunior\b/g, 'jr').replace(/\bsenior\b/g, 'sr');
+  raw = raw.replace(/\s*[\u2018\u2019\u02bc'`\u2010-\u2015-]\s*/g, '').replace(/\./g, '').replace(/\bjunior\b/g, 'jr').replace(/\bsenior\b/g, 'sr');
   var parts = raw.split(',').map(function (part) { return part.trim(); }).filter(Boolean);
   var suffix = '';
   if (parts.length > 1 && /^(jr|sr|ii|iii|iv|v)$/.test(parts[parts.length - 1])) suffix = parts.pop();
@@ -15357,7 +15364,7 @@ function mlsExactIdentityPair(expected, observed) {
 function mlsExactNameKey(value) {
   var raw = String(value || '').trim().toLowerCase();
   try { raw = raw.normalize('NFKD').replace(/[\u0300-\u036f]/g, ''); } catch (e) {}
-  raw = raw.replace(/[.\u2019'`-]/g, '').replace(/\bjunior\b/g, 'jr').replace(/\bsenior\b/g, 'sr');
+  raw = raw.replace(/\s*[\u2018\u2019\u02bc'`\u2010-\u2015-]\s*/g, '').replace(/\./g, '').replace(/\bjunior\b/g, 'jr').replace(/\bsenior\b/g, 'sr');
   var parts = raw.split(',').map(function (part) { return part.trim(); }).filter(Boolean);
   var suffix = '';
   if (parts.length > 1 && /^(jr|sr|ii|iii|iv|v)$/.test(parts[parts.length - 1])) suffix = parts.pop();
@@ -15500,7 +15507,7 @@ function mlsExactIdentityPair(expected, observed) {
 function mlsExactNameKey(value) {
   var raw = String(value || '').trim().toLowerCase();
   try { raw = raw.normalize('NFKD').replace(/[\u0300-\u036f]/g, ''); } catch (e) {}
-  raw = raw.replace(/[.\u2019'`-]/g, '').replace(/\bjunior\b/g, 'jr').replace(/\bsenior\b/g, 'sr');
+  raw = raw.replace(/\s*[\u2018\u2019\u02bc'`\u2010-\u2015-]\s*/g, '').replace(/\./g, '').replace(/\bjunior\b/g, 'jr').replace(/\bsenior\b/g, 'sr');
   var parts = raw.split(',').map(function (part) { return part.trim(); }).filter(Boolean);
   var suffix = '';
   if (parts.length > 1 && /^(jr|sr|ii|iii|iv|v)$/.test(parts[parts.length - 1])) suffix = parts.pop();
@@ -15560,6 +15567,8 @@ function mlsExactIdentityPair(expected, observed) {
         if (toks.length >= 2) { lname = toks[toks.length - 1]; fname = toks.slice(0, -1).join(' '); }
       }
       if (!lname) return { opened: false, reason: 'no-name' };
+      /* 3.0.124: comparison already ignored titles; the search query must too. */
+      fname = fname.replace(/^(?:(?:mr|mrs|ms|miss|dr|prof)\.?\s+)+/i, '').trim();
       var fq = (fname.split(/\s+/)[0] || '');
       var searchStr = fq ? (lname + ',' + fq) : lname;
       function nrmDob(s) { /* isodob-1.1.0 (3.0.117): anchored ISO branch first - the M/D/Y regex matched INSIDE an ISO year, so this DOB veto compared 1962-03-04, 1942-03-04 and 1902-03-04 EQUAL and both passed and refused the wrong rows. The hardcoded >26 two-digit pivot is retired for the dynamic one. */ var iso = /(^|[^0-9])(\d{4})-([01]\d)-([0-3]\d)(?![0-9])/.exec(String(s || '')); if (iso) return Number(iso[3]) + '/' + Number(iso[4]) + '/' + iso[2]; var m = /([01]?\d)[\/\-\.]([0-3]?\d)[\/\-\.](\d{2,4})/.exec(String(s || '')); if (!m) return ''; var y = m[3].length === 2 ? ((Number(m[3]) > ((new Date().getFullYear() % 100) + 1) ? '19' : '20') + m[3]) : m[3]; return Number(m[1]) + '/' + Number(m[2]) + '/' + y; }
@@ -15712,11 +15721,20 @@ function mlsExactIdentityPair(expected, observed) {
       d4 = best.w.document;
       function exactResultRow(row) {
         var cells = Array.prototype.slice.call(row.querySelectorAll('td,th')).map(function(x){return String(x.innerText||'').trim();});
-        var table = row.closest && row.closest('table'), headers = table ? Array.prototype.slice.call(table.querySelectorAll('thead th,thead td')).map(function(x){return String(x.innerText||'').trim().toLowerCase();}) : [];
-        var fi=headers.findIndex(function(x){return /^(first|given)( name)?$/.test(x);}), li=headers.findIndex(function(x){return /^(last|family|sur)(name| name)?$/.test(x);});
-        var rowName = fi>=0 && li>=0 ? (cells[fi]||'')+' '+(cells[li]||'') : '';
-        if(!rowName) { var names=cells.filter(function(x){return !/[0-9]/.test(x)&&mlsExactNameKey(x)===mlsExactNameKey(name);}); if(names.length===1) rowName=names[0]; }
-        var dates=[];cells.forEach(function(x){var k=mlsExactDobKey(x);if(k&&dates.indexOf(k)<0)dates.push(k);});
+        var table = row.closest && row.closest('table');
+        function labels(nodes){return Array.prototype.slice.call(nodes||[]).map(function(x){return String(x.innerText||'').toLowerCase().replace(/[^a-z]/g,'');});}
+        function positions(h,re){var a=[];h.forEach(function(v,i){if(re.test(v))a.push(i);});return a;}
+        var first=/^(first|given)(name)?$/,last=/^(last|family|sur)(name)?$/,birth=/^(dob|dateofbirth|birthdate)$/;
+        var headers=table?labels(table.querySelectorAll('thead th,thead td')):[];
+        if(table&&(!positions(headers,first).length||!positions(headers,last).length)) {
+          var rows=Array.prototype.slice.call(table.querySelectorAll('tr'));
+          for(var hi=0;hi<rows.length;hi++) {if(rows[hi]===row)continue;var h=labels(rows[hi].querySelectorAll('th,td'));if(positions(h,first).length&&positions(h,last).length){headers=h;break;}}
+        }
+        var fi=positions(headers,first),li=positions(headers,last),di=positions(headers,birth),rowName='';
+        if(fi.length>1||li.length>1||di.length>1)return {ok:false};
+        if(fi.length===1&&li.length===1)rowName=(cells[fi[0]]||'')+' '+(cells[li[0]]||'');
+        if(!rowName){var names=cells.filter(function(x){return !/[0-9]/.test(x)&&mlsExactNameKey(x)===mlsExactNameKey(name);});if(names.length===1)rowName=names[0];}
+        var dates=[];(di.length===1?[cells[di[0]]]:cells).forEach(function(x){var k=mlsExactDobKey(x);if(k&&dates.indexOf(k)<0)dates.push(k);});
         return {ok:dates.length===1&&mlsExactIdentityPair({name:name,dob:dob},{name:rowName,dob:dates[0]}).ok,dob:dates.length===1?dates[0]:''};
       }
       var exact = [], prefix = [], pool = [], mrnNarrowed = false;
@@ -16156,9 +16174,8 @@ function mlsExactIdentityPair(expected, observed) {
                      (routeBoundBannerSeen), unchanged. */
                   if (!appointmentNavigationProven && !responseSent) {
                     try {
-                      var eaTok = function (v) { var sfx = /^(?:jr|sr|ii|iii|iv|v|esq|junior|senior)$/; return String(v || '').replace(/\([^)]*\)/g, ' ').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).filter(function (tk) { return tk && tk.length > 1 && !sfx.test(tk); }); };
-                      var eaNameOk = function (obs, exp) { var have = eaTok(obs), need = eaTok(exp); if (have.length < 2 || need.length < 2) return false; var c = {}; have.forEach(function (tk) { c[tk] = (c[tk] || 0) + 1; }); for (var qi = 0; qi < need.length; qi++) { if (!c[need[qi]]) return false; c[need[qi]]--; } return true; };
-                      var eaDobKey = function (v) { var m = /^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/.exec(String(v || '').trim()); var y, mo, d; if (m) { y = +m[1]; mo = +m[2]; d = +m[3]; } else { m = /^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/.exec(String(v || '').trim()); if (!m) return ''; y = +m[3]; mo = +m[1]; d = +m[2]; } if (y < 1900 || mo < 1 || mo > 12 || d < 1 || d > 31) return ''; return y + '-' + mo + '-' + d; };
+                      var eaNameOk = function (obs, exp) { return !!mlsExactNameKey(exp) && mlsExactNameKey(obs) === mlsExactNameKey(exp); };
+                      var eaDobKey = mlsExactDobKey;
                       var eaWantDob = eaDobKey(msg.dob || '');
                       var eaWantDate = '';
                       var eaDm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(frozenScheduleDate || ''));
@@ -17311,7 +17328,7 @@ async function mlsReadVisitsPaneDriverFn(name, dob, athenaId) {
 function mlsExactNameKey(value) {
   var raw = String(value || '').trim().toLowerCase();
   try { raw = raw.normalize('NFKD').replace(/[\u0300-\u036f]/g, ''); } catch (e) {}
-  raw = raw.replace(/[.\u2019'`-]/g, '').replace(/\bjunior\b/g, 'jr').replace(/\bsenior\b/g, 'sr');
+  raw = raw.replace(/\s*[\u2018\u2019\u02bc'`\u2010-\u2015-]\s*/g, '').replace(/\./g, '').replace(/\bjunior\b/g, 'jr').replace(/\bsenior\b/g, 'sr');
   var parts = raw.split(',').map(function (part) { return part.trim(); }).filter(Boolean);
   var suffix = '';
   if (parts.length > 1 && /^(jr|sr|ii|iii|iv|v)$/.test(parts[parts.length - 1])) suffix = parts.pop();

@@ -1,0 +1,574 @@
+{
+  "candidate": "3.0.124",
+  "buildId": "3.0.124+core-sha256:c8de53d2bd49b7f66c34881fdf0bb05ed3883309e2f5e7955131d58357cd4be0",
+  "zipSha256": "b5e139e9f85f2785a9401971e649d4f012c0bb44b46007366052fb6a30be446d",
+  "executed": 94,
+  "passed": 94,
+  "results": [
+    {
+      "name": "appointment-id-bootstrap-contract.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "9461aa9913e1c46f135dec3bda3999646de52c8364312faec9b29566313b0e03"
+    },
+    {
+      "name": "appointment-nonclinical-route-guard.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "0a93b40eeff9320e952aa0e90b9fc2f6644ca9810b338e2a3852a20414f4e295"
+    },
+    {
+      "name": "already-open-appointment-short-circuit.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "329a022974f9650624d233f852ea76eefff8c6ce6e688f4135d26110bcceed51"
+    },
+    {
+      "name": "athena-action-contract.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "1cb6bc5f6d43a0b940b796fd25c7e57f25d07f5f8da95ffde4f58e60053ae596"
+    },
+    {
+      "name": "athena-action-token-session-runtime.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "480e546af1e864640f0be62c44908f15a0e82cf74cf918a840df7bb3a8debff9"
+    },
+    {
+      "name": "athena-active-launcher-tab-runtime.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "d9d7359267388f98013e2acf81a62cc2dcf56af76ba8f419f649a0800048ddba"
+    },
+    {
+      "name": "athena-adversarial-contract.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "3a1a4bd0904fee62b0336eb7006d1c5872c4c7cf1cc7ae2211b14691c8f9529d"
+    },
+    {
+      "name": "athena-draft-only-execution.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "9558095ffdae7bb5c0b2646788e20fad7baebf58a34039aae41c3634e7ca6cbe"
+    },
+    {
+      "name": "athena-keepalive-pull-busy-runtime.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "11f58f66a925df4e82e35e513044beaf322cabf9e8d6227ea60515e827a10771"
+    },
+    {
+      "name": "athena-legacy-executor-closed.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "c42733454962858cb5358a0a10c481c38c15607286f829dc5f1c3f650f72c713"
+    },
+    {
+      "name": "athena-live-unbound-discovery-runtime.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "4fe3980620c209670b128c3225d9cc4336d97d7b15cf7848f643ead0c87e0c7e"
+    },
+    {
+      "name": "athena-name-search-format-contract.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "9ceac708e7195296117d6fc7cfc065f4675793df2368b55819efa4a1c74f9a0c"
+    },
+    {
+      "name": "athena-named-section-placement-runtime.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "3810baec653bac41e5f78fa7ae444113b636939a5c87569e2c24ebc8ac986ed0"
+    },
+    {
+      "name": "athena-native-persistence-proof-contract.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "75c228d69ba7ee93e2f9e66d25abb61cf52413a56003820d2138042f788fb495"
+    },
+    {
+      "name": "athena-native-persistence-runtime.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "948484800d857baaebfe931aed6d9ff4efb6c8aa8f4b9e06bc9c59974665755c"
+    },
+    {
+      "name": "athena-order-action-runtime.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "4eb971906704bdb57d961426be06560bfcdcffdc8566eeb3d25511287d8061a1"
+    },
+    {
+      "name": "athena-overlay-lifecycle-contract.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "7476459e1fd3822682ca4e84601e83e81e986237f40edd2c0f1f9c50d81345b3"
+    },
+    {
+      "name": "athena-probe-exact-candidate-foreground-runtime.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "4a81f0b29d3bf67bb745afef319ce5041a537f6482770f90b0d73b140c3c0760"
+    },
+    {
+      "name": "athena-procedure-note-placement-runtime.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "6770ec4dea1035259bc2d4a9955476099cd072cbf0b049f1ab549b517c7ea18f"
+    },
+    {
+      "name": "athena-session-health-runtime.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "719296c87c530a5b5170501b6227f02c6e895a975a0504e24a171b6e6aa5d4bd"
+    },
+    {
+      "name": "athena-session-preservation-contract.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "39105ddf4fe423ea830bcfaf2cbd7225553319fe0959d67c66c3fd2e3c9f7124"
+    },
+    {
+      "name": "athena-tab-lease-over-pin.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "f2b05c84e79f43a19b3ac9fa9d7a4b01218102a53e4041fabc2a46b6fc1f199a"
+    },
+    {
+      "name": "athena-window-guard-contract.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "527f1a3c003170fea44f4a991af3cd0936337dcc932f4ecc64868a31f149ca29"
+    },
+    {
+      "name": "athena-write-contract.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "6b68a16d9f6a8e192d609a137644e342e741774ef3cddbd70e3cb93c0b721dd2"
+    },
+    {
+      "name": "athena-write-verification-contract.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "65372a47ebf2af81b7abc66105ac309e78e58b961e8a83afca12680cd5b05460"
+    },
+    {
+      "name": "ax-encounter-binding-runtime.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "2fa04d49b3fad832498987764006f412c5294a206ba88cc9f8cf6b72a9c5ef41"
+    },
+    {
+      "name": "ax-history-census-terminal-runtime.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "6662d1677328448eeea1d6bad932d672f0f9298cfdd2f5fc7e54b755c3446cc6"
+    },
+    {
+      "name": "ax-native-reader.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "6d96b370d36d7c71c42cf31c6b4c10ff3c62c0dd0b2b865cef89647ba377bf5a"
+    },
+    {
+      "name": "background-all-visits-cleanup-serialization.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "e2216ecd0bf5dc3f24e59b5a7f665bd9b48b5917a9c1630a338b46686c7de3ed"
+    },
+    {
+      "name": "background-final-patient-timeout-runtime.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "77387cbc4dd5c63276bb5774b42456486c61a0cc58394722c0c8ae9be18a5db3"
+    },
+    {
+      "name": "briefing-problem-capture-runtime.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "1dc9c576e96ef97d1573f485d4c5f0c73452a511123cf60e49b7158e9df958dd"
+    },
+    {
+      "name": "candidate-3045-diagnostics-contract.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "43d6659e031c80e519e20651143ec8410058065b5885f2695283506b06910825"
+    },
+    {
+      "name": "chart-capture-excludes-script-text.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "1580e4a7eea135e3dd12a6ecd76203af91d9d35d594b5ba66a0e7f328cc8737e"
+    },
+    {
+      "name": "chart-open-failure-diagnostics-contract.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "d410cdceeba89eebf6f0c30c540135acc691c51fca88a261ba65b5ac39349aaa"
+    },
+    {
+      "name": "chart-request-deadline-runtime.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "fb3d2bef146dee911c7b885f1784c8c9c7342cd029a87e38e1df05e0e0e4f385"
+    },
+    {
+      "name": "content-read-relay-watchdog.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "862b82ff6bc367974a8bb687e4695a479f06368fc666953657e1c675fab9b022"
+    },
+    {
+      "name": "day-navigation-observes-the-header.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "9e30fa64f8a2b270bba6b2f6bf8dee045cd943fc9de7f71b95c04d807b6a3aaa"
+    },
+    {
+      "name": "destination-teaching-runtime.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "7d9f5e78a0e1d3532592945c1a724ea42ec7ecacf188937495db829903973b3c"
+    },
+    {
+      "name": "encounter-index-names-its-surface.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "eaccb7811d276d1422201eb347c093a49270af2d02a4a53297be178d35dec6a7"
+    },
+    {
+      "name": "encounter-index-stability-survives-frame-reload.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "a46cc56ebb4e3d6f7c141a6275b96ec87f22805a6155e5be6e3cd43beb225b52"
+    },
+    {
+      "name": "enumerate-all-events-is-not-the-row-count.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "9d95218cdbb30dddafeb7d69955fbab575151a074ec6d4954f2dca49d61c8460"
+    },
+    {
+      "name": "enumerate-evidence-crosses-the-hop.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "488d5e90d315c470c1a7670ee1066ad949aa2f5c8d8304545a64b0a9d2471b32"
+    },
+    {
+      "name": "enumerate-gives-up-when-provably-stuck.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "162eee4564d470a74bbd3db90b66b44d6072dad588a63e51c641e4d34f59adaa"
+    },
+    {
+      "name": "enumerate-noise-surface-exclusion.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "c267843401152a79c220364ca243b300f03ea990ceca06abaa30d4355c009201"
+    },
+    {
+      "name": "enumerate-refusal-evidence.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "dd5043f2b2b55b7e3ddd1838722dc1684a2024fa44fe7ab47ad1a1f197c7f654"
+    },
+    {
+      "name": "exact-row-recovery-runtime.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "3d32b70c3582f3b310a40ea692fc57424384bbad74034c4cd9addd0284b7f9fa"
+    },
+    {
+      "name": "ext-3063-athena-tab-resilience-contract.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "782ce765823631bb2533cd81ae3e113880764d71cd9a05d39e9ec36bd7492795"
+    },
+    {
+      "name": "ext-3064-hidden-safe-sleep-contract.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "3e1428b8286dd976d2d459648c819c273e84dde20872ab62f506f219ff31e2c3"
+    },
+    {
+      "name": "extension-backend-origin-security.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "9cf0fd5192f7d2d825d9370ce9641f112a6a61f43e75080c135b0aa8f410a1c0"
+    },
+    {
+      "name": "extension-host-scope-contract.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "3d3a7db30c233abfa80ea5c398821d23aa776db682f11777472949b9d94253d8"
+    },
+    {
+      "name": "extension-mac-sleep-and-legacy-review-runtime.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "329973a4f414a87a64930bb5418969073597199b1173b9b9e6ce317b3bec714f"
+    },
+    {
+      "name": "extension-manifest-text-integrity.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "eaf10605cb751dc599cfd693d1bde0518dfb34b6768cd7e143814d22f3e4d02c"
+    },
+    {
+      "name": "extension-orphan-neutralization-contract.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "57587ee5b331841172a90cc351fc8ff7f80b8cab383673b092375b0ee38801e2"
+    },
+    {
+      "name": "extension-package.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "35f8563d1a34a9f1cfbbeb938d696a4be03be82a49ff5891844a7d7d8507d79a"
+    },
+    {
+      "name": "extension-read-path.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "12deb2e5d2d4710c49ba5dff044d13ee77d8d6d69b0c895b5fbcc62f20f60055"
+    },
+    {
+      "name": "fatigue-breaker.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "6c7f7ff561c37dceebfe77f20b22ad262b0fad371ba5fe5957c83e8241131422"
+    },
+    {
+      "name": "frame-url-binds-appointment.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "11bac69f3b29a764fd9c96225017d741b9e983be404e158c75a54ab584605c7c"
+    },
+    {
+      "name": "full-visit-reader-runtime.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "8cf3a89dcb3f7dde53da78733ee5cf37c3835430be0a3d8d0fab0e652069f282"
+    },
+    {
+      "name": "history-absolute-deadline-runtime.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "c9ff1275554c9acd8bdb015d2f151ca9b5256e137312d52d854095db81be14af"
+    },
+    {
+      "name": "history-preopened-same-tab-contract.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "1348e185660e306428209298ab8e5beb921868635e21a4aa4a6195ae673c3d7d"
+    },
+    {
+      "name": "history-retry-foreground-contract.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "d11227f1aadb4876056bbc106134f45e6f62a8639481453ef65408f25eab3677"
+    },
+    {
+      "name": "manual-history-exact-open-mrn-contract.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "4427ad8f340fa3b374aa292ce0806c86bf451c3d59472f785e2fc1094f564ef8"
+    },
+    {
+      "name": "per-read-session-liveness-contract.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "99aff039c3e0081cc4f2561334c63dd5476bdea4a98e28c84feec3b52d52c01e"
+    },
+    {
+      "name": "qol-ax-identity-gate.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "43a60cb3eed4b899a5b793b348befc178958654ae2543bc14ba8468b8f28be35"
+    },
+    {
+      "name": "qol-batch-scoped-focus-restore.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "333e76172cb2ab7fb3864fda2d8ad68d55c54cba0a8c9e8f0036b0e642f8907f"
+    },
+    {
+      "name": "qol-focus-comes-home.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "f1976fac383f3ec3d059f72314fc3f27955827d38ae737a7e6c8a999766833cc"
+    },
+    {
+      "name": "savenamed-active-surface-runtime.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "f49b6148203b48919d8c9b0b286d901bda4762fd4c29236c6b02df691b93ac9a"
+    },
+    {
+      "name": "savenamed-slate-editor-reader-runtime.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "9aa12ba87a25e67abf3930c2d29e59e2fcb581b9a771482314a6a7045e23f200",
+      "rechecked": true
+    },
+    {
+      "name": "schedule-chip-name-capture-contract.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "27341f0eb6307ec1eb6b11091b185eb78bdec83926763e958ff6cf04827ea603"
+    },
+    {
+      "name": "schedule-complete-note-runtime.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "269a6f67e734b29d1ac62e90933f6198ae78f9170d1f8296c0773c70849ca316"
+    },
+    {
+      "name": "schedule-dom-text-echo-regression.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "05ed214b558ae9d77e9d1632ba7034ae7e81fdf900c40e022b744bb23b087e41"
+    },
+    {
+      "name": "schedule-empty-day-proof-contract.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "c3fa1ad113a80f20e0261659c4bce61a9dbe996dc67353e2f63c2e4747d8a1eb"
+    },
+    {
+      "name": "schedule-empty-day-settle-contract.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "1b343149cd0f163e4a1ddf34d36c578c4fd6eda46a55214c3b7051669402a06e"
+    },
+    {
+      "name": "schedule-mutating-row-reverify-contract.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "c7ce0173474bdc23b0e03fe277f5dcfa1cd1b80d30329298a08922c0e3cad12b"
+    },
+    {
+      "name": "schedule-nonpatient-row-guard.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "84b53e237b9259346969f7c65d435afdc436284e918bd2bea34bf5eb635f21f3"
+    },
+    {
+      "name": "schedule-packaged-reader-regression.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "893e38f1f85118d9ae4f1e627c99df8f3c61fc6b98f473cfc668dd59e6dc338b"
+    },
+    {
+      "name": "schedule-pull-integrity.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "e4968510090d7ba51878743ce5f385f03962b3d51816b3a917bb506bd873391a"
+    },
+    {
+      "name": "schedule-pull-reconciliation-contract.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "97d21f2c1312b44c843e705fb9febd93c50c3ac393ed4b2632f0b84d502876cb"
+    },
+    {
+      "name": "schedule-read-declares-its-freshness.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "c0489b54dc3fa57f3f87d915991d6faf9dc6bd2c594e4e4fbf83176933c22935"
+    },
+    {
+      "name": "schedule-row-demographics-adversarial.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "893d31565328989cdc517c2a07065ceb19a32951b16762f762e395249720786d"
+    },
+    {
+      "name": "schedule-scrape-deadline-searchopen-runtime.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "7f297fcdaee94b7df7e0874b2af1a7a4844deb2920b828a4901bdd6a3b99c586"
+    },
+    {
+      "name": "schedule-time-contract.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "fe2ad0c1e7366998bede41fe53e46bb600ab4a1c14b192289ba8f6efb6c4c542"
+    },
+    {
+      "name": "schedule-weektab-provider-header-variant.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "e9eebb28803e987c7d6fd00e562f7db13668f142ea50afaeb2e0b6b481142357"
+    },
+    {
+      "name": "surface-recycle-rebind.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "aa40a82f01f547a8c8163e63f960ff59204a2b00291d9249004e08ab491eb4f4"
+    },
+    {
+      "name": "test-content-production-boundary.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "9aafe7f5d6cf6b72e0b0391727a8107d11a8372d61ceab9a6b1bb9c2b3d1adfa"
+    },
+    {
+      "name": "visit-accordion-body-runtime.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "f712e941575ec2a4b9ca0225ff8eaaa05ebb3e81ff4ccc41304e87f2d7d9bb5b"
+    },
+    {
+      "name": "visit-body-identity-302-contract.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "7fa11207583ec5aa436dd7dfefcec7875538fc4ead774aff860027ced5454959"
+    },
+    {
+      "name": "visit-reader-minimal-deadline-contract.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "878b55749d9e3556616d6ed1240129f6e21afc4bf62e0eaf43c5203c6bb7d97a"
+    },
+    {
+      "name": "visit-request-correlation-runtime.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "147d55a26d618eab750e2dbc923b974516a89c97d44226a6c3faf6ddd4a31e35"
+    },
+    {
+      "name": "visits-rail-scoped-click.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "660a11f8fe9e7b9247629bf3f91cd1c98fbf8273c04e7ca0cf9e0f505165cf4f"
+    },
+    {
+      "name": "visits-surface-and-cleanup-pins.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "c1cc48d8a78781b3982db6cf265104354c92b6391ace7b4c727569df8860d9eb"
+    },
+    {
+      "name": "writeflow-presence-port-contract.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "046deabaed2ba7f83b32cf98376e6fd45012d6184bde002fae3e1fe3e08ebfe9"
+    },
+    {
+      "name": "exact-name-dob-identity-runtime.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "30ffb5f0a8dd81760f7367b7f7182d83a108545b3e186977fc7df543ffce2b72"
+    },
+    {
+      "name": "identity-recovery-30124-runtime.test.js",
+      "pass": true,
+      "status": 0,
+      "sha": "106b11c79a5f076f20e0c8d44015fed288f2206830cba9a2f1a70b1ec47d6b50"
+    }
+  ]
+}
