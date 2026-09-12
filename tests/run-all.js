@@ -1036,6 +1036,10 @@ const tests = [
   /* ...and the rule that enforces it may not be deleted by a clinician typing
      into "Focus this note". The focus box used to REPLACE it outright. */
   'sparse-safety-instruction-survives-focus.test.js',
+  /* General visit-note prompting must keep terse HPI/A&P dictation organized,
+     source-grounded, and procedure-specific without weakening the SOAP safety
+     and documentation requirements. */
+  'visit-note-hpi-ap-quality-contract.test.js',
   /* Both of these arrived with ac8ffc49 / bfd2ad76 on 2026-08-27 and were never
      registered, so the gate had never once executed them. Both pass. Found by
      run-all's own registry check while adding the suite above. */
