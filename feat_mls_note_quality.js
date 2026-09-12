@@ -118,20 +118,15 @@
 
   CONTRACTS[T_HPI] =
     "THE TEMPLATE IS AUTHORITATIVE FOR STRUCTURE. If the practice supplies HPI headings or a paragraph shape, reproduce them exactly; this contract governs content within them and never reorders or renames a template heading. Ordering below is advisory.\n\n" +
-    "First, honor the note subtype. A new-patient or consult HPI anchors with age, sex, and pertinent history. An established or post-procedure follow-up does NOT re-declare '58-year-old female' and does NOT reproduce the intake narrative - its defining content is the interval history: what has happened since the last visit or procedure, the percent relief and duration of relief obtained, adverse effects, current status, and what the patient wants today. A follow-up HPI is short by design; concision there is competence.\n\n" +
-    "Write from the source only. Never state a date, dose, level, percentage, treatment, imaging finding, or prior diagnosis that is not in the transcript or the supplied chart context. This note reaches the patient's portal the day it is signed.\n\n" +
-    "Cover, as the encounter warrants: reason for the encounter; onset, chronicity, and duration (state the three-month threshold explicitly when true); mechanism or an explicit atraumatic statement, with work or MVA context and work status when applicable; location with laterality and spinal level or region - describe midline and axial pain as axial or midline rather than inventing a side; radiation with a named distal extent, above or below the knee, or an explicit denial; quality in the patient's own descriptors; severity as average, worst, and best on a numeric scale ('severe stenosis' on an MRI is never a pain severity); timing, pattern, and - on follow-up - trajectory; aggravating and relieving factors; associated symptoms with explicit pertinent negatives; a region-appropriate red-flag screen with specific denials - bowel and bladder plus saddle for lumbosacral, the myelopathy set (hand clumsiness, dropping objects, buttons, handwriting, balance, urinary urgency, Lhermitte) for cervical, never saddle anesthesia for a neck complaint - and, when a red flag is positive, what is being done about it; prior workup with a date and attribution ('MRI of 05/12/2026 was reported as showing...'); prior treatments conservative-to-invasive with each outcome and the conservative trial's duration in weeks; every prior interventional procedure with laterality, level, date, PERCENT relief, and DURATION of relief; current medications with dose and frequency and controlled-substance status; functional impact quantified against a concrete activity or tolerance, plus work or disability status; and the patient's goal.\n\n" +
-    "Third person for the patient, varied attribution verbs, no three-word stem opening more than two sentences. Limited clinician first person is correct for verifiable actions - 'I reviewed the MRI of 05/12/2026', 'I last saw her on 06/03/2026'. Describe the pattern, map it anatomically, and conclude nothing: write 'shooting pain radiating down the posterior right leg to the foot', not 'radicular'. State relief as a pair: 'approximately 80% relief of leg pain lasting three weeks.' Plain, neutral, non-stigmatizing language: 'has not been able to attend therapy', not 'non-compliant'; 'declines', not 'refuses'.\n\n" +
-    "Do not include examination findings ('tender to palpation', 'SLR positive', '4/5 strength'), diagnostic conclusions asserted as fact, speaker labels, timestamps, ASR artifacts, second-person address, catch-all negatives ('no red flags', 'ROS negative'), boilerplate ROS dumps, copy-forward markers standing in for interval history, or error-prone dose designations. Reorganize into clinician synthesis, not transcript order.";
+    "Write a concise, natural chronological narrative rather than an OPQRST checklist. Use supplied facts in this useful order: onset or inciting event; provoking and relieving factors and care already tried; quality; region and radiation; severity and effect on activities of daily living; then timing, progression, and current status. Include a detail only when the transcript supplies it. Finish, when supplied, with pertinent positives or negatives, prior procedures and their percent and duration of relief, and current medicines or interventions. A short HPI is complete when the source is short; do not pad it with vague filler or a normal review of systems.\n\n" +
+    "For a follow-up after a named procedure, naturally state that this is reevaluation after that procedure. Include day-3, day-7, or current improvement only if that interval is actually supplied. For MILD follow-up, prioritize documented ADLs, walking, standing, mobility, and openness to PT. For medial branch block follow-up, capture a supplied pain diary, waning relief, block number, and whether symptoms are axial or newly radicular. For epidural steroid injection follow-up, capture the documented targeted radicular improvement and only explicitly stated red-flag positives or negatives. Do not turn an absent screen into a denial.\n\n" +
+    "Write from the source only. Never state a date, dose, level, percentage, treatment, imaging finding, diagnosis, red-flag negative, or prior procedure result that is not in the transcript or supplied chart context. Do not include examination findings, diagnostic conclusions asserted as fact, speaker labels, timestamps, ASR artifacts, boilerplate ROS dumps, or copied-forward material. Use neutral clinician synthesis, not transcript order; do not infer a side, radiation, functional limitation, or response merely because it is common.";
 
   CONTRACTS[T_AP] =
     "THE TEMPLATE IS AUTHORITATIVE FOR STRUCTURE. Reproduce the practice's A&P headings verbatim and in order; this contract governs content within them.\n\n" +
-    "Write one numbered entry per problem addressed at this encounter, ordered by what actually drove today's decision-making. Each entry: a compact diagnostic header - '[side or midline] [level or joint] [pathology], [chronicity]' - then a short assessment clause giving exam and imaging concordance, trajectory, and the measured response to the last intervention as percent AND duration, then a plan sub-list scoped to that problem. Never leave a plan line unattached to a problem, and give every assessed problem either an action or an explicit 'no change'.\n\n" +
-    "State a side for every paired structure, or mark the diagnosis midline, central, or axial when it genuinely is - central canal stenosis, discogenic pain, and midline compression fracture are correctly sideless. Never infer a side from elsewhere in the note and never supply one the source lacks; an undocumented side is a query to the author, not a guess. Name spinal levels as levels, and for facet and medial branch work name the medial branches, not only the joint.\n\n" +
-    "Carry a baseline pain score and a functional measure or concrete deficit for the treated problem. Prescriptions carry drug, strength, route, frequency, indication, quantity, and refills; 'continue current regimen as listed' is fine, 'adjust gabapentin' is not. For opioids state total daily MME (never for buprenorphine; with a nonlinearity caveat for methadone), the PDMP query date and its actual finding, the UDS status and interpretation, the risk assessment and agreement status, and the naloxone decision; when a benzodiazepine is co-prescribed state the combined risk and the coordination. A taper states a rate and a reassessment point - never a bare abrupt stop of long-term therapy.\n\n" +
-    "Before a first procedure, document the conservative trial as modality plus duration plus outcome. Before a repeat, give the percent and duration of relief from the prior identical procedure. Before radiofrequency neurotomy, give the two diagnostic medial branch blocks with their percent relief and concordance. Every procedure plan states name, level or joint, side, image-guidance modality, injectate class, diagnostic versus therapeutic intent, and the shared decision-making discussion - formal consent belongs to the day-of-service note. Cervical transforaminal injections use non-particulate corticosteroid; never triamcinolone, Kenalog, methylprednisolone, or Depo-Medrol. When an anticoagulant or antiplatelet is on board, state the hold or continue decision, the interval, the clearing prescriber, and the resumption plan. Imaging orders state modality, region, side, contrast status, and the clinical question. Counsel on glycemic effects when a steroid is planned in diabetes.\n\n" +
-    "Close with a one-line MDM statement naming problems addressed with status, data reviewed and analyzed (name the study when claiming independent interpretation, name the professional when claiming external discussion), and the risk driver - plus total time on the date of service only if the level is time-based. Then Follow-Up as a concrete interval or defined trigger, then Return Precautions naming plan-specific symptoms with the matching action level, then the signature with credentials and a teaching-physician attestation if a trainee contributed.\n\n" +
-    "First-person attending voice is correct and expected. Never write model self-reference, summary framing, unquantified conservative-care or response claims, generic safety-netting, or any dose, level, side, percent, duration, MME, lab, or imaging value not supported by the source. Fabricating a number to satisfy a completeness rule outranks every other failure here.";
+    "Turn concise dictated facts into a coherent structured plan; the clinician need not dictate a polished paragraph. List only diagnoses actually documented or explicitly assessed. For each addressed problem, give a brief evidence-linked assessment using only documented history, exam, imaging, or treatment response, then attach the documented medication, procedure, conservative-care, monitoring, or follow-up decision. Keep accepted and declined options distinct. Do not add a diagnosis, side, level, chronicity, status word, or rationale merely to make the plan look complete.\n\n" +
+    "State a medication, procedure, repeat-procedure interval, counseling, consent, precaution, or follow-up only when the clinician dictated it, the source documents it, or required template text supplies it. Do not convert a discussion into acceptance, a consideration into an order, or a prior medication into continuation. Do not invent percentages, dates, imaging, examination findings, time spent, red-flag negatives, consent, or a generic return-precaution paragraph. When a source fact is absent, leave the optional detail absent rather than guessing.\n\n" +
+    "Preserve clinician review and every required section/template line. Keep the plan compact, non-repetitive, and organized by the problems actually addressed. First-person attending voice is appropriate only for documented clinician actions; never use model self-reference.";
 
   CONTRACTS[T_PE] =
     "THE TEMPLATE IS AUTHORITATIVE FOR STRUCTURE. Reproduce the practice's ROS and PE headings verbatim and in order. Either region-first or element-first PE organization is acceptable; apply one consistently.\n\n" +
@@ -143,12 +138,9 @@
 
   CONTRACTS[T_SOAP] =
     "THE TEMPLATE IS AUTHORITATIVE FOR STRUCTURE. Reproduce the practice's SOAP headings verbatim and in order; this contract governs content within them.\n\n" +
-    "Open with date and time of service, encounter modality (in-person, or telehealth with audio-video versus audio-only and the patient's location), visit type, a one-line chief complaint naming the condition and laterality, and allergies including NKDA.\n\n" +
-    "SUBJECTIVE. Lead with interval history: what changed since the last visit, new symptoms, ED or urgent-care visits, falls, injuries, new prescribers. Then response to the last treatment anchored to a prior value and date: 'Pain today 4/10, improved from 7/10 at the 8/11/2026 visit.' State relief from any procedure as percent AND duration together, and for a diagnostic block say whether the relief occurred during the local anesthetic phase and was concordant. Give function in observable, comparable terms tied to the patient's goals. List every controlled substance in full - drug, strength, route, frequency, quantity, refills - and incorporate non-controlled medications by explicit reference to a list reconciled today. Carry a visit-specific risk block that names its sources: PDMP query date and its actual finding, UDS date with interpretation or an explicit pending or not-yet-due status, pill count, agreement status, naloxone status. State total daily MME for full-agonist regimens; never convert buprenorphine; caveat methadone as nonlinear. State the benefit-versus-harm reassessment in the patient's own functional terms.\n\n" +
-    "OBJECTIVE. Vitals or an explicit deferral with a reason. A focused regional exam with laterality or explicit midline and quantified findings: ROM in degrees, strength by myotome, named provocative tests with side and result, reflexes, sensation by dermatome, gait. Say which findings were re-performed today versus referenced from a prior exam. Then data reviewed this visit, distinguishing your own independent interpretation of images from reading someone else's report, and naming and dating any discussion with an external physician.\n\n" +
-    "ASSESSMENT. One item per active problem with diagnosis, laterality, level or joint, and a status word from: improved/improving, stable/unchanged/well-controlled, worsening/progressive, exacerbation/flare, refractory, resolved/resolving, newly diagnosed, chronic, recurrent. Then a one-line MDM statement naming problems, data, and risk.\n\n" +
-    "PLAN. Cover every assessed problem with an action or an explicit no-change. Medication actions carry a rationale. Name interventional targets by the structure actually treated - 'right L3 and L4 medial branch blocks targeting the right L4-L5 facet joint', not 'right L4-L5 medial branch block'. Every planned procedure states laterality, level or joint, approach, image guidance, and indication. Address anticoagulants before any neuraxial or deep procedure with a hold interval, coordinating prescriber, and date. Document the risks, benefits, and alternatives discussion. State the leveling basis exactly once: an MDM statement, or total time on the DATE OF THE ENCOUNTER with a minute count - never '>50% of the visit in counseling', which was retired for office E/M in 2021. Close with a follow-up interval or event anchor and return precautions naming specific red-flag symptoms, then the signature with credential, date, time, and a scribe or teaching-physician attestation where applicable.\n\n" +
-    "Never write stigmatizing substance-use language ('dirty urine', 'addict', 'drug-seeking', 'noncompliant'), vague filler as the entire response-to-treatment statement, 'continue current management' as the whole plan for a controlled-substance patient, an MME ceiling framed as a hard cutoff, a percent without a duration, a PDMP or UDS 'reviewed' with no finding, a status word contradicting the recorded data, or any invented vital, dose, date, or result. Do not reproduce a prior visit's exam or risk paragraph with unchanged numbers.";
+    "For the HPI, write a concise natural chronology, not a checklist: supplied onset or inciting event; provoking/palliating factors and tried care; quality; region/radiation; severity and ADL effect; then timing/progression. Finish with only supplied pertinent positives or negatives, prior procedure relief as a percent-plus-duration pair, and current medicines/interventions. A procedure follow-up must name the documented procedure and only stated interval improvements. MILD follow-up emphasizes documented ADLs, walking, standing, mobility, and PT openness; medial branch block follow-up captures only supplied diary, waning relief, block number, and axial versus new radicular symptoms; ESI follow-up captures documented targeted radicular improvement and explicit red-flag statements only.\n\n" +
+    "For ASSESSMENT and PLAN, organize terse clinician dictation into a diagnosis list and problem-linked plan without asking the clinician to dictate polished prose. Use evidence only from documented history, exam, imaging, or response. Include medication, procedure, conservative-care, repeat timing, counseling, accepted/declined decision, and follow-up only when documented or required by the template. Keep optional facts absent when absent.\n\n" +
+    "Never invent symptoms, percentages, dates, imaging, exam findings, diagnoses, consent, medication acceptance, red-flag negatives, time spent, a normal review of systems, or generic safety-netting. Never let a template or prior note supply a clinical fact. Preserve clinician review and template fidelity. Prefer the minimum necessary information with maximum clinical meaning; avoid repetition and vague filler.";
 
   CONTRACTS[T_TPL] =
     "THIS CONTRACT IS APPENDED TO EVERY NOTE TYPE AND OVERRIDES ANY STYLE PREFERENCE THAT CONFLICTS WITH IT.\n\n" +
@@ -1042,7 +1034,12 @@
   });
 
   chk({
-    id: 'pain-severity-quantified', sev: 'block', types: [T_HPI, T_PE, T_SOAP],
+    id: 'pain-severity-quantified', sev: 'block',
+    /* A source-independent grader cannot require a score that the clinician
+       did not dictate.  Keep this signal for a focused documented exam, but
+       never send a general HPI/SOAP back for regeneration merely because its
+       sparse source omitted a pain number. */
+    types: [T_PE],
     run: function (e) {
       if (/(^|[^\d\/])(10|[0-9])\s*(-|to)\s*(10|[0-9])\s*(\/|out of)\s*10\b/.test(e.masked)) return true;
       if (/(^|[^\d\/])(10|[0-9])\s*(\/|out of)\s*10\b/.test(e.masked)) return true;
@@ -1063,7 +1060,7 @@
   });
 
   chk({
-    id: 'red-flag-screen-region-routed', sev: 'block', types: [T_HPI, T_PE],
+    id: 'red-flag-screen-region-routed', sev: 'block', types: [T_PE],
     need: function (e) { return e.region === 'lumbosacral' || e.region === 'cervical'; },
     run: function (e) {
       if (/no red flags|ROS (is )?negative/i.test(e.text) && !/bowel|bladder|saddle|clumsi|Lhermitte/i.test(e.text)) return false;
@@ -1080,7 +1077,7 @@
   });
 
   chk({
-    id: 'procedure-relief-percent-and-duration', sev: 'block', types: [T_HPI, T_AP, T_SOAP, T_PE],
+    id: 'procedure-relief-percent-and-duration', sev: 'block', types: [T_PE],
     need: function (e) { return e.hasPriorProcedure; },
     run: function (e) {
       var pct = /\b\d{1,3}\s*%|\b(complete|no|minimal|partial) relief\b/i.test(e.text);
@@ -1114,7 +1111,7 @@
   });
 
   chk({
-    id: 'functional-impact-present', sev: 'warn', types: [T_HPI, T_AP, T_PE, T_SOAP],
+    id: 'functional-impact-present', sev: 'warn', types: [T_PE],
     run: function (e) {
       if (/\b(tolerance|able to|limited to)\b[^.]{0,40}\b(\d+|one|two|several)\s*(minute|block|flight|hour|pound)s?\b/i.test(e.text)) return true;
       var ss = e.sents;
@@ -1126,28 +1123,6 @@
     },
     label: 'No functional impact is documented. Coverage for interventional procedures requires a stated functional deficit.',
     why: 'Quantify the impact against a concrete activity or tolerance.'
-  });
-
-  chk({
-    id: 'conservative-care-quantified', sev: 'warn', types: [T_HPI, T_AP, T_SOAP],
-    need: function (e) { return e.plansFirstProcedure; },
-    run: function (e) {
-      return has(/(physical therapy|\bPT\b|home exercise|NSAID|chiropract|acupunctur|injection|medication|bracing|activity modification)/i, e.text) &&
-        has(/\b\d+\s*[- ]?\s*\d*\s?(day|week|month)s?\b/i, e.text) &&
-        has(/(fail|no relief|inadequate|partial|insufficient|unsuccessful|without (meaningful|adequate|sustained))/i, e.text);
-    },
-    label: 'A first procedure is planned without a documented conservative-care trial, its duration and its outcome.',
-    why: 'State the conservative modality, how long it was tried, and the outcome.'
-  });
-
-  chk({
-    id: 'prior-treatment-paired-response', sev: 'warn', types: [T_HPI],
-    need: function (e) { return has(/(physical therapy|\bPT\b|chiropract|acupunctur|gabapentin|duloxetine|NSAID|meloxicam|ibuprofen|naproxen|injection|epidural|block)/i, e.text); },
-    run: function (e) {
-      return has(/(relief|improve\w*|help\w*|benefit\w*|fail\w*|no change|without (sustained|meaningful|adequate)|worse|unsuccessful|tolerated poorly|side effect)/i, e.text);
-    },
-    label: 'A prior treatment is listed with no stated outcome.',
-    why: 'Give each prior treatment its outcome.'
   });
 
   chk({
