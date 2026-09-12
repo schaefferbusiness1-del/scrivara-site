@@ -511,7 +511,114 @@ async function refusedLink(label, bootOptions, expectedCalls) {
     checks++;
   }
 
+  /* =========================================================================
+     CONNECTMINE-2.1.0 — "Use my MLS Scribe templates" (#opnMineBtn)
+     opnUseMine() posts to /api/client/opnotes/templates/mine; opnOpenApp()
+     decides whether the button is even offered, from who.hasMlsAccount on the
+     /session reply.
+     ===================================================================== */
+  {
+    // This mock DOM starts every element's className at '' — nothing models
+    // the real page's static markup (class="btn2 hide") — so "shown" and
+    // "never touched" would otherwise be indistinguishable. Each sub-test
+    // below seeds the button to the real starting class before booting.
+
+    /* (1) hasMlsAccount:true -> the button is offered. */
+    const shownRun = boot({
+      k: GOOD,
+      replies: {
+        '/api/client/opnotes/session GET': { status: 200, body: { signedIn: true, client: { name: 'ZZ Test Surgeon Mine' }, hasMlsAccount: true } },
+        '/api/client/opnotes/templates GET': { status: 200, body: { templates: [] } },
+        '/api/client/opnotes/jobs GET': { status: 200, body: { jobs: [] } }
+      }
+    });
+    shownRun.dom.el('opnMineBtn').className = 'btn2 hide';
+    await shownRun.ctx.window.opnReady;
+    ok(!/\bhide\b/.test(shownRun.dom.el('opnMineBtn').className),
+      'hasMlsAccount:true did not offer the "Use my MLS Scribe templates" button');
+
+    /* (2) hasMlsAccount:false, or left out of the reply entirely -> the button
+           that "can only disappoint" stays hidden, in both shapes. */
+    for (const hasMlsAccount of [false, undefined]) {
+      const sessionBody = { signedIn: true, client: { name: 'ZZ Test Surgeon NoMine' } };
+      if (hasMlsAccount !== undefined) sessionBody.hasMlsAccount = hasMlsAccount;
+      const hiddenRun = boot({
+        k: GOOD,
+        replies: {
+          '/api/client/opnotes/session GET': { status: 200, body: sessionBody },
+          '/api/client/opnotes/templates GET': { status: 200, body: { templates: [] } },
+          '/api/client/opnotes/jobs GET': { status: 200, body: { jobs: [] } }
+        }
+      });
+      hiddenRun.dom.el('opnMineBtn').className = 'btn2 hide';
+      await hiddenRun.ctx.window.opnReady;
+      ok(/\bhide\b/.test(hiddenRun.dom.el('opnMineBtn').className),
+        'hasMlsAccount:' + hasMlsAccount + ' offered a button that can only disappoint');
+    }
+
+    /* (3) pressing it POSTs to templates/mine, repaints the template list from
+           the response, and hides itself afterward. */
+    const mineBodies = [];
+    const pressRun = boot({
+      k: GOOD,
+      replies: {
+        '/api/client/opnotes/session GET': { status: 200, body: { signedIn: true, client: { name: 'ZZ Test Surgeon Press' }, hasMlsAccount: true } },
+        '/api/client/opnotes/templates GET': { status: 200, body: { templates: [] } },
+        '/api/client/opnotes/jobs GET': { status: 200, body: { jobs: [] } },
+        '/api/client/opnotes/templates/mine POST': (init) => {
+          mineBodies.push(JSON.parse(String(init.body || '{}')));
+          return {
+            ok: true, status: 200,
+            json: () => Promise.resolve({
+              saved: 2,
+              templates: [
+                { id: 'ot_mine1', name: 'ZZ Mine Template One', charCount: 40, version: 1, updatedAt: 5 },
+                { id: 'ot_mine2', name: 'ZZ Mine Template Two', charCount: 60, version: 1, updatedAt: 6 }
+              ]
+            })
+          };
+        }
+      }
+    });
+    pressRun.dom.el('opnMineBtn').className = 'btn2 hide';
+    await pressRun.ctx.window.opnReady;
+    ok(!/\bhide\b/.test(pressRun.dom.el('opnMineBtn').className), 'setup: the button did not appear before it was pressed');
+
+    await pressRun.ctx.opnUseMine();
+    eq(mineBodies.length, 1, 'pressing the button did not POST to templates/mine exactly once');
+    const mineHtml = pressRun.dom.el('tplList').innerHTML;
+    ok(/ZZ Mine Template One/.test(mineHtml) && /ZZ Mine Template Two/.test(mineHtml),
+      'the template list was not repainted from the templates/mine response');
+    eq(pressRun.dom.el('tplMsg').textContent, '2 templates brought across.', 'the confirmation sentence drifted');
+    ok(/\bhide\b/.test(pressRun.dom.el('opnMineBtn').className), 'the button did not hide itself after a successful pull');
+
+    /* (4) a 404 OPNOTE_NO_ACCOUNT reply shows the server's own sentence and
+           leaves the template list exactly as it was. */
+    const SAY_NO_ACCOUNT = 'We could not find operative templates on an MLS Scribe account for this address. Add them here instead.';
+    const refusedRun = boot({
+      k: GOOD,
+      replies: {
+        '/api/client/opnotes/session GET': { status: 200, body: { signedIn: true, client: { name: 'ZZ Test Surgeon Refused' }, hasMlsAccount: true } },
+        '/api/client/opnotes/templates GET': {
+          status: 200,
+          body: { templates: [{ id: 'ot_before', name: 'ZZ Already Here', charCount: 20, version: 1, updatedAt: 1 }] }
+        },
+        '/api/client/opnotes/jobs GET': { status: 200, body: { jobs: [] } },
+        '/api/client/opnotes/templates/mine POST': { status: 404, body: { error: { code: 'OPNOTE_NO_ACCOUNT', message: SAY_NO_ACCOUNT } } }
+      }
+    });
+    refusedRun.dom.el('opnMineBtn').className = 'btn2 hide';
+    await refusedRun.ctx.window.opnReady;
+    const beforeHtml = refusedRun.dom.el('tplList').innerHTML;
+    ok(/ZZ Already Here/.test(beforeHtml), 'setup: the existing template list did not paint');
+
+    await refusedRun.ctx.opnUseMine();
+    eq(refusedRun.dom.el('tplMsg').textContent, SAY_NO_ACCOUNT, "a 404 OPNOTE_NO_ACCOUNT did not show the server's own sentence");
+    eq(refusedRun.dom.el('tplList').innerHTML, beforeHtml, 'a refused pull rewrote the template list that was already there');
+  }
+
   console.log('PASS opnotes client page: ' + checks + ' checks — a link that is not good shows one sentence and nothing else, ' +
+    'connectmine-2.1.0\'s "Use my MLS Scribe templates" button is offered only on hasMlsAccount:true, pulls and repaints templates and hides itself on success, and leaves the list untouched under a 404 OPNOTE_NO_ACCOUNT, ' +
     'the link alone reaches no note until a mailed code is accepted and every call after it carries that credential, ' +
     'an expired sign-in asks for a code while a revoked link does not, ' +
     'the fill/save/done walk carries its version, templates upload and paste, and no developer words reach the surgeon');

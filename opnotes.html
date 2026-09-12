@@ -68,6 +68,7 @@
       <h2>Your templates</h2>
       <p class="sub">These are the templates your op notes are written from.</p>
       <div id="tplList"></div>
+      <button class="btn2 hide" id="opnMineBtn" onclick="opnUseMine()">Use my MLS Scribe templates</button>
       <button class="btn2" onclick="opnPickTemplate()">Add or replace a template</button>
       <p class="note">Word (.docx) or a text file.</p>
       <input id="tplFile" type="file" accept=".docx,.txt,.md,.rtf,.csv,.htm,.html" class="hide" onchange="opnTemplateChosen(this)">
@@ -259,7 +260,7 @@ async function opnVerify() {
       opnSess = String(d.session);
       opnSessSave();
       if (f) f.value = '';
-      await opnOpenApp(d.client || {});
+      await opnOpenApp(d.client || {}, d);
       return;
     }
     var said = String(((d || {}).error || {}).message || '');
@@ -480,6 +481,41 @@ function opnRenderTemplates(list) {
 
 function opnPickTemplate() { var f = opnEl('tplFile'); if (f && f.click) f.click(); }
 
+/* connectmine-2.1.0: the surgeon already keeps their operative templates in MLS
+   Scribe, so one press brings them across instead of uploading them again. The
+   button is painted ONLY when the server has said there is an account at this
+   address with an activated set that has operative templates in it - an offer
+   that can only disappoint is worse than no offer at all. */
+async function opnUseMine() {
+  var b = opnEl('opnMineBtn');
+  if (b) { b.disabled = true; b.textContent = 'Bringing them across...'; }
+  try {
+    var r = await opnPost('/api/client/opnotes/templates/mine', {});
+    if (r.status === 401) { await opnHandle401(r); return; }
+    var d = null; try { d = await r.json(); } catch (e) { d = null; }
+    if (b) { b.disabled = false; b.textContent = 'Use my MLS Scribe templates'; }
+    if (r.ok && d) {
+      opnRenderTemplates(d.templates || []);
+      var n = Number(d.saved || 0);
+      opnSay('tplMsg', n + ' template' + (n === 1 ? '' : 's') + ' brought across.', false);
+      opnShow('tplMsg', true);
+      opnShow('opnMineBtn', false);
+      /* The note on screen was painted from the list as it was, so its Wrong
+         template control is now offering fewer templates than exist. Repaint it
+         against the list we just received. */
+      if (opnOpen && opnOpen.id) await opnOpenJob(opnOpen.id);
+      return;
+    }
+    var said = String(((d || {}).error || {}).message || '');
+    opnSay('tplMsg', said || 'That did not go through. Try again in a moment.', true);
+    opnShow('tplMsg', true);
+  } catch (e) {
+    if (b) { b.disabled = false; b.textContent = 'Use my MLS Scribe templates'; }
+    opnSay('tplMsg', 'That did not go through. Try again in a moment.', true);
+    opnShow('tplMsg', true);
+  }
+}
+
 /* Cleaning copied from the clinical app's own reader so a template reads the
    same here as it does there. */
 function opnCleanText(t, lower) {
@@ -555,8 +591,10 @@ async function opnSendTemplate(name, text) {
 /* Everything past the sign-in. Called once the credential exists, from the boot
    probe when the session was still good and from opnVerify when a code has just
    been accepted. */
-async function opnOpenApp(client) {
+async function opnOpenApp(client, who) {
   var c = client || {};
+  /* Only when the server has said the press would do something. */
+  if (who && who.hasMlsAccount) opnShow('opnMineBtn', true);
   var hdr = opnEl('hdr'); if (hdr) hdr.textContent = 'Op notes for ' + (c.name || 'you');
   var sub = opnEl('sub'); if (sub) sub.textContent = 'Everything is written for you. Fill in what only you know, then mark it done.';
   var g = opnEl('gate'); if (g) g.innerHTML = '';
@@ -613,7 +651,7 @@ async function opnBoot() {
     opnSignInCard('');
     return;
   }
-  await opnOpenApp((who && who.client) || {});
+  await opnOpenApp((who && who.client) || {}, who);
 }
 
 window.opnReady = opnBoot();

@@ -466,6 +466,15 @@ const tests = [
      both — and the owner rejected it. The suite now proves opnote-day-3.0.0:
      the LEFT RAIL of per-patient buttons he asked to have back, beside the
      selected patient's note. */
+  /* REGISTERED 2026-09-12. This file existed on disk for days and was never in
+     this list, so it had never once run in the gate - and a suite that is never
+     registered is a suite that never runs. It is green (54 assertions). Two
+     siblings found in the same state are NOT registered here on purpose:
+     1p-pullpill-first-runtime.test.js needs playwright, which is not installed
+     in a plain worktree, and settings-modal-never-opens-unattended.test.js is
+     RED on its own and needs a real diagnosis before it can gate anything -
+     see AGENT_COORDINATION.md 2026-09-12. Neither is registered on a guess. */
+  'opnote-schedule-placeholder-identity-and-template-class.test.js',
   '1p-opnote-rail-runtime.test.js',
   '1p-opnote-storm-perf.test.js',
   /* A way HOME out of the full-screen room, and a room where every control is

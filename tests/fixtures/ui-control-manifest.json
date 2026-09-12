@@ -3,11 +3,11 @@
  "charter": "UI_CHARTER_CALM_SHELL_2026-07-24.md",
  "sources": 331,
  "totals": {
-  "controls": 4798,
+  "controls": 4799,
   "gated": 399,
-  "active": 4399,
+  "active": 4400,
   "byKind": {
-   "button": 4473,
+   "button": 4474,
    "handler": 249,
    "navtab": 76
   }
@@ -51,7 +51,7 @@
   "page:mls-marketing-console.html": 17,
   "page:mls-marketing.html": 17,
   "page:mls-widgets.html": 2,
-  "page:opnotes.html": 9,
+  "page:opnotes.html": 10,
   "page:patient-portal-staging.html": 3,
   "page:patient-portal.html": 27,
   "page:patient-review.html": 8,
@@ -99,7 +99,7 @@
   "page:mls-marketing-console.html": 17,
   "page:mls-marketing.html": 17,
   "page:mls-widgets.html": 2,
-  "page:opnotes.html": 9,
+  "page:opnotes.html": 10,
   "page:patient-portal-staging.html": 3,
   "page:patient-portal.html": 27,
   "page:patient-review.html": 8,
@@ -112,7 +112,7 @@
  "surfaces": {
   "clinician": 3309,
   "1p": 661,
-  "public": 157,
+  "public": 158,
   "cloned": 661,
   "phone": 6,
   "popup": 4
@@ -80393,7 +80393,24 @@
    "handler": null
   },
   {
-   "id": "opnotes-html-71-add-or-replace-a-template",
+   "id": "opnMineBtn",
+   "label": "Use my MLS Scribe templates",
+   "accessibleName": "Use my MLS Scribe templates",
+   "title": "",
+   "kind": "button",
+   "tag": "button",
+   "domId": "opnMineBtn",
+   "view": "page:opnotes.html",
+   "route": "page:opnotes.html",
+   "surface": "public",
+   "shellChecked": false,
+   "file": "opnotes.html",
+   "line": 71,
+   "gated": false,
+   "handler": "opnUseMine()"
+  },
+  {
+   "id": "opnotes-html-72-add-or-replace-a-template",
    "label": "Add or replace a template",
    "accessibleName": "Add or replace a template",
    "title": "",
@@ -80405,12 +80422,12 @@
    "surface": "public",
    "shellChecked": false,
    "file": "opnotes.html",
-   "line": 71,
+   "line": 72,
    "gated": false,
    "handler": "opnPickTemplate()"
   },
   {
-   "id": "opnotes-html-78-save-this-template",
+   "id": "opnotes-html-79-save-this-template",
    "label": "Save this template",
    "accessibleName": "Save this template",
    "title": "",
@@ -80422,7 +80439,7 @@
    "surface": "public",
    "shellChecked": false,
    "file": "opnotes.html",
-   "line": 78,
+   "line": 79,
    "gated": false,
    "handler": "opnSavePastedTemplate()"
   },
@@ -80439,12 +80456,12 @@
    "surface": "public",
    "shellChecked": false,
    "file": "opnotes.html",
-   "line": 208,
+   "line": 209,
    "gated": false,
    "handler": "opnAskCode()"
   },
   {
-   "id": "opnotes-html-212-sign-in",
+   "id": "opnotes-html-213-sign-in",
    "label": "Sign in",
    "accessibleName": "Sign in",
    "title": "",
@@ -80456,12 +80473,12 @@
    "surface": "public",
    "shellChecked": false,
    "file": "opnotes.html",
-   "line": 212,
+   "line": 213,
    "gated": false,
    "handler": "opnVerify()"
   },
   {
-   "id": "opnotes-html-284-button",
+   "id": "opnotes-html-285-button",
    "label": "' + ' ' + ' ' + '",
    "accessibleName": "' + ' ' + ' ' + '",
    "title": "",
@@ -80473,12 +80490,12 @@
    "surface": "public",
    "shellChecked": false,
    "file": "opnotes.html",
-   "line": 284,
+   "line": 285,
    "gated": false,
    "handler": "opnOpenJob(' ')"
   },
   {
-   "id": "opnotes-html-309-save",
+   "id": "opnotes-html-310-save",
    "label": "Save",
    "accessibleName": "Save",
    "title": "",
@@ -80490,12 +80507,12 @@
    "surface": "public",
    "shellChecked": false,
    "file": "opnotes.html",
-   "line": 309,
+   "line": 310,
    "gated": false,
    "handler": "opnSaveJob()"
   },
   {
-   "id": "opnotes-html-310-mark-done",
+   "id": "opnotes-html-311-mark-done",
    "label": "Mark done",
    "accessibleName": "Mark done",
    "title": "",
@@ -80507,7 +80524,7 @@
    "surface": "public",
    "shellChecked": false,
    "file": "opnotes.html",
-   "line": 310,
+   "line": 311,
    "gated": false,
    "handler": "opnCompleteJob()"
   },
@@ -80524,7 +80541,7 @@
    "surface": "public",
    "shellChecked": false,
    "file": "opnotes.html",
-   "line": 407,
+   "line": 408,
    "gated": false,
    "handler": "opnRefit()"
   },
@@ -80541,7 +80558,7 @@
    "surface": "public",
    "shellChecked": false,
    "file": "opnotes.html",
-   "line": 408,
+   "line": 409,
    "gated": false,
    "handler": "opnRefitUndo()"
   },
