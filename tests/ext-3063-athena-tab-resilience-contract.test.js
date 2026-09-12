@@ -60,7 +60,8 @@ assert(bg.includes("payload = Object.assign({}, payload, { athenaTabs: __schedAt
 assert(bg.includes('out.athenaTabs = __rawAthenaAll;'), 'presence reply must carry athenaTabs');
 
 /* 6. writeready hand-offs: the appointment-row refusal keeps the driver's PHI-free diag; a probe refusal carries tab counts */
-assert(bg.includes("error: 'The exact Athena appointment row could not be opened. No name fallback was attempted.', diag: (sched && sched.diag) || null });"), 'appointment-row refusal must keep diag');
+assert(bg.includes("error: 'The exact Athena appointment row could not be opened. No name fallback was attempted.', diag: searchOpenDiag((sched && sched.diag) || null) });"),
+  'appointment-row refusal must keep the driver diag plus the bounded already-open diagnostic');
 assert(bg.includes("{ diag: { athenaTabs: athCandidates.length, verifiedTabs: verifiedTabCount, firstReason: String((probeFailure && probeFailure.reason) || 'context-unverified') } }"), 'probe refusal must carry tab counts');
 
 /* write path untouched: the four-layer safety guard and the supervised handler boundary are still there */
