@@ -50,6 +50,7 @@ assert.ok(studyLoaderAt >= 0 && studyLoaderStart >= 0 && studyLoaderClose > stud
 const STUDY_LOADER_IIFE = connectSource.slice(studyLoaderStart, studyLoaderClose + studyLoaderCloseMarker.length);
 assert.ok(STUDY_LOADER_IIFE.includes('[data-mls-sm-tab="build"]') &&
   STUDY_LOADER_IIFE.includes("'mls:view-changed'") &&
+  STUDY_LOADER_IIFE.includes("'mls:studio-section-changed'") &&
   STUDY_LOADER_IIFE.includes("window.__MLS_AV||Date.now()"),
   'Study loader lost first-use admission or build-following cache identity');
 
@@ -208,11 +209,12 @@ const SHELL_HTML = `<!doctype html><html><body>
     {
       const page = await browser.newPage();
       const firstUseHtml = `<!doctype html><html><body>
-        <div id="studioView" style="display:none">
-          <button type="button" data-mls-sm-tab="build">Build</button>
+        <div id="appWrap"><div id="studioView" style="display:none">
           <div class="sx-title">AI Studio</div>
+          <div id="copilotCard">Ask</div>
+          <div class="sx-right">Build a custom tool</div>
           <div id="mlsSgPro">Advanced cohort host</div>
-        </div>
+        </div><div id="analysisView"></div></div>
       </body></html>`;
       await page.route('https://mls-study-first-use.test/**', route =>
         route.fulfill({ status: 200, contentType: 'text/html', body: firstUseHtml }));
@@ -235,8 +237,14 @@ const SHELL_HTML = `<!doctype html><html><body>
       assert.strictEqual(before.queued, true, 'Study lost its quiet background preload fallback');
       assert.strictEqual(before.scripts, 0, 'hidden Studio fetched Study before either idle time or first use');
 
-      await page.evaluate(() => { document.getElementById('studioView').style.display = 'block'; });
-      await page.locator('[data-mls-sm-tab="build"]').click();
+      await page.evaluate(() => {
+        window.__studioSectionEvents = [];
+        window.addEventListener('mls:studio-section-changed', event =>
+          window.__studioSectionEvents.push(event && event.detail && event.detail.section));
+        window.localStorage.setItem('mlsStudioSection', 'build');
+        document.getElementById('studioView').style.display = 'block';
+      });
+      await page.addScriptTag({ content: mergeSource });
       await page.waitForSelector('#mlsStudyRequest', { timeout: 5000 });
       const firstUse = await page.evaluate(() => {
         const tags = Array.from(document.querySelectorAll('script[data-mls-asset="feat_mls_study_request.js"]'));
@@ -244,7 +252,8 @@ const SHELL_HTML = `<!doctype html><html><body>
           scripts: tags.length,
           src: tags[0] && tags[0].src,
           state: window.__mlsStudyRequestLoader && window.__mlsStudyRequestLoader.state,
-          direct: document.getElementById('mlsStudyRequest').parentElement === document.getElementById('studioView')
+          direct: document.getElementById('mlsStudyRequest').parentElement === document.getElementById('studioView'),
+          sectionEvents: window.__studioSectionEvents.slice()
         };
       });
       assert.strictEqual(firstUse.scripts, 1, 'opening Build did not admit exactly one Study module');
@@ -252,8 +261,10 @@ const SHELL_HTML = `<!doctype html><html><body>
         'Study first use did not follow the current app build token');
       assert.strictEqual(firstUse.state, 'ready', 'Study loader did not verify its mounted owner');
       assert.strictEqual(firstUse.direct, true, 'first-use loading mounted Study outside the Build surface');
+      assert.deepStrictEqual(firstUse.sectionEvents, ['build'],
+        'the remembered Build section did not publish one first-use admission signal');
 
-      await page.locator('[data-mls-sm-tab="build"]').click();
+      await page.evaluate(() => window.__mlsStudioMerge.select('build'));
       await page.evaluate(() => window.__deferredStudyCallback());
       await page.waitForTimeout(50);
       assert.strictEqual(await page.locator('script[data-mls-asset="feat_mls_study_request.js"]').count(), 1,

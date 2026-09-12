@@ -1,4 +1,4 @@
-/* MLS Studio Merge — sm-1.0.0
+/* MLS Studio Merge — sm-1.0.1
  *
  * Owner, 2026-07-26: "add the analysis tab to the ai studio tab smartly".
  *
@@ -77,7 +77,7 @@
 
   if (window.__mlsStudioMerge) return;
 
-  var VERSION = 'sm-1.0.0';
+  var VERSION = 'sm-1.0.1';
   var W = window, D = document;
   var BODY_CLASS = 'mls-sm';
   var STYLE_ID = 'mlsStudioMergeCss';
@@ -394,7 +394,8 @@
     if (KEYS.indexOf(key) < 0) key = 'ask';
     var body = D.body;
     if (!body) return;
-    if (body.getAttribute('data-mls-sm') !== key) body.setAttribute('data-mls-sm', key);
+    var changed = body.getAttribute('data-mls-sm') !== key;
+    if (changed) body.setAttribute('data-mls-sm', key);
     KEYS.forEach(function (k) {
       var on = k === key;
       if (body.classList.contains(BODY_CLASS + '-' + k) !== on) body.classList.toggle(BODY_CLASS + '-' + k, on);
@@ -413,6 +414,9 @@
     /* Give the section its own data a nudge — the Analysis tiles used to load
        on showView('analysis'), which no longer fires. */
     if (key === 'practice') refreshPractice();
+    if (changed) safe(function () {
+      W.dispatchEvent(new CustomEvent('mls:studio-section-changed', { detail: { section: key } }));
+    });
   }
 
   /* THE INLINE display ON #analysisView IS LOAD-BEARING, and this is the
