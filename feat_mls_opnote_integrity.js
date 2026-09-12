@@ -276,7 +276,33 @@
      procedureFacts fields, so any removed span containing one is refused
      outright rather than trusted to the invariance check. */
   var PROC_TITLE_KEEP=/\b(?:MAC|MBB|RFA|ESI|TFESI|SI|MB|DR\s*B)\b/i;
+  /* opclean: a SECOND refusal, on the same principle as PROC_TITLE_KEEP. No
+     removal may carry away a clinical word. procedureFacts covers type,
+     region, side, levels and approach; this covers the vocabulary that is not
+     one of those six fields and therefore invisible to the invariance gate. */
+  var PROC_TITLE_CLINICAL=/\b(?:left|right|bilat(?:eral)?|midline|lumbar|cervical|thoracic|sacral|sacroiliac|caudal|knee|hip|shoulder|joint|nerve|block|injection|inject(?:ed|ion)?|inj|ablation|steroid|epidural|facet|medial|branch|genicular|trigger|point|bursa|transforaminal|interlaminar|neurotomy|denervation|radiofrequency|discogram|kyphoplasty|vertebroplasty|intracept|stimulator|catheter|lead|level|guidance|fluoro(?:scopy)?|ultrasound)\b/i;
   var PROC_TITLE_JUNK=[
+    /* ---- opclean: the front desk's AUTHORIZATION residue -------------------
+       Measured on a real day of 25 operative notes: 6 of them printed the
+       appointment's billing note inside the note's own "Procedure:" line -
+       "L SIJ injection P; AUTH# 294962974", "R SIJ Injection/Bobby P; PER AIM
+       PORTAL NO AUTH RE", "L SIJ injection P; NO AUTH REQ. REF# D63303993".
+       None of it is clinical; all of it is the scheduler telling the biller
+       something. Each rule anchors to the END of the string or to a ';'/','
+       separated trailing clause, so it can only take a trailing scheduling
+       segment and never a word out of the middle of the procedure. */
+    /* "AUTH# 294962974" / "AUTHORIZATION# ..." */
+    /\s*[;,.]?\s*\bAUTH(?:ORIZATION)?\s*#\s*[A-Za-z0-9][A-Za-z0-9-]{2,}\s*$/i,
+    /* "REF# D63303993" */
+    /\s*[;,.]?\s*\bREF(?:ERENCE)?\s*#\s*[A-Za-z0-9][A-Za-z0-9-]{2,}\s*$/i,
+    /* "NO AUTH REQ." / "NO AUTHORIZATION REQUIRED" / "AUTH NOT REQUIRED" */
+    /\s*[;,.]?\s*\b(?:NO\s+AUTH(?:ORIZATION)?\s+(?:REQ(?:UIRED|D)?|NEEDED)|AUTH(?:ORIZATION)?\s+NOT\s+(?:REQ(?:UIRED|D)?|NEEDED))\b\.?\s*$/i,
+    /* "NO AVAILITY" and whatever the scheduler added after it */
+    /\s*[;,.]?\s*\bNO\s+AVAILITY\b[^;]*$/i,
+    /* a whole trailing clause the scheduler addressed to a payer: "; PER AIM
+       PORTAL NO AUTH RE". The leading ';' or ',' is REQUIRED, so "per" used
+       inside a procedure phrase is untouched. */
+    /\s*[;,]\s*\bPER\b\s+\S[^;]*$/i,
     /* "; CASE# KPNV5463" - the '#' and a digit are both REQUIRED so an ordinary
        sentence ending in "case ..." can never match. */
     /\s*[;,]?\s*CASE\s*#\s*(?=[A-Za-z0-9-]*\d)[A-Za-z0-9][A-Za-z0-9-]{3,}\s*$/i,
@@ -285,6 +311,12 @@
     /\s*#\s*\d{1,3}\b(?=\s*(?:PP|P)?\s*(?:[;,]|$))/i,
     /* the trailing scheduling suffix itself */
     /\s*\b(?:PP|P)\b\s*(?=[;,]|$)/i,
+    /* opclean: the staff initial or nickname the scheduler slashes onto the
+       procedure - "R SIJ Injection/Bobby". It is a person, not a procedure, and
+       it was being printed on the note. Deliberately narrow: a slash followed
+       by ONE capitalised ordinary word (no digits, so "L4/5" and "B/L" cannot
+       match), and PROC_TITLE_CLINICAL refuses it if that word is clinical. */
+    /\/(?!\s)[A-Z][a-z]{2,14}\b(?![\w'-])/,
     /* whatever punctuation the removals left dangling */
     /\s*[;,]+\s*$/
   ];
@@ -294,11 +326,23 @@
   }
   function procTitleForNote(text){
     var original=S(text),out=original;
-    for(var i=0;i<PROC_TITLE_JUNK.length;i++){
-      var m=PROC_TITLE_JUNK[i].exec(out);
-      if(!m||!m[0])continue;
-      if(PROC_TITLE_KEEP.test(m[0]))continue;
-      out=out.slice(0,m.index)+out.slice(m.index+m[0].length);
+    /* opclean: a BOUNDED second pass, because a scheduler stacks these.
+       "…; AUTHORIZATION# 44881; NO AUTH REQ" hides the authorisation number
+       behind the "no auth required" clause: every rule is anchored to the end
+       of the string, so removing the outer clause is what exposes the inner
+       one. Each rule only ever REMOVES text, so the string strictly shrinks
+       and three passes terminate; the invariance gate below still judges the
+       final result once, exactly as before. */
+    for(var pass=0;pass<3;pass++){
+      var beforePass=out;
+      for(var i=0;i<PROC_TITLE_JUNK.length;i++){
+        var m=PROC_TITLE_JUNK[i].exec(out);
+        if(!m||!m[0])continue;
+        if(PROC_TITLE_KEEP.test(m[0]))continue;
+        if(PROC_TITLE_CLINICAL.test(m[0]))continue;
+        out=out.slice(0,m.index)+out.slice(m.index+m[0].length);
+      }
+      if(out===beforePass)break;
     }
     out=out.replace(/\s{2,}/g,' ').replace(/\s*[;,]+\s*$/,'').trim();
     if(!out||out===original)return original;
@@ -695,7 +739,7 @@
   function rank(procedure) {
     procedure = expandShorthand(procedure);
     var proc = normText(stripNegated(procedure)), pc = procClass(procedure), pf=procedureFacts(procedure), pt = tokens(stripNegated(procedure)), list = templates();
-    return list.map(function (t, index) {
+    var scored = list.map(function (t, index) {
       var name = normText(S(t.name) + ' ' + ((t.keywords || []).join(' ')));
       var body = normText(S(t.text).slice(0, 1800));
       var tc = templateClass(t), score = 0, compat=templateCompatibility(procedure,t);
@@ -726,7 +770,65 @@
         if (proc.indexOf(w) >= 0 && (name.indexOf(w) >= 0 || body.indexOf(w) >= 0)) score += 2;
       });
       return { tpl:t, score:score, procClass:pc, tplClass:tc, compatible:compat.pass, conflicts:compat.errors, index:index };
-    }).sort(function (a, b) { return b.score - a.score || a.index - b.index; });
+    });
+    return demoteSameNameStubs(scored).sort(function (a, b) { return b.score - a.score || a.index - b.index; });
+  }
+  /* ── A HEADER SHEET IS NOT AN OPERATIVE NOTE (opclean) ─────────────────────
+     Measured on the owner's real library: 199 templates under 102 names, 27 of
+     those names duplicated. "Left sacroiliac joint injection" exists five
+     times — four full operative notes of about 2,380 characters and one
+     433-character header sheet carrying Patient / Physician / Anaesthesia /
+     the two diagnoses / Medication / NDC and no narrative whatsoever.
+     rank() scored all five IDENTICALLY (146): every word of the request is
+     already in the shared NAME, so the missing narrative cost the header sheet
+     nothing, and `b.score - a.score || a.index - b.index` then resolved the tie
+     by LIBRARY ORDER, which put the header sheet first. Four of that Monday's
+     patients were drafted from it and got an 800-900 character "operative
+     note" with no description of the procedure in it.
+
+     THE MEASURE IS A MEASURE, NOT A CHARACTER THRESHOLD. substance() counts
+     the two things that make a template an operative note rather than a cover
+     page: lines of real prose (a sentence a surgeon dictated, as opposed to
+     "Patient: <name>") and whether it has a description-of-procedure/technique
+     section at all — the same section narrativeSpan() already locates for the
+     repair pass. And the judgement is always RELATIVE TO ITS OWN SIBLINGS: a
+     template is demoted only when another template of the SAME NAME has what
+     it completely lacks. A library made entirely of header sheets is therefore
+     untouched, and nothing here deletes, edits or hides a template — the
+     demoted one stays in the list and stays one click away. */
+  function templateSubstance(tpl){
+    var text=S(tpl&&(tpl.text||tpl.body||'')),lines=text.split(/\r?\n/),prose=0;
+    for(var i=0;i<lines.length;i++){
+      var t=S(lines[i]).trim();if(!t)continue;
+      var colon=t.indexOf(':'),body=(colon>=0&&colon<=60)?S(t.slice(colon+1)).trim():t;
+      if(!body)continue;
+      if(body.split(/\s+/).length>=12)prose++;
+    }
+    var narrative=0;try{narrative=narrativeSpan(text)?1:0;}catch(e){}
+    return {prose:prose,narrative:narrative,chars:text.length,score:prose+narrative*3};
+  }
+  var STUB_PENALTY=200;
+  function demoteSameNameStubs(scored){
+    var groups={},i,k,e;
+    for(i=0;i<scored.length;i++){
+      e=scored[i];if(!e||!e.tpl)continue;
+      e.substance=templateSubstance(e.tpl);
+      k=normText(e.tpl.name);if(!k)continue;
+      if(!Object.prototype.hasOwnProperty.call(groups,k))groups[k]=[];
+      groups[k].push(e);
+    }
+    for(k in groups){
+      if(!Object.prototype.hasOwnProperty.call(groups,k))continue;
+      var g=groups[k];if(g.length<2)continue;
+      var anySubstance=false;
+      for(i=0;i<g.length;i++)if(g[i].substance.prose>0||g[i].substance.narrative>0)anySubstance=true;
+      if(!anySubstance)continue;
+      for(i=0;i<g.length;i++){
+        e=g[i];
+        if(e.substance.prose===0&&e.substance.narrative===0){e.stub=true;e.score-=STUB_PENALTY;}
+      }
+    }
+    return scored;
   }
   /* Does the reason NAME exactly one template? Returns that template or null.
      Deliberately strict, because this is the one path that confers confidence
@@ -802,6 +904,14 @@
     return null;
   }
 
+  /* One side of a tie message. Plain name unless the other side carries the
+     same name, in which case say which is the full note and which is not. */
+  function tieLabel(entry, other) {
+    var name = S(entry && entry.tpl && entry.tpl.name).slice(0, 40);
+    if (!other || !other.tpl || normText(other.tpl.name) !== normText(entry.tpl.name)) return name;
+    var s = entry.substance || templateSubstance(entry.tpl);
+    return name + ' — ' + ((s.prose > 0 || s.narrative > 0) ? 'full note' : 'header only') + ', ' + s.chars + ' characters';
+  }
   function best(procedure) {
     procedure = expandShorthand(procedure);
     /* An explicit "no procedure performed" statement is a REAL no-match — it
@@ -891,7 +1001,11 @@
        one-click alternatives - correct fail-closed - but the doctor was told
        "two templates tie" without WHICH two, leaving nothing to act on. Name
        them in the reason; the manual Template picker stays the resolution. */
-    var tieNames = deadHeat && r[1] && r[1].tpl ? (' (' + S(top.tpl && top.tpl.name).slice(0, 40) + ' vs ' + S(r[1].tpl.name).slice(0, 40) + ')') : '';
+    /* opclean: when the two tied templates share a NAME, naming them twice
+       says nothing. Add the one fact that tells them apart — how much of each
+       is an operative note — so "(X vs X)" becomes something a doctor can act
+       on. */
+    var tieNames = deadHeat && r[1] && r[1].tpl ? (' (' + tieLabel(top, r[1]) + ' vs ' + tieLabel(r[1], top) + ')') : '';
     return { tpl:confident ? top.tpl : null, candidate:top.tpl, confident:confident, reason:deadHeat?('two '+(S(top.tplClass)||'same-class')+' templates tie on score'+tieNames+' — the level or side is not decisive, so it was not auto-applied; pick one under Template'):(classExact?'procedure class':(confident?'keyword margin':'ambiguous')), score:top.score, margin:margin, tie:deadHeat, ranked:r };
   }
 
@@ -1036,13 +1150,39 @@
     if (!pc || !tc || pc === tc) return false;
     return pc === 'generic_esi' && !!ESI_FAMILY[tc];
   }
+  /* PREFER THE FULLEST OF A DEAD HEAT (opclean).
+     This is the line that actually chose the header sheet. best() detects the
+     tie correctly and returns tpl:null; bestFor() then calls closestGuess(),
+     which handed back r.candidate — the tie's `top`, i.e. whichever of the
+     identically-named templates the library happened to list first. Among
+     candidates that score the SAME, the one carrying more operative narrative
+     is the better note and can never be the worse one. No confidence verdict
+     changes: the tie is still a tie, the row is still marked a guess, and the
+     doctor still sees "closest match only". */
+  function fullestOfTiedTop(r){
+    var ranked=(r&&r.ranked)||[],top=ranked[0];
+    if(!top||!top.tpl)return null;
+    var pick=null,bestSub=-1;
+    for(var i=0;i<ranked.length;i++){
+      var e=ranked[i];
+      if(!e||!e.tpl||e.score!==top.score)break;
+      if(e.compatible===false)continue;
+      var sub=e.substance?e.substance.score:0;
+      if(sub>bestSub){bestSub=sub;pick=e.tpl;}
+    }
+    return pick;
+  }
   function closestGuess(r, text) {
     if (!r || r.confident) return null;
     if (r.noProcedure || r.multi || r.conflicts) return null;
     if (!(r.score > 0)) return null;
     if (!hasProcedureSignal(text)) return null;
     if (r.candidate && narrowsWithinFamily(text, r.candidate)) return null;
-    return r.candidate || null;
+    /* and the same refusal applies to the template actually returned, which on
+       a tie is the fullest rather than the first in library order */
+    var cand = fullestOfTiedTop(r) || r.candidate || null;
+    if (cand && narrowsWithinFamily(text, cand)) return null;
+    return cand;
   }
   /* opidfix-1.0.0: does the CANDIDATE template's own stated side/levels
      contradict what the doctor actually requested? Same rule as
@@ -1314,6 +1454,17 @@
   function headingLabel(line) {
     var t=S(line).trim(); if(!t) return '';
     var m=t.match(/^([^:]{2,70}):(?:\s+.*)?$/); var label=m?m[1].trim():t;
+    /* A PLACEHOLDER LINE IS NOT A SECTION HEADING (opclean).
+       "[FILL: type of anesthesia]" matched the colon pattern with the label
+       "[FILL", and the all-caps branch below then accepted it as a heading.
+       Two things followed, and the owner saw both: sourceSections() pushed
+       `line.slice(colon+1)` — the marker's own tail WITHOUT its "[FILL:"
+       prefix — into the note as body text, and airSections() put a blank line
+       in front of it, so the amputated remnant sat alone on its own line.
+       fidelity()/headings() also counted a phantom "fill" heading that was in
+       the draft and not in the template. A line that opens with '[' is a slot
+       waiting to be answered, never a section. */
+    if(label.charAt(0)==='[') return '';
     /* Only colon-less document titles carry the whole-line length guard; a
        "HEADING: <content>" line stays a heading no matter how long its content
        is, so a draft that fills a section on the heading line itself can never
@@ -1890,6 +2041,10 @@
   async function generateOnce(name,dateStr,procedure,tplText,ctx) {
     window.__mlsLastOpFidelityError='';window.__mlsLastOpFidelityPass=false;
     ctx=ctx||{};
+    /* Before ANY of this context is printed: drop every identifier that cannot
+       be proved to belong to the provider this note names. See
+       scrubUnownedIdentifiers() below. */
+    scrubUnownedIdentifiers(ctx);
     generationStage(ctx,'Confirming procedure','Verifying the exact patient and requested procedure.');
     /* 2026-08-06 — THE REFUSAL IS RIGHT; THE REASON WAS WRONG.
        Three different conditions shared one message, and the one a doctor
@@ -2213,11 +2368,13 @@
     repaired.note=attestNote(airSections(repaired.note),ctx);repaired.templateFidelity=check2;repaired.templateMode=tplMode;repaired.clinicalConsistency=clinical2;if(tplTruncated)repaired.templateTruncated=true;repaired.templateConformance=conformanceOf(repaired.note,tplForModel,tplMode,tplTruncated,crossAdapt);return repaired;
   }
 
-  /* oni-2.10.0: the deterministic provider/facility attestation footer is owned
-     by the prep module (opnp); since this owner replaced _genOpNote outright,
-     opnp's wrapper never runs — so the pipeline invites it back explicitly.
-     Validation (fidelity + clinical) always runs BEFORE the footer is added,
-     and the footer emits [[blanks]] for anything unknown rather than inventing. */
+  /* oni-2.10.0: the deterministic provider/facility footer is owned by the prep
+     module (opnp); since this owner replaced _genOpNote outright, opnp's
+     wrapper never runs — so the pipeline invites it back explicitly.
+     opclean: prep now returns the note UNCHANGED, because that block was
+     scaffolding sitting inside a saved note body (it exported, emailed and
+     pasted into the EMR, placeholder text and all). The call is kept so there
+     is exactly one owner of the decision and one place to change it. */
   function attestNote(note, ctx) {
     try {
       var prep = window.__mlsOpNotePrep;
@@ -2340,6 +2497,37 @@
   generate.__opnpWrapped=true;
   generate.__mlsOpTemplateOwner=true;
 
+  /* ONE answer to "is this the same clinician", used by rowGenerationCtx and by
+     the identifier scrub below. It was written inline twice inside
+     rowGenerationCtx; extracting it is what stops the two copies drifting. */
+  function providerKey(v){return S(v).toLowerCase().replace(/\b(?:md|do|np|pa(?:-?c)?|rn|dpm|dds|dmd|phd|facs|faap|faan)\b\.?/g,' ').replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();}
+  /* AN NPI IS NEVER PRINTED BESIDE A NAME IT DOES NOT BELONG TO.
+     Measured on a real batch of 25 op notes: every one paired the OPERATING
+     PROVIDER's name with the SIGNED-IN ACCOUNT HOLDER's NPI, because the ctx
+     that reaches the fact stamp is built by ScribeFlow's opPrepGenerateOne,
+     which overwrites ctx.provider with the appointment's provider and leaves
+     ctx.providerNpi (the Settings NPI) in place. On that account the operating
+     provider is a physician and the account holder is a physician assistant,
+     so every note asserted the PA's NPI as the surgeon's.
+     The app holds exactly ONE NPI (the account-level Settings field) and the
+     Athena provider roster carries none, so when the note names somebody else
+     there is no second value to reach for: the identifiers are dropped and no
+     NPI is printed. An identifier the SCHEDULE supplied is stamped
+     providerNpiSource:'appointment' upstream and survives.
+     This runs in the generator, which is the one choke point every caller's
+     ctx passes through, so no surface has to repeat the comparison. */
+  function scrubUnownedIdentifiers(ctx){
+    if(!ctx||typeof ctx!=='object')return ctx;
+    if(S(ctx.providerNpiSource).trim()==='appointment')return ctx;
+    var named=providerKey(ctx.provider||ctx.providerName);
+    if(!named)return ctx;
+    var configured='';
+    try{if(isFn(window.clinicalProviderName))configured=providerKey(window.clinicalProviderName());}catch(e){}
+    if(!configured){try{if(isFn(window.getProviderName))configured=providerKey(window.getProviderName());}catch(e2){}}
+    if(configured&&configured===named)return ctx;
+    delete ctx.providerNpi;delete ctx.providerLicense;delete ctx.providerDea;delete ctx.providerCredentials;
+    return ctx;
+  }
   function rowGenerationCtx(row){
     var ctx={},base=null,appt=row&&row.appt||{};
     try{if(isFn(window._opPatientCtx))base=window._opPatientCtx(appt.name,appt.dob,row&&row.patientId);}catch(e){}
@@ -2348,8 +2536,8 @@
     if(!ctx.providerId)ctx.providerId=S(appt.providerId||appt.provider_id);
     var apptProvider=S(appt.providerName||appt.provider_name||appt.provider).trim();
     if(apptProvider){
-      var priorProvider=S(ctx.provider||ctx.providerName).toLowerCase().replace(/\b(?:md|do|np|pa(?:-?c)?|rn|dpm|dds|dmd|phd|facs|faap|faan)\b\.?/g,' ').replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();
-      var nextProvider=apptProvider.toLowerCase().replace(/\b(?:md|do|np|pa(?:-?c)?|rn|dpm|dds|dmd|phd|facs|faap|faan)\b\.?/g,' ').replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();
+      var priorProvider=providerKey(ctx.provider||ctx.providerName);
+      var nextProvider=providerKey(apptProvider);
       ctx.provider=apptProvider;ctx.providerName=apptProvider;
       if(priorProvider&&nextProvider&&priorProvider!==nextProvider){delete ctx.providerNpi;delete ctx.providerLicense;delete ctx.providerCredentials;}
     }
@@ -2465,6 +2653,6 @@
     if(isFn(all)&&!all.__oni){var allWrap=async function(){try{var _tpf=window.__mlsTplPrepFix;if(_tpf&&typeof _tpf.draftAll==='function')return await _tpf.draftAll();}catch(_eDA){}var rows=window._opPrep||[],st=document.getElementById('opPrepStatus'),ok=0,failed=0;for(var i=0;i<rows.length;i++){if(st)st.textContent='Drafting '+(i+1)+'/'+rows.length+' — '+rows[i].appt.name+'…';if(await window.opPrepGenerateOne(i))ok++;else failed++;}if(st)st.textContent=failed?('Drafted '+ok+' of '+rows.length+'. '+failed+' need a confirmed template or a retry.'):('✅ Drafted all '+ok+' op note'+(ok===1?'':'s')+' with template structure verified.');return {drafted:ok,failed:failed};};allWrap.__oni=true;window.opPrepGenerateAll=allWrap;}
   }
 
-  window.__mlsOpNoteIntegrity={installed:true,version:VERSION,classify:procClass,parseProcedureFacts:procedureFacts,templateCompatibility:templateCompatibility,clinicalConsistency:clinicalConsistency,rank:rank,best:best,bestFor:bestFor,matchVisitText:matchVisitText,stripNegated:stripNegated,statesNoProcedure:statesNoProcedure,headings:headings,fixedFragments:fixedFragments,fidelity:fidelity,templateConformance:templateConformance,conformanceLines:conformanceLines,fillDateSlots:fillDateSlots,noteStatesDay:noteStatesDay,parseDayParts:parseDayParts,exactNameMatch:exactNameMatch,alternativesFrom:alternativesFrom,forceFacts:forceFacts,fillProcedureSlots:fillProcedureSlots,reanchor:reanchor,airSections:airSections,sanitizeTemplate:sanitizeTemplate,chartProblems:chartProblems,generate:generate,_historyVisitBelongsTo:historyVisitBelongsTo,_verifiedHistoryVisits:verifiedHistoryVisits,_resolveSelectedTemplate:resolveSelectedTemplate,_generationKey:generationKey,_rowGenerationCtx:rowGenerationCtx,_closeCallAdaptation:closeCallAdaptation,procTitleForNote:procTitleForNote,narrativeBinding:narrativeBinding,guardNarrativeBinding:guardNarrativeBinding};
+  window.__mlsOpNoteIntegrity={installed:true,version:VERSION,classify:procClass,parseProcedureFacts:procedureFacts,templateCompatibility:templateCompatibility,clinicalConsistency:clinicalConsistency,rank:rank,best:best,bestFor:bestFor,matchVisitText:matchVisitText,stripNegated:stripNegated,statesNoProcedure:statesNoProcedure,headings:headings,fixedFragments:fixedFragments,fidelity:fidelity,templateConformance:templateConformance,conformanceLines:conformanceLines,fillDateSlots:fillDateSlots,noteStatesDay:noteStatesDay,parseDayParts:parseDayParts,exactNameMatch:exactNameMatch,alternativesFrom:alternativesFrom,templateSubstance:templateSubstance,scrubUnownedIdentifiers:scrubUnownedIdentifiers,forceFacts:forceFacts,fillProcedureSlots:fillProcedureSlots,reanchor:reanchor,airSections:airSections,sanitizeTemplate:sanitizeTemplate,chartProblems:chartProblems,generate:generate,_historyVisitBelongsTo:historyVisitBelongsTo,_verifiedHistoryVisits:verifiedHistoryVisits,_resolveSelectedTemplate:resolveSelectedTemplate,_generationKey:generationKey,_rowGenerationCtx:rowGenerationCtx,_closeCallAdaptation:closeCallAdaptation,procTitleForNote:procTitleForNote,narrativeBinding:narrativeBinding,guardNarrativeBinding:guardNarrativeBinding};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',install,{once:true});else install();
 })();

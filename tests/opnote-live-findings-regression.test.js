@@ -12,8 +12,28 @@ const ease = read('feat_ease.js');
 const prod = read('mls-connect.js');
 const staging = read('mls-connect.staging.js');
 
-assert(/if \(\/\\bnpi\\b\/\.test\(l\)\) return S\(prof\.npi\)\.trim\(\);/.test(fill),
-  'blank NPI still falls through to the generic provider-name auto-fill rule');
+/* opclean: this used to pin one spelling —
+     if (/\bnpi\b/.test(l)) return S(prof.npi).trim();
+   The rule now also refuses to hand the ACCOUNT HOLDER's NPI to a note that
+   names a different operating provider (measured on a real batch of 25
+   operative notes, every one of which printed the signed-in account holder's
+   NPI under the operating surgeon's name), so the branch is no longer one
+   line. What this pin exists for is unchanged and is checked on the BRANCH
+   instead of on its spelling: an NPI blank is answered with an NPI or with
+   nothing, and it is still decided before the generic provider-NAME rule can
+   claim it. The behaviour is driven end to end in
+   tests/opnote-body-is-the-note.test.js and
+   tests/settings-identity-reaches-the-op-note.test.js. */
+{
+  const npiAt = fill.indexOf('if (/\\bnpi\\b/.test(l))');
+  assert(npiAt > 0, 'the NPI rule is gone from knownValue - an NPI blank now falls through to the provider-name rule');
+  const provAt = fill.indexOf('if (isProv && prov) return prov;');
+  assert(provAt > npiAt, 'the NPI rule no longer runs before the generic provider-name auto-fill rule');
+  const branch = fill.slice(npiAt, fill.indexOf('if (/(practice name|', npiAt));
+  assert(/S\(prof\.npi\)\.trim\(\)/.test(branch), 'the NPI rule no longer answers with the configured NPI at all');
+  assert(!/return\s+prov\b/.test(branch), 'the NPI rule can return a provider NAME');
+  assert(/return ''/.test(branch), 'the NPI rule has no honest-blank answer left');
+}
 assert(integrity.includes('generate.__opnpWrapped=true;') && integrity.includes('generate.__mlsopWrapped=true;'),
   'strict template generator does not block both legacy ownership heartbeats');
 assert(integrity.includes('oneWrap.__opnpWrapped=true;'),
