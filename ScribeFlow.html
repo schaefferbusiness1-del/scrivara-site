@@ -35678,6 +35678,21 @@ function _mlsTemplateRoutingSource(user,opts){
   if(Object.prototype.hasOwnProperty.call(opts,'todayTranscript')) return String(opts.todayTranscript==null?'':opts.todayTranscript).slice(0,24000);
   return opts.freeform?'':String(user==null?'':user);
 }
+/* Op-note credit exhaustion is a terminal account condition, not a provider
+   diagnostic to copy into a patient-facing ledger. Keep this deliberately
+   narrow: other AI surfaces retain their established access messaging, while
+   the op-note owner gets one PHI-free recovery instruction and a machine code
+   that Draft-all can exclude from automatic retry. */
+function _mlsOpNoteCreditExhausted(opts,status,providerCode,detail){
+  if(String(opts&&opts.family||'').toLowerCase()!=='opnote') return null;
+  var raw=(String(providerCode||'')+' '+String(detail||'')).toLowerCase();
+  if(Number(status)!==402&&!/insufficient[_ -]?quota|quota exceeded|exceeded your current quota|out of (?:credit|credits)|billing/.test(raw)) return null;
+  var e=new Error('AI credits are unavailable. Add billing/credits or switch key, then Retry failed.');
+  e.code='MLS_OPNOTE_AI_CREDITS_EXHAUSTED';
+  e.mlsAi={status:Number(status)||402,code:'insufficient_quota',retryable:false};
+  e.mlsOpNoteCreditExhausted=true;
+  return e;
+}
 async function aiCallRaw(sys,user,key,opts){
   opts=opts||{};
   /* Load account draft preferences only for an actual generation request. */
@@ -35762,7 +35777,8 @@ async function aiCallRaw(sys,user,key,opts){
       });
       if(r.status===401){ handle401(); throw new Error('401 unauthorized'); }
       if(r.status===402){
-        let msg=''; try{const j=await r.json();msg=(j&&(j.message||j.error))||'';}catch(e){}
+        let msg='',code=''; try{const j=await r.json();msg=(j&&(j.message||j.error))||'';code=(j&&j.code)||(j&&j.error&&j.error.code)||'';}catch(e){}
+        const creditErr=_mlsOpNoteCreditExhausted(opts,r.status,code,msg); if(creditErr) throw creditErr;
         const e=new Error('no_access '+msg); e.noAccess=true;
         /* ===== cap-1.0.0 ===== */ e.mlsAi={status:402,code:'no_access',retryable:false,detail:String(msg||'').slice(0,120)}; /* ===== end cap-1.0.0 ===== */
         throw e;
@@ -35779,6 +35795,7 @@ async function aiCallRaw(sys,user,key,opts){
            No message text changes - only fields are added. */
         let detail='',code='',retryable=null;
         try{const j=await r.json();detail=(j&&(j.error||j.message))||'';code=(j&&j.code)||'';if(j&&typeof j.retryable==='boolean')retryable=j.retryable;}catch(e){}
+        const creditErr=_mlsOpNoteCreditExhausted(opts,r.status,code,detail); if(creditErr) throw creditErr;
         const eAi=new Error(r.status+' '+detail);
         eAi.mlsAi={status:r.status,code:String(code||''),retryable:(retryable===null?(r.status>=500||r.status===429):retryable),detail:String(detail||'').slice(0,120)};
         throw eAi;
@@ -35799,13 +35816,15 @@ async function aiCallRaw(sys,user,key,opts){
     });
     if(res.status===401){ handle401(); const e=new Error('401 unauthorized'); throw e; }
     if(res.status===402){
-      let msg=''; try{const j=await res.json();msg=(j&&(j.message||j.error))||'';}catch(e){}
+      let msg='',code=''; try{const j=await res.json();msg=(j&&(j.message||j.error))||'';code=(j&&j.code)||(j&&j.error&&j.error.code)||'';}catch(e){}
+      const creditErr=_mlsOpNoteCreditExhausted(opts,res.status,code,msg); if(creditErr) throw creditErr;
       const e=new Error('no_access '+msg); e.noAccess=true; throw e;
     }
     if(!res.ok){
       /* ===== cap-1.0.0 (same fields on the /api/generate lane) ===== */
       let detail='',gCode='',gRetryable=null;
       try{const j=await res.json();detail=(j&&(j.error||j.message))||'';gCode=(j&&j.code)||'';if(j&&typeof j.retryable==='boolean')gRetryable=j.retryable;var issueList=Array.isArray(j&&j.issues)?j.issues:[];}catch(e){var issueList=[];}
+      const creditErr=_mlsOpNoteCreditExhausted(opts,res.status,gCode,detail); if(creditErr) throw creditErr;
       const eGen=new Error(res.status+' '+detail);
       eGen.mlsAi={status:res.status,code:String(gCode||''),retryable:(gRetryable===null?(res.status>=500||res.status===429):gRetryable),detail:String(detail||'').slice(0,120)};
       if(issueList.length) eGen.mlsAi.issues=issueList.map(function(v){return String(v||'').slice(0,96);}).filter(function(v){return /^[a-z0-9_]{2,96}$/i.test(v);}).slice(0,12);
@@ -35852,6 +35871,7 @@ async function aiCallRaw(sys,user,key,opts){
   if(!res.ok){
     let detail='', code='';
     try{const j=await res.json();detail=(j.error&&j.error.message)||'';code=(j.error&&j.error.code)||'';}catch(e){}
+    const creditErr=_mlsOpNoteCreditExhausted(opts,res.status,code,detail); if(creditErr) throw creditErr;
     throw new Error(res.status+' '+code+' '+detail);
   }
   const data=await res.json();
@@ -47895,7 +47915,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1260';
+  window.__MLS_AV='b1261';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

@@ -19622,11 +19622,19 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var rows = window._opPrep || [];
     /* 2026-07-28: a finished run offers "Retry failed (N)" - it re-runs ONLY
        the failed row indexes so a 19-patient run is resumable, not restartable. */
-    var onlyIdx = null;
-    try { if (runOpts && runOpts.onlyIdx && runOpts.onlyIdx.length) onlyIdx = runOpts.onlyIdx.slice(); } catch (eOI) {}
+    var onlyIdx = null, hasOnlyIdx = false, terminalSkips = {};
+    try {
+      if (runOpts && Array.isArray(runOpts.onlyIdx)) { hasOnlyIdx = true; onlyIdx = runOpts.onlyIdx.slice(); }
+      if (runOpts && runOpts.terminalSkips && typeof runOpts.terminalSkips === 'object') {
+        Object.keys(runOpts.terminalSkips).forEach(function (k) {
+          var n = Number(k), reason = S(runOpts.terminalSkips[k]).trim();
+          if (n >= 0 && n < rows.length && Math.floor(n) === n && reason) terminalSkips[n] = reason.slice(0, 180);
+        });
+      }
+    } catch (eOI) {}
     if (!rows.length) { toast("No patients loaded \u2014 pick a day or month first.", "err"); return; }
-    if (!tplList().length) { toast("Upload your op-note templates first (\uD83D\uDCC4 Templates).", "err"); return; }
-    if (rows.length > 40) {
+    if ((!hasOnlyIdx || onlyIdx.length) && !tplList().length) { toast("Upload your op-note templates first (\uD83D\uDCC4 Templates).", "err"); return; }
+    if (rows.length > 40 && (!hasOnlyIdx || onlyIdx.length)) {
       var goBig = false;
       /* b965: the estimate follows the runner. It still says one AI call per
          patient - that is unchanged and worth stating - but the wall-clock
@@ -19662,26 +19670,35 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     RUN.day = "";
     try { RUN.day = S(window._opPrepDay); } catch (eRD) { RUN.day = ""; }
     RUN.broke = false;
-    var states = rows.map(function (r) {
+    var states = rows.map(function (r, idx) {
       var day = ""; try { day = S(r.dateStr).replace(/^[A-Za-z]+,\s*/, "").replace(/,\s*\d{4}$/, ""); } catch (e) {}
-      return { name: (r.appt && r.appt.name) || "Patient", day: day, st: "pend", msg: "" };
+      return { name: (r.appt && r.appt.name) || "Patient", day: day, st: terminalSkips[idx] ? "skip" : "pend", msg: terminalSkips[idx] || "" };
     });
-    if (onlyIdx) {
+    if (hasOnlyIdx) {
       /* retry repaints ONLY the retried rows - completed rows keep their drafted
-         state instead of dissolving to pending (2026-07-29 QA fleet). */
+         state instead of dissolving to pending (2026-07-29 QA fleet). Rows that
+         are not part of this pass are still terminal receipt entries: a ledger
+         must never call a finished visit "pending" merely because it was not
+         selected for a manual retry. */
       var inRetry = {}; onlyIdx.forEach(function (nR) { inRetry[nR] = 1; });
       states.forEach(function (st0, nR) {
-        if (inRetry[nR]) return;
+        if (inRetry[nR] || terminalSkips[nR]) return;
         var r0 = rows[nR];
         if (r0 && r0.gen && S(r0.note).trim()) { st0.st = "ok"; st0.msg = "kept from the earlier run"; }
-        else { st0.msg = "not in this retry"; }
+        else { st0.st = "skip"; st0.msg = "not selected for this retry"; }
       });
     }
-    var okN = 0, failN = 0, skipN = 0, i = 0, total = onlyIdx ? onlyIdx.length : rows.length;
+    var workIdx = hasOnlyIdx ? onlyIdx.slice() : rows.map(function (_r, idx) { return idx; }).filter(function (idx) { return !terminalSkips[idx]; });
+    var okN = 0, failN = 0, skipN = 0, i = 0, total = rows.length, workTotal = workIdx.length;
+    states.forEach(function (st0) {
+      if (st0.st === "ok") { okN++; i++; }
+      else if (st0.st === "fail") { failN++; i++; }
+      else if (st0.st === "skip") { skipN++; i++; }
+    });
     function headline() {
       return "Drafting " + Math.min(i, total) + "/" + total + " \u00B7 \u2713 " + okN + " \u00B7 \u2717 " + failN + " \u00B7 \u2298 " + skipN;
     }
-    paintLedger(states, 0, total, headline());
+    paintLedger(states, i, total, headline());
     function tryRow(idx) {
       /* 2026-07-28: the real failure reason lives in __mlsLastOpFidelityError
          (written by the integrity owner). Clear it first so a stale value from
@@ -19730,6 +19747,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          model to recover, short enough that a 28-patient day does not crawl.
          RUN.stop is honoured between attempts, so Stop still stops. */
       var _drTransient = function (err) {
+        if (err && (err.code === 'MLS_OPNOTE_AI_CREDITS_EXHAUSTED' || (err.mlsAi && err.mlsAi.retryable === false && err.mlsAi.code === 'insufficient_quota'))) return false;
         var m = S((err && (err.message || err)) || '');
         if (!m) return false;                                   /* no reason captured — do not spend more calls blindly */
         /* U0 (2026-08-17): shipped as /^s*(?:HTTP[_ ])?(?:429|5dd)<0x08>/ -
@@ -19998,7 +20016,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
              Bare codes are translated; anything already written as a sentence
              (the fidelity and clinical-consistency refusals, which are the
              useful ones) is passed through untouched. */
-          if (/^(?:HTTP[_ ])?[45]\d\d$/i.test(why) || !why) {
+          var failureCode = S(r && r._genErrCode);
+          if (failureCode === 'MLS_OPNOTE_AI_CREDITS_EXHAUSTED') {
+            why = 'AI credits are unavailable. Add billing/credits or switch key, then Retry failed.';
+          } else if (/^(?:HTTP[_ ])?[45]\d\d$/i.test(why) || !why) {
             var code = (why.match(/\d{3}/) || [""])[0];
             if (code === "429") why = "the note service is rate-limiting this account (429) \u2014 wait a minute";
             else if (code === "401" || code === "403") why = "the note service rejected our credentials (" + code + ") \u2014 sign out and back in";
@@ -20006,7 +20027,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
             else if (code) why = "the note service refused the request (" + code + ")";
             else why = "the note service did not return a draft and gave no reason";
           }
-          states[idx].st = "fail"; states[idx].msg = why + " \u2014 re-try this one from its card";
+          states[idx].st = "fail"; states[idx].msg = failureCode === 'MLS_OPNOTE_AI_CREDITS_EXHAUSTED' ? why : (why + " \u2014 re-try this one from its card");
         }
         /* b965: the completed-count is bumped by settleOne(), once per row, for
            EVERY path - including the pre-checks that used to bump it themselves.
@@ -20020,6 +20041,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        pump on the same 350ms courtesy delay the serial runner used, so a single
        row (PARALLEL = 1, or a retry list of one) behaves identically. */
     var nextSlot = 0, active = 0, finished = false;
+    /* The old async function started pump() and immediately resolved undefined.
+       The on-screen ledger eventually had the right numbers, but its outer
+       day-brain receipt saw zeroes and could not reconcile the full input set.
+       Resolve only after finish() has terminalized every row. */
+    var finishResolve = null;
+    var completion = new Promise(function (resolve) { finishResolve = resolve; });
     function settleOne() {
       active--; i++;
       paintLedger(states, i, total, headline());
@@ -20027,9 +20054,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     }
     function pump() {
       if (finished) return;
-      if (RUN.stop || nextSlot >= total) { if (active === 0) finish(); return; }
-      while (active < PARALLEL && nextSlot < total && !RUN.stop) {
-        var slot = onlyIdx ? onlyIdx[nextSlot] : nextSlot;
+      if (RUN.stop || nextSlot >= workTotal) { if (active === 0) finish(); return; }
+      while (active < PARALLEL && nextSlot < workTotal && !RUN.stop) {
+        var slot = workIdx[nextSlot];
         nextSlot++;
         active++;
         (function (idx) {
@@ -20038,12 +20065,20 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           Promise.resolve(p).then(settleOne, settleOne);
         })(slot);
       }
-      if (active === 0 && (RUN.stop || nextSlot >= total)) finish();
+      if (active === 0 && (RUN.stop || nextSlot >= workTotal)) finish();
     }
     function finish() {
       if (finished) return;
       finished = true;
       RUN.on = false;
+      /* A stopped run has no in-flight work by the time finish() is called.
+         Mark every never-started row terminal so the receipt remains a complete
+         accounting of the input set rather than a mixture of results/pending. */
+      if (RUN.stop) {
+        states.forEach(function (st0) {
+          if (st0.st === "pend" || st0.st === "run") { st0.st = "skip"; st0.msg = "stopped before drafting"; skipN++; }
+        });
+      }
       var el = $("opPrepStatus");
       /* dr-1.2.0: a run that stopped because the room moved to another day says
          SO, in the doctor's own words, rather than reporting a bare "Stopped"
@@ -20074,8 +20109,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         } catch (eRF) {}
       }
       logEvent("draft-all", "prep run", failN === 0, summary);
+      if (finishResolve) finishResolve({ drafted: okN, failed: failN, skipped: skipN, total: total });
     }
     pump();
+    return completion;
   }
 
   /* intercept the existing Draft-all button (capture phase beats its inline onclick) */

@@ -252,8 +252,8 @@ function makeDom() {
   return doc;
 }
 
-/* draftAll resolves when it kicks off, not when it finishes; wait for the
-   ledger to report a terminal summary. */
+/* The runner now resolves with the same terminal totals that it paints. Keep a
+   UI wait as an independent proof that its visible receipt also settled. */
 function untilDone(document, tries) {
   return new Promise((res, rej) => {
     let n = 0;
@@ -311,10 +311,20 @@ function drive(plan, opts) {
     win.__mlsLastOpFidelityPass = false;
     win.__mlsLastOpFidelityError = '';
     win.__mlsLastOpErrorCode = '';
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const settle = () => {
         inflight--;
         order.push('end:' + i);
+        if (p.reject) {
+          const err = new Error(p.reject);
+          err.code = p.code || '';
+          if (p.ai) err.mlsAi = Object.assign({}, p.ai);
+          if (opts.rowVerdicts !== false) {
+            row._genPass = false; row._genErr = p.reject; row._genErrCode = p.code || '';
+          }
+          reject(err);
+          return;
+        }
         if (p.fail) {
           win.__mlsLastOpFidelityError = p.fail;
           win.__mlsLastOpErrorCode = p.code || 'MLS_OPNOTE_CLINICAL_CONFLICT';
@@ -343,10 +353,10 @@ function drive(plan, opts) {
 
   vm.createContext(sandbox);
   vm.runInContext(TPF_SRC, sandbox);
-  win.__mlsTplPrepFix.draftAll();
-  return untilDone(document).then((status) => {
+  const completion = win.__mlsTplPrepFix.draftAll(opts.runOpts);
+  return Promise.all([untilDone(document), Promise.resolve(completion)]).then(([status, result]) => {
     clearInterval(releaser);
-    return { rows, order, maxInflight, toasts, status, document };
+    return { rows, order, maxInflight, toasts, status, result, document };
   }, (e) => { clearInterval(releaser); throw e; });
 }
 
@@ -421,6 +431,48 @@ drive(DAY).then((r) => {
   ok(/✅ Done: 4 drafted · 0 failed · 0 skipped of 4\./.test(r2.status),
     'and still reports the run honestly',
     JSON.stringify(r2.status));
+
+  head('2e. quota exhaustion is terminal, PHI-free, and attempted once');
+  return drive([{
+    name: 'Synthetic Quota Row',
+    reject: 'AI credits are unavailable. Add billing/credits or switch key, then Retry failed.',
+    code: 'MLS_OPNOTE_AI_CREDITS_EXHAUSTED',
+    ai: { status: 402, code: 'insufficient_quota', retryable: false }
+  }]);
+}).then((rq) => {
+  ok(rq.order.filter((x) => x === 'start:0').length === 1,
+    'a nonretryable quota failure spends exactly one AI attempt', rq.order.join(' '));
+  ok(/✅ Done: 0 drafted · 1 failed · 0 skipped of 1\./.test(rq.status),
+    'quota exhaustion ends as one terminal failure', JSON.stringify(rq.status));
+  const quotaLedger = rq.document.getElementById('tpfLedgerList').innerHTML;
+  ok(/Add billing\/credits or switch key, then Retry failed\./.test(quotaLedger),
+    'the ledger gives the explicit account recovery action', quotaLedger);
+  ok(!/request[_ -]?id|provider detail|Synthetic Quota Row request/i.test(quotaLedger),
+    'the failure reason contains no raw provider detail', quotaLedger);
+  ok(rq.result && rq.result.drafted === 0 && rq.result.failed === 1 && rq.result.skipped === 0 && rq.result.total === 1,
+    'the returned terminal totals match the visible one-row receipt', JSON.stringify(rq.result));
+
+  head('2f. held visits remain terminal and count in the full denominator');
+  return drive([
+    { name: 'Synthetic Draft A', ms: 2 },
+    { name: 'Synthetic Held Visit', ms: 2 },
+    { name: 'Synthetic Draft B', ms: 2 }
+  ], {
+    runOpts: {
+      onlyIdx: [0, 2],
+      terminalSkips: { 1: 'No procedure is documented for this visit.' }
+    }
+  });
+}).then((rt) => {
+  ok(/✅ Done: 2 drafted · 0 failed · 1 skipped of 3\./.test(rt.status),
+    'the visible receipt reconciles two drafts plus one held visit to all three inputs', JSON.stringify(rt.status));
+  ok(rt.order.indexOf('start:1') < 0,
+    'the held visit never enters the AI drafting lane', rt.order.join(' '));
+  const terminalLedger = rt.document.getElementById('tpfLedgerList').innerHTML;
+  ok(/No procedure is documented for this visit\./.test(terminalLedger),
+    'the held visit has a terminal, PHI-free reason', terminalLedger);
+  ok(rt.result && rt.result.drafted === 2 && rt.result.failed === 0 && rt.result.skipped === 1 && rt.result.total === 3,
+    'returned totals reconcile to the same full denominator', JSON.stringify(rt.result));
 
   /* =====================================================================
      SCENARIO 3 — the repaint guards invalidate themselves

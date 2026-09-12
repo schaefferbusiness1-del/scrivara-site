@@ -7,6 +7,7 @@ const vm = require('vm');
 
 const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'feat_mls_opnote_integrity.js'), 'utf8');
+const appSource = fs.readFileSync(path.join(root, 'ScribeFlow.html'), 'utf8');
 const stages = ['Confirming procedure', 'Loading validated template', 'Applying provider defaults', 'Applying facility defaults', 'Drafting procedure section', 'Drafting findings', 'Checking side and level', 'Checking required fields', 'Running final consistency check', 'Note ready'];
 const templateText = 'PATIENT:\nPREOPERATIVE DIAGNOSIS:\nPROCEDURE:\nDESCRIPTION OF PROCEDURE:\nCOMPLICATIONS:\nDISPOSITION:';
 
@@ -22,6 +23,22 @@ function note(procedure) {
 }
 
 async function main() {
+  /* Run the production transport normalizer itself, rather than only a copied
+     predicate. This is the first seam that sees an OpenAI direct-key 402. */
+  const creditStart = appSource.indexOf('function _mlsOpNoteCreditExhausted(');
+  const creditEnd = appSource.indexOf('\nasync function aiCallRaw(', creditStart);
+  assert.ok(creditStart >= 0 && creditEnd > creditStart, 'ScribeFlow op-note credit normalizer is missing');
+  const creditContext = { Error, String, Number, RegExp };
+  vm.runInNewContext(appSource.slice(creditStart, creditEnd), creditContext, { filename: 'ScribeFlow-credit-normalizer.js' });
+  const transportQuota = creditContext._mlsOpNoteCreditExhausted(
+    { family: 'opnote' }, 402, 'insufficient_quota', 'Jordan Lee req_123'
+  );
+  assert.strictEqual(transportQuota.code, 'MLS_OPNOTE_AI_CREDITS_EXHAUSTED');
+  assert.strictEqual(transportQuota.mlsAi.retryable, false);
+  assert.strictEqual(transportQuota.message, 'AI credits are unavailable. Add billing/credits or switch key, then Retry failed.');
+  assert.ok(!transportQuota.message.includes('Jordan Lee') && !transportQuota.message.includes('req_123'),
+    'ScribeFlow transport normalizer leaked provider detail');
+
   const jobs = [];
   let serial = 0;
   const loading = {
@@ -91,7 +108,30 @@ async function main() {
   assert.strictEqual(jobs[2].status, 'completed', 'newest progress job did not complete');
   assert.strictEqual(context.__mlsLastOpFidelityPass, true, 'late stale response overwrote the newest request readiness');
 
-  console.log('PASS op-note generation jobs: one in-flight request, request-correlated stages, terminal progress, and stale-response rejection');
+  /* A provider quota response can contain request/provider detail. The
+     installed op-note generator must replace it before it reaches the progress
+     job or a row receipt, and it must mark the error non-retryable. */
+  const rawProviderDetail = '402 insufficient_quota for Jordan Lee request req_123';
+  responder = async () => {
+    const err = new Error(rawProviderDetail);
+    err.mlsAi = { status: 402, code: 'insufficient_quota', retryable: false, detail: rawProviderDetail };
+    throw err;
+  };
+  let quotaErr;
+  await assert.rejects(
+    context._genOpNote('Jordan Lee', '2026-07-14', 'Left L2 TFESI', templateText, ctx),
+    err => { quotaErr = err; return err && err.code === 'MLS_OPNOTE_AI_CREDITS_EXHAUSTED'; }
+  );
+  assert.strictEqual(quotaErr.message, 'AI credits are unavailable. Add billing/credits or switch key, then Retry failed.');
+  assert.strictEqual(quotaErr.mlsAi.retryable, false, 'quota exhaustion was marked retryable');
+  assert.ok(!quotaErr.message.includes('Jordan Lee') && !quotaErr.message.includes('req_123'),
+    'provider detail or an identifier leaked into the recovery message');
+  assert.strictEqual(jobs[jobs.length - 1].failure.message, quotaErr.message,
+    'the progress job received raw provider detail instead of the safe quota message');
+  assert.strictEqual(seenOpts[seenOpts.length - 1].family, 'opnote',
+    'the installed op-note generator did not identify its AI transport family');
+
+  console.log('PASS op-note generation jobs: one in-flight request, request-correlated stages, terminal progress, stale-response rejection, and PHI-free quota exhaustion');
 }
 
 main().catch(err => {

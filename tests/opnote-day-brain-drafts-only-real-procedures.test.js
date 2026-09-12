@@ -426,13 +426,14 @@ async function main() {
     calAppts: [{ appt_date: FUTURE, patient_external_id: 'p3', name: 'Cara Charlie', status: 'cancelled', reason: 'Caudal ESI' }]
   });
   tpfCtx.__aiOn = false;
-  let sawOnlyIdx = null, tpfCalls = 0;
+  let sawOnlyIdx = null, sawTerminalSkips = null, tpfCalls = 0;
   tpfCtx.__mlsTplPrepFix = {
     draftAll: async (opts) => {
       /* Array.from re-homes it: opts.onlyIdx is built inside the vm realm, so its
          prototype is the sandbox's Array and deepStrictEqual would reject an
          otherwise identical list. */
       tpfCalls++; sawOnlyIdx = opts && opts.onlyIdx ? Array.from(opts.onlyIdx) : null;
+      sawTerminalSkips = opts && opts.terminalSkips ? Object.assign({}, opts.terminalSkips) : null;
       return { drafted: sawOnlyIdx ? sawOnlyIdx.length : 0, failed: 0 };
     }
   };
@@ -448,20 +449,50 @@ async function main() {
     'low-confidence reroute, per-patient ledger) that f6ba6ff7 made the owner');
   assert.deepStrictEqual(sawOnlyIdx, [0, 3],
     'draftAll was not handed the triaged set through onlyIdx: ' + JSON.stringify(sawOnlyIdx));
+  assert.deepStrictEqual(Object.keys(sawTerminalSkips || {}).sort(), ['1', '2'],
+    'held rows were not carried as terminal receipt entries: ' + JSON.stringify(sawTerminalSkips));
+  assert.strictEqual(sawOnlyIdx.length + Object.keys(sawTerminalSkips || {}).length, tpfCtx._opPrep.length,
+    'Draft-all work plus terminal skips does not reconcile to every input row');
+  Object.keys(sawTerminalSkips || {}).forEach(function (idx) {
+    const reason = String(sawTerminalSkips[idx]);
+    assert.ok(/procedure/i.test(reason), 'terminal skip has no actionable procedure reason: ' + reason);
+    assert.ok(!/Ben Bravo|Cara Charlie|Routine follow-up|Caudal ESI/i.test(reason),
+      'terminal skip copied an identifier or raw schedule text into the receipt: ' + reason);
+  });
   assert.strictEqual(tpfOut.skipped, 2);
   assert.deepStrictEqual(tpfCtx.__drafted, undefined,
     'the fallback loop ran as well as draftAll - every patient would be drafted twice');
 
-  // 4a-quater. A DAY WITH NOTHING TO DRAFT MUST NOT REACH draftAll AT ALL.
+  /* The richer runner owns the displayed receipt. It must retain the complete
+     input denominator and terminalize entries outside a retry rather than
+     painting them as pending; otherwise the day-brain handoff above is only
+     cosmetic. */
+  assert.ok(connect.includes('total = rows.length, workTotal = workIdx.length'),
+    'Draft-all still shrinks its denominator to onlyIdx instead of every input row');
+  assert.ok(connect.includes('finishResolve({ drafted: okN, failed: failN, skipped: skipN, total: total })'),
+    'Draft-all resolves before its terminal receipt totals are available');
+  assert.ok(connect.includes('terminalSkips[idx] ? "skip" : "pend"'),
+    'day-brain exclusions are not rendered as terminal skip states');
+  assert.ok(!connect.includes('st0.msg = "not in this retry"'),
+    'a finished retry can still leave non-selected rows pending');
+  assert.ok(connect.includes('MLS_OPNOTE_AI_CREDITS_EXHAUSTED') &&
+    connect.includes('Add billing/credits or switch key, then Retry failed.'),
+    'Draft-all does not preserve the safe quota recovery message');
+
+  // 4a-quater. A DAY WITH NOTHING TO DRAFT reaches the richer runner ONLY with
+  // an explicit empty work list, so it can publish a complete all-skip receipt
+  // without treating [] as "draft every row".
   const emptyTpf = makeSandbox({});
   emptyTpf.__aiOn = false;
-  let emptyCalls = 0;
-  emptyTpf.__mlsTplPrepFix = { draftAll: async () => { emptyCalls++; return { drafted: 0, failed: 0 }; } };
+  let emptyCalls = 0, emptyOpts = null;
+  emptyTpf.__mlsTplPrepFix = { draftAll: async opts => { emptyCalls++; emptyOpts = opts; return { drafted: 0, failed: 0, skipped: 1 }; } };
   emptyTpf._opPrep = [row('Ben Bravo', 'Routine follow-up', 'p2', FUTURE)];
   await emptyTpf.opPrepGenerateAll();
-  assert.strictEqual(emptyCalls, 0,
-    'draftAll was called with an empty triage set - it reads an empty onlyIdx as "no filter" ' +
-    'and would have drafted the entire day, which is the exact bug this module exists to fix');
+  assert.strictEqual(emptyCalls, 1, 'the all-skip run did not publish a receipt');
+  assert.deepStrictEqual(Array.from(emptyOpts.onlyIdx || []), [],
+    'the all-skip receipt was not given an explicit empty work list');
+  assert.deepStrictEqual(Object.keys(emptyOpts.terminalSkips || {}), ['0'],
+    'the all-skip receipt omitted its only input row');
 
   // 4b. After a bypass, that patient IS drafted - and nobody else joins them.
   dayCtx.__drafted = [];

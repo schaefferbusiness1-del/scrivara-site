@@ -941,6 +941,26 @@
      deliberately not drafted. Counted here, subtracted there. */
   var gateRefusals = 0;
 
+  /* Receipt reasons are deliberately categorical. The row card may explain the
+     clinical triage in more detail, but a bulk receipt/progress entry must not
+     repeat schedule text (or an identifier embedded in it). */
+  function terminalSkipReason(t) {
+    var code = S(t && t.code);
+    if (code === 'not-a-procedure') return 'No procedure is documented for this visit.';
+    if (code === 'cancelled' || code === 'no-show') return 'No completed procedure is documented for this visit.';
+    if (code === 'never-arrived') return 'No completed procedure is documented for this visit.';
+    if (code === 'already-saved') return 'An op note is already saved for this visit.';
+    return 'This visit is not eligible for automatic drafting.';
+  }
+  function terminalSkipReasons(rows) {
+    var out = {};
+    for (var i = 0; i < rows.length; i++) {
+      var t = rows[i]._opdbTriage || triage(rows[i]);
+      if (t.verdict !== 'needs') out[i] = terminalSkipReason(t);
+    }
+    return out;
+  }
+
   function wrapGenerateOne() {
     var base = window.opPrepGenerateOne;
     if (!isFn(base) || base.__opdb) return;
@@ -991,9 +1011,18 @@
       triageAll();
       var want = needsIndexes();
       var skipped = rows.length - want.length;
+      var terminalSkips = terminalSkipReasons(rows);
 
       if (!rows.length) return Promise.resolve({ drafted: 0, failed: 0, skipped: 0 });
       if (!want.length) {
+        var tpfNone = null;
+        try { tpfNone = window.__mlsTplPrepFix; } catch (eNone) {}
+        if (tpfNone && isFn(tpfNone.draftAll)) {
+          /* Empty `onlyIdx` is intentional here: the richer runner paints a
+             complete all-skip receipt instead of treating an empty list as no
+             filter and drafting the whole day. */
+          return Promise.resolve(tpfNone.draftAll({ onlyIdx: [], terminalSkips: terminalSkips }));
+        }
         var st0 = document.getElementById('opPrepStatus');
         var msg = skipped === 1
           ? 'Nothing to draft — the one patient on this day does not need an op note.'
@@ -1011,13 +1040,19 @@
       return matchAll().then(function () {
         triageAll();
         want = needsIndexes();
-        if (!want.length) return { drafted: 0, failed: 0, skipped: rows.length };
+        terminalSkips = terminalSkipReasons(rows);
+        if (!want.length) {
+          var tpfAfterMatch = null;
+          try { tpfAfterMatch = window.__mlsTplPrepFix; } catch (eAfterMatch) {}
+          if (tpfAfterMatch && isFn(tpfAfterMatch.draftAll)) return tpfAfterMatch.draftAll({ onlyIdx: [], terminalSkips: terminalSkips });
+          return { drafted: 0, failed: 0, skipped: rows.length };
+        }
 
         gateRefusals = 0;
         var tpf = null;
         try { tpf = window.__mlsTplPrepFix; } catch (e) {}
         var run = (tpf && isFn(tpf.draftAll) && want.length < rows.length)
-          ? tpf.draftAll({ onlyIdx: want.slice() })
+          ? tpf.draftAll({ onlyIdx: want.slice(), terminalSkips: terminalSkips })
           : base.apply(self, args);
 
         return Promise.resolve(run).then(function (out) {

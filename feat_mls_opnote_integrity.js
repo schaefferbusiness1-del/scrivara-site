@@ -2259,7 +2259,7 @@
        silently truncated -> parseResult returned the raw cut string -> both
        fidelity passes failed for a reason no message named. 4096 fits the
        longest real op note with JSON overhead. */
-    var opts={freeform:true,maxTokens:4096,mlsOpNotePatientId:S(p.id),mlsTemplateFidelity:true,mlsOpNotePhase:'initial'};
+    var opts={freeform:true,family:'opnote',maxTokens:4096,mlsOpNotePatientId:S(p.id),mlsTemplateFidelity:true,mlsOpNotePhase:'initial'};
     /* oni-2.17.0: the op-note lane had NO timeout - one hung /api/complete
        held the whole Draft-all run. 180s matches the 3-minute progress budget. */
     try{var __oniAc=new AbortController();opts.signal=__oniAc.signal;setTimeout(function(){try{__oniAc.abort();}catch(eA){}},180000);}catch(eAC){}
@@ -2387,6 +2387,23 @@
      the drafting overlay, which is a single shared node. */
   var _oniInflight=0;
   function copyCtx(ctx){var out={};ctx=ctx||{};for(var k in ctx)if(Object.prototype.hasOwnProperty.call(ctx,k)&&k!=='__mlsProgressHandle')out[k]=ctx[k];return out;}
+  /* The transport normally supplies this already (ScribeFlow's aiCallRaw owns
+     the provider response), but normalize again at the installed generator
+     boundary. That keeps mocks, older shells, and wrapped transports from
+     leaking a provider message into a row receipt or progress panel. */
+  var AI_CREDITS_CODE='MLS_OPNOTE_AI_CREDITS_EXHAUSTED';
+  var AI_CREDITS_MESSAGE='AI credits are unavailable. Add billing/credits or switch key, then Retry failed.';
+  function normalizeAiCreditsError(err){
+    if(err&&err.code===AI_CREDITS_CODE)return err;
+    var ai=err&&err.mlsAi||{}, status=Number(ai.status||err&&err.status||0);
+    var raw=(S(err&&err.code)+' '+S(ai.code)+' '+S(err&&err.message)).toLowerCase();
+    if(status!==402&&!/insufficient[_ -]?quota|quota exceeded|exceeded your current quota|out of (?:credit|credits)|billing/.test(raw))return err;
+    var clean=new Error(AI_CREDITS_MESSAGE);
+    clean.code=AI_CREDITS_CODE;
+    clean.mlsAi={status:status||402,code:'insufficient_quota',retryable:false};
+    clean.mlsOpNoteCreditExhausted=true;
+    return clean;
+  }
   function generate(name,dateStr,procedure,tplText,ctx) {
     ctx=ctx||{};
     var gkey=generationKey(dateStr,procedure,tplText,ctx),existing=generationByKey[gkey];
@@ -2467,6 +2484,7 @@
       if(entry.progress)entry.progress.complete('Operative note ready.');
       return result;
     }).catch(function(err){
+      err=normalizeAiCreditsError(err);
       if(!(err&&(err.code==='MLS_OPNOTE_STALE'||err.code==='MLS_OPNOTE_CANCELED'))){
         if(entry.progress)entry.progress.fail(err);
         /* oni-2.10.0: every real failure (identity, template conflict, empty
