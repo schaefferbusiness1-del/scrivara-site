@@ -20,7 +20,14 @@ const pages = {
   /* opnote-svc-1.0.0 (2026-09-11): the client-surgeon op-note page. EXACTLY one
      wrapped call site on purpose - its own api() helper - so the link
      credential is attached in one place and nowhere else. */
-  'opnotes.html': { fetches: 1, required: ['fragment.k'] },
+  /* opnote-svc-2.0.0 (2026-09-12): realData. This is the ONE page in this map
+     that carries real patient information on purpose. It is not a public form a
+     stranger can reach: the reader has already proved the mailbox on file with
+     a six-digit code, and the notes on it are their own clinic day. So the
+     synthetic-evaluation banner every other page here must show would be a lie,
+     and it is replaced by the notice that IS true - these are real notes, do
+     not forward the page, do not pass on the code. Owner ruling 2026-09-12. */
+  'opnotes.html': { fetches: 1, required: ['fragment.k'], realData: true },
   'send-portal-invite.html': { fetches: 3, required: [], scrubAll: true }
 };
 
@@ -49,15 +56,30 @@ for (const [name, contract] of Object.entries(pages)) {
   assert.strictEqual((html.match(/\bmlsSensitiveFetch\s*\(/g) || []).length, contract.fetches, `${name}: sensitive fetch coverage drift`);
   assert(!/new\s+URLSearchParams\s*\(\s*location\.(?:search|hash)/.test(html), `${name}: URL secrets are read after the head scrub`);
 
-  const boundaryTags = html.match(/<div\b[^>]*data-mls-synthetic-boundary=["']1["'][^>]*>/gi) || [];
-  assert.strictEqual(boundaryTags.length, 1, `${name}: exactly one synthetic-evaluation boundary is required`);
-  assert(/role=["']note["']/.test(boundaryTags[0]) && /aria-label=["']Synthetic evaluation only["']/.test(boundaryTags[0]), `${name}: boundary semantics are missing`);
-  assert(!/(?:display\s*:\s*none|\bhidden\b|class=["'][^"']*hide)/i.test(boundaryTags[0]), `${name}: evaluation boundary is not visibly rendered`);
+  /* Either the page is an evaluation surface and says so, or it is the one
+     real-data surface and says THAT. Both branches demand exactly one visible
+     notice in the body, before any form, with its own aria-label - so neither
+     kind of page can quietly end up with no notice at all, and a synthetic
+     banner can never creep back onto the real-data page. */
+  const boundaryAttr = contract.realData ? 'data-mls-phi-notice' : 'data-mls-synthetic-boundary';
+  const boundaryLabel = contract.realData ? 'Confidential patient information' : 'Synthetic evaluation only';
+  const boundaryCopy = contract.realData
+    ? '<strong>Confidential patient information.</strong> These are real operative notes. Do not forward this page, and do not pass on the code you signed in with.'
+    : '<strong>Synthetic evaluation only.</strong> Use fictional information; do not enter real patient or clinical data.';
+  const boundaryTags = html.match(new RegExp('<div\\b[^>]*' + boundaryAttr + '=["\']1["\'][^>]*>', 'gi')) || [];
+  assert.strictEqual(boundaryTags.length, 1, `${name}: exactly one ${boundaryAttr} notice is required`);
+  if (contract.realData) {
+    assert(!/data-mls-synthetic-boundary/.test(html), `${name}: a synthetic-evaluation banner has no place on the real-data page`);
+  } else {
+    assert(!/data-mls-phi-notice/.test(html), `${name}: an evaluation surface must not claim to carry real patient information`);
+  }
+  assert(/role=["']note["']/.test(boundaryTags[0]) && new RegExp('aria-label=["\']' + boundaryLabel + '["\']').test(boundaryTags[0]), `${name}: boundary semantics are missing`);
+  assert(!/(?:display\s*:\s*none|\bhidden\b|class=["'][^"']*hide)/i.test(boundaryTags[0]), `${name}: notice is not visibly rendered`);
   const boundaryIndex = html.indexOf(boundaryTags[0]);
-  assert(boundaryIndex > html.search(/<body\b/i), `${name}: boundary must be in the body`);
+  assert(boundaryIndex > html.search(/<body\b/i), `${name}: notice must be in the body`);
   const firstForm = html.search(/<form\b/i);
-  if (firstForm >= 0) assert(boundaryIndex < firstForm, `${name}: boundary must appear before the first real-data form`);
-  assert(html.includes('<strong>Synthetic evaluation only.</strong> Use fictional information; do not enter real patient or clinical data.'), `${name}: calm evaluation copy drifted`);
+  if (firstForm >= 0) assert(boundaryIndex < firstForm, `${name}: notice must appear before the first real-data form`);
+  assert(html.includes(boundaryCopy), `${name}: notice copy drifted`);
 
   assert(!/(?:Network error|Network problem|RESEND_API_KEY|MAIL_FROM|known owner-lookup bug|PORTAL-SESSION|cross-site cookies)/i.test(html), `${name}: technical jargon remains in user-visible copy`);
   for (const unsafeEcho of ['textContent=(res.j', 'showMsg((res.j', 'perr((res.j', 'err((res.j', 'fail((res.j', "body('⏳ '+(((res.j"]) {

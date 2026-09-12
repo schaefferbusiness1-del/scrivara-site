@@ -47,7 +47,7 @@
 </style>
 </head>
 <body>
-<div data-mls-synthetic-boundary="1" role="note" aria-label="Synthetic evaluation only" style="box-sizing:border-box;width:calc(100% - 24px);max-width:920px;margin:12px auto 0;padding:10px 12px;background:#F7F3E8;border:1px solid #E8DCC0;border-radius:10px;color:#5E5138;font:600 13px/1.45 system-ui,-apple-system,Segoe UI,Arial,sans-serif;text-align:center"><strong>Synthetic evaluation only.</strong> Use fictional information; do not enter real patient or clinical data.</div>
+<div data-mls-phi-notice="1" role="note" aria-label="Confidential patient information" style="box-sizing:border-box;width:calc(100% - 24px);max-width:920px;margin:12px auto 0;padding:10px 12px;background:#F7F3E8;border:1px solid #E8DCC0;border-radius:10px;color:#5E5138;font:600 13px/1.45 system-ui,-apple-system,Segoe UI,Arial,sans-serif;text-align:center"><strong>Confidential patient information.</strong> These are real operative notes. Do not forward this page, and do not pass on the code you signed in with.</div>
 <div class="wrap">
   <div class="brand"><span class="mark">+</span> <span>MLS</span></div>
 
@@ -107,6 +107,7 @@ var K = (function () { var u = window.__mlsSensitiveUrl || {}; return String((u.
 var OPN_SHAPE = /^[a-f0-9]{64}$/;
 var opnJobs = [];
 var opnOpen = null;
+var opnTemplates = [];
 
 function opnEsc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (m) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[m]; }); }
 function opnEl(id) { return document.getElementById(id); }
@@ -179,7 +180,8 @@ function opnRenderJob(job) {
     '<textarea id="opnNote" class="note-body">' + opnEsc(job.noteText || '') + '</textarea>' +
     '<button class="btn" onclick="opnSaveJob()">Save</button>' +
     '<button class="btn2" onclick="opnCompleteJob()">Mark done</button>' +
-    '<p class="said hide" id="jobMsg"></p>';
+    '<p class="said hide" id="jobMsg"></p>' +
+    opnRefitHtml(job);
   var card = opnEl('jobCard');
   if (card) { card.innerHTML = h; card.className = 'card'; }
 }
@@ -211,6 +213,7 @@ async function opnOpenJob(id) {
     if (r.status === 401) { opnDead(); return; }
     if (!r.ok) { opnSay('jobMsg', 'That did not go through. Try again in a moment.', true); opnShow('jobMsg', true); return; }
     var d = await r.json();
+    opnUndoText = '';
     opnRenderJob(d.job || {});
   } catch (e) { opnTrouble(); }
 }
@@ -248,9 +251,95 @@ async function opnCompleteJob() {
   } catch (e) { opnSay('jobMsg', 'That did not go through. Try again in a moment.', true); opnShow('jobMsg', true); }
 }
 
+/* ---- wrong template ----------------------------------------------------- */
+/* retemplate-2.0.0. The note is written from whichever template matched its
+   name, and that match is sometimes wrong - in one measured library, 199
+   templates sat under 102 names and a 433-character stub with no operative
+   narrative beat four full siblings that shared its name. The surgeon is the
+   only person who can see that has happened, so the way out belongs here.
+
+   This is deliberately ONE control and a plain sentence. It rewrites the note
+   they already have into the shape of the template they pick. It is not a
+   re-generation and no new clinical fact can enter: the server refuses a
+   rewrite that lost a number or a blank and keeps the note exactly as it was.
+   The previous wording is held in memory for one press of Put it back, which
+   is why that button appears only after a rewrite and vanishes on save. */
+var opnUndoText = '';
+function opnRefitHtml(job) {
+  var rows = opnTemplates || [];
+  if (!rows.length) return '';
+  var h = '<h2>Wrong template?</h2>' +
+    '<p class="note">Pick the one this operation should have been written from and it will be rewritten to match. Read it before you mark it done.</p>' +
+    '<select id="opnRefitPick">';
+  for (var i = 0; i < rows.length; i++) {
+    var sel = (String(rows[i].id) === String(job && job.templateId || '')) ? ' selected' : '';
+    h += '<option value="' + opnEsc(rows[i].id) + '"' + sel + '>' + opnEsc(rows[i].name || 'Template') + '</option>';
+  }
+  h += '</select>' +
+    '<button class="btn2" id="opnRefitGo" onclick="opnRefit()">Rewrite it with this template</button>' +
+    '<button class="btn2 hide" id="opnRefitUndo" onclick="opnRefitUndo()">Put it back</button>' +
+    '<p class="said hide" id="refitMsg"></p>';
+  return h;
+}
+
+async function opnRefit() {
+  if (!opnOpen) return;
+  var pick = opnEl('opnRefitPick');
+  var tid = pick ? String(pick.value || '') : '';
+  if (!tid) return;
+  var go = opnEl('opnRefitGo');
+  if (go) { go.disabled = true; go.textContent = 'Rewriting...'; }
+  opnSay('refitMsg', 'This takes a few seconds.', false);
+  opnShow('refitMsg', true);
+  try {
+    var r = await opnPost('/api/client/opnotes/jobs/' + encodeURIComponent(opnOpen.id) + '/retemplate',
+      { templateId: tid, expectedVersion: opnOpen.version });
+    if (r.status === 401) { opnDead(); return; }
+    var d = null;
+    try { d = await r.json(); } catch (e) { d = null; }
+    if (go) { go.disabled = false; go.textContent = 'Rewrite it with this template'; }
+    if (r.status === 409 && d && d.error && d.error.code === 'OPNOTE_REFIT_UNSAFE') {
+      /* The server would not store it, so nothing on this page changed. Say
+         exactly that, because a surgeon who thinks a rewrite half-landed will
+         go looking for what it did to their note. */
+      opnSay('refitMsg', 'That rewrite left something out, so your note is exactly as it was. Edit it here instead.', true);
+      opnShow('refitMsg', true);
+      return;
+    }
+    if (r.status === 409) { opnSay('refitMsg', 'Someone else changed this note. Reload the page to see the newest one.', true); opnShow('refitMsg', true); return; }
+    if (!r.ok || !d || !d.job) { opnSay('refitMsg', 'That did not go through. Try again in a moment.', true); opnShow('refitMsg', true); return; }
+    var body = opnEl('opnNote');
+    opnUndoText = String(d.previousText || (body ? body.value : '') || '');
+    if (body) body.value = String(d.job.noteText || '');
+    opnOpen.version = d.job.version;
+    opnOpen.noteText = String(d.job.noteText || '');
+    opnOpen.templateId = d.job.templateId || '';
+    opnShow('opnRefitUndo', true);
+    opnSay('refitMsg', 'Rewritten. Read it through, then Save.', false);
+    opnShow('refitMsg', true);
+  } catch (e) {
+    if (go) { go.disabled = false; go.textContent = 'Rewrite it with this template'; }
+    opnSay('refitMsg', 'That did not go through. Try again in a moment.', true);
+    opnShow('refitMsg', true);
+  }
+}
+
+/* Put it back only restores the WORDS. It does not undo the rewrite on the
+   server; pressing Save after it is what makes the old wording the stored note
+   again, and the sentence says so. */
+function opnRefitUndo() {
+  var body = opnEl('opnNote');
+  if (!body || !opnUndoText) return;
+  body.value = opnUndoText;
+  opnShow('opnRefitUndo', false);
+  opnSay('refitMsg', 'Put back. Press Save to keep it that way.', false);
+  opnShow('refitMsg', true);
+}
+
 /* ---- templates --------------------------------------------------------- */
 function opnRenderTemplates(list) {
   var host = opnEl('tplList');
+  opnTemplates = list || [];
   if (!host) return;
   var rows = list || [];
   if (!rows.length) { host.innerHTML = '<p class="sub">Nothing here yet.</p>'; return; }
@@ -351,17 +440,20 @@ async function opnBoot() {
   opnShow('gate', false);
   opnShow('app', true);
 
+  /* Templates first on purpose: opening a note paints its Wrong template
+     control from this list, and a list that arrives afterwards would give the
+     first note the surgeon opens no way out of a bad match. */
+  try {
+    var tr = await opnGet('/api/client/opnotes/templates');
+    if (tr.ok) { var td = await tr.json(); opnRenderTemplates((td && td.templates) || []); }
+  } catch (e) { opnRenderTemplates([]); }
+
   try {
     var jr = await opnGet('/api/client/opnotes/jobs');
     if (jr.status === 401) { opnDead(); return; }
     if (jr.ok) { var jd = await jr.json(); opnJobs = (jd && jd.jobs) || []; }
   } catch (e) { opnJobs = []; }
   opnRenderList();
-
-  try {
-    var tr = await opnGet('/api/client/opnotes/templates');
-    if (tr.ok) { var td = await tr.json(); opnRenderTemplates((td && td.templates) || []); }
-  } catch (e) { opnRenderTemplates([]); }
 }
 
 window.opnReady = opnBoot();
