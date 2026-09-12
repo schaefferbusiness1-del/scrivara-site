@@ -10046,6 +10046,9 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
         const wantMrn = String(msg.patientMrn || '').trim();
         const preopened = msg.preopened === true;
         const bootstrapIdentity = msg.bootstrapIdentity === true;
+        /* 3.0.119: exact-row recovery binds the ordinary full-text read to
+           its appointment lease without switching to identity-only mode. */
+        const appointmentRecovery = msg.appointmentRecovery === true;
         const expectedAppointmentId = String(msg.appointmentId || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40);
         const expectedScheduleDate = /^\d{4}-\d{2}-\d{2}$/.test(String(msg.scheduleDate || '')) ? String(msg.scheduleDate) : '';
         const expectedAthenaTabId = Number(msg.athenaTabId);
@@ -10062,7 +10065,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
           if (!lease || !lease.tabId || (Date.now() - Number(lease.at || 0)) > 180000 || leaseNameKey(lease.name) !== leaseNameKey(want)) {
             return chartRespond({ ok: false, reason: 'preopened-tab-unverified', error: 'The exact Athena chart-open receipt was missing or stale. Nothing was read.' });
           }
-          if (bootstrapIdentity && (!expectedAppointmentId || lease.appointmentIdBound !== true ||
+          if ((bootstrapIdentity || appointmentRecovery) && (!expectedAppointmentId || lease.appointmentIdBound !== true ||
               String(lease.requestId || '') !== chartRequestId || String(lease.appointmentId || '') !== expectedAppointmentId ||
               (expectedScheduleDate && String(lease.scheduleDate || '') !== expectedScheduleDate) ||
               (!Number.isFinite(expectedAthenaTabId) || Number(lease.tabId) !== expectedAthenaTabId) ||
@@ -14805,6 +14808,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         while (toks.length > 1 && SUFX.test(toks[toks.length - 1])) toks.pop();
         if (toks.length >= 2) { lname = toks[toks.length - 1].toLowerCase(); fname = toks[0].toLowerCase(); }
       }
+      function __svSleep(ms) { var __svAt = Date.now() + Math.max(0, Number(ms || 0)); return new Promise(function (r) { /* mls-hs-1.0.0: a hidden tab freezes timers; yield through a MessageChannel until the wall clock passes. */ if (typeof document === 'undefined' || !document.hidden) { setTimeout(r, Math.max(0, __svAt - Date.now())); return; } var __svCh = null; try { __svCh = new MessageChannel(); } catch (e) { __svCh = null; } if (!__svCh) { setTimeout(r, Math.max(0, __svAt - Date.now())); return; } __svCh.port1.onmessage = function () { if (Date.now() >= __svAt) { try { __svCh.port1.onmessage = null; __svCh.port1.close(); __svCh.port2.close(); } catch (e2) {} r(); return; } if (!document.hidden) { try { __svCh.port1.onmessage = null; __svCh.port1.close(); __svCh.port2.close(); } catch (e3) {} setTimeout(r, Math.max(0, __svAt - Date.now())); return; } try { __svCh.port2.postMessage(0); } catch (e4) { setTimeout(r, Math.max(0, __svAt - Date.now())); } }; __svCh.port2.postMessage(0); }); }
       var searchStr = (lname && fname) ? (lname + ',' + fname) : String(name || '').trim();
       if (phase === 'fill') {
         var inputs = [].slice.call(document.querySelectorAll('input,textarea')).filter(vis);
@@ -14878,7 +14882,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
              A detached field can still report the value we wrote, so the node
              must also still be connected. Nothing below this loop runs until the
              value verifies; when it never does, nothing is submitted at all. */
-          function __svSleep(ms) { var __svAt = Date.now() + Math.max(0, Number(ms || 0)); return new Promise(function (r) { /* mls-hs-1.0.0: a hidden tab freezes timers; yield through a MessageChannel until the wall clock passes. */ if (typeof document === 'undefined' || !document.hidden) { setTimeout(r, Math.max(0, __svAt - Date.now())); return; } var __svCh = null; try { __svCh = new MessageChannel(); } catch (e) { __svCh = null; } if (!__svCh) { setTimeout(r, Math.max(0, __svAt - Date.now())); return; } __svCh.port1.onmessage = function () { if (Date.now() >= __svAt) { try { __svCh.port1.onmessage = null; __svCh.port1.close(); __svCh.port2.close(); } catch (e2) {} r(); return; } if (!document.hidden) { try { __svCh.port1.onmessage = null; __svCh.port1.close(); __svCh.port2.close(); } catch (e3) {} setTimeout(r, Math.max(0, __svAt - Date.now())); return; } try { __svCh.port2.postMessage(0); } catch (e4) { setTimeout(r, Math.max(0, __svAt - Date.now())); } }; __svCh.port2.postMessage(0); }); }
+          // __svSleep is shared with exact-row rebind above.
           var __svTyped = false;
           for (var __svTry = 0; __svTry < 3 && !__svTyped; __svTry++) {
             if (!openAllowed()) return deadlineOut();
@@ -14914,6 +14918,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (phase === 'open') {
         var BAD = /save|sign|finalize|post|bill|submit|delete|lock|addend|amend|close encounter|check ?out|log ?out|sign ?off|cancel/i;
         function rowText(el) { return (el.textContent || '').replace(/\s+/g, ' ').trim(); }
+        /* rowrebind-1.0.0 (3.0.119): an exact-id row uses the SAME name
+           echo at selection and immediately before its click. Ordinary
+           name-only scans do not gain punctuation-folded matching. */
+        function rowNameMatches(text, idBound) {
+          var t = String(text || '').toLowerCase();
+          if (!t || t.length >= 700 || !lname) return false;
+          if (t.indexOf(lname) >= 0 && (!fname || t.indexOf(fname) >= 0)) return true;
+          if (idBound !== true) return false;
+          var folded = t.replace(/[^a-z]/g, ''), last = String(lname).replace(/[^a-z]/g, ''), first = String(fname || '').replace(/[^a-z]/g, '');
+          return !!last && folded.indexOf(last) >= 0 && (!first || folded.indexOf(first) >= 0);
+        }
         function scoreRow(tx, el) {
           if (!tx || tx.length > 220) return -1;
           /* v1.64: BAD-test only a CONTROL's own short label. A schedule ROW's status
@@ -14949,9 +14964,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         // synthetic events - a bare el.click() does NOTHING on them (live-proven: the
         // opener "clicked" and athena never navigated). Dispatch the real pointer/mouse
         // sequence, exactly like the verified mlsEnsureClinicalChartFn nav does.
-        function realClick(el) {
+        function realClick(el, proof) {
           if (!openAllowed()) return false;
           try { el.scrollIntoView({ block: 'center' }); } catch (e1) {}
+          if (!el || el.isConnected === false || (proof && !proof())) return false;
           if (!openAllowed()) return false;
           try {
             var r = el.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2;
@@ -14962,21 +14978,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             });
           } catch (e3) {}
           if (!openAllowed()) return false;
+          if (!el || el.isConnected === false || (proof && !proof())) return false;
           try { el.click(); } catch (e4) { return false; }
           return true;
         }
-        function clickRow(row) {
+        function clickRow(row, idBound) {
           clickRow.reason = '';
-          /* rowreverify-1.0.0 (3.0.117): the suggestion dropdown and the schedule
-             list both re-render between the scan that scored this row and this
-             click. Re-read the row's OWN live text and refuse if it no longer
-             carries the patient it was scored for. A detached node is never
-             clicked, and no click is ever issued from a stale coordinate. */
-          try {
-            if (row && row.isConnected === false) { clickRow.reason = 'row-identity-changed'; return false; }
-            var __crText = rowText(row).toLowerCase();
-            if ((lname && __crText.indexOf(lname) === -1) || (fname && __crText.indexOf(fname) === -1)) { clickRow.reason = 'row-identity-changed'; return false; }
-          } catch (eCrVerify) {}
+          function verifyRow() {
+            try {
+              if (!row || row.isConnected === false || !rowNameMatches(rowText(row), idBound)) { clickRow.reason = 'row-identity-changed'; return false; }
+              if (idBound === true) {
+                var live = apptIdRow();
+                if (live && live.ambiguous) { clickRow.reason = 'appointment-id-ambiguous'; return false; }
+                if (!live || live.el !== row) { clickRow.reason = 'row-identity-changed'; return false; }
+              }
+              return true;
+            } catch (eVerify) { clickRow.reason = 'row-identity-changed'; return false; }
+          }
+          if (!verifyRow()) return false;
           var clickT = null;
           // v1.53: prefer the child link whose text matches the patient NAME (not the
           // row's first <a>, which on a schedule row is often a time/status link).
@@ -15010,9 +15029,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             } catch (e6) {}
           }
           if (!clickT) clickT = (row.querySelector && row.querySelector('a')) || row;
-          if (!realClick(clickT)) return false;
+          if (!realClick(clickT, verifyRow)) { if (!clickRow.reason) clickRow.reason = 'row-identity-changed'; return false; }
           // v1.62: if the chosen target was a non-navigating wrapper, also drive the row.
-          if (clickT !== row && openAllowed()) { try { realClick(row); } catch (e5) {} }
+          if (clickT !== row && openAllowed()) { try { realClick(row, verifyRow); } catch (e5) {} }
           return true;
         }
         /* v2.9.25: exact appointment-id row binding for day-grid variants that
@@ -15040,9 +15059,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             for (var up = 0; up < 5 && row; up++) {
               if (vis(row)) {
                 var t = rowText(row).toLowerCase();
-                if (t && t.length < 700 && lname && t.indexOf(lname) !== -1 && (!fname || t.indexOf(fname) !== -1)) { matchedRow = row; break; }
-                /* rowfold-1.0.0 (3.0.99): id-anchored echo check tolerates apostrophes/hyphens/welds - letters-only fold, additive fallback only. */
-                if (t && t.length < 700 && lname) { var tF0 = t.replace(/[^a-z]/g, ''), lF0 = String(lname).replace(/[^a-z]/g, ''), fF0 = String(fname || '').replace(/[^a-z]/g, ''); if (lF0 && tF0.indexOf(lF0) !== -1 && (!fF0 || tF0.indexOf(fF0) !== -1)) { matchedRow = row; break; } }
+                if (rowNameMatches(t, true)) { matchedRow = row; break; }
               }
               row = row.parentElement;
             }
@@ -15082,17 +15099,31 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           }
           return matchedRows.length === 1 ? { el: matchedRows[0], sc: 99, scanned: holders.length, viaApptId: true, matches: 1 } : null;
         }
+        async function clickRebound(initial, scrolledTo) {
+          var candidate = initial, rebinds = 0;
+          for (var pass = 0; pass < 3; pass++) {
+            if (!openAllowed()) return deadlineOut();
+            var d = { frame: location.hostname, scanned: candidate.scanned || 0, topScore: candidate.sc || 0, apptIdBound: false, apptIdMatches: candidate.matches || 0, rowRebinds: rebinds };
+            if (typeof scrolledTo === 'number') d.scrolledTo = scrolledTo;
+            if (candidate.ambiguous) return { phase: 'open', opened: false, attempted: false, candidates: candidate.matches || 2, reason: 'appointment-id-ambiguous', diag: d };
+            if (candidate.el && clickRow(candidate.el, candidate.viaApptId === true)) {
+              d.apptIdBound = candidate.viaApptId === true;
+              return { phase: 'open', opened: true, via: candidate.viaApptId ? (typeof scrolledTo === 'number' ? 'appt-id-scroll' : 'appt-id') : (typeof scrolledTo === 'number' ? 'scroll' : 'quick'), candidates: 1, diag: d };
+            }
+            if (!openAllowed()) return deadlineOut();
+            var reason = candidate.el ? (clickRow.reason || 'row-identity-changed') : 'row-identity-changed';
+            if (reason !== 'row-identity-changed' || pass === 2 || !(requireAppointmentId === true || initial.viaApptId === true)) return { phase: 'open', opened: false, attempted: false, candidates: candidate.el ? 1 : 0, reason: reason, diag: d };
+            rebinds++;
+            await __svSleep(Math.min(120, Math.max(0, __openGuard.deadline - Date.now())));
+            if (!openAllowed()) return deadlineOut();
+            candidate = (requireAppointmentId === true || initial.viaApptId === true) ? (apptIdRow() || { el: null, sc: 0, scanned: 0 }) : scanOnce();
+          }
+        }
         // fast path: exact id only in bootstrap mode; ordinary opens retain the
         // proven name scan as a compatibility fallback.
         var hit = apptIdRow() || (requireAppointmentId === true ? { el: null, sc: 0, scanned: 0 } : scanOnce());
         if (hit.ambiguous) return { phase: 'open', opened: false, candidates: hit.matches || 2, reason: 'appointment-id-ambiguous', diag: { frame: location.hostname, scanned: hit.scanned, topScore: hit.sc, apptIdBound: false, apptIdMatches: hit.matches || 2 } };
-        if (hit.el) {
-          if (!clickRow(hit.el)) {
-            if (/^(appointment-target-not-clinical|row-identity-changed)$/.test(clickRow.reason || '')) return { phase: 'open', opened: false, attempted: false, candidates: 1, reason: clickRow.reason, diag: { frame: location.hostname, scanned: hit.scanned, topScore: hit.sc, apptIdBound: false, apptIdMatches: hit.matches || 1 } };
-            return deadlineOut();
-          }
-          return { phase: 'open', opened: true, via: hit.viaApptId ? 'appt-id' : 'quick', candidates: 1, diag: { frame: location.hostname, scanned: hit.scanned, topScore: hit.sc, apptIdBound: hit.viaApptId === true, apptIdMatches: hit.matches || 1 } };
-        }
+        if (hit.el) return await clickRebound(hit);
         // v1.61: SCROLL the virtualized schedule + re-scan. athenaOne renders only the
         // rows in the viewport, so a below-the-fold patient (e.g. Ruth Gehrman) was never
         // found by the old single-scan opener - "open-failed". The reader already scrolls
@@ -15127,13 +15158,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             await (function (ms) { var __hsAt = Date.now() + Math.max(0, Number(ms || 0)); return new Promise(function (r) { /* mls-hs-1.0.0: hidden tab => timers throttled to 1/s then 1/min; yield through a MessageChannel (not a timer) until the wall clock passes. */ if (typeof document === 'undefined' || !document.hidden) { setTimeout(r, Math.max(0, __hsAt - Date.now())); return; } var __ch = null; try { __ch = new MessageChannel(); } catch (e) { __ch = null; } if (!__ch) { setTimeout(r, Math.max(0, __hsAt - Date.now())); return; } __ch.port1.onmessage = function () { if (Date.now() >= __hsAt) { try { __ch.port1.onmessage = null; __ch.port1.close(); __ch.port2.close(); } catch (e2) {} r(); return; } if (!document.hidden) { try { __ch.port1.onmessage = null; __ch.port1.close(); __ch.port2.close(); } catch (e3) {} setTimeout(r, Math.max(0, __hsAt - Date.now())); return; } try { __ch.port2.postMessage(0); } catch (e4) { setTimeout(r, Math.max(0, __hsAt - Date.now())); } }; __ch.port2.postMessage(0); }); })(320);
             var h2 = requireAppointmentId === true ? (apptIdRow() || { el: null, sc: 0, scanned: 0 }) : scanOnce(); if (h2.scanned > scannedTotal) scannedTotal = h2.scanned;
             if (h2.ambiguous) return { phase: 'open', opened: false, candidates: h2.matches || 2, reason: 'appointment-id-ambiguous', diag: { frame: location.hostname, scanned: scannedTotal, scrolledTo: y, topScore: h2.sc, apptIdBound: false, apptIdMatches: h2.matches || 2 } };
-            if (h2.el) {
-              if (!clickRow(h2.el)) {
-                if (/^(appointment-target-not-clinical|row-identity-changed)$/.test(clickRow.reason || '')) return { phase: 'open', opened: false, attempted: false, candidates: 1, reason: clickRow.reason, diag: { frame: location.hostname, scanned: scannedTotal, scrolledTo: y, topScore: h2.sc, apptIdBound: false, apptIdMatches: h2.matches || 1 } };
-                return deadlineOut();
-              }
-              return { phase: 'open', opened: true, via: h2.viaApptId ? 'appt-id-scroll' : 'scroll', candidates: 1, diag: { frame: location.hostname, scanned: scannedTotal, scrolledTo: y, topScore: h2.sc, apptIdBound: h2.viaApptId === true, apptIdMatches: h2.matches || 1 } };
-            }
+            if (h2.el) return await clickRebound(h2, y);
           }
           if (openAllowed()) try { sc0.scrollTop = orig; } catch (e) {}
         }
@@ -15763,6 +15788,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         var frozenMrn = String(msg.mrn || msg.patientMrn || msg.athenaId || '').trim().slice(0, 40);
         var frozenApptId = String(msg.appointmentId || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40);
         var bootstrapIdentity = msg.bootstrapIdentity === true;
+        var exactScheduleFallback = false, scheduleRegrounds = 0;
         var frozenScheduleDate = /^\d{4}-\d{2}-\d{2}$/.test(String(msg.scheduleDate || '')) ? String(msg.scheduleDate) : '';
         var rawSendResponse = sendResponse, responseSent = false;
         var openStartedAt = Date.now();
@@ -15827,6 +15853,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           var x = await mlsExecTO(opts, Math.max(1, Math.min(left, Number(ceilingMs || left))));
           if ((x && x.timeout) || openExpired()) return { timeout: true, deadline: true };
           return x || {};
+        }
+        async function restoreExactSchedule(stage) {
+          if (!frozenScheduleDate) { sendResponse({ ok: false, opened: false, reason: 'schedule-date-missing-after-recovery', error: 'The exact requested schedule date was missing. Nothing was opened.' }); return false; }
+          scheduleRegrounds++;
+          var regroundX = await execOpen({ target: { tabId: tab.id, allFrames: true }, args: [frozenScheduleDate, false, openGuard], func: mlsAthenaGotoDate }, 40000);
+          if (regroundX.timeout) { failOpenDeadline(stage || 'exact schedule restoration'); return false; }
+          var verifiedDates = (regroundX.r || []).map(function (entry) { return entry && entry.result; }).filter(function (value) { return value && value.done === true && value.dateUnverified !== true && /^\d{4}-\d{2}-\d{2}$/.test(String(value.schedDate || '')); });
+          var regroundOk = verifiedDates.length > 0 && verifiedDates.every(function (value) { return String(value.schedDate) === frozenScheduleDate; });
+          if (!regroundOk) { sendResponse({ ok: false, opened: false, reason: 'schedule-date-restore-failed', error: 'The exact requested date could not be verified. No appointment was opened.', diag: { route: 'schedule', scheduleRegrounds: scheduleRegrounds, scheduleDateVerified: false } }); return false; }
+          return true;
         }
         async function waitOpen(ms) {
           var left = Math.max(0, openGuard.deadline - Date.now());
@@ -15930,13 +15966,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                must re-ground the SAME frozen requested date before scanning;
                otherwise the id is honestly absent and history silently drops.
                Never substitute today. */
-            if (bootstrapIdentity) {
-              if (!frozenScheduleDate) { sendResponse({ ok: false, opened: false, reason: 'schedule-date-missing-after-recovery', error: 'The requested schedule date was missing after Athena recovery. Nothing was opened.' }); return; }
-              var regroundX = await execOpen({ target: { tabId: tab.id, allFrames: true }, args: [frozenScheduleDate, false, openGuard], func: mlsAthenaGotoDate }, 40000);
-              if (regroundX.timeout) { failOpenDeadline('post-recovery date restoration'); return; }
-              var regroundOk = (regroundX.r || []).map(function (entry) { return entry && entry.result; }).filter(Boolean).some(function (value) { return value.done === true && value.dateUnverified !== true && String(value.schedDate || '') === frozenScheduleDate; });
-              if (!regroundOk) { sendResponse({ ok: false, opened: false, reason: 'schedule-date-restore-failed', error: 'Athena recovered, but the exact requested date could not be restored. No appointment was opened.' }); return; }
-            }
+            if (bootstrapIdentity && !(await restoreExactSchedule('post-recovery date restoration'))) return;
           }
           // === v1.53 ROUTE 1 — SCHEDULE/CALENDAR CLICK-OPEN (reliable on athenaOne v26.3) ===
           // The synthetic search-box 'fill' path below does NOT register a query on
@@ -15970,6 +16000,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           var sched = null, findRes = null;
           for (var oi = 0; oi < order.length; oi++) {
             if (order[oi] === 'sched') {
+              /* Exact ids/date let an ordinary failed Find route recover on
+                 its real schedule. It becomes the STRICT bootstrap route,
+                 including before/after navigation proof; never name-only. */
+              if (!bootstrapIdentity && frozenApptId && frozenScheduleDate && oi > 0 && order[oi - 1] === 'find') { bootstrapIdentity = true; exactScheduleFallback = true; }
+              if (exactScheduleFallback && !(await restoreExactSchedule('find-to-schedule restoration'))) return;
               if (senderTab) progress(senderTab, 'Looking for “' + (msg.name || '') + '” on the athenaOne schedule…', openGuard.token);
               /* v1.89: a stuck-open Calendar nav dropdown can overlay the very
                  schedule rows this scan is about to read/click - close it first
@@ -15983,29 +16018,36 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 }
               } catch (eDm) {}
               var beforeAppointmentFrames = [];
-              if (bootstrapIdentity) {
-                var beforeFramesSettled = await settleOpen(chrome.webNavigation.getAllFrames({ tabId: tab.id }));
-                if (!beforeFramesSettled || !beforeFramesSettled.ok) {
-                  sendResponse({ ok: false, opened: false, reason: 'appointment-navigation-snapshot-unavailable', error: 'Athena frame state could not be frozen before the exact appointment click. Nothing was opened.' }); return;
+              for (var scheduleTry = 0; scheduleTry < 2; scheduleTry++) {
+                if (bootstrapIdentity) {
+                  var beforeFramesSettled = await settleOpen(chrome.webNavigation.getAllFrames({ tabId: tab.id }));
+                  if (!beforeFramesSettled || !beforeFramesSettled.ok) {
+                    sendResponse({ ok: false, opened: false, reason: 'appointment-navigation-snapshot-unavailable', error: 'Athena frame state could not be frozen before the exact appointment click. Nothing was opened.' }); return;
+                  }
+                  beforeAppointmentFrames = beforeFramesSettled.value || [];
                 }
-                beforeAppointmentFrames = beforeFramesSettled.value || [];
+                var schedX = await execOpen({ target: { tabId: tab.id, allFrames: true }, func: mlsSearchOpenDriverFn, args: [msg.name || '', 'open', openGuard, frozenApptId, bootstrapIdentity] }, 42000);
+                if (schedX.timeout) { failOpenDeadline('schedule-row open'); return; }
+                var schedRes = schedX.r || [];
+                if (bootstrapIdentity) {
+                  var exactOpenResults = schedRes.map(function (entry) {
+                    var value = entry && entry.result;
+                    if (value && typeof entry.frameId === 'number') try { value.__frameId = entry.frameId; } catch (eFrameTag) {}
+                    return value;
+                  }).filter(Boolean);
+                  var exactAmbiguous = exactOpenResults.some(function (value) { return value && (value.reason === 'appointment-id-ambiguous' || (value.diag && Number(value.diag.apptIdMatches || 0) > 1)); });
+                  var exactSuccesses = exactOpenResults.filter(function (value) { return value && value.opened === true && value.diag && value.diag.apptIdBound === true; });
+                  if (exactAmbiguous || exactSuccesses.length > 1) {
+                    sendResponse({ ok: false, opened: false, reason: 'appointment-id-ambiguous', error: 'More than one visible Athena row claimed the exact appointment id. Nothing was opened.' }); return;
+                  }
+                  sched = exactSuccesses[0] || bestFrameResult(schedRes, 'open');
+                } else sched = bestFrameResult(schedRes, 'open');
+                if (sched && sched.opened) break;
+                if (!bootstrapIdentity || !frozenScheduleDate || scheduleTry > 0 || scheduleRegrounds > 0 || !/^(appointment-id-not-found|row-identity-changed)$/.test(String(sched && sched.reason || 'appointment-id-not-found'))) break;
+                if (senderTab) progress(senderTab, 'Restoring the exact schedule day and re-finding the appointment row...', openGuard.token);
+                if (!(await restoreExactSchedule('schedule-row recovery'))) return;
               }
-              var schedX = await execOpen({ target: { tabId: tab.id, allFrames: true }, func: mlsSearchOpenDriverFn, args: [msg.name || '', 'open', openGuard, frozenApptId, bootstrapIdentity] }, 42000);
-              if (schedX.timeout) { failOpenDeadline('schedule-row open'); return; }
-              var schedRes = schedX.r || [];
-              if (bootstrapIdentity) {
-                var exactOpenResults = schedRes.map(function (entry) {
-                  var value = entry && entry.result;
-                  if (value && typeof entry.frameId === 'number') try { value.__frameId = entry.frameId; } catch (eFrameTag) {}
-                  return value;
-                }).filter(Boolean);
-                var exactAmbiguous = exactOpenResults.some(function (value) { return value && (value.reason === 'appointment-id-ambiguous' || (value.diag && Number(value.diag.apptIdMatches || 0) > 1)); });
-                var exactSuccesses = exactOpenResults.filter(function (value) { return value && value.opened === true && value.diag && value.diag.apptIdBound === true; });
-                if (exactAmbiguous || exactSuccesses.length > 1) {
-                  sendResponse({ ok: false, opened: false, reason: 'appointment-id-ambiguous', error: 'More than one visible Athena row claimed the exact appointment id. Nothing was opened.' }); return;
-                }
-                sched = exactSuccesses[0] || bestFrameResult(schedRes, 'open');
-              } else sched = bestFrameResult(schedRes, 'open');
+              if (sched) { sched.diag = Object.assign({}, sched.diag || {}, { route: 'schedule', scheduleRegrounds: scheduleRegrounds, scheduleDateVerified: scheduleRegrounds > 0, exactScheduleFallback: exactScheduleFallback }); }
               if (sched && sched.opened) {
                 var appointmentNavigationProven = !bootstrapIdentity;
                 var appointmentNavigationFrameIds = [];
@@ -16088,7 +16130,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                    accepting a stale/lurking frame's identity. */
                 try { self.__mlsExpectOpen = { name: msg.name || '', dob: msg.dob || '', mrn: frozenMrn, tabId: tab.id, at: Date.now(), requestId: openGuard.token, appointmentId: frozenApptId, encounterAccepted: encounterAcceptedReceipt, appointmentIdBound: bootstrapIdentity && appointmentNavigationProven, appointmentNavigationFrameIds: appointmentNavigationFrameIds.slice(0, 24), scheduleDate: frozenScheduleDate }; self.__mlsWriteTarget = { name: msg.name || '', dob: msg.dob || '', mrn: frozenMrn, tabId: tab.id, appTabId: senderTab || null, at: Date.now() }; } catch (e0) {}
                 var __encOpen = await mlsEnsureEncounterOpen(tab.id);
-                sendResponse({ ok: true, opened: true, encounterOpen: __encOpen, via: bootstrapIdentity ? 'appointment-id' : 'schedule-click', candidates: sched.candidates, appointmentId: bootstrapIdentity ? frozenApptId : '', encounterAccepted: encounterAcceptedReceipt, appointmentIdBound: bootstrapIdentity && appointmentNavigationProven, appointmentNavigationFrameIds: appointmentNavigationFrameIds.slice(0, 24), athenaTabId: tab.id, diag: sched.diag }); return;
+                sendResponse({ ok: true, opened: true, encounterOpen: __encOpen, via: bootstrapIdentity ? 'appointment-id' : 'schedule-click', exactScheduleFallback: exactScheduleFallback, candidates: sched.candidates, appointmentId: bootstrapIdentity ? frozenApptId : '', encounterAccepted: encounterAcceptedReceipt, appointmentIdBound: bootstrapIdentity && appointmentNavigationProven, appointmentNavigationFrameIds: appointmentNavigationFrameIds.slice(0, 24), athenaTabId: tab.id, diag: sched.diag }); return;
               }
             } else {
               if (senderTab) progress(senderTab, 'Searching athenaOne patients for “' + (msg.name || '') + '”…', openGuard.token);
@@ -16176,12 +16218,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                  phantom opens then junk reads "Mainline, Lauren" / "Fail, PTA"
                  that the app gate had to refuse). Fail honestly instead. */
               if (findRes && /^(ambiguous|no-results|no-name-match|blank-error|rows-not-rendered|dob-mismatch|search-target-unverified)$/.test(findRes.reason || '')) {
+                /* A real identity contradiction stays terminal. A missing or
+                   unrendered Find result may use an independently supplied
+                   exact appointment/date, with every row/banner gate intact. */
+                if (frozenApptId && frozenScheduleDate && /^(no-results|no-name-match|blank-error|rows-not-rendered|search-target-unverified)$/.test(findRes.reason || '') && order.indexOf('sched', oi + 1) >= 0) { exactScheduleFallback = true; bootstrapIdentity = true; continue; }
                 sendResponse({ ok: false, opened: false, candidates: (findRes.count || 0),
                   error: findRes.reason === 'ambiguous' ? ('Found ' + (findRes.count || 'several') + ' possible matches for ' + (msg.name || '') + ' — refusing to open any of them without a matching DOB or MRN to disambiguate.')
                     : findRes.reason === 'dob-mismatch' ? ('athenaOne has ' + (findRes.count || 1) + ' name match(es) for ' + (msg.name || '') + ' but the DOB on file does not match any of them — check the stored DOB.')
                     : findRes.reason === 'search-target-unverified' ? "athenaOne's search did not show this patient; nothing was opened."
                     : 'athenaOne patient search found no matching patient.',
-                  findReason: findRes.reason }); return;
+                  reason: findRes.reason, findReason: findRes.reason }); return;
               }
             }
           }
@@ -16196,7 +16242,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           var fillRes = fillX.r || [];
           var fill = bestFrameResult(fillRes, 'fill');
           if (!fill || !fill.filled) {
-            sendResponse({ ok: false, opened: false, attempted: false, reason: (fill && fill.reason) || '', error: (fill && fill.reason === 'numeric-only-field-refused') ? 'Refused: the only patient field on this screen accepts numbers only, and typing a name there makes athenaNet raise a blocking dialog. The chart was skipped instead.' : ((fill && fill.reason === 'search-target-unverified') ? "athenaOne's search did not show this patient; nothing was opened." : 'Could not find the Athena patient search box on this screen.'), diag: fill && fill.diag });
+            sendResponse({ ok: false, opened: false, attempted: false, reason: (fill && fill.reason) || 'patient-search-control-unavailable', error: (fill && fill.reason === 'numeric-only-field-refused') ? 'Refused: the only patient field on this screen accepts numbers only, and typing a name there makes athenaNet raise a blocking dialog. The chart was skipped instead.' : ((fill && fill.reason === 'search-target-unverified') ? "athenaOne's search did not show this patient; nothing was opened." : 'Could not find the Athena patient search box on this screen.'), diag: fill && fill.diag });
             return;
           }
           if (senderTab) progress(senderTab, 'Searching “' + (msg.name || '') + '”…', openGuard.token);
@@ -16212,9 +16258,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 sendResponse({ ok: true, opened: true, encounterOpen: __encOpen, candidates: opened.candidates, diag: opened.diag });
           } else {
             var cands = (openRes || []).map(function (r) { return r && r.result; }).filter(Boolean).reduce(function (a, r) { return a + ((r && r.candidates) || 0); }, 0);
-            sendResponse({ ok: false, opened: false, candidates: cands, error: cands > 1 ? ('Found ' + cands + ' possible matches.') : 'No matching patient was found in the results.', diag: opened && opened.diag, findReason: (findRes && (findRes.reason || findRes.error)) || '' });
+            sendResponse({ ok: false, opened: false, candidates: cands, error: cands > 1 ? ('Found ' + cands + ' possible matches.') : 'No matching patient was found in the results.', reason: (findRes && /^[a-z][a-z0-9-]{1,39}$/.test(String(findRes.reason || ''))) ? findRes.reason : 'patient-search-no-match', diag: opened && opened.diag, findReason: (findRes && /^[a-z][a-z0-9-]{1,39}$/.test(String(findRes.reason || ''))) ? findRes.reason : '' });
           }
-        } catch (e) { sendResponse({ ok: false, error: String((e && e.message) || e) }); }
+        } catch (e) { sendResponse({ ok: false, opened: false, reason: 'search-open-error', error: String((e && e.message) || e) }); }
       })();
       return true;
     }

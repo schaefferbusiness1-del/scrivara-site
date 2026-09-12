@@ -16,10 +16,29 @@ const block = source.slice(start, end);
 for (const field of ['findReason:', 'via:', 'candidates:', 'sessionLikelyExpired:', 'diag: safeDiag']) {
   assert(block.includes(field), 'chart-open failure bridge dropped ' + field);
 }
-assert(block.includes("replace(/[^a-z0-9_-]/g, '')"), 'failure reason/route are not restricted to closed code tokens');
+assert(block.includes('.test(code) ? code :'), 'failure reason/route are not restricted to a closed vocabulary');
 assert(block.includes("['scanned', 'scrollers', 'topScore', 'inputCount', 'numericFieldsRefused', 'apptIdMatches', 'rowDobKnown']"),
   'bounded structural counters are not explicitly whitelisted');
 assert(!/Object\.assign\([^\n]*openedSafe|\.\.\.opened|chartPatient|chartDob|chartMrn|rowDob\s*:/.test(block),
   'failure evidence copied a patient identifier or the unbounded worker result');
+
+const relay = new Function('opened', 'finishChart', 'mlsStr', 'openErr', block);
+function run(opened) {
+  let result;
+  relay(opened, r => { result = r; }, (v, limit) => String(v || '').slice(0, limit), null);
+  return result;
+}
+const precise = run({ reason: 'appointment-navigation-snapshot-unavailable', diag: { rowRebinds: 2, scheduleRegrounds: 1, scheduleDateVerified: true } });
+assert.strictEqual(precise.reason, 'appointment-navigation-snapshot-unavailable', 'a long closed code was truncated');
+assert.strictEqual(precise.diag.rowRebinds, 2);
+assert.strictEqual(precise.diag.scheduleRegrounds, 1);
+assert.strictEqual(precise.diag.scheduleDateVerified, true);
+const noPhi = run({ reason: 'JaneSample-70001', findReason: 'JaneSample-70001', via: 'JaneSample-70001', diag: { rowRebinds: 500, scheduleRegrounds: -10, patientName: 'Jane Sample', mrn: '70001' } });
+assert.strictEqual(noPhi.reason, 'open-failed');
+assert.strictEqual(noPhi.findReason, '');
+assert.strictEqual(noPhi.via, '');
+assert.strictEqual(noPhi.diag.rowRebinds, 9);
+assert.strictEqual(noPhi.diag.scheduleRegrounds, 0);
+assert(!JSON.stringify(noPhi.diag).includes('Jane') && !JSON.stringify(noPhi.diag).includes('70001'));
 
 console.log('PASS chart-open-failure-diagnostics-contract: closed reason/route codes and structural counts cross content.js; patient identifiers do not');

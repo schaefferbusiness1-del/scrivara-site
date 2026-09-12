@@ -1409,6 +1409,11 @@ const tests = [
   'background-final-patient-timeout-runtime.test.js',
   'already-open-appointment-short-circuit.test.js',
   'appointment-id-bootstrap-contract.test.js',
+  'exact-row-recovery-runtime.test.js',
+  'athena-native-persistence-runtime.test.js',
+  'athena-native-persistence-proof-contract.test.js',
+  'savenamed-active-surface-runtime.test.js',
+  'savenamed-slate-editor-reader-runtime.test.js',
   'appointment-nonclinical-route-guard.test.js',
   'day-schedule-absolute-deadline-runtime.test.js',
   'schedule-scrape-deadline-searchopen-runtime.test.js',
@@ -1426,6 +1431,7 @@ const tests = [
   'chart-prompt-speaks-athena-medication-vocabulary.test.js',
   'provider-day-history-cards-runtime.test.js',
   'full-visit-reader-runtime.test.js',
+  'ax-history-census-terminal-runtime.test.js',
   'visit-reader-minimal-deadline-contract.test.js',
   'visit-request-correlation-runtime.test.js',
   'cohort-request-correlation-runtime.test.js',
@@ -2566,4 +2572,3 @@ if (executed !== tests.length) {
 }
 console.log(`GATE_COMPLETE executed=${executed} of=${tests.length}`);
 console.log(`PASS all ${tests.length} local regression suites`);
-

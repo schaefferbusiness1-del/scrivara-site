@@ -539,7 +539,10 @@
                  and counts — never the opened result row, DOB, MRN or name. */
               var openedSafe = (opened && typeof opened === 'object') ? opened : {};
               var openedDiag = (openedSafe.diag && typeof openedSafe.diag === 'object') ? openedSafe.diag : {};
-              function openCode(value) { return mlsStr(value, 40).toLowerCase().replace(/[^a-z0-9_-]/g, ''); }
+              function openCode(value) {
+                var code = mlsStr(value, 64).toLowerCase();
+                return /^(?:open-failed|open-deadline-exceeded|search-deadline-exceeded|search-open-error|search-open-no-response|no-athena-tab|no-content-frame|findpatient-no-load|results-timeout|fill-not-sticking|no-find-button|blank-error|rows-not-rendered|ambiguous|no-results|no-name-match|dob-mismatch|search-target-unverified|numeric-only-field-refused|name-not-found|row-identity-changed|appointment-id-missing|appointment-id-not-found|appointment-id-ambiguous|appointment-target-not-clinical|appointment-navigation-snapshot-unavailable|appointment-navigation-unverified|schedule-date-missing-after-recovery|schedule-date-restore-failed|patient-search-control-unavailable|patient-search-no-match|legacy-no-match|findpatient|findpatient-dob-override|schedule|schedule-click|appointment-id|already-open-appointment|appt-id|appt-id-scroll|quick|scroll)$/.test(code) ? code : '';
+              }
               var openFindReason = openCode(openedSafe.findReason || openedDiag.findReason);
               if (!openFindReason && /no matching patient was found in the results/i.test(String(openedSafe.error || ''))) openFindReason = 'legacy-no-match';
               var openRoute = openCode(openedSafe.via || openedDiag.route);
@@ -547,6 +550,11 @@
               ['scanned', 'scrollers', 'topScore', 'inputCount', 'numericFieldsRefused', 'apptIdMatches', 'rowDobKnown'].forEach(function (key) {
                 var value = Number(openedDiag[key]); if (isFinite(value)) safeDiag[key] = value;
               });
+              ['rowRebinds', 'scheduleRegrounds'].forEach(function (key) {
+                var value = Number(openedDiag[key]); if (isFinite(value)) safeDiag[key] = Math.max(0, Math.min(9, value));
+              });
+              safeDiag.scheduleDateVerified = openedDiag.scheduleDateVerified === true;
+              safeDiag.exactScheduleFallback = openedDiag.exactScheduleFallback === true;
               safeDiag.rowMrnMatched = openedDiag.rowMrnMatched === true;
               finishChart({
                 ok: false,
@@ -561,7 +569,10 @@
               });
               return;
             }
-            if (chartBootstrapIdentity && !(opened.appointmentIdBound === true && opened.appointmentId === chartAppointmentId)) {
+            /* 3.0.119: recovered ordinary reads retain full chart text plus the
+               normal DOB/MRN gate. Bootstrap mode itself is identity-only. */
+            chartMessage.appointmentRecovery = opened.exactScheduleFallback === true;
+            if ((chartBootstrapIdentity || chartMessage.appointmentRecovery) && !(opened.appointmentIdBound === true && opened.appointmentId === chartAppointmentId && chartAppointmentId && chartScheduleDate)) {
               finishChart({ ok: false, reason: 'appointment-navigation-unverified', error: 'The exact Athena appointment navigation was not proven. Nothing was read.' });
               return;
             }
@@ -569,7 +580,7 @@
             chartMessage.appointmentNavigationFrameIds = Array.isArray(opened.appointmentNavigationFrameIds)
               ? opened.appointmentNavigationFrameIds.map(function (value) { return Number(value); }).filter(function (value) { return Number.isInteger(value) && value >= 0; }).slice(0, 24)
               : [];
-            if (chartBootstrapIdentity && !chartMessage.appointmentNavigationFrameIds.length) {
+            if ((chartBootstrapIdentity || chartMessage.appointmentRecovery) && !chartMessage.appointmentNavigationFrameIds.length) {
               finishChart({ ok: false, reason: 'appointment-navigation-unverified', error: 'The exact Athena appointment did not return a changed-frame proof. Nothing was read.' });
               return;
             }
@@ -2153,12 +2164,12 @@
       }
       mlsSearchRelayRetry({ type: 'mlsAppSearchOpenRequest', name: d.name || d.raw || '', dob: dobHint, mrn: mrnHint, appointmentId: String(d.appointmentId || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40), bootstrapIdentity: d.bootstrapIdentity === true, scheduleDate: /^\d{4}-\d{2}-\d{2}$/.test(String(d.scheduleDate || '')) ? String(d.scheduleDate) : '', noReload: d.noReload === true, requestId: requestId, deadlineAt: deadlineAt }, function (res) {
         var err = chrome.runtime && chrome.runtime.lastError;
-        if (err || !res) { post(requestOrigin, 'mlsAppSearchOpenResult', { ok: false, error: (err && err.message) || 'No response from MLS Assist', unhandled: true, requestId: requestId, deadlineAt: deadlineAt }); return; }
+        if (err || !res) { post(requestOrigin, 'mlsAppSearchOpenResult', { ok: false, reason: 'search-open-no-response', error: (err && err.message) || 'No response from MLS Assist', unhandled: true, requestId: requestId, deadlineAt: deadlineAt }); return; }
         var out = {}; for (var k in res) out[k] = res[k];
         out.requestId = requestId; out.deadlineAt = deadlineAt;
         post(requestOrigin, 'mlsAppSearchOpenResult', out);
       });
-    } catch (e) { post(requestOrigin, 'mlsAppSearchOpenResult', { ok: false, error: String((e && e.message) || e), requestId: requestId, deadlineAt: deadlineAt }); }
+    } catch (e) { post(requestOrigin, 'mlsAppSearchOpenResult', { ok: false, reason: 'search-open-error', error: String((e && e.message) || e), requestId: requestId, deadlineAt: deadlineAt }); }
   };
   window.addEventListener('message', mlsSearchOpenHandler, false);
   try {
