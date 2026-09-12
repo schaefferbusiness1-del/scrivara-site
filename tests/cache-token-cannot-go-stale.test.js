@@ -137,6 +137,24 @@ function collectSplitPins(text, into) {
 }
 collectSplitPins(sources, pins);
 
+/* Build-following loaders cannot go stale and therefore do not belong in the
+ * commit-precise hand-token scan below, but they DO belong in this guard's
+ * coverage census. Otherwise converting the two stale loaders to the safer
+ * form makes the reviewed floor fail by pretending those assets vanished. */
+const dynamicAssets = new Set();
+const DYNAMIC_DIRECT_RE = new RegExp(
+  `['"](${LOCAL_JS})\\?v=['"]\\s*\\+\\s*\\(window\\.__MLS_AV\\s*\\|\\|\\s*Date\\.now\\(\\)\\)`,
+  'g'
+);
+while ((m = DYNAMIC_DIRECT_RE.exec(sources))) dynamicAssets.add(normalizeLocalAsset(m[1]));
+const DYNAMIC_SPLIT_RE = new RegExp(
+  `(?:\\bvar\\s+|,)\\s*([A-Za-z_$][\\w$]*)=(['"])(${LOCAL_JS})\\2[;,]` +
+  `(?:(?!\\1\\s*=)[\\s\\S]){0,2000}?s\\.src=\\1\\+['"]\\?v=['"]\\s*\\+\\s*` +
+  `\\(window\\.__MLS_AV\\s*\\|\\|\\s*Date\\.now\\(\\)\\)`,
+  'g'
+);
+while ((m = DYNAMIC_SPLIT_RE.exec(sources))) dynamicAssets.add(normalizeLocalAsset(m[3]));
+
 /* Scanner self-test: both historical spellings must remain visible. This is
    deliberately independent of the current fleet so a future loader rewrite
    cannot make the guard green by shrinking what it sees. */
@@ -167,8 +185,10 @@ for (const f of ['mls-connect.js', 'ScribeFlow.html']) {
   collectSplitPins(text, headPins);
 }
 
-assert.ok(pins.size >= 134,
-  'the pin scanner found only ' + pins.size + ' tokens — the reviewed floor is 134 across direct, split, root-qualified and vendor loaders. ' +
+const coveredAssets = new Set(Array.from(pins.keys()).concat(Array.from(dynamicAssets)));
+assert.ok(coveredAssets.size >= 134,
+  'the cache scanner found only ' + coveredAssets.size + ' assets (' + pins.size + ' hand tokens + ' + dynamicAssets.size +
+  ' build-following loaders) — the reviewed floor is 134 across direct, split, root-qualified and vendor loaders. ' +
   'A loader spelling probably changed and part of the fleet just left this guard.');
 
 assert.ok(pins.size > 0, 'no hand-maintained cache tokens were found at all — the pattern has drifted');
@@ -274,4 +294,5 @@ assert.deepStrictEqual(stale, [],
 console.log('PASS cache token cannot go stale: ' + checked.length + ' hand-maintained token(s) checked ' +
   'commit-precisely against their own file history (of ' + pins.size + ' found; ' + skippedUntouched +
   ' untouched since the seed and skipped; ' + freshWorktreeTokens +
-  ' fresh worktree token bump(s)), 0 stale, ' + scanSeconds + 's.');
+  ' fresh worktree token bump(s); ' + dynamicAssets.size +
+  ' build-following asset(s) covered separately), 0 stale, ' + scanSeconds + 's.');

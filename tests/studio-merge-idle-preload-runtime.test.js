@@ -33,10 +33,20 @@ const root = path.resolve(__dirname, '..');
 const CONNECT_PATH = path.join(root, 'mls-connect.js');
 const SHELL_PATH = path.join(root, 'ScribeFlow.html');
 const MERGE_PATH = path.join(root, 'feat_mls_studio_merge.js');
+const STUDY_PATH = path.join(root, 'feat_mls_study_request.js');
 
 const connectSource = fs.readFileSync(CONNECT_PATH, 'utf8');
 const shellSource = fs.readFileSync(SHELL_PATH, 'utf8');
 const mergeSource = fs.readFileSync(MERGE_PATH, 'utf8');
+const studySource = fs.readFileSync(STUDY_PATH, 'utf8');
+
+const tourMarker = 'MLS Scribe -- b39 Studio overhaul + ONE auto-start tour';
+const tourMarkerAt = connectSource.indexOf(tourMarker);
+const tourIifeStart = connectSource.indexOf('(function () {', tourMarkerAt);
+const tourIifeClose = connectSource.indexOf('})();', tourIifeStart);
+assert.ok(tourMarkerAt >= 0 && tourIifeStart > tourMarkerAt && tourIifeClose > tourIifeStart,
+  'could not lift the real Studio advanced-wrapper reconciler');
+const STUDIO_WRAPPER_IIFE = connectSource.slice(tourIifeStart, tourIifeClose + 5);
 
 /* ---------- lift the real loader IIFE, do not retype it ---------- */
 const startMarker = "var A='feat_mls_studio_merge.js';";
@@ -118,7 +128,70 @@ const SHELL_HTML = `<!doctype html><html><body>
       await page.close();
     }
 
-    /* ================= 2: the on-screen trigger still fires immediately ================= */
+    /* =============== 2: Study is a visible top-level Build surface ============ */
+    {
+      const page = await browser.newPage();
+      await page.setContent(`<!doctype html><html><head><style>
+        #studioView{display:grid;grid-template-columns:1fr;gap:12px}
+        #mlsB39SgBody{display:none}
+        #mlsB39SgWrap.open #mlsB39SgBody{display:block}
+      </style></head><body>
+        <div id="appWrap"><div id="studioView" class="sx-grid">
+          <div class="sx-title">AI Studio</div>
+          <div id="copilotCard">Ask</div>
+          <div class="sx-right">Build a custom tool</div>
+          <div id="studioResultCard"></div>
+          <div id="mlsSgPro">Legacy cohort controls</div>
+          <div id="mls-sg-root">Advanced cohort tools</div>
+        </div><div id="analysisView"></div></div>
+      </body></html>`);
+      await page.evaluate(() => { window.__mlsManualToursOnly = true; });
+      await page.addScriptTag({ content: STUDIO_WRAPPER_IIFE });
+      await page.addScriptTag({ content: mergeSource });
+      await page.waitForFunction(() => !!window.__mlsStudioMerge, null, { timeout: 5000 });
+      await page.evaluate(() => window.__mlsStudioMerge.select('build'));
+      await page.addScriptTag({ content: studySource });
+      await page.waitForSelector('#mlsStudyRequest');
+
+      const mounted = await page.evaluate(() => {
+        const studio = document.getElementById('studioView');
+        const builder = document.getElementById('mlsStudyRequest');
+        const wrapper = document.getElementById('mlsB39SgWrap');
+        const prompt = document.getElementById('mlsStudyPrompt');
+        return {
+          oneBuilder: document.querySelectorAll('#mlsStudyRequest').length,
+          directChild: builder.parentElement === studio,
+          outsideAdvanced: !wrapper.contains(builder),
+          advancedClosed: !wrapper.classList.contains('open'),
+          visible: getComputedStyle(builder).display !== 'none' && !!builder.getClientRects().length,
+          gridRow: getComputedStyle(builder).gridRowStart,
+          promptEnabled: !prompt.disabled && !prompt.readOnly,
+          advancedOwnsLegacy: document.getElementById('mlsSgPro').closest('#mlsB39SgBody') === document.getElementById('mlsB39SgBody'),
+          advancedOwnsGroups: document.getElementById('mls-sg-root').closest('#mlsB39SgBody') === document.getElementById('mlsB39SgBody')
+        };
+      });
+      assert.strictEqual(mounted.oneBuilder, 1, 'Study mounted more than one primary builder');
+      assert.strictEqual(mounted.directChild, true, 'Study is not a direct AI Studio panel');
+      assert.strictEqual(mounted.outsideAdvanced, true, 'Study is still trapped in the collapsed advanced wrapper');
+      assert.strictEqual(mounted.advancedClosed, true, 'revealing the primary Study tool opened unrelated advanced controls');
+      assert.strictEqual(mounted.visible, true, 'the Build tab still paints the healthy Study tool as missing');
+      assert.strictEqual(mounted.gridRow, '3', 'Study is not the first Build panel beneath the section switcher');
+      assert.strictEqual(mounted.promptEnabled, true, 'the visible Study composer cannot accept input');
+      assert.strictEqual(mounted.advancedOwnsLegacy, true, 'legacy cohort controls escaped the advanced wrapper');
+      assert.strictEqual(mounted.advancedOwnsGroups, true, 'named Study Groups escaped the advanced wrapper');
+
+      const prompt = page.locator('#mlsStudyPrompt');
+      await prompt.fill('');
+      await prompt.press('Enter');
+      await page.locator('#mlsStudyStatus').waitFor({ state: 'visible', timeout: 3000 });
+      assert.ok((await page.locator('#mlsStudyStatus').innerText()).trim().length > 10,
+        'Enter reached no handler or produced no honest validation status');
+      assert.strictEqual(await page.locator('#mlsStudySubmit').isEnabled(), true,
+        'an invalid request left the Study composer stuck disabled');
+      await page.close();
+    }
+
+    /* ================= 3: the on-screen trigger still fires immediately ================= */
     {
       const page = await browser.newPage();
       await page.setContent(SHELL_HTML);
@@ -141,7 +214,7 @@ const SHELL_HTML = `<!doctype html><html><body>
       await page.close();
     }
 
-    /* ================= 3: placeholder present before the real mount, gone after ================= */
+    /* ================= 4: placeholder present before the real mount, gone after ================= */
     {
       const page = await browser.newPage();
       /* Playwright runs routes in the OPPOSITE order of registration (the
@@ -180,6 +253,5 @@ const SHELL_HTML = `<!doctype html><html><body>
     await browser.close();
   }
 
-  console.log('PASS studio-merge idle preload: schedules exactly one idle load, the on-screen trigger is untouched, ' +
-    'and the real merge module removes the "Loading the rest of AI Studio..." placeholder the moment it actually mounts');
+  console.log('PASS studio-merge: idle preload remains exact, and the real Study composer is visible, first, unique, and live on Build while advanced cohorts stay closed');
 })().catch(error => { console.error(error && error.stack || error); process.exit(1); });

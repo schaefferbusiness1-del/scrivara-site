@@ -1,6 +1,6 @@
 /* =============================================================================
  * MLS Scribe natural-language study request surface
- * __mlsStudyRequest sr-2.0.0 (site only, additive, reversible)
+ * __mlsStudyRequest sr-2.4.0 (site only, additive, reversible)
  *
  * One sentence is enough: the deterministic parser turns it into a strict
  * StudySpec, the existing __mlsSgFix/__mlsStudyGroups engines build and run the
@@ -33,7 +33,7 @@
   (typeof globalThis !== 'undefined' ? globalThis : this), function (root) {
   'use strict';
 
-  var VERSION = 'sr-2.3.1';
+  var VERSION = 'sr-2.4.0';
   var CSS_ID = 'mlsStudyRequestCss';
   var UI_ID = 'mlsStudyRequest';
   var ADV_ID = 'mlsStudyAdvanced';
@@ -2127,17 +2127,33 @@
       body.appendChild(child);
     });
   }
+  /* The sentence-first builder is AI Studio's primary Study surface.  It
+     used to be inserted into #mlsSgPro, which the studio reconciler places
+     behind the collapsed "Study Groups — advanced" disclosure.  That made a
+     healthy, fully wired builder look missing.  Keep the legacy cohort
+     machinery in #mlsSgPro, but keep this primary surface as a direct Studio
+     child so the Build tab can place and reveal it independently. */
+  function placePrimary(doc, pro, section) {
+    var studio = doc && doc.getElementById('studioView');
+    if (!studio || !section) return false;
+    var anchor = doc.getElementById('mlsB39SgWrap');
+    if (!anchor || anchor.parentNode !== studio) anchor = pro && pro.parentNode === studio ? pro : null;
+    if (section.parentNode !== studio || (anchor && section.nextSibling !== anchor)) studio.insertBefore(section, anchor);
+    return true;
+  }
   function mount() {
     var doc = root.document, pro = doc && doc.getElementById('mlsSgPro');
-    if (!doc || !pro) return false;
-    if (doc.getElementById(UI_ID)) return true;
+    if (!doc || !pro || !doc.getElementById('studioView')) return false;
+    var existing = doc.getElementById(UI_ID);
+    if (existing) return placePrimary(doc, pro, existing);
     injectCss(doc);
     var section = buildUi(doc);
     var details = doc.createElement('details'); details.id = ADV_ID;
     var summary = doc.createElement('summary'); summary.textContent = 'Advanced options and named cohorts';
     var body = doc.createElement('div'); body.id = ADV_BODY_ID;
     details.appendChild(summary); details.appendChild(body);
-    pro.insertBefore(details, pro.firstChild); pro.insertBefore(section, details);
+    pro.insertBefore(details, pro.firstChild);
+    placePrimary(doc, pro, section);
     adoptLegacy(pro, details, body); mountedPro = pro;
     if (childObserver) childObserver.disconnect();
     childObserver = new MutationObserver(function (mutations) {

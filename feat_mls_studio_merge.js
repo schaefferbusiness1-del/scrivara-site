@@ -206,10 +206,10 @@
       /* ONE CELL, ONE PANEL — the other half of the 2026-07-29 overlap fix.
          Naming the study hosts as Build members stops them painting over
          Practice, but sx:98 stacks all FOUR of them on row 3, so on Build
-         #mlsSgPro and #mlsB39SgWrap would still share one cell. Give each its
-         own row, counting on from the result card (sx: row 6, or row 8 at
-         <=980px) in the order mls-connect's own placeOrder() already wants —
-         "result -> advanced SG", mls-connect.js placeOrder(). Consecutive
+         #mlsSgPro and #mlsB39SgWrap would still share one cell.  The primary
+         natural-language builder now owns row 3 immediately below the
+         switcher; the advanced Study Groups wrapper stays after the result
+         card (sx: row 6, or row 8 at <=980px). Consecutive
          rows, so no empty track is reserved; and the hosts that are normally
          nested cost nothing while hidden, because a display:none grid item is
          removed from the grid entirely.
@@ -220,14 +220,16 @@
          is too thin a thing to rest a layout on. */
       'body.' + BODY_CLASS + ' #studioView.sx-grid > #mlsB39SgWrap{grid-row:7!important}',
       'body.' + BODY_CLASS + ' #studioView.sx-grid > #mls-sg-root{grid-row:8!important}',
-      'body.' + BODY_CLASS + ' #studioView.sx-grid > #mlsStudyRequest{grid-row:9!important}',
+      'body.' + BODY_CLASS + ' #studioView.sx-grid > #mlsSgPro{grid-row:9!important}',
+      'body.' + BODY_CLASS + ' #studioView.sx-grid > #mlsStudyRequest{grid-row:3!important}',
       /* sx re-stacks itself below 980px (copilot 4, right 5, lock 6, pay 7,
          result 8), so the study hosts follow it down or they would land on the
          Pay Reports tile. "No overlap at any width" is the whole point. */
       '@media (max-width:980px){',
       '  body.' + BODY_CLASS + ' #studioView.sx-grid > #mlsB39SgWrap{grid-row:9!important}',
       '  body.' + BODY_CLASS + ' #studioView.sx-grid > #mls-sg-root{grid-row:10!important}',
-      '  body.' + BODY_CLASS + ' #studioView.sx-grid > #mlsStudyRequest{grid-row:11!important}}',
+      '  body.' + BODY_CLASS + ' #studioView.sx-grid > #mlsSgPro{grid-row:11!important}',
+      '  body.' + BODY_CLASS + ' #studioView.sx-grid > #mlsStudyRequest{grid-row:3!important}}',
 
       /* Only needed when ax did not install: without this Practice renders
          blank and nothing anywhere says why. */

@@ -546,7 +546,7 @@ check('E: no two visible studio panels share a grid cell, at any viewport', func
   assert.strictEqual(bad.length, 0, 'panels stacked in one cell:\n      - ' + bad.join('\n      - '));
 });
 
-check('F: the same resolver DETECTS the shipped defect (this suite is not vacuous)', function () {
+check('F: the same resolver DETECTS an unowned Study panel (this suite is not vacuous)', function () {
   /* Re-run E against the pre-fix member list: Build owned only .sx-right,
      #studioResultCard and #mlsB39SgWrap, so the three study hosts had no hide
      rule. Simulated by deleting their display:none rules from the cascade. */
@@ -568,8 +568,11 @@ check('F: the same resolver DETECTS the shipped defect (this suite is not vacuou
     PARSED.clear();
   }
   assert(hits.length > 0, 'with the study hosts unowned the resolver still finds no overlap - it cannot see the defect it exists for');
-  assert(hits.some(h => /#mlsSgPro/.test(h) && /#analysisView/.test(h)),
-    'the resolver missed the exact pair the owner photographed (#mlsSgPro over #analysisView); it found: ' + hits.join(' | '));
+  /* sr-2.4 makes #mlsStudyRequest the intentional row-3 primary and moves a
+     transient direct #mlsSgPro to its own row.  Removing the Build hide path
+     must therefore expose the CURRENT dangerous pair: Study over Practice. */
+  assert(hits.some(h => /#mlsStudyRequest/.test(h) && /#analysisView/.test(h)),
+    'the resolver missed an unowned row-3 Study primary over Practice; it found: ' + hits.join(' | '));
 });
 
 console.log('');
