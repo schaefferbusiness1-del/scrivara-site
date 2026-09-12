@@ -23646,6 +23646,14 @@ document.addEventListener('click',function(e){
    autosaves to History and reopening resumes it. */
 document.addEventListener('keydown',function(e){
   try{
+    /* opsendfix-1.0.0: THE THING IN FRONT STANDS DOWN FIRST. The surgeon
+       hand-off is a fixed overlay painted ON TOP of this room. Closing the room
+       out from under it left that overlay covering the whole app with nothing
+       behind it - an Escape that made the trap worse. */
+    if(e.key==='Escape'||e.key==='Esc'){
+      var s=document.getElementById('opSurgeonModal');
+      if(s){ e.preventDefault(); e.stopImmediatePropagation(); try{ opSurgeonClose(); }catch(_s){} return; }
+    }
     var m=document.getElementById('opPrepModal');
     if(!m||!m.classList.contains('show')) return;
     if(e.key==='Escape'||e.key==='Esc'){ e.preventDefault(); e.stopImmediatePropagation(); closeOpPrep(); return; }
@@ -24990,12 +24998,24 @@ var _opSurgeonRow=null, _opSurgeonClients=[];
    here only so the screen can be repainted around it (after an address is
    added, for instance); opSurgeonClose clears it, nothing writes it to storage,
    nothing logs it, and it is never put in a toast. */
-var _opSurgeonId='', _opSurgeonTo='', _opSurgeonTyped='', _opSurgeonCount=0, _opSurgeonUrl='', _opSurgeonLine='', _opSurgeonLineOk=false, _opSurgeonBusy='';
+var _opSurgeonId='', _opSurgeonTo='', _opSurgeonTyped='', _opSurgeonCount=0, _opSurgeonUrl='', _opSurgeonLine='', _opSurgeonLineOk=false, _opSurgeonBusy='', _opSurgeonUnsure=false;
+/* opsendfix-1.0.0: EVERY REQUEST ON THIS SURFACE ANSWERS, ONE WAY OR ANOTHER.
+   A request that hangs used to leave _opSurgeonBusy set for the rest of the
+   page's life, and the hand-off screen repaints from that flag - so a slow
+   server left every button on a full-screen overlay disabled with no way out
+   but a reload. A request that gives up is a failure the screens already know
+   how to say. */
+var OP_SURGEON_WAIT_MS=45000;
 async function _opSurgeonApi(path,opts){
   opts=opts||{};
   opts.headers=Object.assign({'Authorization':'Bearer '+bkToken()},opts.headers||{});
   if(opts.body&&!opts.headers['Content-Type']) opts.headers['Content-Type']='application/json';
-  var r=await fetch(bkBase()+path,opts);
+  var ac=null,timer=0;
+  try{ if(typeof AbortController==='function'){ ac=new AbortController(); opts.signal=ac.signal; } }catch(e){}
+  if(ac) timer=setTimeout(function(){ try{ ac.abort(); }catch(e){} },OP_SURGEON_WAIT_MS);
+  var r;
+  try{ r=await fetch(bkBase()+path,opts); }
+  finally{ if(timer) clearTimeout(timer); }
   var d={}; try{ d=await r.json(); }catch(e){}
   if(!r.ok){ var err=new Error((d&&d.error&&d.error.message)||('Request failed ('+r.status+').')); err.status=r.status; throw err; }
   return d;
@@ -25010,7 +25030,7 @@ function _opSurgeonDialog(inner){
   document.body.appendChild(d);
   return d;
 }
-function opSurgeonClose(){ var d=document.getElementById('opSurgeonModal'); if(d&&d.parentNode) d.parentNode.removeChild(d); _opSurgeonRow=null; _opSurgeonId=''; _opSurgeonTo=''; _opSurgeonTyped=''; _opSurgeonCount=0; _opSurgeonUrl=''; _opSurgeonLine=''; _opSurgeonLineOk=false; _opSurgeonBusy=''; }
+function opSurgeonClose(){ var d=document.getElementById('opSurgeonModal'); if(d&&d.parentNode) d.parentNode.removeChild(d); _opSurgeonRow=null; _opSurgeonId=''; _opSurgeonTo=''; _opSurgeonTyped=''; _opSurgeonCount=0; _opSurgeonUrl=''; _opSurgeonLine=''; _opSurgeonLineOk=false; _opSurgeonBusy=''; _opSurgeonUnsure=false; }
 function _opSurgeonBlanks(){ try{ return window.opNoteBlankTokens((((window._opPrep||[])[_opSurgeonRow])||{}).note||'')||[]; }catch(e){ return []; } }
 function _opSurgeonPick(){
   var blanks=_opSurgeonBlanks();
@@ -25043,16 +25063,30 @@ function _opSurgeonHandoff(){
   var n=_opSurgeonCount;
   var h='<div style="font-weight:800;font-size:17px">Ready for them</div>';
   h+=_opSurgeonWaitCount(n);
-  h+='<div class="mini" style="margin-top:10px;font-weight:700">It will go to '+esc(_opSurgeonTo)+'.</div>';
+  /* _opSurgeonUnsure means the send may already have gone. Saying "It will go
+     to" over the top of that would contradict the sentence underneath it. */
+  if(!_opSurgeonUnsure) h+='<div class="mini" style="margin-top:10px;font-weight:700">It will go to '+esc(_opSurgeonTo)+'.</div>';
   h+=_opSurgeonLineHtml();
   h+='<div id="opSurgeonMsg" class="mini" style="color:#8b2525;font-weight:700;margin-top:8px"></div>';
   h+='<div class="row" style="gap:8px;margin-top:14px">';
-  h+=(_opSurgeonBusy==='mail')
-    ? '<button class="btn-primary" disabled>Sending...</button>'
-    : '<button class="btn-primary"'+(_opSurgeonBusy?' disabled':'')+' onclick="opSurgeonMail()">Email it to them</button>';
-  h+=(_opSurgeonBusy==='link')
-    ? '<button class="btn-ghost" disabled>One moment...</button>'
-    : '<button class="btn-ghost"'+(_opSurgeonBusy?' disabled':'')+' onclick="opSurgeonLinkOnly()">Just show me the link</button>';
+  /* Neither way of making a link is offered once we cannot tell whether one was
+     already made and mailed: the whole point of this lane is that one hand-off
+     leaves exactly one live credential behind. */
+  if(!_opSurgeonUnsure){
+    h+=(_opSurgeonBusy==='mail')
+      ? '<button class="btn-primary" disabled>Sending...</button>'
+      : '<button class="btn-primary"'+(_opSurgeonBusy?' disabled':'')+' onclick="opSurgeonMail()">Email it to them</button>';
+    h+=(_opSurgeonBusy==='link')
+      ? '<button class="btn-ghost" disabled>One moment...</button>'
+      : '<button class="btn-ghost"'+(_opSurgeonBusy?' disabled':'')+' onclick="opSurgeonLinkOnly()">Just show me the link</button>';
+  }
+  /* THE WAY OUT, ALWAYS, AND NEVER DISABLED. This screen is a fixed overlay
+     covering the whole app, and both other buttons grey out while a request is
+     in flight - so without this one a slow server hid the entire app behind it
+     and only a reload got the owner back. opSurgeonClose drops the overlay and
+     clears every value held for it, so it is safe to press mid-flight: the note
+     is already waiting on the surgeon's page either way. */
+  h+='<button class="btn-ghost" onclick="opSurgeonClose()">'+(_opSurgeonUnsure?'Close':'Not now')+'</button>';
   h+='</div>';
   _opSurgeonDialog(h);
 }
@@ -25074,6 +25108,15 @@ function _opSurgeonShowLink(url,n){
     h+='<div class="mini" style="color:var(--muted);margin-top:16px;border-top:1px solid var(--line);padding-top:12px">No email address is saved for this surgeon, so add one here and the next op note can go straight to them.</div>';
     h+='<div class="row" style="gap:8px;margin-top:6px;flex-wrap:wrap"><input id="opSurgeonAddEmail" placeholder="Email" style="flex:1;min-width:170px;min-height:40px;padding:6px 9px;border:1px solid var(--line);border-radius:10px"><button class="btn-ghost"'+(_opSurgeonBusy?' disabled':'')+' onclick="opSurgeonSaveEmail()">Save email</button></div>';
   }
+  /* A surgeon just typed in by hand, WITH an address. The owner filled in a
+     field labelled Email and then got no send button and, until this line, not
+     one word about the address he had just typed. It went onto their card with
+     the rest of the new surgeon; it is simply too late to use on this op note,
+     because this link is already minted and a second one for the same note is
+     the thing this lane must never do. */
+  else if(!_opSurgeonTo&&_opSurgeonTyped){
+    h+='<div class="mini" style="color:var(--muted);margin-top:16px;border-top:1px solid var(--line);padding-top:12px">Their address is saved. The next op note for them can be emailed straight from here.</div>';
+  }
   h+='<div id="opSurgeonMsg" class="mini" style="color:#8b2525;font-weight:700;margin-top:8px"></div>';
   _opSurgeonDialog(h);
 }
@@ -25092,43 +25135,54 @@ async function opPrepForSurgeon(i){
   catch(e){ _opSurgeonClients=[]; }
   _opSurgeonPick();
 }
+/* opsendfix-1.0.0: THE PRESS THAT MAKES THE JOB HOLDS THE FLAG ITSELF. This
+   opened on `if(_opSurgeonBusy) return;` but never set it, so the guard could
+   only ever catch a flag some other handler had left - and two fast presses
+   posted the op note twice, listing it twice on the surgeon's page. The flag is
+   set before the first await and cleared on every way out of this function,
+   including the three refusals that leave the pick dialog standing. */
 async function opSurgeonSend(){
   if(_opSurgeonBusy) return;
   var i=_opSurgeonRow; var row=(window._opPrep||[])[i]; if(!row) return;
   var pick=document.getElementById('opSurgeonPick');
   var clientId=pick?String(pick.value||''):'';
   var known=null;
-  _opSurgeonTyped=''; _opSurgeonTo=''; _opSurgeonUrl=''; _opSurgeonLine=''; _opSurgeonLineOk=false;
+  _opSurgeonBusy='send';
+  _opSurgeonTyped=''; _opSurgeonTo=''; _opSurgeonUrl=''; _opSurgeonLine=''; _opSurgeonLineOk=false; _opSurgeonUnsure=false;
   var newName=_opSurgeonField('opSurgeonName');
   if(newName){
     _opSurgeonTyped=_opSurgeonField('opSurgeonEmail');
     try{
       var made=await _opSurgeonApi('/api/opnote-clients',{method:'POST',body:JSON.stringify({name:newName,practice:_opSurgeonField('opSurgeonPractice'),email:_opSurgeonField('opSurgeonEmail')})});
       clientId=(made&&made.client&&made.client.id)||'';
-    }catch(e){ _opSurgeonSay('That surgeon could not be added. Try again in a moment.'); return; }
+    }catch(e){ _opSurgeonBusy=''; _opSurgeonSay('That surgeon could not be added. Try again in a moment.'); return; }
   }else{
     /* The address comes off the card the list already handed back, so asking
        whether this one can be sent costs no extra request. */
     for(var k=0;k<_opSurgeonClients.length;k++){ if(String((_opSurgeonClients[k]||{}).id||'')===clientId){ known=_opSurgeonClients[k]; break; } }
   }
-  if(!clientId){ _opSurgeonSay('Pick a surgeon, or type a name to add one.'); return; }
+  if(!clientId){ _opSurgeonBusy=''; _opSurgeonSay('Pick a surgeon, or type a name to add one.'); return; }
   var blanks=_opSurgeonBlanks();
   var title=String(row.proc||'').trim()||'Op note';
   try{
     await _opSurgeonApi('/api/opnote-jobs',{method:'POST',body:JSON.stringify({clientId:clientId,templateId:row.tplId||null,title:title,noteText:String(row.note||''),blanks:blanks})});
-  }catch(e){ _opSurgeonSay('That did not go through. Try again in a moment.'); return; }
+  }catch(e){ _opSurgeonBusy=''; _opSurgeonSay('That did not go through. Try again in a moment.'); return; }
   _opSurgeonId=clientId;
   _opSurgeonCount=blanks.length;
   _opSurgeonTo=String((known&&known.email)||'').trim();
   /* An address on their card is the whole question. With one, this stops here
      WITHOUT minting and lets the owner choose - opSurgeonMail asks the server
      to mint and mail inside a single press, so the hand-off still produces one
-     link. Without one, there is nothing to choose between, so mint and show. */
-  if(_opSurgeonTo){ _opSurgeonHandoff(); return; }
+     link. Without one, there is nothing to choose between, so mint and show.
+     The flag is dropped BEFORE either screen paints: both read it to decide
+     what to grey out, and a screen that arrives already disabled is the wedge
+     this lane just finished removing. */
+  if(_opSurgeonTo){ _opSurgeonBusy=''; _opSurgeonHandoff(); return; }
   try{
     var minted=await _opSurgeonApi('/api/opnote-clients/'+encodeURIComponent(clientId)+'/link',{method:'POST'});
+    _opSurgeonBusy='';
     _opSurgeonShowLink((minted&&minted.link&&minted.link.url)||'',blanks.length);
-  }catch(e){ _opSurgeonSay('The op note is waiting for them, but the link did not come back. Open this again to get one.'); }
+  }catch(e){ _opSurgeonBusy=''; _opSurgeonSay('The op note is waiting for them, but the link did not come back. Open this again to get one.'); }
 }
 /* THE SEND. One press does the whole thing on the server - mint, then mail -
    and hands the link back either way. _opSurgeonBusy is set before the first
@@ -25137,15 +25191,28 @@ async function opSurgeonSend(){
 async function opSurgeonMail(){
   if(_opSurgeonBusy) return;
   if(!_opSurgeonId||!_opSurgeonTo) return;
-  _opSurgeonBusy='mail'; _opSurgeonLine=''; _opSurgeonLineOk=false; _opSurgeonHandoff();
-  var d=null;
+  _opSurgeonBusy='mail'; _opSurgeonLine=''; _opSurgeonLineOk=false; _opSurgeonUnsure=false; _opSurgeonHandoff();
+  var d=null,st=0;
   try{ d=await _opSurgeonApi('/api/opnote-clients/'+encodeURIComponent(_opSurgeonId)+'/link/send',{method:'POST'}); }
-  catch(e){ d=null; }
+  catch(e){ d=null; st=Number(e&&e.status)||0; }
   _opSurgeonBusy='';
   var url=(d&&d.link&&d.link.url)||'';
-  /* Nothing came back at all, so nothing was made either - stay where we are,
-     say so, and leave the other way out sitting right there. */
-  if(!url){ _opSurgeonLine='The email did not go out. Show the link instead and send it to them yourself.'; _opSurgeonLineOk=false; _opSurgeonHandoff(); return; }
+  /* opsendfix-1.0.0: NOTHING CAME BACK IS TWO DIFFERENT ANSWERS, AND ONLY ONE
+     OF THEM MEANS NOTHING WAS MADE.
+
+     The server makes the link FIRST and only then tries the mail, so which of
+     the two this is turns entirely on who refused. A 4xx is the server itself
+     saying no before it made anything - no surgeon by that name, no address on
+     their card, an address that is not one - and the owner can safely be sent
+     round to the other button for a link. Anything else (the server fell over
+     mid-request, the connection dropped, we gave up waiting) may well have
+     minted a link and mailed it before the answer was lost. Telling the owner
+     to make another one there would leave a second live credential for the same
+     op note, with nobody holding the first - exactly the leak this whole screen
+     was shaped to avoid. So that state says what is actually known and offers
+     no way to make another. */
+  if(!url&&st>=400&&st<500){ _opSurgeonLine='The email did not go out. Show the link instead and send it to them yourself.'; _opSurgeonLineOk=false; _opSurgeonHandoff(); return; }
+  if(!url){ _opSurgeonUnsure=true; _opSurgeonLine='We could not tell whether that email went out, so the op note is waiting for them either way. Close this and check with them before you send another.'; _opSurgeonLineOk=false; _opSurgeonHandoff(); return; }
   if(d.sent===true){ _opSurgeonLine='Sent to '+_opSurgeonTo+'. The link is below as well.'; _opSurgeonLineOk=true; }
   else{ _opSurgeonLine='The email did not go out. Copy the link below and send it to them yourself.'; _opSurgeonLineOk=false; }
   _opSurgeonShowLink(url,_opSurgeonCount);

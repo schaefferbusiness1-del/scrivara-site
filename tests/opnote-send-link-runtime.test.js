@@ -84,6 +84,12 @@ function noJargon(html, where) {
     ok(!re.test(text), where + ' says ' + JSON.stringify(word) + ' to a doctor: ' + text.slice(0, 240));
   }
 }
+/* opsendfix-1.0.0: THE SCREENS ARE A FULL-VIEWPORT OVERLAY WITH NOTHING BEHIND
+   THEM THE OWNER CAN REACH, so "is there a control left he can actually press"
+   is a real question and these two answer it from the painted markup. */
+function buttons(html) { return String(html).match(/<button[^>]*>/g) || []; }
+function liveButtons(html) { return buttons(html).filter((b) => b.indexOf(' disabled') === -1); }
+function wayOut(html) { return liveButtons(html).filter((b) => /onclick="opSurgeonClose\(\)"/.test(b)); }
 
 /* =======================================================================
  * 1. THE CONTROLS EXIST, ONCE PER SHELL, AND REACH THE WINDOW
@@ -119,6 +125,7 @@ function runtime(options) {
   const opts = options || {};
   const calls = [];
   const linksMade = [];
+  const serverMade = [];
   const lazy = new Map();
   const body = { children: [] };
   body.appendChild = function (n) { n.parentNode = body; body.children.push(n); return n; };
@@ -142,6 +149,9 @@ function runtime(options) {
     document,
     console, JSON, Object, String, Number, Boolean, Math, RegExp, Error, Promise, Array,
     encodeURIComponent, decodeURIComponent, setTimeout, clearTimeout,
+    /* the REAL one, so the giving-up point in _opSurgeonApi is executed here
+       rather than feature-detected away into a no-op that never runs */
+    AbortController,
     bkBase: () => 'https://synthetic-backend.invalid',
     bkToken: () => 'SYNTHETIC_CLINICIAN_CREDENTIAL',
     toast: (m, k) => toasts.push({ m, k }),
@@ -151,6 +161,25 @@ function runtime(options) {
       const key = String(url).replace('https://synthetic-backend.invalid', '') + ' ' + String((init || {}).method || 'GET');
       const reply = (opts.replies || {})[key];
       if (!reply) return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve({ error: { code: 'NOT_STUBBED', message: key } }) });
+      /* A REQUEST THAT NEVER ANSWERS. A hung Render call is not a refusal: it
+         is silence, and the only thing that can end it is the page's own
+         giving-up point. Nothing here resolves this promise - the abort does. */
+      if (reply.hang) {
+        return new Promise((resolve, reject) => {
+          const signal = (init || {}).signal;
+          if (!signal) return;   // asserted by the caller: a hang with no way out is the wedge
+          signal.addEventListener('abort', () => {
+            const e = new Error('The request was called off.');
+            e.name = 'AbortError';
+            reject(e);
+          });
+        });
+      }
+      /* THE SERVER MADE ONE AND WE NEVER HEARD. The send route mints BEFORE it
+         mails, so a 5xx from the proxy after the handler committed leaves a
+         live credential the page never saw. Counted separately from linksMade,
+         which is only what actually came back. */
+      if (reply.mintedAnyway) serverMade.push(String(url));
       const good = reply.status >= 200 && reply.status < 300;
       /* A LINK THAT REALLY EXISTS, counted where it is really made. Asking the
          send route for one and being refused creates nothing; only an answer
@@ -168,9 +197,13 @@ function runtime(options) {
   ctx.window._opPrep = ctx._opPrep;
   const mints = () => calls.filter((c) => /\/link$/.test(c.url) && c.init.method === 'POST');
   const sends = () => calls.filter((c) => /\/link\/send$/.test(c.url) && c.init.method === 'POST');
+  const jobs = () => calls.filter((c) => /\/api\/opnote-jobs$/.test(c.url) && c.init.method === 'POST');
   return {
-    ctx, calls, toasts, copied, body, mints, sends, linksMade,
+    ctx, calls, toasts, copied, body, mints, sends, jobs, linksMade,
     minted: () => linksMade.length,
+    /* every live credential this hand-off left behind, including the ones the
+       page never saw come back */
+    liveLinks: () => linksMade.length + serverMade.length,
     dialogHtml: () => body.children.map((c) => c.innerHTML).join('\n')
   };
 }
@@ -306,12 +339,16 @@ async function handOff(r, clientId) {
     noJargon(screen, 'the refused-send screen');
   }
 
-  /* ---- 5. NOTHING CAME BACK: stay put, say so, keep the other way out ------ */
+  /* ---- 5. THE SERVER REFUSED BEFORE IT MADE ANYTHING: go round the other way
+     A 4xx on this route is the server saying no with its own hand on the brake
+     - no surgeon by that name, no address on their card, an address that is not
+     one. It mints nothing, so sending the owner to the other button for a link
+     is safe and leaves exactly one credential behind. ------------------------ */
   {
     const r = runtime({
       rows: [{ note: DRAFT, proc: 'Left shoulder arthroscopy' }],
       replies: replies(WITH_EMAIL, {
-        '/api/opnote-clients/oc_hasmail/link/send POST': { status: 500, body: { error: { code: 'OPNOTE_SEND_FAILED', message: 'internal' } } }
+        '/api/opnote-clients/oc_hasmail/link/send POST': { status: 400, body: { error: { code: 'OPNOTE_CLIENT_EMAIL_BAD', message: 'raw server wording' } } }
       })
     });
     await handOff(r, WITH_EMAIL.id);
@@ -319,17 +356,57 @@ async function handOff(r, clientId) {
 
     const screen = r.dialogHtml();
     ok(/The email did not go out\. Show the link instead and send it to them yourself\./.test(screen),
-      'a send that never answered failed silently: ' + visible(screen).slice(0, 240));
-    ok(/Just show me the link/.test(screen), 'a failed send left the owner on a screen with no way forward');
-    ok(screen.indexOf('internal') === -1, 'the server\'s own words were echoed into the dialog');
-    eq(r.minted(), 0, 'a link was created by a send that the server refused outright');
-    noJargon(screen, 'the failed-send screen');
+      'a refusal before minting failed silently: ' + visible(screen).slice(0, 240));
+    ok(/Just show me the link/.test(screen), 'a refused send left the owner on a screen with no way forward');
+    ok(screen.indexOf('raw server wording') === -1, 'the server\'s own words were echoed into the dialog');
+    eq(r.liveLinks(), 0, 'a link was created by a send the server refused outright');
+    noJargon(screen, 'the refused-before-minting screen');
 
     /* and the way out really works, and still only makes one link */
     await r.ctx.opSurgeonLinkOnly();
     ok(r.dialogHtml().indexOf(LINK_URL) >= 0, 'the fallback did not produce a link');
-    eq(r.minted(), 1, 'the fallback after a failed send created ' + r.minted() + ' links, expected exactly 1');
+    eq(r.liveLinks(), 1, 'the fallback after a refused send created ' + r.liveLinks() + ' links, expected exactly 1');
     eq(r.sends().length, 1, 'the fallback went back to the send route instead of just minting');
+  }
+
+  /* ---- 5b. THE ANSWER WAS LOST AFTER THE SERVER ALREADY MINTED -------------
+     opsendfix-1.0.0. The send route mints FIRST and only then awaits the mail,
+     so a 502 or 504 from in front of it - a slow mail call, a restart mid-deploy,
+     a dropped connection - reaches this page as nothing at all while a live
+     30-day credential now exists that nobody is holding. Telling the owner to
+     press "Just show me the link" there is telling him to mint a SECOND one for
+     the same op note, which is the single thing this whole screen exists to
+     prevent. This state has to say what is actually known and offer no way to
+     make another. ------------------------------------------------------------ */
+  {
+    const r = runtime({
+      rows: [{ note: DRAFT, proc: 'Left shoulder arthroscopy' }],
+      replies: replies(WITH_EMAIL, {
+        '/api/opnote-clients/oc_hasmail/link/send POST': { status: 502, mintedAnyway: true, body: { error: 'Bad gateway' } }
+      })
+    });
+    await handOff(r, WITH_EMAIL.id);
+    await r.ctx.opSurgeonMail();
+
+    const screen = r.dialogHtml();
+    eq(r.liveLinks(), 1, 'the fixture is wrong: this case only means anything if the server really did mint one');
+    ok(/We could not tell whether that email went out/.test(screen),
+      'a lost answer still claims to know the email did not go: ' + visible(screen).slice(0, 240));
+    ok(/waiting for them either way/.test(screen), 'the owner is not told the op note is on their page regardless');
+    ok(!/The email did not go out/.test(screen),
+      'a lost answer asserts something nobody can know. The mail may well have gone out before the answer was lost.');
+    ok(!/Just show me the link/.test(screen),
+      'a lost answer invites a SECOND mint for one op note. The server minted before it mailed, so pressing that would leave two ' +
+      'live credentials behind and nobody holding the first.');
+    ok(!/Email it to them/.test(screen), 'a lost answer invites a second send for one op note');
+    ok(!/onclick="opSurgeonMail\(\)"/.test(screen) && !/onclick="opSurgeonLinkOnly\(\)"/.test(screen),
+      'a way to mint another is still wired up on the screen that must not offer one');
+    ok(screen.indexOf('Bad gateway') === -1, 'the server\'s own words were echoed into the dialog');
+    ok(!/It will go to/.test(screen), 'the screen still promises a send in the future tense over a sentence saying it may already have gone');
+    /* and it is still not a dead end */
+    eq(wayOut(screen).length, 1, 'the screen that offers no way to make another link offers no way out either');
+    eq(r.ctx._opSurgeonBusy, '', 'the flag survived the lost answer, so every button stays greyed out forever');
+    noJargon(screen, 'the lost-answer screen');
   }
 
   /* ---- 6. A SECOND PRESS WHILE IT IS IN FLIGHT DOES NOTHING ---------------- */
@@ -402,7 +479,139 @@ async function handOff(r, clientId) {
     eq(r.sends().length, 0, 'choosing to copy still asked the send route for something');
   }
 
+  /* ---- 9. THERE IS ALWAYS A WAY OUT, AND A HUNG SEND DOES NOT WEDGE IT -----
+     opsendfix-1.0.0. This is a fixed, full-viewport overlay at z-index 12000
+     with the whole app behind it. Every other screen in this family has an
+     escape - the pick dialog has Cancel, the link screen has Done - and this
+     one had only the two network actions, both of which grey themselves out
+     while a request is in flight. A Render call that never answered therefore
+     left the owner looking at a screen with no enabled control on it at all,
+     covering everything, with only a page reload to get out. ---------------- */
+  {
+    const r = runtime({
+      rows: [{ note: DRAFT, proc: 'Left shoulder arthroscopy' }],
+      replies: replies(WITH_EMAIL, { '/api/opnote-clients/oc_hasmail/link/send POST': { hang: true } })
+    });
+    r.ctx.OP_SURGEON_WAIT_MS = 25;   // the real shell waits 45s; this suite is not going to
+    await handOff(r, WITH_EMAIL.id);
+
+    const idle = r.dialogHtml();
+    eq(wayOut(idle).length, 1,
+      'the hand-off screen has no way out. It covers the whole app, so a screen with only network actions on it is a trap.');
+    ok(/Not now/.test(idle), 'the way out is unlabelled');
+
+    const flight = r.ctx.opSurgeonMail();
+    const busy = r.dialogHtml();
+    ok(/<button class="btn-primary" disabled>Sending\.\.\.<\/button>/.test(busy), 'the working button is still pressable');
+    ok(liveButtons(busy).length >= 1,
+      'every control on a full-screen overlay is disabled while the send is in flight, so a request that never answers hides the ' +
+      'whole app with no way back: ' + busy);
+    eq(wayOut(busy).length, 1, 'the way out greys itself out along with everything else, which is exactly what makes this a trap');
+    ok(r.sends()[0].init.signal, 'the send went out with nothing that can ever call it off, so a hang lasts forever');
+
+    await flight;
+    const after = r.dialogHtml();
+    eq(r.ctx._opSurgeonBusy, '',
+      'a request that never answered left the working flag set for the life of the page, so every button stays greyed out forever');
+    ok(/We could not tell whether that email went out/.test(after),
+      'giving up on a hung send said nothing at all: ' + visible(after).slice(0, 240));
+    ok(liveButtons(after).length >= 1, 'the screen after a hung send still has no control the owner can press');
+    eq(wayOut(after).length, 1, 'the screen after a hung send has no way out');
+    eq(r.liveLinks(), 0, 'the hung send is stubbed as minting nothing, so this fixture proves nothing if it counts one');
+    noJargon(after, 'the hung-send screen');
+  }
+  /* the giving-up point really ships, in every shell, and is a sane wait */
+  for (const page of ALL_PAGES) {
+    const m = /var OP_SURGEON_WAIT_MS=(\d+);/.exec(read(page));
+    ok(m, page + ': the hand-off requests have no giving-up point, so one that hangs freezes the screen for good');
+    const ms = Number(m[1]);
+    ok(ms >= 5000 && ms <= 120000, page + ': the giving-up point is ' + ms + 'ms, which is either too twitchy for a cold start or no help at all');
+  }
+
+  /* ---- 10. A SURGEON TYPED IN FRESH, WITH AN ADDRESS ----------------------
+     The owner filled in a field labelled Email and then got no send button and
+     not one word about the address he had just typed. The address IS saved -
+     it went onto the new surgeon's card - but it is too late to use on this op
+     note, because the link is already minted. Say so. --------------------- */
+  {
+    const r = runtime({
+      rows: [{ note: DRAFT, proc: 'Left shoulder arthroscopy' }],
+      replies: replies(NO_EMAIL, {
+        '/api/opnote-clients POST': { status: 200, body: { client: { id: 'oc_typed', label: 'Okafor', createdAt: 1 } } },
+        '/api/opnote-clients/oc_typed/link POST': { status: 200, body: { link: { id: 21, url: LINK_URL, prefix: 'cccccccc', expiresAt: 2 } } }
+      })
+    });
+    await r.ctx.opPrepForSurgeon(0);
+    r.ctx.document.getElementById('opSurgeonName').value = 'Dr Ada Okafor';
+    r.ctx.document.getElementById('opSurgeonEmail').value = 'newsurgeon@synthetic.invalid';
+    await r.ctx.opSurgeonSend();
+
+    const screen = r.dialogHtml();
+    ok(/Their address is saved\. The next op note for them can be emailed straight from here\./.test(screen),
+      'the owner typed an address into a field labelled Email and the screen said nothing about it at all: ' + visible(screen).slice(0, 300));
+    ok(!/No email address is saved/.test(screen),
+      'the screen says no address is saved for a surgeon whose address the owner just typed in');
+    ok(!/onclick="opSurgeonSaveEmail\(\)"/.test(screen), 'the owner is asked to save an address he already gave');
+    ok(screen.indexOf(LINK_URL) >= 0, 'the newly-typed surgeon was not given a link');
+    ok(/onclick="opSurgeonCopy\(\)"/.test(screen), 'the newly-typed surgeon hand-off lost its Copy button');
+    eq(r.liveLinks(), 1, 'adding a surgeon by hand created ' + r.liveLinks() + ' links, expected exactly 1');
+    noJargon(screen, 'the newly-typed-surgeon screen');
+  }
+
+  /* ---- 11. TWO FAST PRESSES OF "SEND THIS OP NOTE" POST ONE JOB -----------
+     opsendfix-1.0.0. opSurgeonSend opened on `if(_opSurgeonBusy) return;` and
+     never set the flag, so the guard could only ever catch a flag some other
+     handler had left. Two presses listed the same op note twice on the
+     surgeon's page. ------------------------------------------------------- */
+  {
+    const r = runtime({ rows: [{ note: DRAFT, proc: 'Left shoulder arthroscopy' }], replies: replies(WITH_EMAIL) });
+    await r.ctx.opPrepForSurgeon(0);
+    r.ctx.document.getElementById('opSurgeonPick').value = WITH_EMAIL.id;
+    const a = r.ctx.opSurgeonSend();
+    const b = r.ctx.opSurgeonSend();
+    await a; await b;
+    eq(r.jobs().length, 1, 'two fast presses posted ' + r.jobs().length + ' jobs - the surgeon sees the same op note twice');
+    eq(r.liveLinks(), 0, 'the screen that offers the choice minted a link before the owner chose');
+    /* and the screen the owner is left on is not greyed out by its own guard */
+    const screen = r.dialogHtml();
+    ok(/onclick="opSurgeonMail\(\)"/.test(screen),
+      'the press left its own working flag set, so the screen it painted arrived with the send already greyed out: ' + screen);
+    eq(r.ctx._opSurgeonBusy, '', 'the press that finished left its working flag behind');
+  }
+  {
+    /* the same on the copy-only path, where the press really does mint */
+    const r = runtime({ rows: [{ note: DRAFT, proc: 'Left shoulder arthroscopy' }], replies: replies(NO_EMAIL) });
+    await r.ctx.opPrepForSurgeon(0);
+    r.ctx.document.getElementById('opSurgeonPick').value = NO_EMAIL.id;
+    const a = r.ctx.opSurgeonSend();
+    const b = r.ctx.opSurgeonSend();
+    await a; await b;
+    eq(r.jobs().length, 1, 'two fast presses posted ' + r.jobs().length + ' jobs on the copy-only path');
+    eq(r.liveLinks(), 1, 'two fast presses created ' + r.liveLinks() + ' links on the copy-only path, expected exactly 1');
+    ok(/onclick="opSurgeonSaveEmail\(\)"/.test(r.dialogHtml()), 'the link screen arrived with its Save email button already greyed out');
+    eq(r.ctx._opSurgeonBusy, '', 'the press that finished left its working flag behind');
+  }
+
+  /* ---- 12. ESCAPE DROPS THE THING IN FRONT, NOT THE ROOM BEHIND IT --------
+     The only Escape handler in range matches #opPrepModal and calls
+     closeOpPrep(), which removed the op-note room from BEHIND this overlay and
+     left the overlay covering the app with nothing behind it - an Escape that
+     made the trap worse. Checked statically in all four shells: this handler
+     sits outside the block the runtime above lifts. ----------------------- */
+  for (const page of ALL_PAGES) {
+    const src = read(page);
+    const handler = between(src, 'b500 a11y: ESC closes op-prep', "if(e.key!=='Tab') return;");
+    const front = handler.indexOf("getElementById('opSurgeonModal')");
+    const room = handler.indexOf('closeOpPrep()');
+    ok(front >= 0, page + ': Escape never looks for the surgeon hand-off sitting on top of this room');
+    ok(handler.indexOf('opSurgeonClose()') >= 0, page + ': Escape finds the hand-off overlay and does not close it');
+    ok(room >= 0 && front < room,
+      page + ': Escape closes the room out from under the hand-off overlay, leaving the overlay covering the app with nothing behind it');
+  }
+
   console.log('PASS send the surgeon link: ' + checks + ' checks - one hand-off mints exactly one link on both paths, a send that ' +
-    'worked keeps the link and names who got it, a send that failed keeps the link and says so, a second press does nothing, and no ' +
-    'screen puts the link in a toast or a word of jargon in front of a surgeon');
+    'worked keeps the link and names who got it, a send the server refused keeps the link and says so, a send whose answer was lost ' +
+    'says only what is known and offers no second mint, a hung send gives up instead of freezing the screen, every hand-off state ' +
+    'leaves one enabled way out, Escape drops the overlay and not the room behind it, two fast presses post one job, and no screen ' +
+    'puts the link in a toast or a word of jargon in front of a surgeon');
 })().catch((e) => { console.error(e && e.stack || e); process.exit(1); });
