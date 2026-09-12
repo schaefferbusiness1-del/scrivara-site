@@ -13,7 +13,7 @@
   'use strict';
   if (window.__mlsOpNoteIntegrity && window.__mlsOpNoteIntegrity.installed) return;
 
-  var VERSION = 'oni-2.18.1';
+  var VERSION = 'oni-2.18.2';
   var S = function (x) { return x == null ? '' : String(x); };
   var isFn = function (f) { return typeof f === 'function'; };
   var originals = {};
@@ -1972,7 +1972,7 @@
       .replace(/\[([^\[\]\n]{1,60})\]/g,function(m,k){ return isDateSlotName(k)?value:m; });
   }
 
-  /* oni-2.18.1 FINALIZATION PREFLIGHT ========================================
+  /* oni-2.18.2 FINALIZATION PREFLIGHT ========================================
      A generated note used to pass several strong, independent checks and then
      leave through four weaker doors: the editor/save path, PDF export, and the
      single/day surgeon handoffs.  That is how an already-normalized stale note,
@@ -2021,7 +2021,7 @@
        previous all-token stop list erased real surnames such as `Do`, making
        `Alex Morgan Do` compare equal to `Alex Morgan, MD` and allowing the
        latter clinician's configured NPI to cross identities. */
-    var raw=S(value).trim().replace(/^\s*(?:dr|doctor|provider|physician)\.?\s+/i,'');
+    var raw=S(value).trim().replace(/^\s*(?:dr|doctor|provider|physician)\.?\s+/i,''),unpunctuated=/^[^,]+$/.test(raw);
     var comma=raw.split(',').map(function(x){return x.trim();}).filter(Boolean);
     var credPhrase=/^(?:(?:m\.?d\.?|d\.?o\.?|n\.?p\.?|r\.?n\.?|d\.?p\.?m\.?|d\.?d\.?s\.?|d\.?m\.?d\.?|ph\.?d\.?|facs|faap|faan|pa\s*-?\s*c)\s*)+$/i;
     while(comma.length>1&&credPhrase.test(comma[comma.length-1]))comma.pop();
@@ -2030,9 +2030,11 @@
     while(words.length>1){
       var tail=words[words.length-1],plain=tail.replace(/[^A-Za-z]/g,'').toLowerCase();
       var credential=/^(?:md|do|np|rn|dpm|dds|dmd|phd|facs|faap|faan|pac)$/.test(plain);
-      /* Title-case `Do` is a surname unless a comma already placed it in the
-         credential suffix parsed above.  Upper-case DO remains a credential. */
-      if(!credential||(plain==='do'&&tail==='Do'))break;
+      /* `Do` is a real surname.  An all-caps schedule feed must not turn it
+         into a credential merely because case information was lost; a comma
+         remains the unambiguous credential position. */
+      var prefix=words.slice(0,-1).join(' '),allCapsName=unpunctuated&&/[A-Z]/.test(prefix)&&prefix===prefix.toUpperCase();
+      if(!credential||(plain==='do'&&(tail==='Do'||allCapsName)))break;
       words.pop();
     }
     return words.join(' ').toLowerCase().replace(/[^a-z0-9]+/g,' ').split(/\s+/).filter(Boolean).sort().join(' ');
@@ -2055,8 +2057,11 @@
     var namedId=S(ctx.providerId||ctx.provider_id).trim(),cfgId=S(ctx.practiceProviderId||ctx.configuredProviderId||cfg.id).trim();
     var appointmentNpi=S(ctx.providerNpiSource).trim()==='appointment'?npiValue(ctx.providerNpi):'';
     var nameMatch=!!(cfg.name&&(named?providerComparable(cfg.name)===providerComparable(named):(namedId&&cfgId?namedId===cfgId:!namedId)));
-    var idConflict=!!(namedId&&cfgId&&namedId!==cfgId),npiConflict=!!(appointmentNpi&&cfg.npi&&appointmentNpi!==cfg.npi);
-    var same=nameMatch&&!idConflict&&!npiConflict;
+    /* Once an appointment supplies a stable provider id, name similarity is
+       not enough to borrow Settings identity/NPI.  Settings may win only when
+       it can prove the SAME stable id; an absent configured id is not proof. */
+    var idCompatible=!namedId||!!(cfgId&&namedId===cfgId),npiConflict=!!(appointmentNpi&&cfg.npi&&appointmentNpi!==cfg.npi);
+    var same=nameMatch&&idCompatible&&!npiConflict;
     var appointmentProof=S(ctx.providerNpiSource).trim()==='appointment'||S(ctx.providerIdentitySource).trim()==='appointment'||!!namedId;
     if(same){
       /* Settings owns the exact spelling and the NPI for this identity.  A
@@ -2148,8 +2153,8 @@
          /\b(?:insert|add|place)\s+(?:the\s+)?(?:following\s+)?(?:text\s+)?(?:after|before)\s+["“]/i.test(rl)||
          /\breplace\s+(?:["“][^"”\n]+["”]\s+)?with\s+["“]/i.test(rl)||
          /^\s*(?:[-*]\s*)?(?:insert\s+(?:after|before)|replace\s+with)\s+(?:the\s+)?(?:text|line|section|heading|paragraph|sentence|template)\b/i.test(rl)||
-         /^\s*(?:[-*]\s*)?TODO\s*:\s*\S/i.test(rl)||
-         /^\s*(?:[-*]\s*)?DRAFT\s+ONLY(?:\s*(?:[:\-—]\s*.*)?)?\s*$/i.test(rl)){hasResidue=true;break;}
+         /^\s*(?:[-*]\s*)?(?:TODO|FIXME|TBD)(?:\s*:\s*.*)?\s*$/i.test(rl)||
+         /^\s*(?:[-*]\s*)?(?:\[DRAFT\]|DRAFT\s+ONLY(?:\s*(?:[:\-—]\s*.*)?)?)\s*$/i.test(rl)){hasResidue=true;break;}
     }
     if(hasResidue)issue('TEMPLATE_EDIT_RESIDUE','template','Template-edit instructions remain in the note; remove them before saving or handing it off.');
 
@@ -2165,9 +2170,36 @@
        recovery exception. */
     if(options.requireProvider===true&&!providerTrusted)issue('PROVIDER_REQUIRED_FOR_FINAL','provider','A verified operating provider is required before this note can be completed, exported, or handed off.');
 
+    function ageSentence(line,at){
+      var text=S(line),start=0,end=text.length,i;
+      for(i=0;i<at;i++)if(/[.!?;]/.test(text.charAt(i))&&(i+1===text.length||/\s/.test(text.charAt(i+1))))start=i+1;
+      for(i=at;i<text.length;i++)if(/[.!?;]/.test(text.charAt(i))&&(i+1===text.length||/\s/.test(text.charAt(i+1)))){end=i+1;break;}
+      return {text:text.slice(start,end),at:Math.max(0,at-start)};
+    }
+    function historicalAgeContext(line,at){
+      var part=ageSentence(line,at),sentence=part.text.toLowerCase(),before=sentence.slice(0,part.at),after=sentence.slice(part.at),hist=-1,current=-1,m;
+      var histRe=/\b(?:(?:in|during|from|as\s+of|circa)\s+(?:18|19|20)\d{2}|\d+\s+(?:years?|months?)\s+(?:ago|earlier|prior)|at\s+that\s+time|previously|historically|in\s+childhood|as\s+(?:a\s+)?child|when\s+(?:the\s+)?patient\s+was)\b/gi;
+      while((m=histRe.exec(before)))hist=m.index;
+      var currentRe=/\b(?:currently|today|now|at\s+present)\b/gi;
+      while((m=currentRe.exec(before)))current=m.index;
+      if(hist>=0&&hist>current)return true;
+      /* Historical cues may follow the age, but must directly qualify it in
+         THIS sentence.  A later sentence mentioning 2010 cannot launder a
+         current conflicting age. */
+      var ageAt=/^(?:aged\s+\d{1,3}|\d{1,3}[ -]year[ -]old)(?:\s+patient)?\b/i.exec(after);
+      if(!ageAt)return false;
+      var tail=after.slice(ageAt[0].length);
+      return /^\s*,?\s*(?:at\s+(?:that|the)\s+time\b|during\b|in\s+(?:18|19|20)\d{2}\b|when\b)/i.test(tail);
+    }
+    function narrativeAgeClaims(text){
+      var out=[],lines=S(text).split(/\r?\n/),re=/\b(\d{1,3})[ -]year[ -]old\b|\baged\s+(\d{1,3})\b/gi,m;
+      for(var i=0;i<lines.length;i++){re.lastIndex=0;while((m=re.exec(lines[i])))out.push({line:lines[i],at:m.index,age:+(m[1]||m[2]),historical:historicalAgeContext(lines[i],m.index)});}
+      return out;
+    }
     var born=dob?parseClinicalDay(dob):null,encounter=procDate?parseClinicalDay(procDate):null,age=null;
-    var hasAgeClaim=/^\s*Age\s*:/im.test(candidate)||/\b\d{1,3}[ -]year[ -]old\b|\baged\s+\d{1,3}\b/i.test(candidate);
-    if(hasAgeClaim&&(!dob||!procDate))issue('AGE_SOURCE_UNAVAILABLE','age','Age is stated, but verified date of birth and procedure date are not both available.');
+    var hasAgeHeader=/^\s*Age\s*:/im.test(candidate),narrativeAges=narrativeAgeClaims(candidate);
+    var hasUnverifiedCurrentAge=hasAgeHeader||narrativeAges.some(function(x){return !x.historical;});
+    if(hasUnverifiedCurrentAge&&(!dob||!procDate))issue('AGE_SOURCE_UNAVAILABLE','age','Age is stated, but verified date of birth and procedure date are not both available.');
     if(dob&&procDate){
       if(!born||!encounter)issue('AGE_SOURCE_INVALID','age','Date of birth or procedure date is not a valid calendar date.');
       else{
@@ -2236,40 +2268,12 @@
     Object.keys(counts).forEach(function(k){repair('IDENTITY_RECONCILED',k,'A note identity field was reconciled to its verified source.',counts[k]);});
 
     if(age!=null){
-      var ageNarrative=0;
-      function historicalAgeContext(line,at){
-        var before=S(line).slice(0,at).toLowerCase(),hist=-1,current=-1,m;
-        var histRe=/\b(?:(?:in|during|from|as\s+of|circa)\s+(?:18|19|20)\d{2}|(?:18|19|20)\d{2}\s+(?:history|visit|episode)|\d+\s+(?:years?|months?)\s+(?:ago|earlier|prior)|at\s+that\s+time|previously|historically|in\s+childhood|as\s+(?:a\s+)?child|when\s+(?:the\s+)?patient\s+was)\b/gi;
-        while((m=histRe.exec(before)))hist=m.index;
-        var currentRe=/\b(?:currently|today|now|at\s+present)\b/gi;
-        while((m=currentRe.exec(before)))current=m.index;
-        return hist>=0&&hist>current;
-      }
-      function currentAgeIntroduction(line,at){
-        var prefix=S(line).slice(0,at);
-        return /^\s*(?:[A-Z][A-Z0-9 /&()'\-]{1,60}\s*:\s*)?$/.test(prefix);
-      }
-      /* Present-tense patient introductions are current demographics.  Past
-         tense is not: `In 2010, the patient was a 20-year-old` is history, not
-         permission to replace 20 with the encounter-day age. */
-      var ageLines=candidate.split(/\r?\n/);
-      for(var ai=0;ai<ageLines.length;ai++){
-        (function(){
-          var line=ageLines[ai];
-          line=line.replace(/\b((?:(?:the|this)\s+)?patient\s+is\s+(?:an?\s+)?)(\d{1,3})([ -]year[ -]old)\b/gi,function(m,lead,stated,suffix,at){if(historicalAgeContext(line,at)||+stated===age)return m;ageNarrative++;return lead+S(age)+suffix;});
-          line=line.replace(/\b((?:(?:the|this)\s+)?patient\s*,?\s*aged\s+)(\d{1,3})\b/gi,function(m,lead,stated,at){if(historicalAgeContext(line,at)||+stated===age)return m;ageNarrative++;return lead+S(age);});
-          line=line.replace(/\b(\d{1,3})([ -]year[ -]old\s+patient)\b/gi,function(m,stated,suffix,at){if(historicalAgeContext(line,at)||!currentAgeIntroduction(line,at)||+stated===age)return m;ageNarrative++;return S(age)+suffix;});
-          ageLines[ai]=line;
-        })();
-      }
-      candidate=ageLines.join('\n');
-      repair('AGE_RECONCILED','age','Age was derived from date of birth on the procedure date.',ageNarrative);
-      var reviewAgeLines=candidate.split(/\r?\n/),ageClaim=/\b(\d{1,3})[ -]year[ -]old\b|\baged\s+(\d{1,3})\b/gi,am;
-      for(var ar=0;ar<reviewAgeLines.length;ar++){
-        ageClaim.lastIndex=0;
-        while((am=ageClaim.exec(reviewAgeLines[ar]))){if(+(am[1]||am[2])!==age&&!historicalAgeContext(reviewAgeLines[ar],am.index)){issue('AGE_CLAIM_AMBIGUOUS','age','A different age appears outside an unambiguous current-patient demographic phrase and needs review.');break;}}
-        if(seenIssues['AGE_CLAIM_AMBIGUOUS|age'])break;
-      }
+      /* Only the explicit demographic Age: slot is auto-repaired above.  A
+         narrative age can describe another person or a past event, so it is
+         never silently rewritten: clearly historical claims stay byte-exact;
+         conflicting nonhistorical claims stop for review. */
+      narrativeAges=narrativeAgeClaims(candidate);
+      for(var ar=0;ar<narrativeAges.length;ar++)if(narrativeAges[ar].age!==age&&!narrativeAges[ar].historical){issue('AGE_CLAIM_AMBIGUOUS','age','A different narrative age needs review; only the demographic Age field can be reconciled automatically.');break;}
     }
 
     var allowed=[];

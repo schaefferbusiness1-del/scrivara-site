@@ -65,6 +65,7 @@ async function main() {
     getPatients() { return patients; },
     getKey() { return 'test-key'; },
     clinicalProviderName() { return 'Alex Morgan, MD'; },
+    clinicalProviderId() { return 'provider-fixture'; },
     getProviderName() { return 'Alex Morgan, MD'; },
     getNpi() { return '1234567890'; },
     _opDobKey(v) { return String(v || '').trim(); },
@@ -162,7 +163,7 @@ async function main() {
       'Assistant: [[assistant]]',
       'Facility: [[facility_name]]',
       'DESCRIPTION OF PROCEDURE:',
-      'The patient is a 99-year-old adult. Injectate was documented as {40mg/cc).',
+      'The patient is a ' + api.patientAgeOn(p.dob, serviceDate) + '-year-old adult. Injectate was documented as {40mg/cc).',
       'COMPLICATIONS: None.'
     ].join('\n')
   }));
@@ -237,7 +238,7 @@ async function main() {
   assert.strictEqual(familyAge.ok, false, 'a conflicting age with ambiguous ownership was silently rewritten');
   assert(familyAge.issues.some(x => x.code === 'AGE_CLAIM_AMBIGUOUS'), 'ambiguous family-member age did not receive its review code');
   assert(familyAge.proposedNote.includes('Mother is a 70-year-old'), 'the family-member age was changed');
-  assert(familyAge.proposedNote.includes('patient is a ' + api.patientAgeOn(fixturePatients[0].dob, serviceDate) + '-year-old'), 'the unambiguous patient age was not proposed correctly');
+  assert(familyAge.proposedNote.includes('patient is a 99-year-old'), 'the current narrative age was silently rewritten instead of being sent to review');
 
   const historicalText = [
     'Patient: Fixture Patient 01', 'Provider: Alex Morgan, MD',
@@ -250,6 +251,34 @@ async function main() {
   assert(historicalAge.note.includes('In 2010, the patient was a 20-year-old'), 'the exact historical age was rewritten');
   assert(!historicalAge.repairs.some(x => x.code === 'AGE_RECONCILED'), 'a historical age generated a false age-reconciliation receipt');
 
+  const trailingHistoricalText = [
+    'Patient: Fixture Patient 01', 'Provider: Alex Morgan, MD',
+    'HISTORY: The patient, aged 20 at the time of her prior surgery in 2010, recovered uneventfully.',
+    'FINDINGS: Stable.'
+  ].join('\n');
+  const trailingHistoricalAge = api.finalizeNote(trailingHistoricalText, directCtx,
+    { boundary: 'save', applyRepairs: true, requirePatient: true, requireProvider: true });
+  assert.strictEqual(trailingHistoricalAge.ok, true, 'a directly attached historical cue after the age was missed');
+  assert.strictEqual(trailingHistoricalAge.note, trailingHistoricalText, 'the age with its following historical cue was not preserved byte-for-byte');
+
+  const crossSentenceHistory = [
+    'Patient: Fixture Patient 01', 'Provider: Alex Morgan, MD',
+    'HISTORY: The patient is a 20-year-old adult. In 2010, she underwent a prior procedure.',
+    'FINDINGS: Stable.'
+  ].join('\n');
+  const crossSentenceAge = api.finalizeNote(crossSentenceHistory, directCtx,
+    { boundary: 'save', applyRepairs: true, requirePatient: true, requireProvider: true });
+  assert.strictEqual(crossSentenceAge.ok, false, 'a historical cue in the next sentence laundered a conflicting current age');
+  assert(crossSentenceAge.issues.some(x => x.code === 'AGE_CLAIM_AMBIGUOUS'), 'cross-sentence cue leakage lost the narrative-age review reason');
+  assert.strictEqual(crossSentenceAge.proposedNote, crossSentenceHistory, 'the cross-sentence age was mutated');
+
+  const unavailableHistoricalCtx = Object.assign({}, directCtx);
+  delete unavailableHistoricalCtx.dob; delete unavailableHistoricalCtx.procedureDate; delete unavailableHistoricalCtx.dateStr;
+  const unavailableHistoricalAge = api.finalizeNote(trailingHistoricalText, unavailableHistoricalCtx,
+    { boundary: 'save', applyRepairs: true, requirePatient: true, requireProvider: true });
+  assert.strictEqual(unavailableHistoricalAge.ok, true, 'a clearly historical age incorrectly required current encounter DOB/date sources');
+  assert.strictEqual(unavailableHistoricalAge.note, trailingHistoricalText, 'the source-unavailable historical age was changed');
+
   const ambiguousPastText = 'Patient: Fixture Patient 01\nProvider: Alex Morgan, MD\nHISTORY: The patient was a 20-year-old receiving care.';
   const ambiguousPastAge = api.finalizeNote(ambiguousPastText, directCtx,
     { boundary: 'save', applyRepairs: true, requirePatient: true, requireProvider: true });
@@ -258,27 +287,31 @@ async function main() {
   assert.strictEqual(ambiguousPastAge.proposedNote, ambiguousPastText, 'the ambiguous past-tense age was mutated before review');
 
   const surnameDo = api.finalizeNote([
-    'Patient: Fixture Patient 01', 'Provider: Alex Morgan Do', 'NPI: 1098765432', 'FINDINGS: Stable.'
+    'Patient: Fixture Patient 01', 'Provider: ALEX MORGAN DO', 'NPI: [[provider_npi]]', 'FINDINGS: Stable.'
   ].join('\n'), Object.assign({}, directCtx, {
-    provider: 'Alex Morgan Do', providerName: 'Alex Morgan Do', providerId: 'provider-surname-do',
-    providerIdentitySource: 'appointment', providerNpi: '1098765432', providerNpiSource: 'appointment',
-    configuredProviderId: 'provider-practice-md'
+    provider: 'ALEX MORGAN DO', providerName: 'ALEX MORGAN DO', providerId: 'other-clinician',
+    providerIdentitySource: 'appointment'
   }), { boundary: 'save', applyRepairs: true, requirePatient: true, requireProvider: true });
   assert.strictEqual(surnameDo.ok, true, 'the real surname Do collapsed into the configured MD identity');
-  assert(surnameDo.note.includes('Provider: Alex Morgan Do'), 'the appointment-bound surname Do was replaced by Alex Morgan, MD');
-  assert(surnameDo.note.includes('NPI: 1098765432') && !surnameDo.note.includes('NPI: 1234567890'), 'the configured MD NPI crossed into the surname-Do provider');
-  assert.strictEqual(surnameDo.context.providerId, 'provider-surname-do', 'the explicit appointment provider id was discarded');
+  assert(surnameDo.note.includes('Provider: ALEX MORGAN DO'), 'the all-caps appointment surname Do was replaced by Alex Morgan, MD');
+  assert(!surnameDo.note.includes('NPI: 1234567890') && !surnameDo.context.providerNpi, 'the configured MD NPI crossed into the surname-Do provider');
+  assert.strictEqual(surnameDo.context.providerId, 'other-clinician', 'the explicit appointment provider id was discarded');
   assert.strictEqual(surnameDo.context.providerProvenance.source, 'appointment', 'the distinct appointment provider was mislabeled as practice-owned');
+  const sameSpellingOtherId = api.bindProviderProvenance({
+    provider: 'Alex Morgan, MD', providerName: 'Alex Morgan, MD', providerId: 'other-clinician', providerIdentitySource: 'appointment'
+  });
+  assert.strictEqual(sameSpellingOtherId.providerProvenance.source, 'appointment', 'a same-spelling appointment id borrowed Settings identity without a stable configured-id match');
+  assert(!sameSpellingOtherId.providerNpi, 'a same-spelling but unverified appointment id borrowed the Settings NPI');
 
   const residueBase = 'Patient: Fixture Patient 01\nProvider: Alex Morgan, MD\nFINDINGS: Stable.';
-  for (const marker of ['TODO: finish this', 'DRAFT ONLY']) {
+  for (const marker of ['TODO: finish this', 'TODO', 'FIXME', 'TBD', '[DRAFT]', 'DRAFT ONLY']) {
     const residue = api.finalizeNote(residueBase + '\n' + marker, directCtx,
       { boundary: 'save', applyRepairs: true, requirePatient: true, requireProvider: true });
     assert.strictEqual(residue.ok, false, marker + ' escaped the shared finalizer');
     assert(residue.issues.some(x => x.code === 'TEMPLATE_EDIT_RESIDUE'), marker + ' lost its line-level residue review reason');
     assert.strictEqual(residue.proposedNote, residueBase + '\n' + marker, marker + ' was mutated instead of quarantined');
   }
-  const narrativeResidueWords = api.finalizeNote(residueBase + '\nHISTORY: The prior draft only included a patient-authored TODO list.', directCtx,
+  const narrativeResidueWords = api.finalizeNote(residueBase + '\nHISTORY: The prior draft only included patient-authored TODO, FIXME, TBD, and [DRAFT] labels.', directCtx,
     { boundary: 'save', applyRepairs: true, requirePatient: true, requireProvider: true });
   assert.strictEqual(narrativeResidueWords.ok, true, 'ordinary narrative uses of draft/TODO were blocked by the narrow residue rule');
 

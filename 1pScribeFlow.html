@@ -25157,10 +25157,13 @@ async function _opSurgeonApi(path,opts){
   var ac=null,timer=0;
   try{ if(typeof AbortController==='function'){ ac=new AbortController(); opts.signal=ac.signal; } }catch(e){}
   if(ac) timer=setTimeout(function(){ try{ ac.abort(); }catch(e){} },OP_SURGEON_WAIT_MS);
-  var r;
-  try{ r=await fetch(bkBase()+path,opts); }
+  var r,d;
+  /* Keep the abort alive until the BODY is consumed.  fetch() resolves at
+     headers; clearing here let a stalled r.json() hold the cross-tab lock and
+     the full-screen handoff forever.  A missing/malformed body is uncertainty,
+     not success, and therefore rejects while preserving the retry key. */
+  try{ r=await fetch(bkBase()+path,opts);d=await r.json(); }
   finally{ if(timer) clearTimeout(timer); }
-  var d={}; try{ d=await r.json(); }catch(e){}
   if(!r.ok){ var err=new Error((d&&d.error&&d.error.message)||('Request failed ('+r.status+').')); err.status=r.status; throw err; }
   return d;
 }

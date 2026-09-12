@@ -151,7 +151,10 @@ function runtime(options) {
   const ctx = {
     document,
     console, JSON, Object, String, Number, Boolean, Math, Date, RegExp, Error, Promise, Array,
-    encodeURIComponent, decodeURIComponent, setTimeout, clearTimeout,
+    encodeURIComponent, decodeURIComponent,
+    setTimeout: opts.setTimeout || setTimeout,
+    clearTimeout: opts.clearTimeout || clearTimeout,
+    AbortController: opts.AbortController,
     bkBase: () => 'https://synthetic-backend.invalid',
     bkToken: () => 'SYNTHETIC_CLINICIAN_CREDENTIAL',
     toast: (m, k) => toasts.push({ m, k }),
@@ -185,6 +188,7 @@ function runtime(options) {
     },
     fetch(url, init) {
       calls.push({ url: String(url), init: init || {} });
+      if (typeof opts.fetch === 'function') return opts.fetch(String(url), init || {});
       const key = String(url).replace('https://synthetic-backend.invalid', '') + ' ' + String((init || {}).method || 'GET');
       const reply = (opts.replies || {})[key];
       if (!reply) return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve({ error: { code: 'NOT_STUBBED', message: key } }) });
@@ -422,6 +426,62 @@ function happyReplies(extra) {
     eq(jobs.length, 1, 'two simultaneous same-intent tabs created more than one server job');
     const messages = [a, b].map((r) => r.ctx.document.getElementById('opSurgeonMsg').textContent).filter(Boolean);
     ok(messages.some((m) => /already being sent in another tab/i.test(m)), 'the refused simultaneous tab did not explain why nothing was sent');
+  }
+
+  /* fetch() resolves as soon as headers arrive.  Keep the abort timer and Web
+     Lock alive while json() is pending, then prove an abort rejects, releases
+     the lock, and never lets a second tab enter the same intent. */
+  {
+    const held = new Set();
+    const locks = {
+      request(name, options, callback) {
+        if (held.has(name)) return Promise.resolve().then(() => callback(null));
+        held.add(name);
+        return Promise.resolve().then(() => callback({ name })).finally(() => held.delete(name));
+      }
+    };
+    let timeoutFn = null, clearCount = 0;
+    class TestAbortController {
+      constructor() { this.signal = { aborted: false, rejectBody: null }; }
+      abort() {
+        this.signal.aborted = true;
+        if (this.signal.rejectBody) this.signal.rejectBody(new Error('synthetic body abort'));
+      }
+    }
+    const stalledFetch = (url, init) => Promise.resolve({
+      ok: true, status: 200,
+      json: () => new Promise((resolve, reject) => { init.signal.rejectBody = reject; })
+    });
+    const options = {
+      rows: [], locks, fetch: stalledFetch, AbortController: TestAbortController,
+      setTimeout(fn) { timeoutFn = fn; return 77; },
+      clearTimeout(id) { if (id === 77) clearCount++; }
+    };
+    const a = runtime(options), b = runtime(options);
+    const first = a.ctx._opWithHandoffLock('intent-stalled-body', () => a.ctx._opSurgeonApi('/api/stalled', { method: 'POST' }));
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+    ok(typeof timeoutFn === 'function', 'the body-stall request never armed its abort timer');
+    eq(clearCount, 0, 'the abort timer was cleared at response headers before json() completed');
+    let secondError = null;
+    try { await b.ctx._opWithHandoffLock('intent-stalled-body', () => b.ctx._opSurgeonApi('/api/stalled', { method: 'POST' })); }
+    catch (error) { secondError = error; }
+    eq(secondError && secondError.code, 'OPNOTE_SEND_IN_PROGRESS', 'a second tab entered while the first response body was stalled');
+    eq(a.calls.length + b.calls.length, 1, 'the stalled-body lock allowed a second request to reach fetch');
+    timeoutFn();
+    await assert.rejects(first, /synthetic body abort/, 'aborting a stalled response body did not reject the handoff');
+    eq(clearCount, 1, 'the response-body abort did not clean up its timer exactly once');
+    eq(held.size, 0, 'the response-body abort left the cross-tab lock held');
+    eq(await b.ctx._opWithHandoffLock('intent-stalled-body', async () => 'released'), 'released', 'the aborted body left the intent unavailable to a later retry');
+
+    let parseClearCount = 0;
+    const malformed = runtime({
+      rows: [], AbortController: TestAbortController,
+      setTimeout() { return 88; }, clearTimeout(id) { if (id === 88) parseClearCount++; },
+      fetch: () => Promise.resolve({ ok: true, status: 200, json: () => Promise.reject(new Error('synthetic malformed body')) })
+    });
+    await assert.rejects(malformed.ctx._opSurgeonApi('/api/malformed', { method: 'POST' }), /synthetic malformed body/,
+      'a malformed response body was swallowed as a successful empty payload');
+    eq(parseClearCount, 1, 'a response parse failure did not clean up its abort timer');
   }
 
   /* ---- whole-day creation carries one opaque idempotency key -------------- */

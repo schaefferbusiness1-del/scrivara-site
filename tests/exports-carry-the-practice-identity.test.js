@@ -187,7 +187,10 @@ function stripComments(src) {
     'who rendered the service; a bracketed blank the doctor fills is the honest fallback.');
 
   /* mls-opnote-pro's own meta */
-  const meta = stripComments(PRO.slice(PRO.indexOf('function appMeta()'), PRO.indexOf('function appMeta()') + 1400));
+  const metaStart = PRO.indexOf('function appMeta()');
+  const metaEnd = PRO.indexOf('/* The core PART-1 transform', metaStart);
+  assert(metaStart >= 0 && metaEnd > metaStart, 'could not isolate appMeta');
+  const meta = stripComments(PRO.slice(metaStart, metaEnd));
   assert(/clinicalProviderName/.test(meta),
     'appMeta must resolve the provider through the shared resolver. Reading getProviderName alone was ' +
     'the first shipped version and it degraded the op-note PDF letterhead to the literal "Clinician" ' +
