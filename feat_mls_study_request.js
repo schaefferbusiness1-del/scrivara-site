@@ -1,6 +1,6 @@
 /* =============================================================================
  * MLS Scribe natural-language study request surface
- * __mlsStudyRequest sr-2.4.2 (site only, additive, reversible)
+ * __mlsStudyRequest sr-2.4.3 (site only, additive, reversible)
  *
  * One sentence is enough: the deterministic parser turns it into a strict
  * StudySpec, the existing __mlsSgFix/__mlsStudyGroups engines build and run the
@@ -33,7 +33,7 @@
   (typeof globalThis !== 'undefined' ? globalThis : this), function (root) {
   'use strict';
 
-  var VERSION = 'sr-2.4.2';
+  var VERSION = 'sr-2.4.3';
   var CSS_ID = 'mlsStudyRequestCss';
   var UI_ID = 'mlsStudyRequest';
   var ADV_ID = 'mlsStudyAdvanced';
@@ -2142,6 +2142,13 @@
        fall back to immediately before Build's existing custom-tool column. */
     var tabs = doc.getElementById('mlsSmTabs');
     var anchor = tabs && tabs.parentNode === studio ? tabs.nextSibling : null;
+    /* sr-2.4.3: once the card is already directly after the switcher,
+       tabs.nextSibling IS the card. Calling insertBefore(section, section)
+       is not a harmless no-op in Chromium: it removes and reinserts the node,
+       publishing another childList mutation. While the optional cohort host
+       is still loading, mountObserver hears that mutation and repeats forever,
+       starving the tab. Treat the already-correct position as settled. */
+    if (anchor === section) return true;
     if (!anchor) {
       var build = studio.querySelector('.sx-right');
       if (build && build.parentNode === studio) anchor = build;
@@ -2189,10 +2196,15 @@
   }
   function boot() {
     if (!root.document) return;
+    var studio = root.document.getElementById('studioView');
+    if (!studio) return;
     if (mount()) return;
     if (mountObserver) return;
     mountObserver = new MutationObserver(function () { mount(); });
-    mountObserver.observe(root.document.documentElement, { childList: true, subtree: true });
+    /* The only late dependency is #mlsSgPro, which is created inside Studio.
+       Watching the whole document made every unrelated startup satellite call
+       mount(); scope the wait to the one surface that can satisfy it. */
+    mountObserver.observe(studio, { childList: true, subtree: true });
     mountDeadline = setTimeout(function () { try { mountObserver.disconnect(); } catch (e) {} mountObserver = null; }, 60000);
   }
   function revert() {

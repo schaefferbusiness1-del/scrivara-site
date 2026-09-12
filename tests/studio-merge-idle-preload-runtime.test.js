@@ -40,7 +40,7 @@ const shellSource = fs.readFileSync(SHELL_PATH, 'utf8');
 const mergeSource = fs.readFileSync(MERGE_PATH, 'utf8');
 const studySource = fs.readFileSync(STUDY_PATH, 'utf8');
 
-const studyLoaderMarker = "var A='feat_mls_study_request.js',V='sr-2.4.2',LV='srl-1.0.2'";
+const studyLoaderMarker = "var A='feat_mls_study_request.js',V='sr-2.4.3',LV='srl-1.0.3'";
 const studyLoaderAt = connectSource.indexOf(studyLoaderMarker);
 const studyLoaderStart = connectSource.lastIndexOf(';(function(){try{', studyLoaderAt);
 const studyLoaderCloseMarker = '}catch(e){}})();';
@@ -222,6 +222,19 @@ const SHELL_HTML = `<!doctype html><html><body>
       await page.goto('https://mls-study-first-use.test/');
       await page.evaluate(() => {
         window.__MLS_AV = 'first-use-test';
+        /* Chromium turns insertBefore(node, node) into a remove+insert pair,
+         * so an observer that responds by doing it again can starve the page
+         * forever. Count and suppress that exact operation so this test fails
+         * deterministically instead of hanging the runner. */
+        const realInsertBefore = Node.prototype.insertBefore;
+        window.__studySelfReinserts = 0;
+        Node.prototype.insertBefore = function (node, anchor) {
+          if (node === anchor && node && node.id === 'mlsStudyRequest') {
+            window.__studySelfReinserts++;
+            return node;
+          }
+          return realInsertBefore.call(this, node, anchor);
+        };
         window.__mlsDeferAsset = function (fn) {
           window.__deferredStudyCallback = fn;
           return 77;
@@ -265,6 +278,24 @@ const SHELL_HTML = `<!doctype html><html><body>
         'first-use Study starts below other Build cards and jumps only after deferred grid layout');
       assert.deepStrictEqual(firstUse.sectionEvents, ['build'],
         'the remembered Build section did not publish one first-use admission signal');
+
+      /* Recreate the real boot race: another Studio satellite mutates the
+       * surface before the late legacy cohort host exists. The Study observer
+       * must recognize that its card is already first and do no DOM work. */
+      await page.evaluate(() => {
+        const unrelated = document.createElement('div');
+        unrelated.id = 'lateUnrelatedStudioSatellite';
+        document.getElementById('studioView').appendChild(unrelated);
+      });
+      await page.waitForTimeout(50);
+      const quiescent = await page.evaluate(() => ({
+        selfReinserts: window.__studySelfReinserts,
+        directlyAfterTabs: document.getElementById('mlsStudyRequest').previousElementSibling === document.getElementById('mlsSmTabs')
+      }));
+      assert.strictEqual(quiescent.selfReinserts, 0,
+        'an unrelated Studio mutation made Study insert itself before itself and re-trigger its observer');
+      assert.strictEqual(quiescent.directlyAfterTabs, true,
+        'the observer moved Study away from its settled first position');
 
       await page.evaluate(() => {
         const pro = document.createElement('div');

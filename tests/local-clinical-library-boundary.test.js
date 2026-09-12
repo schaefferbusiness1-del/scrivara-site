@@ -193,7 +193,7 @@ for (const [file, tag] of freshHardcodedLoaderTags) {
 }
 const studyLoaderAt = connect.indexOf("var A='feat_mls_study_request.js'");
 const studyLoader = studyLoaderAt >= 0 ? connect.slice(studyLoaderAt, studyLoaderAt + 5000) : '';
-assert(studyLoader.includes("V='sr-2.4.2'") &&
+assert(studyLoader.includes("V='sr-2.4.3'") &&
   studyLoader.includes("s.src=A+'?v='+(window.__MLS_AV||Date.now());"),
   'Study must follow the current app build instead of returning to a hand-maintained cache tag');
 const afterVisitLoader = connect.match(/var A='feat_after_visit_summary\.js'[\s\S]{0,3000}?\/\* action-time AVS readiness:[^\n]*/)?.[0] || '';
