@@ -79,8 +79,10 @@ function makeHarness(responder, overrides = {}) {
           id: `progress-${progress.length + 1}`,
           requestId: `request-${progress.length + 1}`,
           stage(name, detail) { entry.stages.push({ name, detail }); },
-          complete(message) { entry.completed.push(message); },
-          fail(error) { entry.failed.push(error && error.message); },
+          complete(message) { entry.completed.push(message); entry.status = 'completed'; },
+          fail(error) { entry.failed.push(error && error.message); entry.status = 'failed'; },
+          cancel(message) { entry.status = 'canceled'; if (typeof options.cancel === 'function') options.cancel(message); },
+          snapshot() { return { status: entry.status || 'running' }; },
         };
         entry.handle = handle;
         progress.push(entry);
@@ -310,6 +312,55 @@ async function uploadDedupeAndRetryHandle() {
   // File limits fail before parsing or opening a second loader.
   const tooLarge = [{ name: 'huge.pdf', size: 20 * 1024 * 1024 + 1, lastModified: 1 }];
   await assert.rejects(() => h2.context.tplMultiFile({ target: { files: tooLarge } }), /20 MB/);
+
+  /* A large selection is a valid local read. It may later be stopped at the
+     server's honest 500-template persistence ceiling, but the reader itself
+     must not reject the files or block the page on an arbitrary count. */
+  const many = Array.from({ length: 501 }, (_, i) => ({ name: `template-${i}.txt`, size: 1234, lastModified: i }));
+  assert.strictEqual(await h2.context.tplMultiFile({ target: { files: many } }), 1,
+    '501 readable files were rejected by the old arbitrary client ceiling');
+}
+
+async function uploadsSerializeDistinctSelections() {
+  let active = 0, maxActive = 0, calls = 0, releaseFirst;
+  const firstGate = new Promise(resolve => { releaseFirst = resolve; });
+  const h = makeHarness(() => { throw new Error('No HTTP expected'); }, {
+    async tplMultiFile(ev) {
+      calls++; active++; maxActive = Math.max(maxActive, active);
+      if (calls === 1) await firstGate;
+      this._tplPendingSplit = [{ id: `parsed-${calls}`, name: `Parsed ${calls}`, text: `text ${calls}` }];
+      active--;
+    }
+  });
+  const a = h.context.tplMultiFile({ target: { files: [{ name: 'a.txt', size: 1, lastModified: 1 }] } });
+  const b = h.context.tplMultiFile({ target: { files: [{ name: 'b.txt', size: 1, lastModified: 2 }] } });
+  await Promise.resolve();
+  assert.strictEqual(calls, 1, 'a distinct second upload started before the first released shared parser state');
+  assert.strictEqual(maxActive, 1, 'distinct uploads overlapped despite shared _tplPending* globals');
+  releaseFirst();
+  assert.deepStrictEqual(await Promise.all([a, b]), [1, 1], 'serialized upload results did not preserve staged rows');
+  assert.strictEqual(calls, 2);
+  assert.strictEqual(maxActive, 1);
+}
+
+async function canceledPreviewCannotCommitPendingState() {
+  let fetchStarted;
+  const h = makeHarness((url, options) => {
+    if (url.endsWith('/api/template-imports/preview')) {
+      fetchStarted = true;
+      return new Promise((resolve, reject) => {
+        if (options.signal) options.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
+      });
+    }
+    throw new Error(`Unexpected request ${url}`);
+  }, { AbortController });
+  h.setHosted(true);
+  const pending = h.api.previewImport({ templates: [{ id: 'cancel-me', name: 'Cancel me', text: 'body' }] });
+  while (!fetchStarted) await new Promise(resolve => setImmediate(resolve));
+  const job = h.progress[h.progress.length - 1];
+  job.handle.cancel('Canceled by test.');
+  await assert.rejects(() => pending, error => error && (error.name === 'AbortError' || error.code === 'TEMPLATE_OPERATION_CANCELED'));
+  assert.strictEqual(h.api.state.pending, null, 'a canceled preview wrote pending import state after its await');
 }
 
 /* Loading-states contract (b511 lane, owner-reproduced 2026-07-23): a hosted
@@ -455,6 +506,14 @@ async function providerScopedSetLifecycle() {
 }
 
 function staticContracts() {
+  assert(source.includes('var SERVER_IMPORT_LIMIT=500'), 'the client must document the real server import ceiling');
+  assert(!/files\.length>500/.test(source), 'the upload reader must not reject a large local selection at an arbitrary 500-file ceiling');
+  assert(source.includes('uploadQueue') && source.includes('pumpUploads'), 'distinct concurrent uploads must serialize around shared pending globals');
+  assert(source.includes('AbortController') && source.includes('operationAssert(op)') && source.includes('bindProvidedHandle'), 'preview/commit must carry abort and post-await ownership fences');
+  assert(/normalize\(t\.text\)/.test(html) && !/\(t\.text\|\|'\'\)\.slice\(0,80\)/.test(html), 'template dedupe must key the complete normalized body, not its first 80 characters');
+  const room = fs.readFileSync(path.join(root, 'feat_mls_opnote_room.js'), 'utf8');
+  assert(room.includes('TPL_RAIL_WINDOW') && room.includes('opr-tpl-window') && room.includes('TPL_RAIL_SORT_CACHE'),
+    'the template rail must use a bounded window and cached ordering for large libraries');
   assert(source.includes("box.onclick=importClick"), 'preview controls need a durable delegated click handler');
   assert(source.includes("id=\"tlProviderWrap\" hidden") && source.includes("providerWrap.hidden=scopeEl.value!=='provider'"),
     'the roster provider picker must exist only while provider scope is selected');
@@ -491,8 +550,8 @@ function staticContracts() {
     'a set that drops device templates must be confirmed, not applied silently');
   assert(/if\(!\(await confirmReplace\(data\.set\)\)\)/.test(source),
     'activateSet must gate applySet behind the destructive-change confirmation');
-  assert(/if\(await confirmReplace\(result\.set\)\)applySet\(result\.set\)/.test(source),
-    'a commit that activates must gate applySet behind the same confirmation');
+  assert(/var replaceOk=await confirmReplace\(result\.set\);operationAssert\(op\);if\(replaceOk\)applySet\(result\.set\)/.test(source),
+    'a commit that activates must gate applySet behind the same confirmation and operation fence');
   assert(source.includes('function importResultBox'), 'import previews must target the box where the user acted');
   assert(source.includes("block:'center'"), 'import review must scroll into the middle of the viewport');
   assert(source.includes("resultBoxId=pending.fromForm?'tplFormResult':'tplMultiResult'"), 'commit results must land in the same box as their preview');
@@ -531,6 +590,8 @@ function staticContracts() {
   await conflictPreservesDeviceChanges();
   await failedCommitKeepsPreviewAndIdempotency();
   await uploadDedupeAndRetryHandle();
+  await uploadsSerializeDistinctSelections();
+  await canceledPreviewCannotCommitPendingState();
   await formSaveVisibility();
   await providerScopedSetLifecycle();
   console.log('PASS template library runtime, isolation, preview/commit, auto-activate, conflict, retry, loader, upload, and form-save visibility contracts');

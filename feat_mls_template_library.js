@@ -11,7 +11,9 @@
 
   var VERSION='tl-1.6.0', S=function(v){return v==null?'':String(v);}, isFn=function(f){return typeof f==='function';};
   var state={sets:[],activeSetId:'',selectedSetId:'',activeVersion:0,activeTemplates:[],hydrated:false,applying:false,sourceFilenames:[],pending:null,editingId:'',refreshPromise:null,snapshotTimer:0,snapshotSaving:false,snapshotQueued:false,conflict:null,status:'',statusError:false,unsupported:false,accountKey:'',draftScope:'account',providerId:'',providerName:'',providerStableKey:''};
-  var originals={},uploadRuns={},activeUpload=null;
+  var originals={},uploadRuns={},activeUpload=null,uploadQueue=[];
+  var operationSerial=0,activeOperation=null;
+  var SERVER_IMPORT_LIMIT=500;
   var IMPORT_STAGES=['Validating files','Reading files','Parsing template content','Checking results','Review ready'];
   var PREVIEW_STAGES=['Validating import','Checking ownership','Comparing versions','Preparing import preview'];
   var COMMIT_STAGES=['Validating import','Checking duplicates','Writing atomic version','Verifying committed version'];
@@ -57,7 +59,7 @@
      name that happens to look unique in this panel: two clinicians can share
      it, and a stale picker from another account must never reach a write. */
   function accountKey(){try{return S(window.__mlsSessionAccount||((window.bkUser||{}).id)||((window.bkUser||{}).email)||((window.bkUser||{}).username)||((isFn(window.bkToken)&&window.bkToken())||'')).trim();}catch(e){return '';}}
-  function resetAccountScopedState(){state.sets=[];state.activeSetId='';state.selectedSetId='';state.activeVersion=0;state.activeTemplates=[];state.hydrated=false;state.pending=null;state.conflict=null;state.draftScope='account';state.providerId='';state.providerName='';state.providerStableKey='';}
+  function resetAccountScopedState(){if(activeOperation)activeOperation.cancel('Account changed.');state.sets=[];state.activeSetId='';state.selectedSetId='';state.activeVersion=0;state.activeTemplates=[];state.hydrated=false;state.pending=null;state.conflict=null;state.draftScope='account';state.providerId='';state.providerName='';state.providerStableKey='';}
   function ensureAccount(){var key=accountKey();if(!state.accountKey){state.accountKey=key;return false;}if(key!==state.accountKey){state.accountKey=key;resetAccountScopedState();status('Account changed. Any uncommitted template selection was cleared.',false);return true;}return false;}
   function roster(){var r=window.__mlsProviderRoster;return r&&r.installed&&isFn(r.list)&&isFn(r.resolve)?r:null;}
   function scopeFor(custom){
@@ -203,22 +205,59 @@
        one place. A progress bar left at 100% is a lie about work still running. */
     try{
       if(h){
-        var oc=h.complete,of=h.fail;
+        var oc=h.complete,of=h.fail,ox=h.cancel;
         if(isFn(oc))h.complete=function(){clearProgress();return oc.apply(h,arguments);};
         if(isFn(of))h.fail=function(){clearProgress();return of.apply(h,arguments);};
+        if(isFn(ox))h.cancel=function(){clearProgress();return ox.apply(h,arguments);};
       }
     }catch(e){}
     return h;}
   function progressStage(handle,stage,current,total,operation){paintProgress(stage,current,total,operation);try{if(handle)handle.stage(stage,{current:current,total:total,operation:operation||stage});}catch(e){}}
   function progressLink(handle,response){try{var id=response&&response.headers&&response.headers.get('X-Job-ID'),api=window.__mlsLoadingCalm;if(handle&&id&&api&&isFn(api.linkServer))api.linkServer(handle.id,id);}catch(e){}}
 
+  /* Preview and commit are user-visible transactions, not fire-and-forget
+     requests. Each has an AbortController plus an epoch/account fence. A
+     second transaction supersedes the first; the progress surface's Cancel
+     action reaches the same controller, so cancellation is real at fetch and
+     every continuation still has to prove ownership before writing state. */
+  function operationError(message,code){var e=new Error(message||'Template operation canceled.');e.code=code||'TEMPLATE_OPERATION_CANCELED';return e;}
+  function operationCurrent(op){return !!(op&&!op.canceled&&activeOperation===op&&op.account===accountKey());}
+  function operationAssert(op){if(!operationCurrent(op))throw operationError(op&&op.account!==accountKey()?'Account changed while this template operation was in progress. Nothing was saved.':'Template operation was canceled. Nothing was saved.');}
+  function beginOperation(kind){
+    if(activeOperation) activeOperation.cancel('Replaced by a newer template operation.');
+    var controller=null;try{controller=typeof AbortController==='function'?new AbortController():null;}catch(e){}
+    var op={kind:kind,serial:++operationSerial,account:accountKey(),controller:controller,canceled:false,handle:null,canceling:false};
+    op.cancel=function(message){
+      if(op.canceled)return;
+      op.canceled=true;try{if(op.controller)op.controller.abort();}catch(e){}
+      /* Mark the LoadingCalm job canceled when this was a supersession. The
+         callback installed below is guarded by canceling to avoid recursion
+         when the user pressed the progress surface's own Cancel button. */
+      if(op.handle&&!op.canceling){op.canceling=true;try{if(isFn(op.handle.cancel))op.handle.cancel(message||'Canceled.');}catch(e){}op.canceling=false;}
+    };
+    activeOperation=op;return op;
+  }
+  function endOperation(op){if(activeOperation===op)activeOperation=null;}
+  function isCanceled(error,op){return !!((op&&op.canceled)||error&&(['AbortError','TEMPLATE_OPERATION_CANCELED','TEMPLATE_ACCOUNT_CHANGED'].indexOf(error.name)>=0||['TEMPLATE_OPERATION_CANCELED','TEMPLATE_ACCOUNT_CHANGED'].indexOf(error.code)>=0));}
+  function bindProvidedHandle(op,handle){
+    /* LoadingCalm retries pass a fresh handle whose cancel callback is the
+       previous attempt's closure. Replace that callback at the hand-off so a
+       retry can abort its own controller and cannot leave a cosmetic Cancel
+       button behind. */
+    if(!handle||!isFn(handle.cancel))return;
+    var prior=handle.cancel;handle.cancel=function(message){if(!op.canceled){op.canceled=true;try{if(op.controller)op.controller.abort();}catch(e){}}return prior.call(handle,message);};
+  }
+
   async function request(path,options){
     options=options||{};if(!hosted())throw Object.assign(new Error('Sign in to use the cloud template library.'),{code:'TEMPLATE_OFFLINE'});
+    if(options.operation)operationAssert(options.operation);
     var requestId=options.requestId||uid('req-'),requestAccount=accountKey(),headers={'Authorization':'Bearer '+window.bkToken(),'X-Request-ID':requestId};
     if(options.body!==undefined)headers['Content-Type']='application/json';if(options.idempotencyKey)headers['Idempotency-Key']=options.idempotencyKey;
     var response=await window.fetch(window.bkBase()+path,{method:options.method||'GET',headers:headers,body:options.body===undefined?undefined:JSON.stringify(options.body),signal:options.signal});
     if(requestAccount!==accountKey()){var switched=new Error('Account changed while this template operation was in progress. Nothing was saved.');switched.code='TEMPLATE_ACCOUNT_CHANGED';throw switched;}
+    if(options.operation)operationAssert(options.operation);
     progressLink(options.progress,response);var data={};try{data=await response.json();}catch(e){}
+    if(options.operation)operationAssert(options.operation);
     if(!response.ok){var raw=data&&data.error,err=new Error((raw&&raw.message)||data.message||('Template request failed ('+response.status+').'));err.code=(raw&&raw.code)||'TEMPLATE_REQUEST_FAILED';err.status=response.status;err.details=raw&&raw.details;if(response.status===404&&!(raw&&raw.code)){markUnsupported();err.code='TEMPLATE_UNSUPPORTED';err.message='Cloud template sync is not available on this server yet — templates stay on this device.';}else if(response.status===403&&!(raw&&raw.message)){err.message='Cloud template sets are available on clinician accounts — this account’s templates stay on this device.';}throw err;}
     return data;
   }
@@ -441,27 +480,34 @@
 
   function previewImport(custom,providedHandle){
     if(!hosted()){if(isFn(originals.tplAddSplit))return Promise.resolve(originals.tplAddSplit());return Promise.resolve(false);}
-    ensureAccount();var body=importBody(custom);if(body.scopeError){var scopeErr=scopeFor(custom||{}),err=new Error(scopeErr.message);err.code=body.scopeError;return Promise.reject(err);}var bound=requireScope(body);body.scope=bound.scope;body.providerId=bound.providerId;body.providerName=bound.providerName;delete body.scopeError;var fingerprint=body.templates.map(function(t){return t.id+'|'+t.name+'|'+S(t.text).length;}).join('~');
-    var handle=providedHandle||progressStart({key:'template-import-preview:'+fingerprint,kind:'template_import_preview',label:'Previewing template import',stages:PREVIEW_STAGES,total:body.templates.length,timeoutMs:120000,replace:true,cancelable:true,retry:function(next){previewImport(custom,next);}});
+    ensureAccount();var body=importBody(custom);if(body.scopeError){var scopeErr=scopeFor(custom||{}),err=new Error(scopeErr.message);err.code=body.scopeError;return Promise.reject(err);}var bound=requireScope(body);body.scope=bound.scope;body.providerId=bound.providerId;body.providerName=bound.providerName;delete body.scopeError;
+    /* The deployed API accepts at most 500 templates per preview/commit and
+       the set itself tops out at 1,000. Upload/read remains unbounded and
+       cooperative, but cloud persistence must stop here with an honest,
+       actionable limit instead of silently truncating the request. */
+    if(body.templates.length>SERVER_IMPORT_LIMIT){var limitErr=operationError('Cloud template imports support up to '+SERVER_IMPORT_LIMIT+' templates per save. The files were read locally; select '+SERVER_IMPORT_LIMIT+' or fewer before saving.','TEMPLATE_IMPORT_BATCH_LIMIT');status(limitErr.message,true);return Promise.reject(limitErr);}
+    var fingerprint=body.templates.map(function(t){return t.id+'|'+t.name+'|'+S(t.text).length;}).join('~'),op=beginOperation('preview');
+    var handle=providedHandle||progressStart({key:'template-import-preview:'+fingerprint,kind:'template_import_preview',label:'Previewing template import',stages:PREVIEW_STAGES,total:body.templates.length,timeoutMs:120000,replace:true,cancelable:true,cancel:function(){op.cancel('Preview canceled.');},retry:function(next){previewImport(custom,next);}});op.handle=handle;if(providedHandle)bindProvidedHandle(op,handle);
     return (async function(){try{
-      progressStage(handle,'Validating import',0,body.templates.length,'Validating selected templates.');var data=await request('/api/template-imports/preview',{method:'POST',body:body,requestId:handle&&handle.requestId,progress:handle});
-      progressStage(handle,'Comparing versions',body.templates.length,body.templates.length,'Comparing against the selected set version.');state.pending={body:body,preview:data.preview,idempotencyKey:uid('tpl-import-'),fromForm:custom&&custom.fromForm};
-      progressStage(handle,'Preparing import preview',body.templates.length,body.templates.length,'Waiting for explicit commit.');renderImportPreview(data.preview);if(handle)handle.complete('Import preview ready. Nothing has been saved.');return data.preview;
-    }catch(error){status(error.message,true);renderPanel();if(handle)handle.fail(error);throw error;}})();
+      progressStage(handle,'Validating import',0,body.templates.length,'Validating selected templates.');var data=await request('/api/template-imports/preview',{method:'POST',body:body,requestId:handle&&handle.requestId,progress:handle,signal:op.controller&&op.controller.signal,operation:op});operationAssert(op);
+      progressStage(handle,'Comparing versions',body.templates.length,body.templates.length,'Comparing against the selected set version.');operationAssert(op);state.pending={body:body,preview:data.preview,idempotencyKey:uid('tpl-import-'),fromForm:custom&&custom.fromForm};
+      progressStage(handle,'Preparing import preview',body.templates.length,body.templates.length,'Waiting for explicit commit.');operationAssert(op);renderImportPreview(data.preview);if(handle)handle.complete('Import preview ready. Nothing has been saved.');return data.preview;
+    }catch(error){if(isCanceled(error,op)){if(handle&&handle.snapshot&&handle.snapshot().status!=='canceled')handle.cancel('Preview canceled.');throw (error&&error.code?error:operationError('Preview canceled.'));}status(error.message,true);renderPanel();if(handle)handle.fail(error);throw error;}finally{endOperation(op);}})();
   }
 
-  function importClick(event){var b=event.target&&event.target.closest?event.target.closest('[data-tl-import]'):null;if(!b)return;var action=b.getAttribute('data-tl-import');if(action==='commit')commitPending();else if(action==='cancel'){state.pending=null;state.editingId='';['tplMultiResult','tplFormResult'].forEach(function(id){var box=byId(id);if(box){box.onclick=null;box.innerHTML='';}});}}
+  function importClick(event){var b=event.target&&event.target.closest?event.target.closest('[data-tl-import]'):null;if(!b)return;var action=b.getAttribute('data-tl-import');if(action==='commit')commitPending();else if(action==='cancel'){if(activeOperation&&(activeOperation.kind==='preview'||activeOperation.kind==='commit'))activeOperation.cancel('Canceled by user.');state.pending=null;state.editingId='';['tplMultiResult','tplFormResult'].forEach(function(id){var box=byId(id);if(box){box.onclick=null;box.innerHTML='';}});}}
   function commitPending(providedHandle){
     ensureAccount();if(!state.pending)return Promise.resolve(false);var pending=state.pending,body=JSON.parse(JSON.stringify(pending.body)),activate=byId('tlActivateAfter');var bound;try{bound=requireScope(body);}catch(scopeError){status(scopeError.message,true);return Promise.reject(scopeError);}body.scope=bound.scope;body.providerId=bound.providerId;body.providerName=bound.providerName;body.activate=!!(activate&&activate.checked);
+    if(body.templates.length>SERVER_IMPORT_LIMIT){var limitErr=operationError('Cloud template imports support up to '+SERVER_IMPORT_LIMIT+' templates per save. Select '+SERVER_IMPORT_LIMIT+' or fewer before saving.','TEMPLATE_IMPORT_BATCH_LIMIT');status(limitErr.message,true);return Promise.reject(limitErr);}
     var resultBoxId=pending.fromForm?'tplFormResult':'tplMultiResult';
-    var handle=providedHandle||progressStart({key:'template-import-commit:'+pending.idempotencyKey,kind:'template_import',label:'Importing templates',stages:COMMIT_STAGES,total:body.templates.length,timeoutMs:180000,replace:true,cancelable:true,retry:function(next){commitPending(next);}});
+    var op=beginOperation('commit');var handle=providedHandle||progressStart({key:'template-import-commit:'+pending.idempotencyKey,kind:'template_import',label:'Importing templates',stages:COMMIT_STAGES,total:body.templates.length,timeoutMs:180000,replace:true,cancelable:true,cancel:function(){op.cancel('Import canceled.');},retry:function(next){commitPending(next);}});op.handle=handle;if(providedHandle)bindProvidedHandle(op,handle);
     return (async function(){try{
-      progressStage(handle,'Validating import',0,body.templates.length,'Rechecking preview ownership and version.');var data=await request('/api/template-imports/commit',{method:'POST',body:body,idempotencyKey:pending.idempotencyKey,requestId:handle&&handle.requestId,progress:handle});var result=data.result;
+      progressStage(handle,'Validating import',0,body.templates.length,'Rechecking preview ownership and version.');var data=await request('/api/template-imports/commit',{method:'POST',body:body,idempotencyKey:pending.idempotencyKey,requestId:handle&&handle.requestId,progress:handle,signal:op.controller&&op.controller.signal,operation:op});operationAssert(op);var result=data.result;
       progressStage(handle,'Verifying committed version',body.templates.length,body.templates.length,'Applying the committed active version when selected.');
-      if(result&&result.set&&(result.set.active||result.set.id===state.activeSetId||body.activate)){if(await confirmReplace(result.set))applySet(result.set);else status('Imported. Your device templates were left alone.',false);}
-      state.pending=null;window._tplPendingSplit=[];if(pending.fromForm&&isFn(window.clearTplForm))window.clearTplForm();state.editingId='';
+      if(result&&result.set&&(result.set.active||result.set.id===state.activeSetId||body.activate)){var replaceOk=await confirmReplace(result.set);operationAssert(op);if(replaceOk)applySet(result.set);else status('Imported. Your device templates were left alone.',false);}
+      operationAssert(op);state.pending=null;window._tplPendingSplit=[];if(pending.fromForm&&isFn(window.clearTplForm))window.clearTplForm();state.editingId='';
       var box=byId(resultBoxId)||byId('tplMultiResult');if(box)box.innerHTML='<div class="tl-import-review"><b>Import '+esc(result.status)+'.</b>'+countsHtml(result.counts)+'</div>';
-      await refresh({applyActive:false,silent:true});
+      await refresh({applyActive:false,silent:true});operationAssert(op);
       /* tl-1.7.0 (owner 2026-09-11: "the doctor should never have to press
          Activate imported set") - a freshly imported set that is not yet the
          account's active set used to sit behind a manual "Activate imported
@@ -469,9 +515,9 @@
          the removed button called, so it carries the identical
          confirmReplace() destructive-change guard and the identical network
          call - only the extra click is gone. */
-      if(result&&result.set&&!result.set.active&&result.set.id!==state.activeSetId&&!body.activate) await activateSet(result.set.id);
+      operationAssert(op);if(result&&result.set&&!result.set.active&&result.set.id!==state.activeSetId&&!body.activate) await activateSet(result.set.id);operationAssert(op);
       if(handle)handle.complete(result.status==='partial'?'Import completed with rejected rows.':'Templates imported.');return result;
-    }catch(error){status(error.message,true);if(error.code==='TEMPLATE_VERSION_CONFLICT'){state.conflict={kind:'import',body:body,localTemplates:cloneTemplates(body.templates)};await loadConflictVersion();status('A newer cloud version exists. Your previewed changes are still available to retry.',true);}renderPanel();if(handle)handle.fail(error);throw error;}})();
+    }catch(error){if(isCanceled(error,op)){if(handle&&handle.snapshot&&handle.snapshot().status!=='canceled')handle.cancel('Import canceled.');throw (error&&error.code?error:operationError('Import canceled.'));}status(error.message,true);if(error.code==='TEMPLATE_VERSION_CONFLICT'){state.conflict={kind:'import',body:body,localTemplates:cloneTemplates(body.templates)};await loadConflictVersion();status('A newer cloud version exists. Your previewed changes are still available to retry.',true);}renderPanel();if(handle)handle.fail(error);throw error;}finally{endOperation(op);}})();
   }
 
   function activateSet(id){var handle=progressStart({key:'template-set:activate',kind:'template_library',label:'Activating template set',stages:['Validating selection','Loading version','Applying templates'],total:3,timeoutMs:60000,replace:true,cancelable:false});return (async function(){try{progressStage(handle,'Validating selection',1,3);var data=await request('/api/template-sets/'+encodeURIComponent(id)+'/activate',{method:'POST',body:{},requestId:handle&&handle.requestId,progress:handle});progressStage(handle,'Applying templates',3,3);if(!(await confirmReplace(data.set))){status('Set activated in the cloud. Your device templates were left alone.',false);await refresh({applyActive:false,silent:true});state.selectedSetId=id;renderPanel();if(handle)handle.complete('Device templates unchanged.');return false;}applySet(data.set);await refresh({applyActive:false,silent:true});state.selectedSetId=id;renderPanel();if(handle)handle.complete('Template set activated.');return true;}catch(error){status(error.message,true);renderPanel();if(handle)handle.fail(error);return false;}})();}
@@ -524,7 +570,11 @@
           }
         }catch(e){}
         return preview;
-      }).catch(function(){
+      }).catch(function(error){
+        /* A server-enforced import ceiling is not an offline failure: keep the
+           review rows and tell the user exactly how to continue instead of
+           silently falling back to a device-only add with misleading copy. */
+        if(error&&error.code==='TEMPLATE_IMPORT_BATCH_LIMIT')return null;
         try{if(isFn(window.toast))window.toast('Cloud sync unavailable — saving templates on this device instead.','ok');}catch(e){}
         return originals.tplAddSplit.apply(self,args);
       }).finally(function(){try{if(btn&&btn.isConnected){btn.disabled=false;btn.textContent='➕ Add selected to my templates';}}catch(e){}});
@@ -577,7 +627,42 @@
         else if(kind==='recognize-part'){var pp=activeUpload.parse||{c:0,t:0};progressStage(activeUpload.handle,'Parsing template content',pp.c,pp.t,S(label||'file')+' · part '+(d+1)+'/'+(t||1)+suffix);}
       }catch(e){}
     };phaseTick.__tl=true;window._tplPhaseTick=phaseTick;}
-    if(isFn(window.tplMultiFile)&&!window.tplMultiFile.__tl){originals.tplMultiFile=window.tplMultiFile;var uploadWrap=function(ev,providedHandle){var files=Array.prototype.slice.call(ev&&ev.target&&ev.target.files||[]),fp=files.map(function(f){return [f.name,f.size,f.lastModified].join(':');}).join('|');if(uploadRuns[fp])return uploadRuns[fp];var invalid=files.filter(function(f){return Number(f.size)>20*1024*1024;});if(files.length>500||invalid.length){var er=new Error(files.length>500?'Import at most 500 files at a time.':'Each template file must be 20 MB or smaller.');if(isFn(window.toast))window.toast(er.message,'err');return Promise.reject(er);}state.sourceFilenames=files.map(function(f){return S(f.name).slice(0,180);});var handle=providedHandle||progressStart({key:'template-upload:'+fp,kind:'template_upload',label:'Reading template files',stages:IMPORT_STAGES,total:files.length,timeoutMs:Math.min(60*60*1000,5*60*1000+files.length*20*1000),replace:true,cancelable:false,retry:function(next){uploadWrap({target:{files:files,value:''}},next);}});/* b882 — the deadline is ABSOLUTE (LoadingCalm never extends it on activity), and a 90-file import with OCR or AI-split legitimately outruns a flat 10 minutes — it then read "took longer than expected and stopped" while still working. Scale with the batch: 5 min + 20 s per file, capped at the 1-hour clamp. */var run=(async function(){try{progressStage(handle,'Validating files',0,files.length,'Checking file count, size, and readable types.');activeUpload={handle:handle,total:files.length,done:0};progressStage(handle,'Reading files',0,files.length,'Reading selected files without blocking the page.');await originals.tplMultiFile.call(window,{target:{files:files,value:''}});progressStage(handle,'Checking results',files.length,files.length,'Checking parsed templates and rejected files.');var found=(window._tplPendingSplit||[]).length;if(!found)throw new Error('No readable templates were found. Review the file errors and retry.');progressStage(handle,'Review ready',files.length,files.length,found+' template'+(found===1?'':'s')+' ready for review.');if(handle)handle.complete('Template review ready.');return found;}catch(error){if(handle)handle.fail(error);throw error;}finally{activeUpload=null;delete uploadRuns[fp];}})();uploadRuns[fp]=run;return run;};uploadWrap.__tl=true;window.tplMultiFile=uploadWrap;}
+    if(isFn(window.tplMultiFile)&&!window.tplMultiFile.__tl){
+      originals.tplMultiFile=window.tplMultiFile;
+      /* One parser owns the module-level _tplPending* staging globals. Exact
+         duplicate picker events reuse their promise; distinct drops queue and
+         run one at a time, so activeUpload progress and pending rows can never
+         cross-wire. The queue is cooperative: the underlying parser already
+         yields at each file/API await, and no arbitrary file-count ceiling is
+         imposed here. The server's 500-template persistence ceiling is checked
+         later by previewImport(), where it can be explained honestly. */
+      var pumpUploads=function(){
+        if(activeUpload||!uploadQueue.length)return;
+        var job=uploadQueue.shift(),files=job.files,fp=job.fp,handle=job.providedHandle||progressStart({key:'template-upload:'+fp,kind:'template_upload',label:'Reading template files',stages:IMPORT_STAGES,total:files.length,timeoutMs:Math.min(60*60*1000,5*60*1000+files.length*20*1000),replace:true,cancelable:false,retry:function(next){uploadWrap({target:{files:files,value:''}},next);}});
+        state.sourceFilenames=files.map(function(f){return S(f.name).slice(0,180);});
+        activeUpload={handle:handle,total:files.length,done:0,fp:fp};
+        (async function(){try{
+          progressStage(handle,'Validating files',0,files.length,'Checking file count, size, and readable types.');
+          progressStage(handle,'Reading files',0,files.length,'Reading selected files without blocking the page.');
+          await originals.tplMultiFile.call(window,{target:{files:files,value:''}});
+          progressStage(handle,'Checking results',files.length,files.length,'Checking parsed templates and rejected files.');
+          var found=(window._tplPendingSplit||[]).length;if(!found)throw new Error('No readable templates were found. Review the file errors and retry.');
+          progressStage(handle,'Review ready',files.length,files.length,found+' template'+(found===1?'':'s')+' ready for review.');
+          if(handle)handle.complete('Template review ready.');job.resolve(found);
+        }catch(error){if(handle)handle.fail(error);job.reject(error);
+        }finally{if(activeUpload&&activeUpload.fp===fp)activeUpload=null;delete uploadRuns[fp];pumpUploads();}})();
+      };
+      var uploadWrap=function(ev,providedHandle){
+        var files=Array.prototype.slice.call(ev&&ev.target&&ev.target.files||[]),fp=files.map(function(f){return [f.name,f.size,f.lastModified].join(':');}).join('|');
+        if(!files.length)return Promise.resolve(0);
+        if(uploadRuns[fp])return uploadRuns[fp];
+        var invalid=files.filter(function(f){return Number(f.size)>20*1024*1024;});
+        if(invalid.length){var er=new Error('Each template file must be 20 MB or smaller.');if(isFn(window.toast))window.toast(er.message,'err');return Promise.reject(er);}
+        var run=new Promise(function(resolve,reject){uploadQueue.push({files:files,fp:fp,providedHandle:providedHandle,resolve:resolve,reject:reject});pumpUploads();});
+        uploadRuns[fp]=run;return run;
+      };
+      uploadWrap.__tl=true;window.tplMultiFile=uploadWrap;
+    }
   }
 
   function install(){wrapFunctions();ensurePanel();if(hosted())setTimeout(function(){refresh({silent:true});},0);}

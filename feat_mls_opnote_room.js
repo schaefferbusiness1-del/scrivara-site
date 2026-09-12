@@ -399,12 +399,24 @@
   }
 
   var RAIL_FILTER = '';   /* b899 — the rail's name filter, survives rebuilds */
+  /* tplscale-1.0.0 — keep the picker responsive for the 1,000-template set
+     ceiling and larger local libraries. Sorting is cached by id/name order;
+     scrolling only renders a bounded window, so a scroll cannot repeat an
+     O(N log N) sort or create thousands of buttons. Fixed-height rows make the
+     spacer's scroll geometry deterministic while delegated click/edit handlers
+     keep the same behavior for visible rows. */
+  var TPL_RAIL_WINDOW = 80, TPL_RAIL_ROW_HEIGHT = 48;
+  var TPL_RAIL_SORT_CACHE = { signature: '', list: [] };
   function buildTplRail() {
     var rail = $('oprTplRail'); if (!rail) return;
-    var list = safe(function () { return isFn(window.getTemplates) ? (window.getTemplates() || []) : []; }, []);
+    var rawList = safe(function () { return isFn(window.getTemplates) ? (window.getTemplates() || []) : []; }, []);
+    var signature = rawList.map(function (t) { return S(t && t.id) + '\u0001' + S(t && t.name); }).join('\u0002');
     /* b899 — 96 templates in library-insertion order is creation-time noise;
-       alphabetical, with a name filter above (owner request 2026-08-06). */
-    list = list.slice().sort(function (a, b) { return String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }); });
+       alphabetical, with a name filter above (owner request 2026-08-06).
+       Reuse the sorted snapshot when only selection/scroll/health changed. */
+    var list;
+    if (TPL_RAIL_SORT_CACHE.signature === signature) list = TPL_RAIL_SORT_CACHE.list;
+    else { list = rawList.slice().sort(function (a, b) { return String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }); }); TPL_RAIL_SORT_CACHE = { signature: signature, list: list }; }
     var q = String(RAIL_FILTER || '').trim().toLowerCase();
     var shown = q ? list.filter(function (t) { return String(t.name || '').toLowerCase().indexOf(q) >= 0; }) : list;
     var cur = curRow();
@@ -419,7 +431,15 @@
       h += '<div class="opr-tpl-empty">No template name contains &ldquo;' + esc(RAIL_FILTER) + '&rdquo;. Clear the search to see all ' + list.length + '.</div>';
     } else {
       var hOf = safe(function () { return window.__mlsTplPrepFix && isFn(window.__mlsTplPrepFix.healthOf) ? window.__mlsTplPrepFix.healthOf : null; }, null);
-      for (var i = 0; i < shown.length; i++) {
+      /* Only paint rows near the viewport. The outer rail remains the same
+         owner and keeps its delegated interactions; the spacer preserves the
+         full scrollbar and the absolute window preserves item positions. */
+      var rememberedTop = Number(rail.__oprTplScrollTop) || 0;
+      var start = Math.max(0, Math.min(Math.max(0, shown.length - TPL_RAIL_WINDOW), Math.floor(rememberedTop / TPL_RAIL_ROW_HEIGHT) - 12));
+      var end = Math.min(shown.length, start + TPL_RAIL_WINDOW);
+      h += '<div class="opr-tpl-window" data-tpl-window="1"><div class="opr-tpl-spacer" style="height:' + (shown.length * TPL_RAIL_ROW_HEIGHT) + 'px;position:relative">'
+        + '<div class="opr-tpl-window-items" style="position:absolute;left:0;right:0;top:' + (start * TPL_RAIL_ROW_HEIGHT) + 'px">';
+      for (var i = start; i < end; i++) {
         var t = shown[i];
         var health = hOf ? safe((function (tt) { return function () { return hOf(tt); }; })(t), null) : null;
         var cls = health ? health.cls : '';
@@ -430,7 +450,7 @@
         var armed = ARMED_TPL && S(t.id) === ARMED_TPL;
         var state = armed ? 'click again to switch - your text stays'
           : ((on ? 'in use for this procedure' : '') + (on && lbl ? ' · ' : '') + (lbl || ''));
-        h += '<button type="button" class="opr-tpl-item' + (on ? ' on' : '') + (armed ? ' armed' : '') + '"'
+        h += '<button type="button" class="opr-tpl-item' + (on ? ' on' : '') + (armed ? ' armed' : '') + '" style="height:' + TPL_RAIL_ROW_HEIGHT + 'px;box-sizing:border-box;overflow:hidden"'
           + ' data-tpl-id="' + esc(S(t.id)) + '"'
           + ' aria-pressed="' + (on ? 'true' : 'false') + '"'
           + ' title="' + esc((t.name || 'Template') + (state ? ' — ' + state : '')) + '">'
@@ -442,6 +462,7 @@
           + ' aria-label="Edit template ' + esc(t.name || '') + '" title="Open this template to edit it">Edit</span>'
           + '</button>';
       }
+      h += '</div></div></div>';
     }
     /* b899 — typing in the filter rebuilds this rail, and innerHTML replacement
        destroys focus mid-word. Remember focus + caret, restore after. */
@@ -463,6 +484,11 @@
     var changed = (rail.__oprHtml !== h);
     if (changed) { rail.innerHTML = h; rail.__oprHtml = h; }
     var searchInp = $('oprTplSearch');
+    var tplWindow = rail.querySelector ? rail.querySelector('[data-tpl-window]') : null;
+    if (tplWindow) {
+      try { tplWindow.scrollTop = rememberedTop; } catch (eScroll) {}
+      tplWindow.onscroll = function () { rail.__oprTplScrollTop = this.scrollTop; buildTplRail(); };
+    }
     if (searchInp && changed) {
       searchInp.value = RAIL_FILTER;
       searchInp.oninput = function () { RAIL_FILTER = this.value; buildTplRail(); };
