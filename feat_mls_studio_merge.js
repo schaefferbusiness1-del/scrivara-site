@@ -413,7 +413,10 @@
     syncAnalysisInline(key);
     /* Give the section its own data a nudge — the Analysis tiles used to load
        on showView('analysis'), which no longer fires. */
-    if (key === 'practice') refreshPractice();
+    if (key === 'practice') {
+      refreshPractice();
+      refreshPracticeEntitlement();
+    }
     if (changed) safe(function () {
       W.dispatchEvent(new CustomEvent('mls:studio-section-changed', { detail: { section: key } }));
     });
@@ -473,6 +476,19 @@
     _practiceWarmed = true;
     ['renderKeyTrends', 'loadAnalysisBaseline', 'loadOutcomesMarketing', 'renderAnalysisSummary']
       .forEach(function (fn) { safe(function () { if (typeof W[fn] === 'function') W[fn](); }); });
+  }
+
+  /* The premium lock is an additive late-loaded owner. Practice used to become
+     visible through this merged switcher without giving that owner a render
+     edge, so a plan change (or a lock module that arrived after boot) could
+     leave the wrong entitlement state painted until its polling timer fired.
+     Ask the owner to reconcile exactly when Practice becomes live; its own
+     apply() remains the single source of truth for premium/non-premium UI. */
+  function refreshPracticeEntitlement() {
+    safe(function () {
+      var lock = W.__mlsStudioLock;
+      if (lock && typeof lock.apply === 'function') lock.apply();
+    });
   }
 
   /* A later additive module can replace window.showView after our wrapper is
@@ -575,7 +591,10 @@
       });
     }
     if (!current()) select(remembered(), false);
-    else syncAnalysisInline(current());
+    else {
+      syncAnalysisInline(current());
+      if (current() === 'practice') refreshPracticeEntitlement();
+    }
   }
   var _warnedStranded = false;
   var _strandedRecheck = false;

@@ -18,6 +18,7 @@
     "test:live-synthetic": "node tests/live-synthetic-smoke.js",
     "test:live-visible-controls": "node tests/live-visible-controls-audit.js",
     "test:live-local-libraries": "node tests/live-local-adjunct-library-boundary.js",
+    "test:hosted-production": "node tests/hosted-production-smoke.js",
     "test:release-preflight": "node tests/public-release-preflight.test.js",
     "audit:pages-build": "node scripts/audit-pages-build.js --site-dir=_site",
     "preflight:public": "node scripts/public-release-preflight.js",

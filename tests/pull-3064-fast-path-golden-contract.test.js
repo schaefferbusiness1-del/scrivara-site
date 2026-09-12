@@ -70,17 +70,17 @@
  * this delta: OFF now holds exactly one visit per row, dated the pulled day -
  * the no-HISTORICAL-bodies protection now lives in the visit-date check.
  *
- * REMAINING ENGINE GAPS (reported, deliberately NOT frozen into expectations):
- * 1. dfc-1.1.0 DOUBLE SCOPED READ: on direct-read SUCCESS the legacy vp
- *    fold-in still fires a second scoped read for the same row in the same
- *    batch - the fold-in door (importer :5930) never consults one.todayNote
- *    (set true at :5633) and dnAlreadyReadToday (:5949) reads a day-ledger
- *    stamp only written at index finalization (:1691). Measured: 6 scoped
- *    reads for 3 clean OFF rows. The one-read-per-row pins in
- *    dayFactsBatchIsTheMandatoryFloor() stay at the CONTRACT numbers and are
- *    RED until the engine suppresses the fold-in after a direct-read success.
- * 2. the deferred day-note round can no longer be armed by anything - see the
- *    TODO in dayFactsDeferrableNoteIsAccountedHonestly().
+ * FORMER ENGINE GAPS (closed in the executable 1p engine):
+ * 1. dfc-1.1.0 DOUBLE SCOPED READ: the inline fold-in now requires
+ *    one.todayNote == null, so a successful direct bridge read is not sent
+ *    through the legacy vp ladder a second time. The runtime pin below measures
+ *    one scoped read per clean OFF row.
+ * 2. the deferred day-note round is reachable for deferrable OFF refusals:
+ *    tnDeferRow admits both modes, niSyncFromReceipt is mode-blind, and the
+ *    runtime pin below measures the rows owned by that round.
+ * The persisted day-pull terminal receipt is also executable and tested: its
+ * settled OFF mode is day-facts, while blocked-unchosen remains its sole
+ * not-requested mode (see day-pull-terminal-receipt-runtime.test.js).
  * Synthetic identities only.
  * ============================================================================= */
 
@@ -251,7 +251,9 @@ function sourceContracts() {
   /* A transient first pass is visibly pending until the established sweep
      settles it; it must not paint a terminal orange failure prematurely. */
   ok(IMPORTER.includes('var oneQueuedForSweep =') &&
-    IMPORTER.includes('oneQueuedForSweep ? "queued-for-automatic-recheck"'),
+    IMPORTER.includes('oneQueuedForSweep ? ppAutomaticRecheckReason(one)') &&
+    IMPORTER.includes('function ppAutomaticRecheckReason(entry)') &&
+    IMPORTER.includes('?"queued-for-automatic-recheck":"re-checking"'),
     'the first-pass transient row is no longer queued calmly for re-check');
   ok(IMPORTER.includes('var AUTOMATIC_HISTORY_RETRY_REASON =') &&
     IMPORTER.includes('var SWEEPABLE_REASON = AUTOMATIC_HISTORY_RETRY_REASON;'),
@@ -485,23 +487,16 @@ function dayFactsSourceContract() {
   ok(completionLine.includes('pulled-day note'),
     'the day-completion OFF sentence stopped reporting unread pulled-day notes at all');
 
-  /* TODO(dayfacts-1.0.1 ENGINE GAP - reported, deliberately NOT pinned red):
-     the PERSISTED day-pull terminal receipt in mls-connect was not converted
-     with the rest of the vocabulary. Measured against these bytes:
-       1p-mls-connect.js:49570  visitNotes.mode = requested === false
-                                ? 'not-requested'  <- the mode delta-6 removed
-                                                      from every other level
-       1p-mls-connect.js:49602  ' Full visit notes were intentionally skipped
-                                  (Full Notes is off).'  <- shown to the doctor
-                                  on reload for a pull that DID attempt every
-                                  pulled-day note (todayNoteRead 2 of 2 here).
-     The assertions that WOULD pin it, once the mapper is converted:
-        ok(!CONNECT.includes("'not-requested' : 'unknown'"), ...);
-        ok(!CONNECT.includes(' Full visit notes were intentionally skipped'), ...);
-     What is pinned instead is honest today AND load-bearing either way: the
-     persisted receipt must keep carrying the day-note census (so a converted
-     line has real numbers to state, and an unconverted one is measurably
-     contradicted by its own receipt). */
+  /* dayfacts-1.0.1: the persisted terminal receipt uses the same mode
+     vocabulary as the live result. The dedicated terminal-receipt runtime
+     suite exercises persistence/reload; these source pins keep the mapper and
+     its user-facing fallback sentence from regressing. */
+  ok(CONNECT.includes("visitNotes: { requested: requested, mode: requested === true ? 'full' : (hr.visitNotesMode === 'blocked-unchosen' ? 'blocked-unchosen' : (requested === false ? 'day-facts' : 'unknown'))"),
+    'the persisted terminal receipt does not map settled OFF to day-facts');
+  ok(!CONNECT.includes("'not-requested' : 'unknown'"),
+    'the persisted terminal receipt reintroduced the revoked not-requested mode');
+  ok(!CONNECT.includes(' Full visit notes were intentionally skipped'),
+    'the persisted terminal receipt reintroduced the revoked intentionally-skipped sentence');
   ok(CONNECT.includes("read: dsReceiptCount(hr.todayNoteRead), failures: dsReceiptCount(hr.todayNoteFailures), notRequested: dsReceiptCount(hr.todayNoteNotRequested)"),
     'the persisted day-pull terminal receipt stopped carrying the day-note census');
 }
@@ -728,18 +723,9 @@ async function dayFactsBatchIsTheMandatoryFloor() {
      attempt per scheduled row - no more (a second pass would re-open every
      chart) and no fewer (a silent lane is what round 1 measured). */
   const offScoped = offH.noteCalls.filter(call => String(call.onlyDate || '') === DAY);
-  /* ENGINE GAP (dfc-1.1.0, reported 2026-08-25, deliberately left RED - see
-     the header): the contract says the successful direct read is the row's
-     ONLY scoped read ("the LEGACY vp/tn/defer/idle ladder never fires for
-     that row"; "at most one scoped read per row per day"). MEASURED: 6 scoped
-     reads for 3 rows - each row's successful bridge read (transport 'bridge',
-     seq chart+1, todayNoteDirectBridge true) is followed by a SECOND scoped
-     read through the legacy vp fold-in (seq chart+2), because the fold-in
-     door at 1p-feat_mls_schedimport_exact.js:5930 never consults
-     one.todayNote (set true at :5633) and dnAlreadyReadToday (:5949) reads a
-     day-ledger stamp that is only written at index finalization (:1691), so
-     it can never dedupe within the batch that made the read. The pins below
-     are the CONTRACT, not today's engine. */
+  /* dfc-1.1.0: the successful direct bridge read is the row's ONLY scoped
+     read (the legacy vp/tn/defer/idle ladder must stand down for that row).
+     The executable guard is measured below by the one-read-per-row census. */
   eq(offScoped.length, 3,
     'day-facts mode did not attempt the pulled-day encounter note for every scheduled row');
   ok(offScoped.every(call => call.transport === 'bridge'),
@@ -885,29 +871,17 @@ async function dayFactsDeferrableNoteIsAccountedHonestly() {
     p.todayNoteProgress === 'chart-open'),
     'a refused day-facts row lost the chart-open progress evidence');
 
-  /* ===== TODO(dayfacts-1.0.1 ENGINE GAP - reported, deliberately NOT frozen)
-     Delta item 3 claims "tnDeferRow and niSyncFromReceipt no longer refuse
-     day-facts rows". They still do, and after 1.0.1 that makes the deferred
-     day-note round UNREACHABLE rather than merely OFF-blind:
-       1p-feat_mls_schedimport_exact.js:5873
-         if (!entry || !day || sweepDepth || receipt.visitNotesRequested !== true) return false;
-       1p-feat_mls_schedimport_exact.js:7064
-         if (receipt.visitNotesRequested !== true) return 0;
-     All three tnDeferRow call sites are inside OFF-only lanes (the inline
-     fold-in :5685, the tail pass :6299, tnStampHandedOff :4598 - each guarded
-     by pullVisitBodies !== true), so the one mode that can reach them is the
-     one mode the guard rejects. niSyncFromReceipt is the only producer for the
-     idle backfill queue, and it returns 0 for exactly those receipts - while
-     niGate/niReadOnce were opened to settled OFF in this same release.
-     MEASURED by this fixture: 3 deferrable failures, todayNoteQueued 0,
-     todayNoteDeferred null on all three rows - stranded outside BOTH queues
-     (the nih-1.0.0 class, this time by construction).
-     The assertions that WOULD pin the contract:
-        ok(receipt.patients.every(p => p.todayNoteDeferred === true), ...);
-        eq(Number(receipt.todayNoteQueued || 0), 3, ...);
-     They are left here rather than run, because pinning today's numbers
-     (queued 0) would freeze the defect and pinning the contract would only
-     restate this report in red. */
+  /* dayfacts-1.0.1: a deferrable day-facts refusal is owned by the immediate
+     deferred round, not stranded outside both queues. These are behavioral
+     pins, so a future checkbox-guard regression turns this test red. */
+  eq(Number(receipt.todayNoteQueued || 0), 3,
+    'a deferrable day-facts refusal was stranded outside the deferred round');
+  ok(receipt.patients.every(p => p && p.todayNoteDeferred === true),
+    'a deferred day-facts row was not marked as owned by the deferred round');
+  eq(Number((receipt.todayNoteDeferred || {}).queued || 0), 3,
+    'the deferred day-note receipt under-counted the rows it owns');
+  eq(Number(receipt.todayNoteUnreadFinal || 0), 0,
+    'a queued day-facts note was reported as finally unread');
   ok(receipt.patients.every(p => p.todayNote === false),
     'a refused pulled-day note did not settle to a false verdict');
 }
@@ -1066,7 +1040,7 @@ async function main() {
   await visitNotesModeBoundaryThroughPull();
   await flush(3);
   console.log('PASS pull-3064-fast-path-golden-contract: ' + checks +
-    ' checks - exact commit 2165bc2 proves the 3.0.64 one-read trace; dfc-1.1.0 (owner DAY contract, 2026-08-25) pins day-facts OFF as the mandatory chart-facts floor: one identity-verified chart open plus exactly ONE scoped AllVisits BRIDGE read per row (hint.onlyDate = the pulled day, transport proven, folded into that row\'s own open chart), saving exactly the pulled day\'s OWN visit body through the additive scoped save (one visit per row, dated the pulled day, typed sameDayReceipt / not-requested allHistoryReceipt, NO historical bodies); on direct-read success the legacy vp ladder stays silent, on a refused direct read the row costs exactly one failed bridge attempt then its own vp attempt with the refusal receipted per row; receipt census agrees with the reads made; ON is that floor plus the unscoped managed walk and no extra scoped open; an unchosen preference is the only zero-read blocked receipt and the only "not requested" day-note column; the three includeHistory doors (day, month, Calendar) are decoupled from the checkbox and one day-facts vocabulary spans every envelope; approved cold/key/retry/diagnostic/queued repairs remain. ENGINE GAPS reported, not frozen: the deferred day-note round is unreachable (importer 5873 tnDeferRow / 7064 niSyncFromReceipt vs the OFF-only call sites 4598/5685/6299), and the persisted day-pull terminal receipt still says "not requested" / "intentionally skipped" (1p-mls-connect.js 49570/49602).');
+    ' checks - exact commit 2165bc2 proves the 3.0.64 one-read trace; dfc-1.1.0 (owner DAY contract, 2026-08-25) pins day-facts OFF as the mandatory chart-facts floor: one identity-verified chart open plus exactly ONE scoped AllVisits BRIDGE read per row (hint.onlyDate = the pulled day, transport proven, folded into that row\'s own open chart), saving exactly the pulled day\'s OWN visit body through the additive scoped save (one visit per row, dated the pulled day, typed sameDayReceipt / not-requested allHistoryReceipt, NO historical bodies); on direct-read success the legacy vp ladder stays silent, on a refused direct read the row costs exactly one failed bridge attempt then its own vp attempt with the refusal receipted per row; receipt census agrees with the reads made; ON is that floor plus the unscoped managed walk and no extra scoped open; an unchosen preference is the only zero-read blocked receipt and the only "not requested" day-note column; the three includeHistory doors (day, month, Calendar) are decoupled from the checkbox and one day-facts vocabulary spans every envelope; approved cold/key/retry/diagnostic/queued repairs remain. Formerly reported engine gaps are now behaviorally covered: direct-read successes stay one scoped read per row, deferrable OFF refusals reach the deferred round, and persisted settled-OFF terminal receipts say day-facts.');
 }
 
 const watchdog = setTimeout(() => {

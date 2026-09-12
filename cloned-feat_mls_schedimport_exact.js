@@ -2842,6 +2842,31 @@
     if (!s) return true;
     return /^p_sched_/.test(s) || /^_?\d+$/.test(s);
   }
+  /* orphanbind-1.0.0 (live 2026-09-12): an exact Athena appointment can
+     outlive the local patient row it was once pointed at. Treating that absent
+     id like a live, disagreeing chart leaves the appointment permanently
+     unreadable: the current Athena row can prove one existing MLS chart by
+     DOB/MRN, while the backend points at an id that is not in the store at
+     all. This repair is intentionally narrower than debris adoption:
+       - the stored and incoming Athena appointment ids must be identical;
+       - the incoming row must carry real DOB/MRN proof;
+       - findPatient must already have resolved that proof to one stored chart;
+       - the old patient id must be absent, not a second live chart.
+     Live-vs-live disagreement therefore stays fatal. */
+  function padoptExactOrphanUpgrade(pts, oldRow, incoming, existing) {
+    if (!oldRow || !existing || existing.id == null) return false;
+    var oldPatientId = String(oldRow.patient_external_id || "").trim();
+    if (!oldPatientId || oldPatientId === String(existing.id)) return false;
+    var incomingAppointmentId = String(rowAppointmentId(incoming) || "").trim().toLowerCase();
+    var storedAppointmentId = String(rowAppointmentId(oldRow) || "").trim().toLowerCase();
+    if (!incomingAppointmentId || !storedAppointmentId || incomingAppointmentId !== storedAppointmentId) return false;
+    var proof = sourceProof(incoming);
+    if (!proof.dob && !proof.mrn) return false;
+    for (var i = 0; i < (Array.isArray(pts) ? pts.length : 0); i++) {
+      if (String(pts[i] && pts[i].id || "") === oldPatientId) return false;
+    }
+    return true;
+  }
   /* A row bearing an Athena chart id that matched NOTHING falls through to the
      stricter MRN/DOB tiers, because a MISS is not a conflict. What it may
      never do is land on a local row PROVABLY stamped with a DIFFERENT Athena
@@ -3583,7 +3608,7 @@
           if (onEach) safe(function () { onEach("dedupe", { name: name }); });
           var exactAppointmentKey = rowAppointmentId(a) ? appointmentIdentity(a, date, nt, false) : "";
           var oldRow = (exactAppointmentKey && !existingAmbiguous[exactAppointmentKey]) ? (existingRows[exactAppointmentKey] || null) : null;
-          var ext = "", existing = null;
+          var ext = "", existing = null, bindingUpgrade = false;
           /* Resolve the patient from frozen source proof first. A same-name local
              record, even when unique, is never a binding candidate. */
           var padoptNotes = {};
@@ -3607,7 +3632,9 @@
                native-vs-native disagreement (or a real proof conflict) stays
                fatal and blocks both records. */
             var debrisUpgrade = boundDisagrees && !proofConflict && existing && !padoptIsDebrisId(existing.id) && padoptIsDebrisId(oldRow.patient_external_id);
-            if (proofConflict || (boundDisagrees && !debrisUpgrade)) {
+            var orphanUpgrade = boundDisagrees && !proofConflict && padoptExactOrphanUpgrade(pts, oldRow, a, existing);
+            bindingUpgrade = debrisUpgrade || orphanUpgrade;
+            if (proofConflict || (boundDisagrees && !bindingUpgrade)) {
               if (boundPatient && boundPatient.id) blockHistoryPatient(boundPatient.id, "source-proof-conflict");
               if (existing && existing.id && (!boundPatient || String(existing.id) !== String(boundPatient.id))) blockHistoryPatient(existing.id, "source-proof-conflict");
               noteImportFailure("appointment-patient-identity-conflict");
@@ -3649,20 +3676,20 @@
                  slot-patient-identity-conflict and the adoption never left the
                  walk (measured live 2026-08-26: a full healthy pull reported
                  calendar-partial every time and the census never moved). The
-                 verdict is recomputed with the identical guards: frozen source
-                 proof must not conflict with the bound row, the resolved chart
-                 must be native, the stored binding must be provable debris.
-                 Anything else stays exactly as fatal as before. */
+                 verdict is recomputed with the identical guards. The one
+                 additional repair is an exact-id orphan: the old patient id is
+                 absent and the current Athena proof already resolved one
+                 stored chart. Anything else stays exactly as fatal as before. */
               var lateBound = patientByLocalId[String(oldRow.patient_external_id)] || null;
               var lateProof = sourceProof(a);
               var lateConflict = !!(lateBound && ((lateProof.dob && normDob(lateBound.dob) && normDob(lateBound.dob) !== lateProof.dob) || (lateProof.mrn && rowMrn(lateBound) && rowMrn(lateBound) !== lateProof.mrn)));
-              var lateUpgrade = !lateConflict && existing && !padoptIsDebrisId(existing.id) && padoptIsDebrisId(oldRow.patient_external_id);
+              var lateUpgrade = !lateConflict && existing && ((!padoptIsDebrisId(existing.id) && padoptIsDebrisId(oldRow.patient_external_id)) || padoptExactOrphanUpgrade(pts, oldRow, a, existing));
               if (!lateUpgrade) {
                 noteImportFailure("slot-patient-identity-conflict");
                 if (onEach) safe(function () { onEach("error", { name: name, error: "slot-patient-identity-conflict" }); });
                 return;
               }
-              debrisUpgrade = true; /* arm the enrich re-point below */
+              bindingUpgrade = true; /* arm the proven re-point below */
             }
           }
           if (!existing) existing=materializePatient(a,name);
@@ -3713,8 +3740,12 @@
               return;
             }
             /* The calendar row already exists, so its exact patient is eligible
-               for history even if an optional missing-time repair later fails. */
-            queueHistory(a, existing, date);
+               for history even if an optional missing-time repair later fails.
+               A proven debris/orphan binding upgrade is the one exception: the
+               replacement chart is not a valid history target until the explicit
+               patient_external_id rebind POST has succeeded. Keep this gate
+               narrow so ordinary existing rows retain their prior ordering. */
+            if (!bindingUpgrade) queueHistory(a, existing, date);
             /* A repeat pull is idempotent enrichment, not a blind skip. Fill only
                fields that are still empty on this exact existing appointment;
                conflicting nonempty values are preserved for human review. */
@@ -3736,15 +3767,12 @@
             if (!storedProviderId2) addMissing("athena_provider_id", incomingProviderId2);
             addMissing("reason", String(a.reason || ""));
             addMissing("patient_external_id", ext || "");
-            /* padopt-1.0.2: the debris->native verdict must actually PERFORM
-               the upgrade. addMissing fills only EMPTY fields, so a backend row
-               bound to p_sched_/digits debris kept that binding forever and the
-               adoption above was invisible outside this walk (measured live
-               2026-08-26: census unchanged after a full healthy pull). The
-               guards are untouched - debrisUpgrade is only ever true when the
-               reconciliation proved the native row against frozen source proof
-               and the stored binding is provable capture debris. */
-            if (debrisUpgrade && ext && String(oldRow.patient_external_id || "") !== ext) {
+            /* padopt-1.0.2 + orphanbind-1.0.0: a proven binding repair must
+               actually PERFORM the update. addMissing fills only EMPTY fields,
+               so both debris->native adoption and an exact-id orphan repair need
+               this explicit re-point. bindingUpgrade is armed only by the two
+               narrow proof gates above. */
+            if (bindingUpgrade && ext && String(oldRow.patient_external_id || "") !== ext) {
               enrich.patient_external_id = ext; enrichKeys.push("patient_external_id");
             }
             /* 2026-07-15: the verified Athena wall time is the truth for an
@@ -3763,6 +3791,7 @@
                   enrichKeys.forEach(function (field) { oldRow[field] = enrich[field]; });
                   markDone(ledgerKey, { patientId: ext || oldRow.patient_external_id || "", backendAppointmentId: oldRow.id, date: date });
                   if (!recordResolution(ledgerKey, oldRow.id, date, "repaired",ext||oldRow.patient_external_id)) { noteImportFailure(lastMappingReason()); return; }
+                  if (bindingUpgrade) queueHistory(a, existing, date);
                   enrichedFields += enrichKeys.length;
                   repaired++; days[date] = (days[date] || 0) + 1;
                   if (onEach) safe(function () { onEach("repaired", { name: name, fields: enrichKeys.slice() }); });
@@ -10008,6 +10037,19 @@
      patient; any drift refuses. Downstream gets the stored separator forms
      (_athenaHistoryTargetSnapshot rejects bare tokens). Shared by the manual
      retry button and the si-1.9.0 automatic end-of-batch re-sweep. */
+  var RETRY_TERMINAL_WITHOUT_PROOF = {
+    "source-proof-conflict": 1,
+    "missing-source-dob-mrn-proof": 1,
+    "patient-not-resolved": 1,
+    "local-patient-materialization-failed": 1,
+    "identity-suggestion-pending": 1,
+    "appointment-identity-unresolved": 1
+  };
+  function retryNoProofReason(item, fallback) {
+    var raw = String(item && item.reason || "").trim().toLowerCase();
+    var m = /^[a-z][a-z0-9-]{0,79}/.exec(raw), code = m ? m[0].replace(/-+$/, "") : "";
+    return RETRY_TERMINAL_WITHOUT_PROOF[code] === 1 ? code : String(fallback || "retry-proof-missing");
+  }
   function buildRetryRows(retryEntries, scopeDay) {
     var seen = {}, rows = [], unresolved = [];
     /* dnd-1.0.0: the day travels with the rebuilt row. scopeDay is the pull's
@@ -10016,13 +10058,23 @@
     scopeDay = normDate(scopeDay || "") || "";
     (Array.isArray(retryEntries) ? retryEntries : []).forEach(function (item) {
       var patientId = String(item && item.patientId || "");
-      if (!patientId || seen[patientId]) return;
+      /* verdictkeep-1.0.0 (live 2026-09-12): an import-time identity refusal
+         is terminal evidence, not a malformed retry. Five exact orphan rows
+         were correctly filed as source-proof-conflict, then the tail retry
+         rewrote all five to retry-proof-missing and made the progress panel
+         misstate the cause. Preserve closed import refusals verbatim. Pid-less
+         refusals are separate requested rows, so retain each one as well. */
+      if (!patientId) {
+        unresolved.push({ patientId: "", reason: retryNoProofReason(item, "retry-target-unavailable"), frozenDob: "", frozenMrn: "" });
+        return;
+      }
+      if (seen[patientId]) return;
       seen[patientId] = true;
       var patient = patientById(patientId);
       var frozenDob = normDob(item && item.frozenDob || ""), frozenMrn = normMrn(item && item.frozenMrn || "");
       var currentDob = normDob(patient && patient.dob || ""), currentMrn = rowMrn(patient);
       if (!frozenDob && !frozenMrn) {
-        unresolved.push({ patientId: patientId, reason: "retry-proof-missing", frozenDob: "", frozenMrn: "" });
+        unresolved.push({ patientId: patientId, reason: retryNoProofReason(item, "retry-proof-missing"), frozenDob: "", frozenMrn: "" });
         return;
       }
       if (!patient) {

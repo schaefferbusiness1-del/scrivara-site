@@ -171,6 +171,7 @@ function harness(options) {
     _athenaAsyncBindingStillSafe() { return true; },
     _mlsValidateStructuredNoteResult() {},
     _mlsValidateAthenaNote(text) { return { text: String(text) }; },
+    _mlsAthenaCanonicalFromStandardNote(text) { return { text: String(text) }; },
     _reorderNoteForStyle(text) { return String(text); },
     _athenaSetVisitBinding() { return true; },
     _mlsSetAthenaNote(text) { context.currentAthenaNote = String(text); },

@@ -101,7 +101,16 @@ function makeWorld(patients) {
     fetch: async (url, init) => {
       if (!init || !init.method) return { ok: true, status: 200, json: async () => ({ appointments: backendRows }) };
       const body = JSON.parse(init.body || '{}');
-      posted.push({ url: String(url), body });
+      const requestUrl = String(url);
+      posted.push({ url: requestUrl, body });
+      const updateMatch = requestUrl.match(/\/([^/?#]+)\/update(?:[?#].*)?$/);
+      if (updateMatch) {
+        const existingId = decodeURIComponent(updateMatch[1]);
+        const at = backendRows.findIndex(row => String(row && row.id || '') === existingId);
+        if (at < 0) return { ok: false, status: 404, json: async () => ({ error: 'appointment not found' }) };
+        backendRows[at] = Object.assign({}, backendRows[at], body);
+        return { ok: true, status: 200, json: async () => ({ id: existingId }) };
+      }
       const id = 'backend-created-' + posted.length;
       backendRows.push(Object.assign({ id }, body));
       return { ok: true, status: 200, json: async () => ({ id }) };
@@ -118,6 +127,7 @@ function makeWorld(patients) {
   return {
     ctx, api: ctx.__mlsSI, patients, posted,
     setBackendRows(rows) { backendRows = rows; },
+    getBackendRows() { return backendRows; },
     resetPosted() { posted.length = 0; }
   };
 }
@@ -506,10 +516,119 @@ const UNDER_DEBRIS = '_48211937';         /* the "_"+digits capture twin */
       're-import re-posted the binding - the upgrade writer leaks into the ordinary path');
   }
 
+  /* ---- (g2) orphanbind-1.0.0: an exact backend appointment can point at
+     a patient id that no longer exists in the local store. Live 2026-09-12,
+     five rows had this exact shape: Athena supplied a valid DOB and resolved
+     one stored chart, but the orphan was treated like a second live patient
+     and every history retry degraded to retry-proof-missing. Re-point only
+     the exact appointment; the live-vs-live refusal below remains the causal
+     control. The resolved chart is deliberately an all-digits capture row so
+     this cure does not depend on the replacement id looking "native". ----- */
+  {
+    const patients = [{
+      id: DIGITS_DEBRIS, name: 'Bernard Brooks', dob: '1970-01-02',
+      summary: 'Synthetic stored chart content', visits: []
+    }];
+    const w = makeWorld(patients);
+    const orphanedRow = {
+      id: 'backend-existing-orphan', athena_appointment_id: 'athena-appt-orphan', athena_provider_id: 'provider-1',
+      patient_external_id: 'removed-local-patient-id', appt_date: '2026-08-26', start_at: '2026-08-26T10:20:00.000Z',
+      provider_name: 'Doctor One', dob: '01/02/1970'
+    };
+    w.setBackendRows([orphanedRow]);
+    const incoming = {
+      appointmentId: 'athena-appt-orphan', name: 'Brooks, Bernard P', dob: '01/02/1970',
+      date: '2026-08-26', time: '10:20', provider: 'Doctor One', providerId: 'provider-1'
+    };
+    const res = await w.api.importAppts([incoming], { date: '2026-08-26', scopeDate: '2026-08-26', requirePatientBinding: true });
+    eq(res.created, 0, 'the orphan repair created a duplicate appointment');
+    eq(res.failed, 0, 'an exact appointment with an absent old patient id still failed as a live identity conflict');
+    const repoints = w.posted.filter(p => /backend-existing-orphan\/update$/.test(p.url) && p.body.patient_external_id !== undefined);
+    eq(repoints.length, 1, 'the exact orphaned appointment was not re-pointed');
+    eq(repoints[0].body.patient_external_id, DIGITS_DEBRIS, 'the orphan repair did not use the one DOB-proven stored chart');
+    eq(String((w.getBackendRows()[0] || {}).patient_external_id || ''), DIGITS_DEBRIS,
+      'the simulated backend did not retain the proven re-point');
+    eq(String((res.historyTargets[0] || {})._mlsTargetPatientId || ''), DIGITS_DEBRIS,
+      'the repaired appointment did not enqueue history for the proven chart');
+
+    /* Once repaired, the same pull is idempotent. */
+    w.resetPosted();
+    await w.api.importAppts([Object.assign({}, incoming)], { date: '2026-08-26', scopeDate: '2026-08-26', requirePatientBinding: true });
+    eq(w.posted.filter(p => p.body.patient_external_id !== undefined).length, 0,
+      'a repaired orphan binding was written again on the next pull');
+  }
+
+  /* ---- (g3) orphanbind-1.1.0: a failed explicit rebind is a hard boundary.
+     History may not read the replacement chart until the POST that binds the
+     existing appointment to it succeeds. The real dayPull runtime proves the
+     calendar receipt stays partial, no chart/note read starts, the next retry
+     succeeds, and a settled native binding is idempotent. ---------------- */
+  {
+    const { makeMonthHarness } = require('./1p-pull-harness.js');
+    const DAY = '2026-08-26';
+    const patients = [{ id: DIGITS_DEBRIS, name: 'Bernard Brooks', dob: '1970-01-02', mrn: '', visits: [] }];
+    const orphanedRow = {
+      id: 'backend-existing-orphan-gate', athena_appointment_id: 'athena-appt-gate', athena_provider_id: '7',
+      patient_external_id: 'removed-local-patient-id', appt_date: DAY, start_at: DAY + 'T10:20:00.000Z',
+      provider: 'Synthetic_Alpha_MD', dob: '01/02/1970'
+    };
+    const world = { patients, backendRows: [orphanedRow], savedBodies: [], seq: 0 };
+    const h = makeMonthHarness({ day: DAY, today: DAY, world, account: 'padopt-rebind-gate' });
+    h.rowDays.set(DAY, [{
+      appointmentId: 'athena-appt-gate', athenaPatientId: 'athena-gate', name: 'Brooks, Bernard P',
+      dob: '01/02/1970', date: DAY, time: '10:20', provider: h.provider.raw, providerId: h.provider.id,
+      reason: 'Synthetic rebind gate'
+    }]);
+    const originalFetch = h.rt.fetch;
+    const rebindPosts = [];
+    let failRebind = true;
+    h.rt.fetch = async function (url, init) {
+      if (String(url).endsWith('/update')) {
+        const body = JSON.parse((init && init.body) || '{}');
+        rebindPosts.push({ url: String(url), body });
+        if (failRebind) return { ok: false, status: 503, json: async () => ({ error: 'synthetic rebind failure' }) };
+      }
+      return originalFetch.call(this, url, init);
+    };
+
+    const failed = await h.api.dayPull({ date: DAY, provider: h.provider, includeHistory: true,
+      pullVisitBodies: false, onStatus: h.onStatus });
+    eq(failed.reason, 'calendar-partial', 'a failed rebind did not make the day pull calendar-partial');
+    eq(failed.calendarReceipt.complete, false, 'the calendar receipt stayed green after the rebind POST failed');
+    eq(failed.calendarReceipt.failureReasons['appointment-update-http'], 1,
+      'the calendar receipt lost the explicit rebind HTTP failure');
+    eq(failed.historyReceipt.requested, 0, 'history was requested even though the replacement binding never persisted');
+    eq(h.chartCalls.length, 0, 'a failed rebind still opened the replacement chart');
+    eq(h.noteCalls.length, 0, 'a failed rebind still read the replacement day note');
+    eq(String(h.world.backendRows[0].patient_external_id), 'removed-local-patient-id',
+      'a failed rebind mutated the backend binding in the failure-injection runtime');
+
+    failRebind = false;
+    const recovered = await h.api.dayPull({ date: DAY, provider: h.provider, includeHistory: true,
+      pullVisitBodies: false, onStatus: h.onStatus });
+    eq(recovered.reason, 'complete', 'a successful rebind retry did not complete the day pull');
+    eq(recovered.calendarReceipt.complete, true, 'the successful rebind retry left the calendar receipt partial');
+    eq(recovered.historyReceipt.requested, 1, 'history did not start after the rebind POST succeeded');
+    ok(h.chartCalls.length > 0, 'the successful rebind retry never opened the replacement chart');
+    eq(String(h.world.backendRows[0].patient_external_id), DIGITS_DEBRIS,
+      'the successful rebind did not persist the proven replacement chart id');
+
+    const attemptsAfterRecovery = rebindPosts.length;
+    const idempotent = await h.api.dayPull({ date: DAY, provider: h.provider, includeHistory: true,
+      pullVisitBodies: false, onStatus: h.onStatus });
+    eq(idempotent.reason, 'complete', 'the settled native binding was not idempotent');
+    eq(rebindPosts.length, attemptsAfterRecovery, 'idempotent re-import posted the patient binding again');
+  }
+
   /* ---- (h) native-vs-native disagreement on an EXISTING row stays FATAL:
      the persistence writer must ride ONLY on the debris verdict. ---------- */
   {
-    const patients = [{ id: NATIVE_ID, name: 'Bernard Brooks', dob: '1970-01-02', visits: [] }];
+    const patients = [
+      { id: NATIVE_ID, name: 'Bernard Brooks', dob: '1970-01-02', visits: [] },
+      /* This row must really exist: an absent id is the orphan case above,
+         not a live-vs-live conflict. */
+      { id: 'p-native-other', name: 'Other Synthetic Patient', dob: '1980-03-04', visits: [] }
+    ];
     const w = makeWorld(patients);
     const foreignBound = {
       id: 'backend-existing-88', athena_appointment_id: 'athena-appt-vs', athena_provider_id: 'provider-1',
@@ -526,6 +645,22 @@ const UNDER_DEBRIS = '_48211937';         /* the "_"+digits capture twin */
     eq(w.posted.filter(p => p.body.patient_external_id !== undefined).length, 0,
       'a native-vs-native disagreement posted a re-point - the fatal gate leaks');
     eq((res.historyTargets || []).length, 0, 'a conflicted appointment still reached the history queue');
+
+    /* A later Retry pass must keep the true terminal cause. It cannot invent
+       identity proof that the refused import never had, but it also must not
+       relabel the cause as a broken retry receipt. */
+    const kept = w.api._buildRetryRows([
+      { patientId: NATIVE_ID, reason: 'source-proof-conflict' },
+      { patientId: '', reason: 'patient-not-resolved' }
+    ], '2026-08-26');
+    eq(kept.rows.length, 0, 'a terminal identity refusal was turned into a chart read');
+    eq(kept.unresolved.filter(x => x.reason === 'source-proof-conflict').length, 1,
+      'Retry rewrote source-proof-conflict to retry-proof-missing');
+    eq(kept.unresolved.filter(x => x.reason === 'patient-not-resolved').length, 1,
+      'Retry dropped a pid-less terminal refusal from the requested census');
+    const malformed = w.api._buildRetryRows([{ patientId: NATIVE_ID, reason: 'open-failed' }], '2026-08-26');
+    eq((malformed.unresolved[0] || {}).reason, 'retry-proof-missing',
+      'a genuinely malformed actionable retry did not say its frozen proof was missing');
   }
 
   /* ---- (i) mrngrab-1.0.0: every pulled chart auto-grabs the MRN ----------

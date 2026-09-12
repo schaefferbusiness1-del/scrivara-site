@@ -50244,6 +50244,23 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function studySessionBoundary(){
     studySessionGeneration++;studyUiEpoch++;
     studyAbortCalendarFetches();
+    /* The launch observers are long-lived because the Patients view is
+       normally stable, but their callbacks carry the session receipt that
+       created them. Drop those bindings at a boundary as well as gating each
+       callback, so a late toolbar/view mutation from the old account cannot
+       recreate a Study button before the next session is bound. */
+    disconnectLaunchObserver();
+    disconnectLaunchParentObserver();
+    safe(function(){
+      var launch=document.getElementById('mlsStudyLaunch');
+      if(launch&&launch.parentNode)launch.parentNode.removeChild(launch);
+    });
+    var launchOwner=studyCapture('launch-boundary',false);
+    if(studyCurrent(launchOwner,false)){
+      injectLaunch(launchOwner);
+      watchLaunchToolbar(launchOwner);
+      watchLaunchParent(launchOwner);
+    }
     var overlay=document.getElementById('mlsStudyOv');studyScrubOverlay(overlay);if(overlay)try{overlay.remove();}catch(e){}studyReleaseModal(false);studyLifecycle('session-boundary');
   }
 
@@ -51154,7 +51171,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
 
   /* ---------- launch button in the Patients toolbar ---------- */
-  function injectLaunch(){
+  function injectLaunch(owner){
+    if(!studyCurrent(owner,false)) return;
     safe(function(){
       if(document.getElementById('mlsStudyLaunch')) return;
       var anchor=document.getElementById('ptPullAthenaBtn'); if(!anchor||!anchor.parentElement) return;
@@ -51162,6 +51180,66 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       b.className=anchor.className; b.textContent='🧪 Study / Import';
       b.addEventListener('click', function(){ open('A'); });
       anchor.parentElement.insertBefore(b, anchor.nextSibling);
+    });
+  }
+
+  /* The Patients toolbar can be rebuilt after the finite boot poll has ended.
+     Watch only that stable view, and only mutations that can remove/recreate
+     either side of this adjacent control. Rebinding disconnects an old view's
+     observer if the shell replaces the view node; repeated setup is a no-op. */
+  var launchObserver=null, launchObserverRoot=null, launchObserverOwner=null,
+      launchParentObserver=null, launchParentRoot=null, launchParentObserverOwner=null;
+  function disconnectLaunchObserver(){
+    safe(function(){ if(launchObserver) launchObserver.disconnect(); });
+    launchObserver=null; launchObserverRoot=null; launchObserverOwner=null;
+  }
+  function disconnectLaunchParentObserver(){
+    safe(function(){ if(launchParentObserver) launchParentObserver.disconnect(); });
+    launchParentObserver=null; launchParentRoot=null; launchParentObserverOwner=null;
+  }
+  function launchMutationHas(node,id){
+    return !!(node&&node.nodeType===1&&safe(function(){ return node.id===id || !!(node.querySelector&&node.querySelector('#'+id)); },false));
+  }
+  function launchMutationNeedsRepair(records){
+    if(!document.getElementById('ptPullAthenaBtn')) return false;
+    for(var i=0;i<(records||[]).length;i++){
+      var rec=records[i]; if(!rec||rec.type!=='childList') continue;
+      var added=rec.addedNodes||[], removed=rec.removedNodes||[];
+      for(var j=0;j<removed.length;j++) if(launchMutationHas(removed[j],'mlsStudyLaunch')) return true;
+      for(var k=0;k<added.length;k++) if(launchMutationHas(added[k],'ptPullAthenaBtn')) return true;
+    }
+    return false;
+  }
+  function watchLaunchToolbar(owner){
+    safe(function(){
+      var root=document.getElementById('patientsView');
+      if(!root||typeof window.MutationObserver!=='function'){ if(!root) disconnectLaunchObserver(); return; }
+      if(launchObserver&&launchObserverRoot===root&&launchObserverOwner&&studyCurrent(launchObserverOwner,false)&&studyCurrent(owner,false)&&launchObserverOwner.generation===owner.generation) return;
+      disconnectLaunchObserver();
+      if(!studyCurrent(owner,false)) return;
+      var mo=new window.MutationObserver(function(records){ if(studyCurrent(owner,false)&&launchMutationNeedsRepair(records)) injectLaunch(owner); });
+      mo.observe(root,{childList:true,subtree:true});
+      launchObserver=mo; launchObserverRoot=root; launchObserverOwner=owner;
+    });
+  }
+  function watchLaunchParent(owner){
+    safe(function(){
+      var root=document.getElementById('appWrap');
+      if(!root||typeof window.MutationObserver!=='function'){ if(!root) disconnectLaunchParentObserver(); return; }
+      if(launchParentObserver&&launchParentRoot===root&&launchParentObserverOwner&&studyCurrent(launchParentObserverOwner,false)&&studyCurrent(owner,false)&&launchParentObserverOwner.generation===owner.generation) return;
+      disconnectLaunchParentObserver();
+      if(!studyCurrent(owner,false)) return;
+      var mo=new window.MutationObserver(function(records){
+        if(!studyCurrent(owner,false)) return;
+        for(var i=0;i<(records||[]).length;i++){
+          var rec=records[i]; if(!rec||rec.type!=='childList') continue;
+          var added=rec.addedNodes||[], removed=rec.removedNodes||[];
+          for(var j=0;j<removed.length;j++) if(launchMutationHas(removed[j],'patientsView')){ watchLaunchToolbar(owner); injectLaunch(owner); return; }
+          for(var k=0;k<added.length;k++) if(launchMutationHas(added[k],'patientsView')){ watchLaunchToolbar(owner); injectLaunch(owner); return; }
+        }
+      });
+      mo.observe(root,{childList:true});
+      launchParentObserver=mo; launchParentRoot=root; launchParentObserverOwner=owner;
     });
   }
 
@@ -51237,10 +51315,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
 
   safe(function(){window.addEventListener('mls:session-boundary',studySessionBoundary,true);});
-  function boot(){ injectLaunch(); wireTimeline(); }
+  function boot(){ var owner=studyCapture('launch-boot',false); injectLaunch(owner); watchLaunchToolbar(owner); watchLaunchParent(owner); wireTimeline(); }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', boot); else boot();
   // re-inject the launch button if the Patients toolbar re-renders
-  var tries=0; var iv=setInterval(function(){ var owner=studyCapture('launch-poll',false);if(!studyCurrent(owner,false))return;tries++; if(tries>40){ clearInterval(iv); return; } safe(injectLaunch); }, 1200);
+  var tries=0; var iv=setInterval(function(){ var owner=studyCapture('launch-poll',false);if(!studyCurrent(owner,false))return;tries++; if(tries>40){ clearInterval(iv); return; } safe(function(){injectLaunch(owner);}); safe(function(){watchLaunchToolbar(owner);}); safe(function(){watchLaunchParent(owner);}); }, 1200);
 
   window.__mlsStudy={ open:open, close:close, _strictMatch:strictMatch, _parseRows:parseRows, _normDob:normDob, _importRow:importRow, _listCohorts:listCohorts,
     _extractReportRows:extractReportRows, _parseReportRows:parseReportRows, _filterReportRows:filterReportRows, _dedupeReportRows:dedupeReportRows, _resolveCriteria:resolveCriteria,

@@ -278,6 +278,7 @@ function harness() {
       const cs = getComputedStyle(r);
       return {
         exists: true,
+        count: document.querySelectorAll('.ez3fl-recfail').length,
         visible: !r.hidden && rect.width > 0 && rect.height > 0 && cs.display !== 'none' && cs.visibility !== 'hidden',
         why: String((why && why.textContent) || '').trim(),
         kind: r.getAttribute('data-kind') || '',
@@ -341,9 +342,20 @@ async function runtime() {
     const who = await until(page, () => window.__srT.active(), (x) => x.agree, 20000);
     ok(who.agree,
       `the harness could not get a chart open and agreed-on (${JSON.stringify(who)}); every mode below would collapse into the no-patient refusal`);
+    /* The real Home hero enters the Easy doctor room through lockAndStart().
+       Reproduce that transition in this synthetic chart fixture before
+       asserting the Visit lane's durable failure surface. */
+    await page.evaluate(() => {
+      if (window.__mlsEasyV32 && typeof window.__mlsEasyV32.open === 'function') window.__mlsEasyV32.open('doctor');
+    });
+    await page.waitForFunction(() => {
+      const s = window.__mlsEasyV32 && typeof window.__mlsEasyV32.state === 'function' ? window.__mlsEasyV32.state() : null;
+      return !!(s && s.mode === 'doctor' && s.screen === 'doctor' && s.locked);
+    }, null, { timeout: 12000 });
 
     let row = await until(page, () => window.__srT.row(), (x) => x.exists, 12000);
     ok(row.exists, 'the lane has no .ez3fl-recfail row at all — there is nowhere for a failed press to leave a mark');
+    eq(row.count, 1, 'the lane mounted duplicate .ez3fl-recfail rows');
     eq(row.visible, false, 'the reason row is painted before anything has failed');
     eq(row.live, 'polite', 'the reason row is not announced to assistive tech (aria-live)');
 

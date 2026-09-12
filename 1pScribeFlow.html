@@ -10464,7 +10464,7 @@ function openSettings(opts){
   if(typeof loadAthenaSettings==='function') loadAthenaSettings();
   renderTwofaSettings();
   renderPullVisitBodiesSetting();
-  renderUpcomingAutoPullSetting(); /* upnext-1.0.0 */
+  if(typeof renderUpcomingAutoPullSetting==='function') renderUpcomingAutoPullSetting(); /* upnext-1.0.0 */
   /* The unified Settings owner keeps one tab model. Re-running the legacy
      builder here wiped the bar and reset the scroll position during opening. */
   if(!(window.__mlsUiUnification&&window.__mlsUiUnification.installed)) mlsBuildSettingsTabs();

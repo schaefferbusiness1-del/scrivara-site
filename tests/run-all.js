@@ -468,12 +468,10 @@ const tests = [
      selected patient's note. */
   /* REGISTERED 2026-09-12. This file existed on disk for days and was never in
      this list, so it had never once run in the gate - and a suite that is never
-     registered is a suite that never runs. It is green (54 assertions). Two
-     siblings found in the same state are NOT registered here on purpose:
-     1p-pullpill-first-runtime.test.js needs playwright, which is not installed
-     in a plain worktree, and settings-modal-never-opens-unattended.test.js is
-     RED on its own and needs a real diagnosis before it can gate anything -
-     see AGENT_COORDINATION.md 2026-09-12. Neither is registered on a guess. */
+     registered is a suite that never runs. The two sibling runtime suites below
+     were added after their direct runs were repaired and verified. */
+  '1p-pullpill-first-runtime.test.js',
+  'settings-modal-never-opens-unattended.test.js',
   'opnote-schedule-placeholder-identity-and-template-class.test.js',
   '1p-opnote-rail-runtime.test.js',
   '1p-opnote-storm-perf.test.js',
@@ -659,6 +657,7 @@ const tests = [
   '1p-pull-honesty-and-daynote-budget-runtime.test.js',
   '1p-copilot-studio-safety-runtime.test.js',
   '1p-athena-occurrence-search-runtime.test.js',
+  '1p-study-launch-observer-runtime.test.js',
   '1p-study-session-modal-runtime.test.js',
   '1p-study-provenance-runtime.test.js',
   '1p-provider-roster-session-loader-runtime.test.js',
@@ -1376,6 +1375,7 @@ const tests = [
   'calm-views-folds-keep-reach.test.js',
   'calm-views-performance-runtime.test.js',
   'studio-merge-keeps-every-route.test.js',
+  'studio-merge-practice-entitlement-runtime.test.js',
   'team-tab-reach-under-tools.test.js',
   'shell-label-authority-contract.test.js',
   'scribeflow-inline-syntax.test.js',
@@ -2700,4 +2700,3 @@ if (executed !== tests.length) {
 }
 console.log(`GATE_COMPLETE executed=${executed} of=${tests.length}`);
 console.log(`PASS all ${tests.length} local regression suites`);
-
