@@ -6042,6 +6042,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <main id="oprEditor">
         <div class="row" style="margin:6px 0 12px;flex-wrap:wrap;gap:8px">
           <button class="btn-primary" id="opPrepGenAllBtn" onclick="opPrepGenerateAll()" style="font-size:13px;padding:8px 14px">✨ Draft all op notes</button>
+          <button class="btn-ghost" id="opPrepBackBtn" onclick="opPrepCheckReturned()" style="font-size:13px;padding:8px 14px;display:none">📥 Get the surgeon's finished notes</button>
           <span id="opPrepStatus" class="mini" style="color:var(--muted);align-self:center"></span>
         </div>
         <div id="oprReceipt" class="mini" style="display:none" aria-live="polite"></div>
@@ -23607,6 +23608,9 @@ function openOpPrep(dayKey){
   if(!dayKey){ dayKey=_opContextDay(); }
   window._opPrepDay=dayKey;
   window._opPrep=_opApptsForDay(dayKey).map(function(a,i){ return _opNewRow(a.name, a.reason, a.dob, _opDayStr(dayKey), a.patientId, a, dayKey, i); });
+  /* backhome-2.0.0: a rebuilt day does not know which of its op notes are
+     already with a surgeon until this puts the job ids back. */
+  try{ if(typeof _opRehydrateJobs==='function') _opRehydrateJobs(); }catch(_eRH){}
   var m=document.getElementById('opPrepModal'); if(m) m.classList.add('show'); opPrepRender();
 }
 /* Re-load the all-patients list for a different day without closing the modal. */
@@ -25042,10 +25046,110 @@ function _opSurgeonPick(){
   h+='<div class="row" style="gap:8px;margin-top:6px;flex-wrap:wrap"><input id="opSurgeonName" placeholder="Name" style="flex:1;min-width:150px;min-height:40px;padding:6px 9px;border:1px solid var(--line);border-radius:10px"><input id="opSurgeonPractice" placeholder="Practice" style="flex:1;min-width:150px;min-height:40px;padding:6px 9px;border:1px solid var(--line);border-radius:10px"></div>';
   h+='<input id="opSurgeonEmail" placeholder="Email" style="width:100%;margin-top:8px;min-height:40px;padding:6px 9px;border:1px solid var(--line);border-radius:10px">';
   h+='<div id="opSurgeonMsg" class="mini" style="color:#8b2525;font-weight:700;margin-top:8px"></div>';
-  h+='<div class="row" style="gap:8px;margin-top:14px"><button class="btn-primary" onclick="opSurgeonSend()">Send this op note</button><button class="btn-ghost" onclick="opSurgeonClose()">Cancel</button></div>';
+  /* dayhandoff-2.0.0: A CLINIC DAY IS ONE PRESS, NOT TWENTY-SIX.
+     The count is of rows that actually HAVE a drafted note - an undrafted row
+     has nothing to hand over, and offering to send it would make the number on
+     this button a lie. The day button only appears when there is more than one,
+     so a single-note day still reads as one plain choice. */
+  var dayN=_opSurgeonDayRows().length;
+  h+='<div class="row" style="gap:8px;margin-top:14px">';
+  if(dayN>1){
+    h+='<button class="btn-primary" onclick="opSurgeonSendDay()">Send all '+dayN+' drafted op notes</button>';
+    h+='<button class="btn-ghost" onclick="opSurgeonSend()">Send this one only</button>';
+  }else{
+    h+='<button class="btn-primary" onclick="opSurgeonSend()">Send this op note</button>';
+  }
+  h+='<button class="btn-ghost" onclick="opSurgeonClose()">Cancel</button></div>';
   _opSurgeonDialog(h);
 }
+/* Every prep row that has a drafted note. This is the day, in screen order. */
+function _opSurgeonDayRows(){
+  var out=[];
+  try{
+    var rows=window._opPrep||[];
+    for(var i=0;i<rows.length;i++){ var r=rows[i]||{}; if(String(r.note||'').trim()) out.push({i:i,row:r}); }
+  }catch(e){}
+  return out;
+}
+/* The template that actually wrote this note, as NAME + TEXT.
+
+   tplId is an id in the clinical app's own library and means nothing to the
+   service, so sending it alone filed every job with no template at all - which
+   is why a surgeon who had been sent a whole day still opened the page and read
+   "Nothing here yet" under Your templates. Sending the words too puts the real
+   template on their list as the note lands, and gives the Wrong template
+   control on their page something to offer. */
+function _opSurgeonTplOf(row){
+  try{
+    var t=(typeof getTemplateById==='function')?getTemplateById(String((row||{}).tplId||'')):null;
+    if(!t) return null;
+    var text=String(t.text||'');
+    if(!text.trim()) return null;
+    return { id:String(t.id||''), name:String(t.name||'Template'), text:text };
+  }catch(e){ return null; }
+}
+function _opSurgeonBlanksOf(row){
+  try{ return window.opNoteBlankTokens(String((row||{}).note||''))||[]; }catch(e){ return []; }
+}
 function _opSurgeonSay(t){ var m=document.getElementById('opSurgeonMsg'); if(m) m.textContent=t; }
+/* How many of the day actually landed. Silent for a single note. It names the
+   shortfall out loud rather than rounding it away: a day that sent 24 of 26 is
+   two operations the surgeon will never see, and the owner has to know that
+   here, not from the surgeon a week later. */
+var _opSurgeonSent=0, _opSurgeonAsked=0;
+/* backhome-2.0.0: WHICH JOB THIS ROW BECAME.
+
+   The service is told no patient identity on purpose - the surgeon is outside
+   this practice, so only the note text and the blanks ever leave. That is also
+   why a note coming back cannot be matched to a patient by anything IN it. The
+   join has to be held HERE, at the moment the row is handed over, and it is the
+   job id and nothing else.
+
+   It is kept in the browser, keyed by the row's own stable key, so closing the
+   day and coming back tomorrow still knows which op note is with which surgeon.
+   The key is the same one the day rebuilds its rows from, so a row that moves
+   position in the schedule keeps its job. Nothing patient-identifying is stored
+   under it: an opKey and an op-note job id, both opaque. */
+function _opJobStoreKey(){ return 'mlsOpJobs:'+String(window._opPrepDay||''); }
+function _opJobStoreRead(){
+  try{ var raw=localStorage.getItem(_opJobStoreKey()); var o=raw?JSON.parse(raw):null; return (o&&typeof o==='object')?o:{}; }
+  catch(e){ return {}; }
+}
+function _opRememberJob(row,id){
+  if(!row||!id) return;
+  row.opJobId=String(id);
+  try{
+    var store=_opJobStoreRead();
+    store[String(row.opKey||'')]=String(id);
+    localStorage.setItem(_opJobStoreKey(),JSON.stringify(store));
+  }catch(e){}
+  try{ _opPaintReturnedButton(); }catch(e){}
+}
+/* Put the remembered ids back on the rows the day has just rebuilt. Safe to run
+   whenever the day changes; a key with no row is simply skipped. */
+function _opRehydrateJobs(){
+  try{
+    var store=_opJobStoreRead();
+    var rows=window._opPrep||[];
+    for(var i=0;i<rows.length;i++){
+      var k=String((rows[i]||{}).opKey||'');
+      if(k&&store[k]) rows[i].opJobId=String(store[k]);
+    }
+  }catch(e){}
+  try{ _opPaintReturnedButton(); }catch(e){}
+}
+function _opPaintReturnedButton(){
+  var b=document.getElementById('opPrepBackBtn'); if(!b) return;
+  var any=false;
+  try{ var rows=window._opPrep||[]; for(var i=0;i<rows.length;i++){ if((rows[i]||{}).opJobId){ any=true; break; } } }catch(e){}
+  b.style.display=any?'':'none';
+}
+try{ window._opRehydrateJobs=_opRehydrateJobs; }catch(_eRJ){}
+function _opSurgeonDayLine(){
+  if(!_opSurgeonAsked||_opSurgeonAsked<2) return '';
+  if(_opSurgeonSent>=_opSurgeonAsked) return '<div class="mini" style="margin-top:8px;font-weight:700">All '+_opSurgeonSent+' op notes are waiting for them.</div>';
+  return '<div class="mini" style="margin-top:8px;font-weight:700;color:#8b2525">'+_opSurgeonSent+' of '+_opSurgeonAsked+' op notes went over. Send the rest one at a time.</div>';
+}
 function _opSurgeonField(id){ var e=document.getElementById(id); return e?String(e.value||'').trim():''; }
 /* The one sentence the last action left behind, if it left one. Green when it
    worked, red when it did not - the words carry the meaning either way. */
@@ -25062,6 +25166,7 @@ function _opSurgeonWaitCount(n){ return '<div class="mini" style="color:var(--mu
 function _opSurgeonHandoff(){
   var n=_opSurgeonCount;
   var h='<div style="font-weight:800;font-size:17px">Ready for them</div>';
+  h+=_opSurgeonDayLine();
   h+=_opSurgeonWaitCount(n);
   /* _opSurgeonUnsure means the send may already have gone. Saying "It will go
      to" over the top of that would contradict the sentence underneath it. */
@@ -25088,12 +25193,19 @@ function _opSurgeonHandoff(){
      is already waiting on the surgeon's page either way. */
   h+='<button class="btn-ghost" onclick="opSurgeonClose()">'+(_opSurgeonUnsure?'Close':'Not now')+'</button>';
   h+='</div>';
+  /* Offered here and not on the pick screen because it needs a surgeon that
+     exists, and because this is the moment the owner is thinking about what
+     the surgeon is going to see when they open the page. */
+  h+=(_opSurgeonBusy==='tpl')
+    ? '<div class="row" style="gap:8px;margin-top:10px"><button class="btn-ghost" disabled>Sending your templates...</button></div>'
+    : '<div class="row" style="gap:8px;margin-top:10px"><button class="btn-ghost"'+(_opSurgeonBusy?' disabled':'')+' onclick="opSurgeonGiveTemplates()">Also give them my op-note templates</button></div>';
   _opSurgeonDialog(h);
 }
 function _opSurgeonShowLink(url,n){
   _opSurgeonUrl=String(url||'');
   _opSurgeonCount=n;
   var h='<div style="font-weight:800;font-size:17px">Ready for them</div>';
+  h+=_opSurgeonDayLine();
   h+=_opSurgeonWaitCount(n);
   h+=_opSurgeonLineHtml();
   h+='<input id="opSurgeonLink" readonly value="'+esc(url)+'" style="width:100%;margin-top:12px;min-height:40px;padding:6px 9px;border:1px solid var(--line);border-radius:10px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px">';
@@ -25141,31 +25253,90 @@ async function opPrepForSurgeon(i){
    posted the op note twice, listing it twice on the surgeon's page. The flag is
    set before the first await and cleared on every way out of this function,
    including the three refusals that leave the pick dialog standing. */
-async function opSurgeonSend(){
-  if(_opSurgeonBusy) return;
-  var i=_opSurgeonRow; var row=(window._opPrep||[])[i]; if(!row) return;
+/* Which surgeon, resolved once for both doors. Returns '' and paints the
+   reason if there is nobody to send to; the caller has already set the busy
+   flag and must clear it. */
+async function _opSurgeonResolve(){
   var pick=document.getElementById('opSurgeonPick');
   var clientId=pick?String(pick.value||''):'';
-  var known=null;
-  _opSurgeonBusy='send';
-  _opSurgeonTyped=''; _opSurgeonTo=''; _opSurgeonUrl=''; _opSurgeonLine=''; _opSurgeonLineOk=false; _opSurgeonUnsure=false;
   var newName=_opSurgeonField('opSurgeonName');
   if(newName){
     _opSurgeonTyped=_opSurgeonField('opSurgeonEmail');
     try{
       var made=await _opSurgeonApi('/api/opnote-clients',{method:'POST',body:JSON.stringify({name:newName,practice:_opSurgeonField('opSurgeonPractice'),email:_opSurgeonField('opSurgeonEmail')})});
       clientId=(made&&made.client&&made.client.id)||'';
-    }catch(e){ _opSurgeonBusy=''; _opSurgeonSay('That surgeon could not be added. Try again in a moment.'); return; }
-  }else{
-    /* The address comes off the card the list already handed back, so asking
-       whether this one can be sent costs no extra request. */
-    for(var k=0;k<_opSurgeonClients.length;k++){ if(String((_opSurgeonClients[k]||{}).id||'')===clientId){ known=_opSurgeonClients[k]; break; } }
+    }catch(e){ _opSurgeonSay('That surgeon could not be added. Try again in a moment.'); return {id:'',known:null}; }
   }
-  if(!clientId){ _opSurgeonBusy=''; _opSurgeonSay('Pick a surgeon, or type a name to add one.'); return; }
+  var known=null;
+  /* The address comes off the card the list already handed back, so asking
+     whether this one can be sent costs no extra request. */
+  for(var k=0;k<_opSurgeonClients.length;k++){ if(String((_opSurgeonClients[k]||{}).id||'')===clientId){ known=_opSurgeonClients[k]; break; } }
+  if(!clientId) _opSurgeonSay('Pick a surgeon, or type a name to add one.');
+  return {id:clientId,known:known};
+}
+
+/* THE WHOLE DAY. One request, one verdict per note, in the order they sit on
+   screen. A day that half-lands says so and names the count, because a silent
+   partial send is the thing that would have the owner hand over a day the
+   surgeon never receives. Exactly like the single send, it mints nothing: the
+   hand-off screen that follows is still what produces one link. */
+async function opSurgeonSendDay(){
+  if(_opSurgeonBusy) return;
+  var day=_opSurgeonDayRows();
+  if(!day.length){ _opSurgeonSay('There are no drafted op notes to send yet.'); return; }
+  _opSurgeonBusy='send';
+  _opSurgeonTyped=''; _opSurgeonTo=''; _opSurgeonUrl=''; _opSurgeonLine=''; _opSurgeonLineOk=false; _opSurgeonUnsure=false;
+  var who=await _opSurgeonResolve();
+  if(!who.id){ _opSurgeonBusy=''; return; }
+  var jobs=[]; var blanksTotal=0;
+  for(var n=0;n<day.length;n++){
+    var r=day[n].row;
+    var bl=_opSurgeonBlanksOf(r); blanksTotal+=bl.length;
+    var tp=_opSurgeonTplOf(r);
+    jobs.push({ templateId:r.tplId||null, templateName:tp?tp.name:'', templateText:tp?tp.text:'',
+      title:(String(r.proc||'').trim()||'Op note'), noteText:String(r.note||''), blanks:bl });
+  }
+  var res=null;
+  try{ res=await _opSurgeonApi('/api/opnote-jobs/batch',{method:'POST',body:JSON.stringify({clientId:who.id,jobs:jobs})}); }
+  catch(e){ _opSurgeonBusy=''; _opSurgeonSay('That did not go through. Try again in a moment.'); return; }
+  var made=Number((res&&res.created)||0);
+  /* The verdicts come back in the order the day was sent, so row n of the day
+     is verdict n. A row whose verdict is a refusal is deliberately left with no
+     job id: the point of holding one is that a note can come back, and this one
+     never went. */
+  try{
+    var verd=(res&&res.results)||[];
+    for(var v=0;v<day.length&&v<verd.length;v++){ if(verd[v]&&verd[v].ok) _opRememberJob(day[v].row,String(verd[v].id||'')); }
+  }catch(e){}
+  if(!made){ _opSurgeonBusy=''; _opSurgeonSay('None of those op notes could be sent. Try again in a moment.'); return; }
+  _opSurgeonId=who.id;
+  _opSurgeonCount=blanksTotal;
+  _opSurgeonTo=String((who.known&&who.known.email)||'').trim();
+  _opSurgeonSent=made;
+  _opSurgeonAsked=jobs.length;
+  if(_opSurgeonTo){ _opSurgeonBusy=''; _opSurgeonHandoff(); return; }
+  try{
+    var mintedDay=await _opSurgeonApi('/api/opnote-clients/'+encodeURIComponent(who.id)+'/link',{method:'POST'});
+    _opSurgeonBusy='';
+    _opSurgeonShowLink((mintedDay&&mintedDay.link&&mintedDay.link.url)||'',blanksTotal);
+  }catch(e){ _opSurgeonBusy=''; _opSurgeonSay('The op notes are waiting for them, but the link did not come back. Open this again to get one.'); }
+}
+
+async function opSurgeonSend(){
+  if(_opSurgeonBusy) return;
+  var i=_opSurgeonRow; var row=(window._opPrep||[])[i]; if(!row) return;
+  _opSurgeonBusy='send';
+  _opSurgeonTyped=''; _opSurgeonTo=''; _opSurgeonUrl=''; _opSurgeonLine=''; _opSurgeonLineOk=false; _opSurgeonUnsure=false;
+  _opSurgeonSent=0; _opSurgeonAsked=0;
+  var who=await _opSurgeonResolve();
+  var clientId=who.id, known=who.known;
+  if(!clientId){ _opSurgeonBusy=''; return; }
   var blanks=_opSurgeonBlanks();
   var title=String(row.proc||'').trim()||'Op note';
+  var tplOne=_opSurgeonTplOf(row);
   try{
-    await _opSurgeonApi('/api/opnote-jobs',{method:'POST',body:JSON.stringify({clientId:clientId,templateId:row.tplId||null,title:title,noteText:String(row.note||''),blanks:blanks})});
+    var madeOne=await _opSurgeonApi('/api/opnote-jobs',{method:'POST',body:JSON.stringify({clientId:clientId,templateId:row.tplId||null,templateName:tplOne?tplOne.name:'',templateText:tplOne?tplOne.text:'',title:title,noteText:String(row.note||''),blanks:blanks})});
+    _opRememberJob(row,(madeOne&&madeOne.job&&madeOne.job.id)||'');
   }catch(e){ _opSurgeonBusy=''; _opSurgeonSay('That did not go through. Try again in a moment.'); return; }
   _opSurgeonId=clientId;
   _opSurgeonCount=blanks.length;
@@ -25242,7 +25413,99 @@ async function opSurgeonSaveEmail(){
   _opSurgeonLineOk=true;
   _opSurgeonShowLink(_opSurgeonUrl,_opSurgeonCount);
 }
-try{ window.opPrepForSurgeon=opPrepForSurgeon; window.opSurgeonSend=opSurgeonSend; window.opSurgeonCopy=opSurgeonCopy; window.opSurgeonClose=opSurgeonClose; window.opSurgeonMail=opSurgeonMail; window.opSurgeonLinkOnly=opSurgeonLinkOnly; window.opSurgeonSaveEmail=opSurgeonSaveEmail; }catch(_eOS){}
+
+/* backhome-2.0.0: BRING THE FINISHED NOTES BACK.
+
+   The surgeon fills their blanks, edits the wording, and marks the note done on
+   their own page. This asks the service which of the ones we sent are finished
+   and puts each surgeon's final wording back on the row it left from. It changes
+   nothing else: the row's own Save is still what files the note, and sending it
+   to athenaOne is still the same press it always was. Nothing here touches
+   athena, and nothing here writes anything anywhere but this browser.
+
+   It is deliberately a press and not a poll. A background fetch that rewrote a
+   note under the owner's cursor is the worst thing this could do, and an owner
+   who has pressed nothing has not asked for their drafts to change. */
+async function opPrepCheckReturned(){
+  var st=document.getElementById('opPrepStatus');
+  var rows=window._opPrep||[];
+  var idx={};
+  var waiting=0;
+  for(var i=0;i<rows.length;i++){ var id=String((rows[i]||{}).opJobId||''); if(id){ idx[id]=i; waiting++; } }
+  if(!waiting){ if(st) st.textContent='No op notes have been sent to a surgeon from this day yet.'; return; }
+  if(st) st.textContent='Checking with the surgeon…';
+  var done=null;
+  try{ done=await _opSurgeonApi('/api/opnote-jobs?status=completed'); }
+  catch(e){ if(st) st.textContent='That did not go through. Try again in a moment.'; return; }
+  var list=(done&&done.jobs)||[];
+  var back=0, changed=0;
+  for(var j=0;j<list.length;j++){
+    var job=list[j]||{};
+    var at=idx[String(job.id||'')];
+    if(at===undefined) continue;
+    var row=rows[at];
+    back++;
+    var full=null;
+    try{ full=await _opSurgeonApi('/api/opnote-jobs/'+encodeURIComponent(job.id)); }catch(e){ full=null; }
+    var text=String((full&&full.job&&full.job.noteText)||'');
+    if(!text.trim()){ row.opReturned=true; continue; }
+    if(text===String(row.note||'')){ row.opReturned=true; continue; }
+    row.note=text;
+    row.opReturned=true;
+    /* The surgeon's wording IS the note now, so any blanks it still carries are
+       recomputed from THAT text by the one canonical parser - the same one the
+       save gate reads. Keeping the old list would let a note the surgeon has
+       finished still count as unfinished, or the reverse. */
+    try{ row.missing=window.opNoteBlankTokens(text)||[]; }catch(e){}
+    try{ opPrepAutosaveDraft(at); }catch(e){}
+    changed++;
+  }
+  try{ if(typeof opPrepRender==='function') opPrepRender(); }catch(e){}
+  if(st){
+    if(!back) st.textContent='Nothing is finished yet. The surgeon still has '+waiting+' op note'+(waiting===1?'':'s')+'.';
+    else if(!changed) st.textContent=back+' op note'+(back===1?' is':'s are')+' marked done, and the wording has not changed.';
+    else st.textContent=changed+' op note'+(changed===1?'':'s')+' came back in the surgeon\'s own words. Read each one, then send it to athenaOne from its card.';
+  }
+  try{ toast(changed?(changed+' op note'+(changed===1?'':'s')+' came back from the surgeon.'):'Nothing is finished yet.', changed?'ok':'warn'); }catch(e){}
+}
+try{ window.opPrepCheckReturned=opPrepCheckReturned; }catch(_eBH){}
+try{ window.opPrepForSurgeon=opPrepForSurgeon; window.opSurgeonSend=opSurgeonSend; window.opSurgeonSendDay=opSurgeonSendDay; window.opSurgeonCopy=opSurgeonCopy; window.opSurgeonClose=opSurgeonClose; window.opSurgeonMail=opSurgeonMail; window.opSurgeonLinkOnly=opSurgeonLinkOnly; window.opSurgeonSaveEmail=opSurgeonSaveEmail; window.opSurgeonGiveTemplates=opSurgeonGiveTemplates; }catch(_eOS){}
+/* mylibrary-2.0.0: GIVE THEM THE WHOLE LIBRARY.
+
+   Sending notes puts the templates that WROTE them on the surgeon's list, which
+   covers the day they were sent. This covers the rest: every operative template
+   the owner holds, so the Wrong template control on their page can offer a real
+   alternative instead of the one row that happened to be used. Only op-kind
+   templates travel - a visit-note template on an operative list is the exact
+   confusion the declared kind exists to end. */
+async function opSurgeonGiveTemplates(){
+  if(_opSurgeonBusy) return;
+  if(!_opSurgeonId){ _opSurgeonSay('That surgeon could not be found. Close this and open it again.'); return; }
+  var list=[];
+  try{
+    var all=(typeof getTemplates==='function')?(getTemplates()||[]):[];
+    for(var i=0;i<all.length;i++){
+      var t=all[i]||{};
+      var kind=''; try{ kind=(typeof _mlsTplKindOf==='function')?_mlsTplKindOf(t):''; }catch(e){ kind=''; }
+      if(kind!==''&&kind!=='op') continue;
+      var text=String(t.text||''); if(!text.trim()) continue;
+      list.push({ name:String(t.name||'Template'), text:text });
+    }
+  }catch(e){ list=[]; }
+  if(!list.length){ _opSurgeonSay('There are no operative templates on this account to hand over.'); return; }
+  _opSurgeonBusy='tpl'; _opSurgeonHandoff();
+  var d=null;
+  try{ d=await _opSurgeonApi('/api/opnote-clients/'+encodeURIComponent(_opSurgeonId)+'/templates/bulk',{method:'POST',body:JSON.stringify({templates:list})}); }
+  catch(e){ d=null; }
+  _opSurgeonBusy='';
+  var saved=Number((d&&d.saved)||0);
+  _opSurgeonLine = saved
+    ? (saved+' template'+(saved===1?'':'s')+' are on their list now.')
+    : 'Those templates did not go over. Try again in a moment.';
+  _opSurgeonLineOk = saved>0;
+  if(_opSurgeonUrl) _opSurgeonShowLink(_opSurgeonUrl,_opSurgeonCount); else _opSurgeonHandoff();
+}
+
 function opPrepSave(i){
   var row=(window._opPrep||[])[i]; if(!row) return;
   var note=row.note||''; if(!note.trim()){ try{ toast('Nothing to save yet.','err'); }catch(e){} return; }

@@ -115,6 +115,18 @@ function boot(options) {
       fragment: Object.freeze(Object.prototype.hasOwnProperty.call(opts, 'k') ? { k: opts.k } : {})
     }),
     mammoth: opts.mammoth || null,
+    /* signin-2.0.1: the page keeps its sign-in credential here. Without a store
+       in the harness every read and write would fall into the page's own catch
+       and the session tests below would pass while proving nothing. */
+    sessionStorage: (function () {
+      const mem = Object.assign({}, opts.session || {});
+      return {
+        mem,
+        getItem(k) { return Object.prototype.hasOwnProperty.call(mem, k) ? mem[k] : null; },
+        setItem(k, v) { mem[k] = String(v); },
+        removeItem(k) { delete mem[k]; }
+      };
+    })(),
     mlsSensitiveFetch(url, init) {
       calls.push({ url: String(url), init: init || {} });
       const key = String(url).replace('https://scrivara-backend.onrender.com', '') + ' ' + String((init || {}).method || 'GET');
@@ -400,10 +412,107 @@ async function refusedLink(label, bootOptions, expectedCalls) {
 
   /* the page really is op notes only */
   const visible = strip(html).replace(/\s+/g, ' ');
-  for (const absent of ['Patients', 'Visit', 'Schedule', 'Settings', 'Sign in', 'Log in', 'Athena']) {
+  /* signin-2.0.1: "Sign in" left this list on purpose - the surgeon now proves
+     the mailbox on file before a note is shown, so those words belong here. The
+     rest still do not: they are the clinical app, and none of it is reachable
+     from this page. The sign-in card has its own tests above. */
+  for (const absent of ['Patients', 'Visit', 'Schedule', 'Settings', 'Log in', 'Athena']) {
     ok(visible.indexOf(absent) === -1, 'the page offers "' + absent + '", which belongs to the clinical app and not here');
   }
 
+  /* =======================================================================
+     SIGNING IN — the link alone must reach no note at all
+     ===================================================================== */
+  {
+    const LINK = 'c'.repeat(64);
+    const SESS = 'sess_' + 'd'.repeat(64);
+    const sent = [];
+    const signInReplies = {
+      '/api/client/opnotes/session GET': { status: 200, body: { needsSignIn: true, emailHint: 's***@example.test' } },
+      '/api/client/opnotes/code POST': { status: 200, body: { sent: true, emailHint: 's***@example.test' } },
+      '/api/client/opnotes/verify POST': (init) => {
+        sent.push(JSON.parse(String(init.body || '{}')));
+        return { status: 200, ok: true, json: () => Promise.resolve({ signedIn: true, session: SESS, client: { name: 'ZZ Test Surgeon', practice: 'ZZ Test Orthopaedics' } }) };
+      },
+      '/api/client/opnotes/templates GET': { status: 200, body: { templates: [] } },
+      '/api/client/opnotes/jobs GET': { status: 200, body: { jobs: [] } }
+    };
+
+    const run = boot({ k: LINK, replies: signInReplies });
+    await run.ctx.window.opnReady;
+
+    /* NOTHING of the notes exists before the code is accepted. */
+    const gate = run.dom.el('gate');
+    ok(String(gate.innerHTML || '').indexOf('Email me a code') >= 0, 'the page did not offer to send a code');
+    ok(String(gate.innerHTML || '').indexOf('s***@example.test') >= 0, 'the page did not say where the code is going');
+    eq(run.dom.el('app').className.indexOf('hide') >= 0, true, 'the notes were on the page before anyone signed in');
+    eq(run.calls.filter((c) => /\/jobs/.test(c.url)).length, 0,
+      'the page asked for op notes while it was still holding only a link. The link is no longer a credential for a note.');
+    checks += 4;
+
+    /* the code door, then the credential */
+    await run.ctx.opnAskCode();
+    eq(run.calls.filter((c) => /\/code$/.test(c.url)).length, 1, 'asking for a code did not reach the code door exactly once');
+    run.dom.el('opnCode').value = '123456';
+    await run.ctx.opnVerify();
+    assert.deepStrictEqual(sent, [{ code: '123456' }], 'the code was not sent as the server expects it');
+    checks += 2;
+
+    /* EVERY call after the sign-in carries the SESSION, never the link again. */
+    const after = run.calls.filter((c) => /\/jobs|\/templates/.test(c.url));
+    ok(after.length >= 2, 'the page did not load the notes after signing in');
+    for (const c of after) {
+      eq(String(((c.init || {}).headers || {}).Authorization || ''), 'Bearer ' + SESS,
+        'a call after the sign-in still carried the link instead of the credential the code bought');
+    }
+    checks += 1 + after.length;
+
+    /* and it is kept, so a reload does not ask for another code */
+    const held = run.window.sessionStorage.getItem('mlsOpnoteSession');
+    ok(held && held.indexOf(SESS) >= 0, 'the sign-in was not kept, so every reload would mail another code');
+    ok(held.indexOf(LINK) === -1, 'the whole link was written into storage beside the credential');
+    checks += 2;
+  }
+
+  /* A DEAD SESSION IS NOT A DEAD LINK. Being sent to find a new link when all
+     that was needed was a fresh code is the difference between a surgeon
+     carrying on and a surgeon ringing the practice. */
+  {
+    const run = boot({
+      k: 'e'.repeat(64),
+      replies: {
+        '/api/client/opnotes/session GET': { status: 200, body: { needsSignIn: true, emailHint: 'z***@example.test' } },
+        '/api/client/opnotes/templates GET': { status: 200, body: { templates: [] } },
+        '/api/client/opnotes/jobs GET': { status: 401, body: { error: { code: 'OPNOTE_SIGNIN_REQUIRED', message: 'Please sign in again to see your notes.' } } }
+      }
+    });
+    await run.ctx.window.opnReady;
+    await run.ctx.opnOpenApp({ name: 'ZZ Test Surgeon' });
+    const gate = run.dom.el('gate');
+    ok(String(gate.innerHTML || '').indexOf('Email me a code') >= 0,
+      'an expired sign-in was reported as a dead link, sending the surgeon to ask for a new one they do not need');
+    ok(String(gate.textContent || '').indexOf(DEAD) === -1, 'an expired sign-in printed the dead-link sentence');
+    checks += 2;
+  }
+
+  /* A REVOKED LINK IS STILL A DEAD LINK, and must not be dressed up as one more
+     code away. */
+  {
+    const run = boot({
+      k: 'f'.repeat(64),
+      replies: {
+        '/api/client/opnotes/session GET': { status: 200, body: { needsSignIn: true, emailHint: 'z***@example.test' } },
+        '/api/client/opnotes/templates GET': { status: 401, body: { error: { code: 'OPNOTE_LINK_REVOKED', message: 'This link was turned off.' } } }
+      }
+    });
+    await run.ctx.window.opnReady;
+    await run.ctx.opnOpenApp({ name: 'ZZ Test Surgeon' });
+    eq(run.dom.el('gate').textContent, DEAD, 'a revoked link was offered another code instead of the plain sentence');
+    checks++;
+  }
+
   console.log('PASS opnotes client page: ' + checks + ' checks — a link that is not good shows one sentence and nothing else, ' +
+    'the link alone reaches no note until a mailed code is accepted and every call after it carries that credential, ' +
+    'an expired sign-in asks for a code while a revoked link does not, ' +
     'the fill/save/done walk carries its version, templates upload and paste, and no developer words reach the surgeon');
 })().catch((e) => { console.error(e && e.stack || e); process.exit(1); });

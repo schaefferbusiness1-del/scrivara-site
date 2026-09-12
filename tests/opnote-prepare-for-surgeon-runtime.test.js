@@ -152,6 +152,12 @@ function runtime(options) {
     bkBase: () => 'https://synthetic-backend.invalid',
     bkToken: () => 'SYNTHETIC_CLINICIAN_CREDENTIAL',
     toast: (m, k) => toasts.push({ m, k }),
+    /* tplcarry-2.0.0: the library lives outside the evaluated block, so it is
+       supplied here with the same field names the real store uses. A test that
+       left this out would make the template-carry assertions below pass
+       vacuously on an empty library. */
+    getTemplateById: (id) => (opts.templates || []).filter((t) => String(t.id) === String(id))[0] || null,
+    getTemplates: () => (opts.templates || []).slice(),
     navigator: { clipboard: { writeText: (v) => { copied.push(String(v)); return Promise.resolve(); } } },
     fetch(url, init) {
       calls.push({ url: String(url), init: init || {} });
@@ -173,6 +179,23 @@ function runtime(options) {
 
 /* the synthetic draft the spec names: three placeholders, three different
    shapes, plus ordinary bracketed clinical prose that must count for nothing */
+/* The template the draft above was written from. Synthetic, and long enough
+   that the "text travelled" assertion cannot pass on a stub. */
+const KNEE_TEMPLATE = {
+  id: 'tpl_knee',
+  name: 'Right knee arthroscopy',
+  text: [
+    'PREOPERATIVE DIAGNOSIS:',
+    'POSTOPERATIVE DIAGNOSIS:',
+    'PROCEDURE PERFORMED:',
+    'ANESTHESIA:',
+    'ESTIMATED BLOOD LOSS:',
+    'FINDINGS:',
+    'DESCRIPTION OF PROCEDURE:',
+    'DISPOSITION:',
+  ].join('\n'),
+};
+
 const DRAFT = [
   'PROCEDURE: Right knee arthroscopy with partial medial meniscectomy.',
   'ESTIMATED BLOOD LOSS: [ESTIMATED BLOOD LOSS]',
@@ -224,7 +247,11 @@ function happyReplies(extra) {
 
   /* ---- the ordinary hand-over -------------------------------------------- */
   {
-    const r = runtime({ rows: [{ note: DRAFT, proc: 'Right knee arthroscopy', tplId: 'tpl_knee' }], replies: happyReplies() });
+    const r = runtime({
+      rows: [{ note: DRAFT, proc: 'Right knee arthroscopy', tplId: 'tpl_knee' }],
+      templates: [KNEE_TEMPLATE],
+      replies: happyReplies(),
+    });
     await r.ctx.opPrepForSurgeon(0);
 
     eq(r.calls.length, 1, 'opening the control made ' + r.calls.length + ' requests, expected exactly the client list');
@@ -247,11 +274,21 @@ function happyReplies(extra) {
     eq(job[0].init.method, 'POST', 'the job was not posted');
     eq(job[0].init.headers['Content-Type'], 'application/json', 'the job body was sent without saying what it is');
     const sent = JSON.parse(job[0].init.body);
-    assert.deepStrictEqual(Object.keys(sent).sort(), ['blanks', 'clientId', 'noteText', 'templateId', 'title'],
+    assert.deepStrictEqual(Object.keys(sent).sort(),
+      ['blanks', 'clientId', 'noteText', 'templateId', 'templateName', 'templateText', 'title'],
       'the job body is not the agreed shape: ' + Object.keys(sent).join(','));
     checks++;
     eq(sent.clientId, 'oc_synthetic1', 'the job went to the wrong surgeon');
     eq(sent.templateId, 'tpl_knee', 'the job lost the template it was written from');
+    /* tplcarry-2.0.0. templateId alone is an id in THIS app's library and means
+       nothing to the service, so a job that carried only the id was filed with
+       no template at all and the surgeon opened their page to an empty template
+       list however many notes they had been sent. The words have to travel. */
+    ok(typeof sent.templateName === 'string' && sent.templateName.length > 0,
+      'the job carried no template NAME, so the surgeon\'s template list stays empty');
+    ok(typeof sent.templateText === 'string' && sent.templateText.length > 20,
+      'the job carried no template TEXT, so nothing can be put on the surgeon\'s list or offered as an alternative');
+    checks += 2;
     eq(sent.title, 'Right knee arthroscopy', 'the job lost its procedure title');
     eq(sent.noteText, DRAFT, 'the job carried something other than the drafted note');
     assert.deepStrictEqual(sent.blanks, EXPECTED_BLANKS,
