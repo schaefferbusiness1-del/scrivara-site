@@ -10,6 +10,7 @@ const source = fs.readFileSync(path.join(root, 'feat_mls_template_library.js'), 
 const liveLoader = fs.readFileSync(path.join(root, 'mls-connect.js'), 'utf8');
 const stagingLoader = fs.readFileSync(path.join(root, 'mls-connect.staging.js'), 'utf8');
 const html = fs.readFileSync(path.join(root, 'ScribeFlow.html'), 'utf8');
+const canonicalHtml = fs.readFileSync(path.join(root, '1pScribeFlow.html'), 'utf8');
 
 function response(status, data, headers = {}) {
   const lower = Object.fromEntries(Object.entries(headers).map(([key, value]) => [key.toLowerCase(), value]));
@@ -109,6 +110,26 @@ function makeHarness(responder, overrides = {}) {
 
 function setSummary(id, version, active, name = id) {
   return { id, name, scope: 'account', status: 'current', active, version, templateCount: 1 };
+}
+
+function executableDedupeRegression() {
+  const start = canonicalHtml.indexOf('function _tplDedupeTemplatesInfo');
+  const end = canonicalHtml.indexOf('\nfunction _tplDedupeTemplates(arr)', start);
+  assert(start >= 0 && end > start, 'canonical dedupe helper could not be isolated for execution');
+  const dedupe = vm.runInNewContext(canonicalHtml.slice(start, end) + ';_tplDedupeTemplatesInfo', {});
+  const prefix = 'Name: Same\n\n' + 'A'.repeat(160);
+  const rows = [
+    { name: 'Same name', text: prefix + ' suffix one' },
+    { name: 'Same name', text: prefix + ' suffix two' },
+    { name: 'Same name', text: prefix + '   suffix one' }
+  ];
+  const result = dedupe(rows);
+  assert.strictEqual(result.list.length, 2,
+    'same-name templates sharing the first 80 characters were incorrectly collapsed');
+  assert.strictEqual(result.dropped.length, 1,
+    'only an exact normalized duplicate should be reported as dropped');
+  assert.strictEqual(result.list[0], rows[0]);
+  assert.strictEqual(result.list[1], rows[1]);
 }
 
 async function hydrationAndAccountIsolation() {
@@ -582,6 +603,7 @@ function staticContracts() {
 }
 
 (async () => {
+  executableDedupeRegression();
   staticContracts();
   await hydrationAndAccountIsolation();
   await previewThenCommit();

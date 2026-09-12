@@ -69,7 +69,7 @@ function makeDom() {
       insertBefore(c, ref) { c.parentNode = this; const i = this.children.indexOf(ref); this.children.splice(i < 0 ? this.children.length : i, 0, c); if (c.id) nodes.set(c.id, c); return c; },
       removeChild(c) { const i = this.children.indexOf(c); if (i >= 0) this.children.splice(i, 1); c.parentNode = null; return c; },
       querySelectorAll() { return []; },
-      querySelector() { return null; },
+      querySelector(sel) { return this.id === 'oprTplRail' && sel === '[data-tpl-window]' ? this.__virtualTplWindow : null; },
       closest() { return null; },
       scrollIntoView() {},
       dispatchEvent(e) { events.push({ id: this.id, type: e && e.type }); const h = this._listeners[e && e.type]; if (h) h.forEach(f => f(e)); return true; },
@@ -77,6 +77,7 @@ function makeDom() {
       removeEventListener() {},
       focus() {}
     };
+    el.__virtualTplWindow = { scrollTop: 0, onscroll: null };
     Object.defineProperty(el, 'innerHTML', {
       get() { return el._html; },
       set(v) { el._html = String(v); }
@@ -122,7 +123,7 @@ function runRoom(templates, rows, wantSelect) {
     localStorage: (function () { const m = {}; return { getItem: k => (k in m ? m[k] : null), setItem: (k, v) => { m[k] = String(v); }, removeItem: k => { delete m[k]; } }; })(),
     confirm: () => true,
     requestIdleCallback: (f) => { try { f(); } catch (e) {} },
-    setTimeout: (f) => { return 0; },
+    setTimeout: (f) => { try { f(); } catch (e) {} return 0; },
     clearTimeout: () => {},
     addEventListener() {}, removeEventListener() {},
     Event: function (t, o) { this.type = t; this.bubbles = !!(o && o.bubbles); }
@@ -178,6 +179,55 @@ const manyHtml = rMany.doc.getElementById('oprTplRail').innerHTML;
 ok((manyHtml.match(/data-tpl-id=/g) || []).length === 11,
   'ALL templates are listed, not the first six with "+N more"',
   'found ' + (manyHtml.match(/data-tpl-id=/g) || []).length + ' of 11');
+
+/* tplscale-1.0.0 — executable stress contract for the 1,000-template cloud
+   ceiling. Only the viewport window is materialized, but its spacer preserves
+   scroll geometry. Rebuilding after a deep scroll must expose the correct
+   sorted rows; the same delegated rail still supports selection/edit paths. */
+const stressTemplates = Array.from({ length: 1000 }, (_, i) => ({
+  id: 'stress-' + i, name: 'Stress template ' + i, text: 'stress body ' + i
+}));
+const rStress = runRoom(stressTemplates, freshRows(), null);
+const stressRail = rStress.doc.getElementById('oprTplRail');
+let stressHtml = stressRail.innerHTML;
+ok((stressHtml.match(/data-tpl-id=/g) || []).length <= 80,
+  '1,000-template rail paints a bounded number of buttons',
+  'painted ' + (stressHtml.match(/data-tpl-id=/g) || []).length);
+ok(/data-tpl-id="stress-0"/.test(stressHtml) && !/data-tpl-id="stress-999"/.test(stressHtml),
+  'large rail starts at the first sorted window');
+const stressWindow = stressRail.__virtualTplWindow;
+/* Lexical ordering places stress-500 around sorted index 450 ("stress-5",
+   "stress-50", ... precede it), so this scroll lands the requested row inside
+   the overscanned window rather than relying on numeric ordering. */
+stressWindow.scrollTop = 48 * 450;
+stressWindow.onscroll();
+stressHtml = stressRail.innerHTML;
+ok(/data-tpl-id="stress-500"/.test(stressHtml) && (stressHtml.match(/data-tpl-id=/g) || []).length <= 80,
+  'large rail scroll exposes the requested deep window without unbounding DOM');
+ok(typeof stressWindow.onscroll === 'function',
+  'large rail installs a scroll listener for progressive windows');
+const stressSearch = rStress.doc.createElement('input');
+stressSearch.id = 'oprTplSearch';
+rStress.doc._nodes.set('oprTplSearch', stressSearch);
+stressRail.__oprHtml = null;
+rStress.api.rebuild();
+stressSearch.value = '999';
+stressSearch.oninput();
+stressHtml = stressRail.innerHTML;
+ok(/data-tpl-id="stress-999"/.test(stressHtml) && (stressHtml.match(/data-tpl-id=/g) || []).length === 1,
+  'large rail search narrows the rendered window to matching templates');
+stressSearch.value = '';
+stressSearch.oninput();
+clickRail(rStress, 'stress-500');
+ok(rStress.win._opPrep[0].tplId === 'stress-500',
+  'large rail click still applies a visible deep-window template');
+rStress.win._tplUI = { dirty: false, selectedId: '' };
+let editedStress = '';
+rStress.win.openTemplates = () => { editedStress = rStress.win._tplUI.selectedId; };
+const editTarget = { closest: (sel) => sel === '[data-tpl-edit]' ? { getAttribute: () => 'stress-500' } : null };
+stressRail.onclick({ target: editTarget, preventDefault() {}, stopPropagation() {} });
+ok(editedStress === 'stress-500',
+  'large rail edit affordance remains delegated after virtualization');
 
 /* health as words, and "in use" as a word */
 ok(/in use for this procedure/.test(railHtml),

@@ -406,7 +406,7 @@
      spacer's scroll geometry deterministic while delegated click/edit handlers
      keep the same behavior for visible rows. */
   var TPL_RAIL_WINDOW = 80, TPL_RAIL_ROW_HEIGHT = 48;
-  var TPL_RAIL_SORT_CACHE = { signature: '', list: [] };
+  var TPL_RAIL_SORT_CACHE = { signature: '', order: [] };
   function buildTplRail() {
     var rail = $('oprTplRail'); if (!rail) return;
     var rawList = safe(function () { return isFn(window.getTemplates) ? (window.getTemplates() || []) : []; }, []);
@@ -414,9 +414,18 @@
     /* b899 — 96 templates in library-insertion order is creation-time noise;
        alphabetical, with a name filter above (owner request 2026-08-06).
        Reuse the sorted snapshot when only selection/scroll/health changed. */
-    var list;
-    if (TPL_RAIL_SORT_CACHE.signature === signature) list = TPL_RAIL_SORT_CACHE.list;
-    else { list = rawList.slice().sort(function (a, b) { return String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }); }); TPL_RAIL_SORT_CACHE = { signature: signature, list: list }; }
+    var order;
+    if (TPL_RAIL_SORT_CACHE.signature === signature) order = TPL_RAIL_SORT_CACHE.order;
+    else {
+      order = rawList.map(function (_, ix) { return ix; }).sort(function (ia, ib) {
+        return String(rawList[ia].name || '').localeCompare(String(rawList[ib].name || ''), undefined, { sensitivity: 'base' });
+      });
+      TPL_RAIL_SORT_CACHE = { signature: signature, order: order };
+    }
+    /* Re-read current objects on every build. A template can keep its id/name
+       while its text/health metadata changes; caching object references would
+       make the rail show stale health after that edit. */
+    var list = order.map(function (ix) { return rawList[ix]; }).filter(Boolean);
     var q = String(RAIL_FILTER || '').trim().toLowerCase();
     var shown = q ? list.filter(function (t) { return String(t.name || '').toLowerCase().indexOf(q) >= 0; }) : list;
     var cur = curRow();
@@ -487,7 +496,14 @@
     var tplWindow = rail.querySelector ? rail.querySelector('[data-tpl-window]') : null;
     if (tplWindow) {
       try { tplWindow.scrollTop = rememberedTop; } catch (eScroll) {}
-      tplWindow.onscroll = function () { rail.__oprTplScrollTop = this.scrollTop; buildTplRail(); };
+      tplWindow.onscroll = function () {
+        rail.__oprTplScrollTop = this.scrollTop;
+        if (rail.__oprTplScrollTimer) return;
+        rail.__oprTplScrollTimer = setTimeout(function () {
+          rail.__oprTplScrollTimer = 0;
+          if (rail.isConnected !== false) buildTplRail();
+        }, 32);
+      };
     }
     if (searchInp && changed) {
       searchInp.value = RAIL_FILTER;
@@ -1190,7 +1206,7 @@
          change that made the Edit affordance reachable, and revert() forgot it -
          so a reverted module left a live key handler on a node it no longer owns.
          Found by tests/opnote-room-walkthrough-runtime.test.js. */
-      try { var b = $('oprTplRail'); if (b) { b.innerHTML = ''; b.__oprHtml = null; b.onclick = null; b.onkeydown = null; } } catch (e5) {}
+      try { var b = $('oprTplRail'); if (b) { if (b.__oprTplScrollTimer) clearTimeout(b.__oprTplScrollTimer); b.__oprTplScrollTimer = 0; b.innerHTML = ''; b.__oprHtml = null; b.onclick = null; b.onkeydown = null; } } catch (e5) {}
       /* the mode control is a node THIS module created, so revert removes it
          entirely rather than emptying it - leaving an orphan box would be a
          visible artefact of a module that is supposed to be gone. */
