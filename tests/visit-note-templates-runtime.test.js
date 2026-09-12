@@ -192,11 +192,20 @@ const SHELL_HTML = `<!doctype html><html><body>
 
     /* ---- the screen exists, is the FIRST card, and says the right sentence ---- */
     const mounted = await page.evaluate(() => {
+      // Opening/reconciling Settings repeatedly must retain one editor for each job.
+      for (let n = 0; n < 4; n++) {
+        window.__mlsDraftTuning.beginSettings();
+        window.__mlsDraftTuning.mountVisitTemplates();
+      }
       const modal = document.querySelector('#settingsModal .modal');
       const sections = Array.prototype.slice.call(modal.querySelectorAll(':scope > .set-section'));
       const sec = document.getElementById('mlsVisitNoteTemplatesSection');
       return {
         exists: !!sec,
+        visitOwners: modal.querySelectorAll('#mlsVisitNoteTemplatesSection').length,
+        otherOwners: modal.querySelectorAll('#mlsDraftTuningSection').length,
+        otherFamilies: Array.from(modal.querySelectorAll('#mlsDtFamily option'), option => option.value),
+        visitInputs: modal.querySelectorAll('#mlsVnTplFile').length,
         first: !!sec && sections[0] === sec,
         head: (sec.querySelector('.set-head') || {}).textContent || '',
         desc: (sec.querySelector('.set-desc') || {}).textContent || '',
@@ -206,6 +215,13 @@ const SHELL_HTML = `<!doctype html><html><body>
       };
     });
     assert.ok(mounted.exists, 'the Visit note templates screen never mounted');
+    assert.strictEqual(mounted.visitOwners, 1, 'reopening Settings duplicated the canonical visit editor');
+    assert.strictEqual(mounted.otherOwners, 1, 'reopening Settings duplicated the other-output editor');
+    assert.strictEqual(mounted.visitInputs, 1, 'visit sections acquired competing file-reader inputs');
+    assert.deepStrictEqual(mounted.otherFamilies.filter(family => ['soap', 'hpi', 'ros', 'exam', 'assessment', 'plan'].includes(family)), [],
+      'the lower output picker reintroduced a second editor for visit templates');
+    assert.ok(mounted.otherFamilies.includes('opnote') && mounted.otherFamilies.includes('avs'),
+      'consolidation removed the non-visit outputs');
     assert.ok(mounted.first, 'the Visit note templates screen is not the first card in Settings > Notes & AI');
     assert.ok(/Visit note templates/.test(mounted.head), 'the screen lost its name: ' + JSON.stringify(mounted.head));
     assert.ok(mounted.desc.includes('These shape your visit notes: Whole visit / SOAP, HPI, ROS, Exam, Assessment, Plan.') &&
