@@ -349,7 +349,7 @@ async function uploadsSerializeDistinctSelections() {
     async tplMultiFile(ev) {
       calls++; active++; maxActive = Math.max(maxActive, active);
       if (calls === 1) await firstGate;
-      this._tplPendingSplit = [{ id: `parsed-${calls}`, name: `Parsed ${calls}`, text: `text ${calls}` }];
+      this._tplPendingSplit = (this._tplPendingSplit || []).concat([{ id: `parsed-${calls}`, name: `Parsed ${calls}`, text: `text ${calls}` }]);
       active--;
     }
   });
@@ -358,8 +358,10 @@ async function uploadsSerializeDistinctSelections() {
   await Promise.resolve();
   assert.strictEqual(calls, 1, 'a distinct second upload started before the first released shared parser state');
   assert.strictEqual(maxActive, 1, 'distinct uploads overlapped despite shared _tplPending* globals');
+  await assert.rejects(() => h.api.previewImport({ templates: [{ name: 'Too early', text: 'body' }] }), error => error.code === 'TEMPLATE_OPERATION_BUSY');
   releaseFirst();
-  assert.deepStrictEqual(await Promise.all([a, b]), [1, 1], 'serialized upload results did not preserve staged rows');
+  assert.deepStrictEqual(await Promise.all([a, b]), [1, 2], 'serialized upload results did not preserve staged rows');
+  assert.deepStrictEqual(Array.from(h.context._tplPendingSplit, row => row.id), ['parsed-1', 'parsed-2']);
   assert.strictEqual(calls, 2);
   assert.strictEqual(maxActive, 1);
 }
@@ -382,6 +384,64 @@ async function canceledPreviewCannotCommitPendingState() {
   job.handle.cancel('Canceled by test.');
   await assert.rejects(() => pending, error => error && (error.name === 'AbortError' || error.code === 'TEMPLATE_OPERATION_CANCELED'));
   assert.strictEqual(h.api.state.pending, null, 'a canceled preview wrote pending import state after its await');
+}
+
+async function canceledAddNeverFallsBackToSaving() {
+  let localAdds = 0;
+  const h = makeHarness((url, options) => new Promise((resolve, reject) => {
+    options.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
+  }), { AbortController, tplAddSplit() { localAdds++; }, _tplPendingSplit: [{ name: 'Pending', text: 'keep', keep: true }] });
+  h.setHosted(true);
+  const run = h.context.tplAddSplit();
+  h.progress[0].handle.cancel();
+  await run;
+  assert.strictEqual(localAdds, 0, 'Cancel unexpectedly saved the templates on this device');
+  assert.strictEqual(h.context._tplPendingSplit.length, 1, 'Cancel discarded the staged upload');
+}
+
+async function retriedPreviewCancelUsesCurrentController() {
+  const h = makeHarness((url, options) => new Promise((resolve, reject) => {
+    options.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
+  }), { AbortController });
+  h.setHosted(true);
+  // Run the real progress store: its UI Cancel calls api.cancel, not handle.cancel.
+  vm.runInContext(fs.readFileSync(path.join(root, 'feat_mls_loading_calm.js'), 'utf8'), h.context);
+  const jobs = h.context.__mlsLoadingCalm;
+  try {
+    const run = h.api.previewImport({ templates: [{ name: 'Retry', text: 'body' }] });
+    const first = jobs.snapshot()[0];
+    jobs.cancel(first.id);
+    await assert.rejects(() => run);
+    const next = jobs.retry(first.id);
+    assert(next && h.fetches.length === 2, 'Retry did not issue a new preview');
+    jobs.cancel(next.id);
+    assert.strictEqual(h.fetches[1].options.signal.aborted, true, 'visible Retry Cancel left the new fetch running');
+    await new Promise(resolve => setImmediate(resolve));
+    assert.strictEqual(h.api.state.pending, null);
+  } finally { jobs.revert(); }
+}
+
+async function inFlightCommitIsOneNonCancelableSave() {
+  let release;
+  const h = makeHarness((url, options) => {
+    if (url.endsWith('/api/template-imports/preview')) return response(200, { preview: { counts: {}, detail: {}, canCommit: true } });
+    if (url.endsWith('/api/template-imports/commit')) return new Promise(resolve => { release = () => resolve(response(200, { result: { status: 'completed', counts: {}, set: { id: 'saved', active: true, templates: [] } } })); });
+    if (url.includes('/api/template-sets?')) return response(200, { activeSetId: 'saved', sets: [setSummary('saved', 1, true)] });
+    throw new Error('Unexpected request ' + url);
+  }, { AbortController });
+  h.setHosted(true);
+  await h.api.previewImport({ templates: [{ name: 'Save', text: 'body' }] });
+  const first = h.api.commitPending();
+  const duplicate = h.api.commitPending();
+  assert.strictEqual(first, duplicate, 'duplicate click must share the in-flight commit promise');
+  assert.strictEqual(h.progress[1].options.cancelable, false, 'a sent save must not offer a misleading Cancel');
+  await assert.rejects(() => h.api.previewImport({ templates: [{ name: 'Replacement', text: 'body' }] }), error => error.code === 'TEMPLATE_OPERATION_BUSY');
+  await assert.rejects(() => h.context.tplMultiFile({ target: { files: [{ name: 'new.txt', size: 1, lastModified: 1 }] } }), error => error.code === 'TEMPLATE_OPERATION_BUSY');
+  assert.strictEqual(h.fetches.filter(row => row.url.endsWith('/commit')).length, 1);
+  assert.strictEqual(h.fetches.find(row => row.url.endsWith('/commit')).options.signal.aborted, false);
+  release();
+  await first;
+  assert.strictEqual(h.api.state.pending, null);
 }
 
 /* Loading-states contract (b511 lane, owner-reproduced 2026-07-23): a hosted
@@ -530,7 +590,7 @@ function staticContracts() {
   assert(source.includes('var SERVER_IMPORT_LIMIT=500'), 'the client must document the real server import ceiling');
   assert(!/files\.length>500/.test(source), 'the upload reader must not reject a large local selection at an arbitrary 500-file ceiling');
   assert(source.includes('uploadQueue') && source.includes('pumpUploads'), 'distinct concurrent uploads must serialize around shared pending globals');
-  assert(source.includes('AbortController') && source.includes('operationAssert(op)') && source.includes('bindProvidedHandle'), 'preview/commit must carry abort and post-await ownership fences');
+  assert(source.includes('AbortController') && source.includes('operationAssert(op)'), 'preview/commit must carry abort and post-await ownership fences');
   assert(/normalize\(t\.text\)/.test(html) && !/\(t\.text\|\|'\'\)\.slice\(0,80\)/.test(html), 'template dedupe must key the complete normalized body, not its first 80 characters');
   const room = fs.readFileSync(path.join(root, 'feat_mls_opnote_room.js'), 'utf8');
   assert(room.includes('TPL_RAIL_WINDOW') && room.includes('opr-tpl-window') && room.includes('TPL_RAIL_SORT_CACHE'),
@@ -614,6 +674,9 @@ function staticContracts() {
   await uploadDedupeAndRetryHandle();
   await uploadsSerializeDistinctSelections();
   await canceledPreviewCannotCommitPendingState();
+  await canceledAddNeverFallsBackToSaving();
+  await retriedPreviewCancelUsesCurrentController();
+  await inFlightCommitIsOneNonCancelableSave();
   await formSaveVisibility();
   await providerScopedSetLifecycle();
   console.log('PASS template library runtime, isolation, preview/commit, auto-activate, conflict, retry, loader, upload, and form-save visibility contracts');

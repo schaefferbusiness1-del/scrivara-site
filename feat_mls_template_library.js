@@ -215,15 +215,16 @@
   function progressStage(handle,stage,current,total,operation){paintProgress(stage,current,total,operation);try{if(handle)handle.stage(stage,{current:current,total:total,operation:operation||stage});}catch(e){}}
   function progressLink(handle,response){try{var id=response&&response.headers&&response.headers.get('X-Job-ID'),api=window.__mlsLoadingCalm;if(handle&&id&&api&&isFn(api.linkServer))api.linkServer(handle.id,id);}catch(e){}}
 
-  /* Preview and commit are user-visible transactions, not fire-and-forget
-     requests. Each has an AbortController plus an epoch/account fence. A
-     second transaction supersedes the first; the progress surface's Cancel
-     action reaches the same controller, so cancellation is real at fetch and
-     every continuation still has to prove ownership before writing state. */
+  /* Preview and commit carry an epoch/account fence. A newer preview can
+     replace an older preview; its Cancel aborts that request. A sent commit
+     must settle before another import starts because aborting fetch cannot
+     undo a server write. Every continuation proves ownership before applying
+     the result to this account. */
   function operationError(message,code){var e=new Error(message||'Template operation canceled.');e.code=code||'TEMPLATE_OPERATION_CANCELED';return e;}
   function operationCurrent(op){return !!(op&&!op.canceled&&activeOperation===op&&op.account===accountKey());}
   function operationAssert(op){if(!operationCurrent(op))throw operationError(op&&op.account!==accountKey()?'Account changed while this template operation was in progress. Nothing was saved.':'Template operation was canceled. Nothing was saved.');}
   function beginOperation(kind){
+    if(activeOperation&&activeOperation.kind==='commit'&&!activeOperation.canceled)throw operationError('Templates are still being saved. Wait for that save to finish before starting another import.','TEMPLATE_OPERATION_BUSY');
     if(activeOperation) activeOperation.cancel('Replaced by a newer template operation.');
     var controller=null;try{controller=typeof AbortController==='function'?new AbortController():null;}catch(e){}
     var op={kind:kind,serial:++operationSerial,account:accountKey(),controller:controller,canceled:false,handle:null,canceling:false};
@@ -239,14 +240,6 @@
   }
   function endOperation(op){if(activeOperation===op)activeOperation=null;}
   function isCanceled(error,op){return !!((op&&op.canceled)||error&&(['AbortError','TEMPLATE_OPERATION_CANCELED','TEMPLATE_ACCOUNT_CHANGED'].indexOf(error.name)>=0||['TEMPLATE_OPERATION_CANCELED','TEMPLATE_ACCOUNT_CHANGED'].indexOf(error.code)>=0));}
-  function bindProvidedHandle(op,handle){
-    /* LoadingCalm retries pass a fresh handle whose cancel callback is the
-       previous attempt's closure. Replace that callback at the hand-off so a
-       retry can abort its own controller and cannot leave a cosmetic Cancel
-       button behind. */
-    if(!handle||!isFn(handle.cancel))return;
-    var prior=handle.cancel;handle.cancel=function(message){if(!op.canceled){op.canceled=true;try{if(op.controller)op.controller.abort();}catch(e){}}return prior.call(handle,message);};
-  }
 
   async function request(path,options){
     options=options||{};if(!hosted())throw Object.assign(new Error('Sign in to use the cloud template library.'),{code:'TEMPLATE_OFFLINE'});
@@ -478,7 +471,8 @@
     box.onclick=importClick;try{box.scrollIntoView({behavior:'smooth',block:'center'});}catch(e){}flashReview(box);
   }
 
-  function previewImport(custom,providedHandle){
+  function previewImport(custom,providedHandle,cancelSlot){
+    if(activeUpload||uploadQueue.length){var reading=operationError('Template files are still being read. Add the selected templates after the review is ready.','TEMPLATE_OPERATION_BUSY');status(reading.message,true);return Promise.reject(reading);}
     if(!hosted()){if(isFn(originals.tplAddSplit))return Promise.resolve(originals.tplAddSplit());return Promise.resolve(false);}
     ensureAccount();var body=importBody(custom);if(body.scopeError){var scopeErr=scopeFor(custom||{}),err=new Error(scopeErr.message);err.code=body.scopeError;return Promise.reject(err);}var bound=requireScope(body);body.scope=bound.scope;body.providerId=bound.providerId;body.providerName=bound.providerName;delete body.scopeError;
     /* The deployed API accepts at most 500 templates per preview/commit and
@@ -486,8 +480,12 @@
        cooperative, but cloud persistence must stop here with an honest,
        actionable limit instead of silently truncating the request. */
     if(body.templates.length>SERVER_IMPORT_LIMIT){var limitErr=operationError('Cloud template imports support up to '+SERVER_IMPORT_LIMIT+' templates per save. The files were read locally; select '+SERVER_IMPORT_LIMIT+' or fewer before saving.','TEMPLATE_IMPORT_BATCH_LIMIT');status(limitErr.message,true);return Promise.reject(limitErr);}
-    var fingerprint=body.templates.map(function(t){return t.id+'|'+t.name+'|'+S(t.text).length;}).join('~'),op=beginOperation('preview');
-    var handle=providedHandle||progressStart({key:'template-import-preview:'+fingerprint,kind:'template_import_preview',label:'Previewing template import',stages:PREVIEW_STAGES,total:body.templates.length,timeoutMs:120000,replace:true,cancelable:true,cancel:function(){op.cancel('Preview canceled.');},retry:function(next){previewImport(custom,next);}});op.handle=handle;if(providedHandle)bindProvidedHandle(op,handle);
+    var fingerprint=body.templates.map(function(t){return t.id+'|'+t.name+'|'+S(t.text).length;}).join('~'),op;
+    try{op=beginOperation('preview');}catch(error){status(error.message,true);return Promise.reject(error);}
+    /* The progress store copies the callback on retry. Keep a shared pointer
+       to the current attempt so its visible Cancel reaches the new request. */
+    cancelSlot=cancelSlot||{};cancelSlot.current=op;
+    var handle=providedHandle||progressStart({key:'template-import-preview:'+fingerprint,kind:'template_import_preview',label:'Previewing template import',stages:PREVIEW_STAGES,total:body.templates.length,timeoutMs:120000,replace:true,cancelable:true,cancel:function(){if(cancelSlot.current)cancelSlot.current.cancel('Preview canceled.');},retry:function(next){previewImport(custom,next,cancelSlot).catch(function(){});}});op.handle=handle;
     return (async function(){try{
       progressStage(handle,'Validating import',0,body.templates.length,'Validating selected templates.');var data=await request('/api/template-imports/preview',{method:'POST',body:body,requestId:handle&&handle.requestId,progress:handle,signal:op.controller&&op.controller.signal,operation:op});operationAssert(op);
       progressStage(handle,'Comparing versions',body.templates.length,body.templates.length,'Comparing against the selected set version.');operationAssert(op);state.pending={body:body,preview:data.preview,idempotencyKey:uid('tpl-import-'),fromForm:custom&&custom.fromForm};
@@ -495,13 +493,17 @@
     }catch(error){if(isCanceled(error,op)){if(handle&&handle.snapshot&&handle.snapshot().status!=='canceled')handle.cancel('Preview canceled.');throw (error&&error.code?error:operationError('Preview canceled.'));}status(error.message,true);renderPanel();if(handle)handle.fail(error);throw error;}finally{endOperation(op);}})();
   }
 
-  function importClick(event){var b=event.target&&event.target.closest?event.target.closest('[data-tl-import]'):null;if(!b)return;var action=b.getAttribute('data-tl-import');if(action==='commit')commitPending();else if(action==='cancel'){if(activeOperation&&(activeOperation.kind==='preview'||activeOperation.kind==='commit'))activeOperation.cancel('Canceled by user.');state.pending=null;state.editingId='';['tplMultiResult','tplFormResult'].forEach(function(id){var box=byId(id);if(box){box.onclick=null;box.innerHTML='';}});}}
+  function importClick(event){var b=event.target&&event.target.closest?event.target.closest('[data-tl-import]'):null;if(!b)return;var action=b.getAttribute('data-tl-import');if(action==='commit')commitPending().catch(function(){});else if(action==='cancel'){if(activeOperation&&activeOperation.kind==='commit'){status('Templates are still being saved. The result will appear here when the save finishes.',false);return;}if(activeOperation&&activeOperation.kind==='preview')activeOperation.cancel('Canceled by user.');state.pending=null;state.editingId='';['tplMultiResult','tplFormResult'].forEach(function(id){var box=byId(id);if(box){box.onclick=null;box.innerHTML='';}});}}
   function commitPending(providedHandle){
+    if(activeOperation&&activeOperation.kind==='commit'&&operationCurrent(activeOperation))return activeOperation.promise;
+    if(activeUpload||uploadQueue.length){var reading=operationError('Template files are still being read. Save after the review is ready.','TEMPLATE_OPERATION_BUSY');status(reading.message,true);return Promise.reject(reading);}
     ensureAccount();if(!state.pending)return Promise.resolve(false);var pending=state.pending,body=JSON.parse(JSON.stringify(pending.body)),activate=byId('tlActivateAfter');var bound;try{bound=requireScope(body);}catch(scopeError){status(scopeError.message,true);return Promise.reject(scopeError);}body.scope=bound.scope;body.providerId=bound.providerId;body.providerName=bound.providerName;body.activate=!!(activate&&activate.checked);
     if(body.templates.length>SERVER_IMPORT_LIMIT){var limitErr=operationError('Cloud template imports support up to '+SERVER_IMPORT_LIMIT+' templates per save. Select '+SERVER_IMPORT_LIMIT+' or fewer before saving.','TEMPLATE_IMPORT_BATCH_LIMIT');status(limitErr.message,true);return Promise.reject(limitErr);}
     var resultBoxId=pending.fromForm?'tplFormResult':'tplMultiResult';
-    var op=beginOperation('commit');var handle=providedHandle||progressStart({key:'template-import-commit:'+pending.idempotencyKey,kind:'template_import',label:'Importing templates',stages:COMMIT_STAGES,total:body.templates.length,timeoutMs:180000,replace:true,cancelable:true,cancel:function(){op.cancel('Import canceled.');},retry:function(next){commitPending(next);}});op.handle=handle;if(providedHandle)bindProvidedHandle(op,handle);
-    return (async function(){try{
+    /* Once sent, a save can succeed even if fetch is aborted. Do not offer a
+       cosmetic undo; duplicate clicks share the same idempotent save. */
+    var op=beginOperation('commit');var handle=providedHandle||progressStart({key:'template-import-commit:'+pending.idempotencyKey,kind:'template_import',label:'Importing templates',stages:COMMIT_STAGES,total:body.templates.length,timeoutMs:180000,replace:true,cancelable:false,retry:function(next){commitPending(next).catch(function(){});}});op.handle=handle;
+    op.promise=(async function(){try{
       progressStage(handle,'Validating import',0,body.templates.length,'Rechecking preview ownership and version.');var data=await request('/api/template-imports/commit',{method:'POST',body:body,idempotencyKey:pending.idempotencyKey,requestId:handle&&handle.requestId,progress:handle,signal:op.controller&&op.controller.signal,operation:op});operationAssert(op);var result=data.result;
       progressStage(handle,'Verifying committed version',body.templates.length,body.templates.length,'Applying the committed active version when selected.');
       if(result&&result.set&&(result.set.active||result.set.id===state.activeSetId||body.activate)){var replaceOk=await confirmReplace(result.set);operationAssert(op);if(replaceOk)applySet(result.set);else status('Imported. Your device templates were left alone.',false);}
@@ -517,7 +519,7 @@
          call - only the extra click is gone. */
       operationAssert(op);if(result&&result.set&&!result.set.active&&result.set.id!==state.activeSetId&&!body.activate) await activateSet(result.set.id);operationAssert(op);
       if(handle)handle.complete(result.status==='partial'?'Import completed with rejected rows.':'Templates imported.');return result;
-    }catch(error){if(isCanceled(error,op)){if(handle&&handle.snapshot&&handle.snapshot().status!=='canceled')handle.cancel('Import canceled.');throw (error&&error.code?error:operationError('Import canceled.'));}status(error.message,true);if(error.code==='TEMPLATE_VERSION_CONFLICT'){state.conflict={kind:'import',body:body,localTemplates:cloneTemplates(body.templates)};await loadConflictVersion();status('A newer cloud version exists. Your previewed changes are still available to retry.',true);}renderPanel();if(handle)handle.fail(error);throw error;}finally{endOperation(op);}})();
+    }catch(error){if(isCanceled(error,op)){var uncertain=operationError('The save result could not be applied after the account changed. Check the original account’s template library before retrying.','TEMPLATE_ACCOUNT_CHANGED');if(handle)handle.fail(uncertain);throw uncertain;}status(error.message,true);if(error.code==='TEMPLATE_VERSION_CONFLICT'){state.conflict={kind:'import',body:body,localTemplates:cloneTemplates(body.templates)};await loadConflictVersion();status('A newer cloud version exists. Your previewed changes are still available to retry.',true);}renderPanel();if(handle)handle.fail(error);throw error;}finally{endOperation(op);}})();return op.promise;
   }
 
   function activateSet(id){var handle=progressStart({key:'template-set:activate',kind:'template_library',label:'Activating template set',stages:['Validating selection','Loading version','Applying templates'],total:3,timeoutMs:60000,replace:true,cancelable:false});return (async function(){try{progressStage(handle,'Validating selection',1,3);var data=await request('/api/template-sets/'+encodeURIComponent(id)+'/activate',{method:'POST',body:{},requestId:handle&&handle.requestId,progress:handle});progressStage(handle,'Applying templates',3,3);if(!(await confirmReplace(data.set))){status('Set activated in the cloud. Your device templates were left alone.',false);await refresh({applyActive:false,silent:true});state.selectedSetId=id;renderPanel();if(handle)handle.complete('Device templates unchanged.');return false;}applySet(data.set);await refresh({applyActive:false,silent:true});state.selectedSetId=id;renderPanel();if(handle)handle.complete('Template set activated.');return true;}catch(error){status(error.message,true);renderPanel();if(handle)handle.fail(error);return false;}})();}
@@ -574,7 +576,7 @@
         /* A server-enforced import ceiling is not an offline failure: keep the
            review rows and tell the user exactly how to continue instead of
            silently falling back to a device-only add with misleading copy. */
-        if(error&&error.code==='TEMPLATE_IMPORT_BATCH_LIMIT')return null;
+        if(isCanceled(error)||error&&['TEMPLATE_IMPORT_BATCH_LIMIT','TEMPLATE_OPERATION_BUSY'].indexOf(error.code)>=0)return null;
         try{if(isFn(window.toast))window.toast('Cloud sync unavailable — saving templates on this device instead.','ok');}catch(e){}
         return originals.tplAddSplit.apply(self,args);
       }).finally(function(){try{if(btn&&btn.isConnected){btn.disabled=false;btn.textContent='➕ Add selected to my templates';}}catch(e){}});
@@ -656,8 +658,10 @@
         var files=Array.prototype.slice.call(ev&&ev.target&&ev.target.files||[]),fp=files.map(function(f){return [f.name,f.size,f.lastModified].join(':');}).join('|');
         if(!files.length)return Promise.resolve(0);
         if(uploadRuns[fp])return uploadRuns[fp];
+        if(activeOperation&&activeOperation.kind==='commit'&&operationCurrent(activeOperation)){var saving=operationError('Templates are still being saved. Select these files again after the save finishes.','TEMPLATE_OPERATION_BUSY');status(saving.message,true);if(isFn(window.toast))window.toast(saving.message,'err');return Promise.reject(saving);}
         var invalid=files.filter(function(f){return Number(f.size)>20*1024*1024;});
         if(invalid.length){var er=new Error('Each template file must be 20 MB or smaller.');if(isFn(window.toast))window.toast(er.message,'err');return Promise.reject(er);}
+        if(activeOperation&&activeOperation.kind==='preview'){activeOperation.cancel('New files selected.');state.pending=null;}
         var run=new Promise(function(resolve,reject){uploadQueue.push({files:files,fp:fp,providedHandle:providedHandle,resolve:resolve,reject:reject});pumpUploads();});
         uploadRuns[fp]=run;return run;
       };
