@@ -99,10 +99,17 @@ if (require.main === module) {
     if (live === null) {
       const url = arg('live-url') || 'https://mlsscribe.com/app-version.json';
       try { live = await readLiveBuild(url); }
-      catch (e) { console.log('forward-deploy guard: ' + e.message + ' — not blocking'); process.exit(0); }
+      catch (e) {
+        console.log('forward-deploy guard: ' + e.message + ' — not blocking');
+        process.exitCode = 0;
+        return;
+      }
     }
     const out = verdict(artifact, live);
     console.log('forward-deploy guard [' + out.code + ']: ' + out.message);
-    process.exit(out.ok ? 0 : 1);
+    /* Let undici/fetch close its native handles before Node exits. An abrupt
+     * forced exit here can trip a libuv assertion on Windows after a live
+     * fetch, turning a successful forward-deploy verdict into a failed gate. */
+    process.exitCode = out.ok ? 0 : 1;
   })();
 }

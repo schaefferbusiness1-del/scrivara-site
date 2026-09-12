@@ -155,6 +155,15 @@ const KNOWN_PUSHED_UNNAMED = new Map([
   ['f8d85d77d9dd28a43fe25f5d9c6900f36cc4425f', 'b1019']
 ]);
 
+/* Two parallel lanes already pushed separate, correctly named b1250 commits
+ * and were merged before this guard saw them. Keep ece8b38 as the canonical
+ * b1250 claim and exempt only the second immutable SHA+token pair from the
+ * uniqueness count. This preserves scrutiny of every build since CUTOFF and
+ * keeps any future duplicate — including another b1250 — a hard failure. */
+const KNOWN_PUSHED_DUPLICATE_CLAIMS = new Map([
+  ['4e253d8ef7b6ef7ce014c50b02ffa6164f8c52c1', 'b1250']
+]);
+
 /* The token may appear ANYWHERE in the message, not only the subject.
  *
  * The guarantee this suite protects is that `git log --grep <build>` finds the
@@ -197,6 +206,7 @@ for (const c of commits) {
     unnamed.push(c.sha.slice(0, 7) + '  tree=' + token + '  subject="' + c.subject.slice(0, 70) + '"');
   }
   if (knownPushedViolation) continue;
+  if (KNOWN_PUSHED_DUPLICATE_CLAIMS.get(c.sha) === token) continue;
   const arr = claimed.get(token) || [];
   arr.push(c.sha.slice(0, 7));
   claimed.set(token, arr);

@@ -20,6 +20,13 @@ const path = require('path');
 
 const root = path.join(__dirname, '..');
 const { verdict, parseBuild } = require(path.join(root, 'scripts', 'assert-forward-deploy.js'));
+const guardSource = fs.readFileSync(path.join(root, 'scripts', 'assert-forward-deploy.js'), 'utf8');
+
+/* A live fetch leaves native handles to close. Abrupt process.exit() crashed
+   Windows Node after printing a successful verdict, so the CLI must exit by
+   setting exitCode and letting the event loop drain naturally. */
+assert(!/process\.exit\s*\(/.test(guardSource),
+  'the forward-deploy CLI must not call process.exit() after a live fetch');
 
 /* ---- 1. the three real inversions must all be REFUSED -------------------- */
 for (const [artifact, live, note] of [
@@ -79,4 +86,5 @@ assert(guardAt > deployAt, 'the guard must run in the DEPLOY job, not the build 
 assert(guardAt < publishAt, 'the guard must run BEFORE the publish step');
 
 console.log('PASS forward-deploy guard: 3 real inversions refused, 4 forward deploys allowed, ' +
-  'same-build re-deploy allowed, unreadable versions fail open, and the guard is wired into the deploy job before publish.');
+  'same-build re-deploy allowed, unreadable versions fail open, clean native-handle shutdown enforced, ' +
+  'and the guard is wired into the deploy job before publish.');
