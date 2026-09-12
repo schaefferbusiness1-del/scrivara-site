@@ -37967,7 +37967,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if (!mine.length) return;
       var chip = window.__mlsAgendaBtnB49 ? null : $('mlsAgendaChip');
       if (chip) {
-        var seen = mine.filter(function (a) { return !!a.checked_in_at; }).length;
+        var seen = mine.filter(function (a) { try{return typeof window._seenToday==='function'&&window._seenToday(a);}catch(e){return false;} }).length;
         var want = '🗓 Today’s agenda (' + seen + '/' + mine.length + ')';
         if (chip.textContent !== want) chip.textContent = want;
         chip.title = 'Appointments today for ' + prov;
@@ -38588,8 +38588,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
  * the real provider names present in window._calAppts (longest match wins),
  * then keep the #mlsAgendaChip button text and the #mlsAgendaPop list scoped
  * to that provider's TODAY-only appointments — the SAME _calAppts source the
- * calendar and b46 use. seen = checked_in_at OR _seenToday(name) (the
- * counter-strip's source). Fail-open: no provider resolved, or "All
+ * calendar and b46 use. Seen means the shared exact appointment-completion
+ * predicate; checked in stays an arrived, unfinished row. Fail-open: no
+ * provider resolved, or "All
  * providers" => nothing changes. UI-only. Athena READ-ONLY. No PHI leaves
  * the page.
  * Revert: window.__mlsAgendaBtnB49_revert()
@@ -38628,6 +38629,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function isSeen(a) {
     try { if (typeof window._seenToday === 'function' && window._seenToday(a)) return true; } catch (e) {}
     return false;
+  }
+  function isArrived(a) {
+    try { return typeof window._mlsAppointmentArrived === 'function' ? window._mlsAppointmentArrived(a) : !!(a&&a.checked_in_at); } catch (e) { return false; }
   }
   function t12(a) {
     if (a.time_display) return a.time_display;
@@ -38668,15 +38672,22 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var p = provToday();
       if (!pop || !p) return;
       var seen = p.appts.filter(isSeen).length;
-      var sig = (p.prov + '|' + p.appts.length + '|' + seen).replace(/"/g, '');
+      var stateSig=p.appts.map(function(a,i){
+        var id=String((a&&(a.athena_appointment_id||a.appointment_id||a.appt_id||a.id))||i);
+        return id+':'+(isSeen(a)?'done':(isArrived(a)?'arrived':'pending'));
+      }).join(',');
+      var sig = (p.prov + '|' + p.appts.length + '|' + seen + '|' + stateSig).replace(/"/g, '');
       if (pop.firstElementChild && pop.firstElementChild.getAttribute('data-b49') === sig) return;
       var sorted = p.appts.slice().sort(function (a, b) { return new Date(a.start_at) - new Date(b.start_at); });
       var now = Date.now();
-      var next = sorted.find(function (a) { return new Date(a.start_at).getTime() >= now && !isSeen(a); });
+      var pending = sorted.filter(function(a){ return !isSeen(a); });
+      var next = pending.find(isArrived) || pending.find(function (a) { return new Date(a.start_at).getTime() >= now; }) || pending[0];
       var rows = sorted.map(function (a) {
-        var badge = isSeen(a) ? '<span style="background:#d8f5e2;color:#116635;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:700">seen</span>'
-          : (a === next ? '<span style="background:#fde68a;color:#7a5600;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:700">next</span>'
-            : '<span style="background:#e2e8f5;color:#204034;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:700">upcoming</span>');
+        var badge;
+        if(isSeen(a)) badge='<span style="background:#d8f5e2;color:#116635;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:700">seen</span>';
+        else if(isArrived(a)) badge='<span style="background:#fde68a;color:#7a5600;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:700">checked in'+(a===next?' · next':'')+'</span>';
+        else if(a===next) badge='<span style="background:#fde68a;color:#7a5600;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:700">next</span>';
+        else badge='<span style="background:#e2e8f5;color:#204034;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:700">upcoming</span>';
         return '<div style="display:flex;align-items:center;gap:10px;padding:7px 12px;border-bottom:1px solid #edf1fa;font:13px system-ui;color:#1E2B24">'
           + '<span style="min-width:64px;color:#2E6A4B">' + t12(a) + '</span>'
           + '<span style="flex:1;font-weight:600">' + String(a.name || '(no name)').replace(/[<>&]/g, '') + '</span>' + badge + '</div>';
@@ -38777,6 +38788,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       return h + ':' + m + ' ' + ap;
     } catch (e) { return ''; }
   }
+  function isSeen(a) { try { return typeof window._seenToday==='function'&&window._seenToday(a); } catch(e) { return false; } }
+  function isArrived(a) { try { return typeof window._mlsAppointmentArrived==='function'?window._mlsAppointmentArrived(a):!!(a&&a.checked_in_at); } catch(e) { return false; } }
 
   /* ---------- A) agenda chip + popup scoping ---------- */
   function fixChip() {
@@ -38784,7 +38797,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var chip = $('mlsAgendaChip');
       var p = provAppts();
       if (!chip || !p) return;
-      var seen = p.appts.filter(function (a) { return !!a.checked_in_at; }).length;
+      var seen = p.appts.filter(isSeen).length;
       var want = '🗓 Today’s agenda (' + seen + '/' + p.appts.length + ')';
       if (chip.textContent !== want) chip.textContent = want;
       chip.title = 'Appointments today for ' + p.prov;
@@ -38794,17 +38807,25 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     try {
       var pop = $('mlsAgendaPop');
       var p = provAppts();
-      if (!pop || !p || pop.__r46done) return;
-      pop.__r46done = 1;
+      if (!pop || !p) return;
+      var stateSig=p.appts.map(function(a,i){
+        var id=String((a&&(a.athena_appointment_id||a.appointment_id||a.appt_id||a.id))||i);
+        return id+':'+(isSeen(a)?'done':(isArrived(a)?'arrived':'pending'));
+      }).join(',');
+      if(pop.__r46done===stateSig) return;
+      pop.__r46done=stateSig;
       /* rebuild the list provider-scoped; keep it simple + readable */
-      var seen = p.appts.filter(function (a) { return !!a.checked_in_at; }).length;
+      var seen = p.appts.filter(isSeen).length;
       var sorted = p.appts.slice().sort(function (a, b) { return new Date(a.start_at) - new Date(b.start_at); });
       var now = Date.now();
-      var next = sorted.find(function (a) { return new Date(a.start_at).getTime() >= now && !a.checked_in_at; });
+      var pending = sorted.filter(function(a){ return !isSeen(a); });
+      var next = pending.find(isArrived) || pending.find(function (a) { return new Date(a.start_at).getTime() >= now; }) || pending[0];
       var rows = sorted.map(function (a) {
-        var badge = a.checked_in_at ? '<span style="background:#d8f5e2;color:#116635;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:700">seen</span>'
-          : (a === next ? '<span style="background:#fde68a;color:#7a5600;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:700">next</span>'
-            : '<span style="background:#e2e8f5;color:#204034;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:700">upcoming</span>');
+        var badge;
+        if(isSeen(a)) badge='<span style="background:#d8f5e2;color:#116635;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:700">seen</span>';
+        else if(isArrived(a)) badge='<span style="background:#fde68a;color:#7a5600;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:700">checked in'+(a===next?' · next':'')+'</span>';
+        else if(a===next) badge='<span style="background:#fde68a;color:#7a5600;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:700">next</span>';
+        else badge='<span style="background:#e2e8f5;color:#204034;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:700">upcoming</span>';
         return '<div style="display:flex;align-items:center;gap:10px;padding:7px 12px;border-bottom:1px solid #edf1fa;font:13px system-ui;color:#1E2B24">'
           + '<span style="min-width:64px;color:#2E6A4B">' + t12(a) + '</span>'
           + '<span style="flex:1;font-weight:600">' + String(a.name || '(no name)').replace(/[<>&]/g, '') + '</span>' + badge + '</div>';

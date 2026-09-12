@@ -131,7 +131,7 @@ const seenSrc = between(app, '/* ===== apptdone-1.0.0 — arrival is not complet
 assert(seenSrc.includes('!n||n.isDraft'), '_seenToday completion still counts drafts');
 assert(seenSrc.includes('String(n.patientId') && seenSrc.includes('_mlsCompletionPatientId(a)'),
   '_seenToday completion is not reconciled to the exact local chart id');
-assert(seenSrc.includes('appointmentId===noteAppointmentId') && seenSrc.includes('encounterId===noteEncounterId'),
+assert(seenSrc.includes('appointmentId!==noteAppointmentId') && seenSrc.includes('encounterId===noteEncounterId'),
   '_seenToday completion lost exact appointment/encounter matching');
 assert(!seenSrc.includes('new Date(n.updated') && !seenSrc.includes('String(n.patient||'),
   '_seenToday restored updated-time or display-name completion evidence');

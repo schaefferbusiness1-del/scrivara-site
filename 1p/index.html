@@ -31571,7 +31571,6 @@ function _mlsCompletionPatientId(a){
   try{
     if(!a) return '';
     if(a._pt&&a.id!=null) return String(a.id);
-    if(a._mlsTargetPatientId!=null&&String(a._mlsTargetPatientId).trim()) return String(a._mlsTargetPatientId).trim();
     if(typeof _calResolveLocalPatient==='function'){
       var id=_calResolveLocalPatient(a); if(id!=null&&String(id).trim()) return String(id).trim();
     }
@@ -31581,8 +31580,14 @@ function _mlsCompletionPatientId(a){
 function _mlsCompletionNotesByPatient(){
   var stamp='';
   try{
-    var sc=window.__mlsStoreCache;
-    if(sc&&typeof sc.ver==='function'&&typeof uns==='function') stamp=String(uns('notes'))+'|'+String(sc.ver());
+    var sc=window.__mlsStoreCache,notesKey=typeof uns==='function'?String(uns('notes')||''):'';
+    if(sc&&notesKey){
+      if(typeof sc.verFor==='function'){
+        var scoped=sc.verFor(notesKey); if(typeof scoped==='string'&&scoped) stamp=notesKey+'|'+scoped;
+      }else if(typeof sc.ver==='function'){
+        var generation=Number(sc.ver()); if(isFinite(generation)&&generation>=0) stamp=notesKey+'|'+generation;
+      }
+    }
     if(stamp&&_mlsCompletionNoteCache&&_mlsCompletionNoteCache.stamp===stamp) return _mlsCompletionNoteCache.byPatient;
   }catch(e){}
   var byPatient=Object.create(null);
@@ -31639,8 +31644,16 @@ function _mlsAppointmentCompleted(target,appointmentIdOverride){
       var n=notes[i],noteDay=_mlsCompletionDay(n.visitDate||n.visit_date||n.noteDate||n.appt_date||n.apptDate||'');
       if(noteDay&&noteDay!==day) continue;
       var noteAppointmentId=_mlsCompletionAppointmentId(n),noteEncounterId=_mlsCompletionEncounterId(n);
-      if(appointmentId&&noteAppointmentId){ if(appointmentId===noteAppointmentId) return true; continue; }
+      if(appointmentId&&noteAppointmentId){
+        if(appointmentId!==noteAppointmentId) continue;
+        if(encounterId&&noteEncounterId&&encounterId!==noteEncounterId) continue;
+        return true;
+      }
       if(encounterId&&noteEncounterId){ if(encounterId===noteEncounterId) return true; continue; }
+      /* A note that names an exact visit id is not a legacy record. If the row
+         cannot prove the same id, never downgrade that stronger evidence into
+         a date-only match. The fallback below is solely for older ID-less notes. */
+      if(noteAppointmentId||noteEncounterId) continue;
       if(noteDay!==day) continue;
       if(uniqueDayCount===null) uniqueDayCount=_mlsSamePatientDayAppointmentCount(a,patientId,day,appointmentId);
       if(uniqueDayCount===1) return true;
