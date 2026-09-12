@@ -52,8 +52,8 @@ const bg = fs.readFileSync(path.join(root, 'background.js'), 'latin1');
 
   assert(/if \(identityMatchesTarget\(frameIdentity\[f\.frameId\]\)\) return true;/.test(body),
     'DOOR 1 must be untouched - an identity read in the frame still binds it');
-  assert(/if \(!strictNameMatch\(f\.t, want\)\) return false;/.test(body),
-    'DOOR 2 must still require the expected NAME in the frame own text');
+  assert(/if \(!textHasPairStrict\(f\.t\)\) return false;/.test(body),
+    'DOOR 2 must require the exact first/last+DOB pair together in the frame own text');
   assert(/wantDob && textHasDobStrict\(f\.t, wantDob\)/.test(body) &&
          /wantMrn && textHasMrnStrict\(f\.t, wantMrn\)/.test(body),
     'DOOR 2 must still require a DOB or MRN in the frame own text');

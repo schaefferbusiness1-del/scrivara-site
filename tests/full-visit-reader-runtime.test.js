@@ -314,8 +314,8 @@ function makeReader(options = {}) {
      failure mode: every body refused on the name while the id was right). */
   const staleName = makeReader({ identity: { name: 'Different Patient', dob: '01/02/1960', mrn: '1234', score: 50 } });
   const staleOk = await staleName.context.__mlsOverlayReadVisits(11, { name: 'Exact Patient', dob: '01/02/1960', mrn: '1234' });
-  assert.strictEqual(staleOk.ok, true, 'a verified stable-id match must not be refused on a stale frame name');
-  assert.strictEqual(staleOk.receipt.complete, true);
+  assert.strictEqual(staleOk.ok, false, '3.0.123: cached MRN must never override a conflicting first/last name');
+  assert.strictEqual(staleName.calls.filter(c => c.op === 'click').length, 0, 'name mismatch must refuse before any encounter body is read');
 
   /* These three fixtures exercise the classic exact-row refusal itself. Keep
      their budget below the separate 42-second ax-surface recycle admission so

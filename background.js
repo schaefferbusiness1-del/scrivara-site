@@ -196,6 +196,42 @@ const _mlsFrameMap = {};
  * It is injected once into the TOP frame and walks only same-origin descendants.
  * It never navigates, reloads, retries, submits charges, or chains actions. */
 async function mlsAthenaActionV2DriverFn(req) {
+function mlsExactNameKey(value) {
+  var raw = String(value || '').trim().toLowerCase();
+  try { raw = raw.normalize('NFKD').replace(/[\u0300-\u036f]/g, ''); } catch (e) {}
+  raw = raw.replace(/[.\u2019'`-]/g, '').replace(/\bjunior\b/g, 'jr').replace(/\bsenior\b/g, 'sr');
+  var parts = raw.split(',').map(function (part) { return part.trim(); }).filter(Boolean);
+  var suffix = '';
+  if (parts.length > 1 && /^(jr|sr|ii|iii|iv|v)$/.test(parts[parts.length - 1])) suffix = parts.pop();
+  if (parts.length === 2) raw = parts[1] + ' ' + parts[0];
+  else if (parts.length === 1) raw = parts[0];
+  else if (parts.length > 2) return '';
+  raw = raw.replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+  var words = raw.split(' ').filter(Boolean);
+  while (words.length && /^(mr|mrs|ms|miss|dr|prof)$/.test(words[0])) words.shift();
+  while (words.length && /^(jr|sr|ii|iii|iv|v)$/.test(words[words.length-1])) words.pop();
+  return words.length >= 2 ? words[0]+' '+words[words.length-1] : '';
+}
+function mlsExactDobKey(value) {
+  var raw = String(value || '').trim(), m, year, month, day;
+  if ((m = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/.exec(raw))) { year=+m[1]; month=+m[2]; day=+m[3]; }
+  else if ((m = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/.exec(raw))) { year=+m[3]; month=+m[1]; day=+m[2]; }
+  else return '';
+  var date = new Date(Date.UTC(year, month-1, day));
+  return year >= 1850 && date.getUTCFullYear() === year && date.getUTCMonth() === month-1 && date.getUTCDate() === day ? year+'-'+month+'-'+day : '';
+}
+function mlsExactIdentityPair(expected, observed) {
+  expected = expected || {}; observed = observed || {};
+  var name = mlsExactNameKey(expected.name), dob = mlsExactDobKey(expected.dob);
+  if (!name || !dob) return {ok:false,reason:'identity-hint-incomplete'};
+  if (observed.ambiguous === true || Number(observed.exactPairCandidateCount || 0) > 1) return {ok:false,reason:'identity-ambiguous'};
+  if (!mlsExactNameKey(observed.name)) return {ok:false,reason:'same-frame-name-missing'};
+  if (name !== mlsExactNameKey(observed.name)) return {ok:false,reason:'same-frame-name-mismatch'};
+  if (!mlsExactDobKey(observed.dob)) return {ok:false,reason:'same-frame-dob-missing'};
+  if (dob !== mlsExactDobKey(observed.dob)) return {ok:false,reason:'same-frame-dob-mismatch'};
+  return {ok:true,reason:'exact-name+dob',mrnConflict:!!(expected.mrn && observed.mrn && String(expected.mrn) !== String(observed.mrn))};
+}
+
   try {
     req = req || {};
     var mode = String(req.mode || 'probe');
@@ -265,11 +301,7 @@ async function mlsAthenaActionV2DriverFn(req) {
       for (var i = 0; i < variants.length; i++) if (low.indexOf(variants[i].toLowerCase()) >= 0) return true;
       return false;
     }
-    function nameKey(v) {
-      var raw = text(v), comma = /^\s*([^,]+),\s*(.+)$/.exec(raw);
-      if (comma) raw = comma[2] + ' ' + comma[1];
-      return norm(raw);
-    }
+    function nameKey(v) { return mlsExactNameKey(v); }
     function noteNorm(v) {
       return String(v == null ? '' : v).replace(/\r\n?/g, '\n').replace(/\u00a0/g, ' ').split('\n').map(function (line) { return line.replace(/[ \t]+$/g, ''); }).join('\n').replace(/\n{3,}/g, '\n\n').trim();
     }
@@ -1186,7 +1218,7 @@ async function mlsAthenaActionV2DriverFn(req) {
           if (n1 && d1 && n1 !== wantName) sawForeign = true;
           if (namesMatch && d1 && d1 === wantDob) {
             /* the expected person's banner - an MRN conflict on it refuses */
-            if (m1 && wantMrn && m1 !== wantMrn) return { identity: null, ambiguous: true };
+            if (kept && m1 && digits(kept.mrn) && m1 !== digits(kept.mrn)) return { identity: null, ambiguous: true }; /* distinct live candidates, never cached MRN */
             if (!kept || (!digits(kept.mrn || '') && m1)) kept = p1;
             continue;
           }
@@ -1377,7 +1409,7 @@ async function mlsAthenaActionV2DriverFn(req) {
       return { ok: true, order: value, schema: schema };
     }
 
-    if (!text(expectedPatient.name) || !dateKey(expectedPatient.dob) || !digits(expectedPatient.mrn)) return { ok: false, blocked: true, reason: 'patient-mismatch', error: 'Expected patient name, DOB, and MRN are required.' };
+    if (!mlsExactIdentityPair(expectedPatient, expectedPatient).ok) return { ok: false, blocked: true, reason: 'patient-mismatch', error: 'Expected exact full name and DOB are required.' };
     var reviewedNote = noteNorm(req.noteText), notePolicy = String(req.notePolicy || 'empty_only');
     var requestedNoteSection = 'note';
     /* ===== savenamed-1.0.0 (3.0.111) ==================================
@@ -1560,7 +1592,16 @@ async function mlsAthenaActionV2DriverFn(req) {
          frame (its own patient_id === expected-MRN gate makes it inert on
          foreign or context-less frames); the ancestor-banner inheritance
          below remains only for frames with no identity of their own. */
-      var hetStage = hetStageEncounterContext(fr, expectedPatient);
+      var pairHeader = hetAncestorIdentity(fr, expectedPatient), pairWin = fr.w, pairHops = 0;
+      while (!pairHeader.identity && !pairHeader.ambiguous && pairWin && pairHops++ < 6) {
+        try { if(!pairWin.parent || pairWin.parent===pairWin) break; pairWin=pairWin.parent; } catch(e){break;}
+        var pairFrame=frames.filter(function(f){return f.w===pairWin;})[0]; if(!pairFrame) break;
+        pairHeader=hetAncestorIdentity(pairFrame, expectedPatient);
+      }
+      if (pairHeader.ambiguous) continue;
+      if (!observedIdentity && pairHeader.identity) { observedIdentity=pairHeader.identity; chartHeader=pairHeader; }
+      var machinePatient = observedIdentity && mlsExactIdentityPair(expectedPatient,observedIdentity).ok ? Object.assign({},expectedPatient,{mrn:observedIdentity.mrn||''}) : null;
+      var hetStage = machinePatient ? hetStageEncounterContext(fr, machinePatient) : null;
       hetRec.het = Number(hetDiag.rank || 0);
       if (!observedIdentity && hetStage) { /* het-1.0.5: ambiguity of the frame's own decorative header copies routes to the ancestor banner when the machine context qualified; the final gate below still refuses unless the ancestor banner is single, parseable and passes the identity gates. */
         /* het-1.0.0: stage surfaces split banner and editor across frames.
@@ -1590,21 +1631,15 @@ async function mlsAthenaActionV2DriverFn(req) {
                admission is forbidden; the frame fails closed. */
             hetWalkVerdict = 'foreign-identity-present';
           }
-          if (!observedIdentity && hetWalkVerdict === 'none-found') {
-            /* het-1.1.3: no banner markup anywhere - the machine context is
-               the identity, flagged for every receipt reader. */
-            observedIdentity = { name: String(expectedPatient.name || ''), dob: String(expectedPatient.dob || ''), mrn: String(expectedPatient.mrn || ''), root: null, source: 'stage-meta' };
-            chartHeader = { identity: observedIdentity, ambiguous: false };
-            hetWalkVerdict = 'meta-bound';
-          }
+          /* exact-pair-30123: no name/DOB banner means no identity admission. */
           hetDiag.ancestorIdentity = hetWalkVerdict;
           if (!observedIdentity) hetStage = null;
         }
       }
       if (!observedIdentity || chartHeader.ambiguous) continue;
-      if (nameKey(observedIdentity.name) !== nameKey(expectedPatient.name) || dateKey(observedIdentity.dob) !== dateKey(expectedPatient.dob)) { sawOtherPatient = true; continue; }
+      if (!mlsExactIdentityPair(expectedPatient, observedIdentity).ok) { sawOtherPatient = true; continue; }
       var wantMrn = digits(expectedPatient.mrn);
-      if (wantMrn && digits(observedIdentity.mrn) !== wantMrn) { sawOtherPatient = true; continue; }
+      if (locked && digits(locked.mrn) && digits(observedIdentity.mrn) !== digits(locked.mrn)) { sawOtherPatient = true; continue; } /* live probe lock remains mandatory */
       if (expectedContext.encounterUrl && String(expectedContext.encounterUrl).split('#')[0] !== String(fr.url).split('#')[0]) continue;
       var noteTarget = null, billTarget = null, orderTarget = null;
       if (action === 'stage_billing') { billTarget = billingField(fr); if (!billTarget.el) continue; }
@@ -4093,7 +4128,7 @@ function mlsAthenaTeachWatcherFn(config) {
       if (!checkedTaught.ok) return { ok: false, blocked: true, reason: checkedTaught.reason };
       if (checkedTaught.value && (checkedTaught.value.action !== action || checkedTaught.value.rowHash !== rowHash || checkedTaught.value.manifestHash !== manifestHash)) return { ok: false, blocked: true, reason: 'taught-destination-binding-mismatch' };
       if (!clean(p.patientId)) return { ok: false, blocked: true, reason: 'local-patient-id-required' };
-      if (!clean(p.name) || !dateKey(p.dob) || !digits(p.mrn)) return { ok: false, blocked: true, reason: 'patient-mismatch' };
+      if (!clean(p.name) || !dateKey(p.dob)) return { ok: false, blocked: true, reason: 'patient-mismatch' };
       if (action === 'place_order' && (!rowHash || rowHash.length > 160)) return { ok: false, blocked: true, reason: 'order-row-mismatch' };
       if (!expectedContextShape(c, mode === 'execute')) return { ok: false, blocked: true, reason: 'context-mismatch' };
       if (action === 'place_order' && !checkedOrder.ok) return { ok: false, blocked: true, reason: checkedOrder.reason };
@@ -4175,7 +4210,7 @@ function mlsAthenaTeachWatcherFn(config) {
         var tokenRecord = {
           used: false, issuedAt: now, expiresAt: tokenExpiresAt,
           senderTabId: sender.tab.id, athenaTabId: tab.id, action: action,
-          previewHash: previewHash, patientHash: simpleHash(patientKey(p)), expectedMrn: digits(p.mrn),
+          previewHash: previewHash, patientHash: simpleHash(patientKey(p)), expectedMrn: digits(probe.context.mrn),
           expectedContextHash: simpleHash(expectedContextKey(expectedAtExecute)), billingHash: simpleHash(canonicalBillingPayload), billingPayload: canonicalBillingPayload, orderHash: simpleHash(canonicalOrderKey), orderPayload: canonicalOrderKey, noteHash: noteHash, notePayload: canonicalNotePayload,
           manifestHash: manifestHash, taughtDestinationHash: simpleHash(canonicalTaughtKey), taughtDestinationPayload: canonicalTaughtKey,
           patientId: clean(p.patientId), clientOrderId: action === 'place_order' ? checkedOrder.order.clientOrderId : '', rowHash: action === 'place_order' ? rowHash : '',
@@ -4202,8 +4237,8 @@ function mlsAthenaTeachWatcherFn(config) {
       if (action === 'place_order' && (rec.clientOrderId !== clientOrderId || rec.clientOrderId !== checkedOrder.order.clientOrderId)) return { ok: false, blocked: true, reason: 'order-client-id-mismatch' };
       if (rec.patientHash !== simpleHash(patientKey(p))) return { ok: false, blocked: true, reason: 'patient-mismatch' };
       if (rec.patientId !== clean(p.patientId)) return { ok: false, blocked: true, reason: 'patient-mismatch' };
-      if (digits(p.mrn) && digits(p.mrn) !== digits(rec.locked && rec.locked.mrn)) return { ok: false, blocked: true, reason: 'patient-mismatch' };
-      if (rec.expectedMrn && rec.expectedMrn !== digits(rec.locked && rec.locked.mrn)) return { ok: false, blocked: true, reason: 'patient-mismatch' };
+      /* Cached MRN is not identity authority; patientHash still binds the original request. */
+      if (rec.expectedMrn && rec.expectedMrn !== digits(rec.locked && rec.locked.mrn)) return {ok:false,blocked:true,reason:'patient-mismatch'}; /* captured live probe lock */
       if (rec.billingPayload !== canonicalBillingPayload || rec.billingHash !== simpleHash(canonicalBillingPayload)) return { ok: false, blocked: true, reason: 'billing-payload-mismatch' };
       if (rec.orderPayload !== canonicalOrderKey || rec.orderHash !== simpleHash(canonicalOrderKey)) return { ok: false, blocked: true, reason: 'order-payload-mismatch' };
       if (rec.notePayload !== canonicalNotePayload || rec.noteHash !== noteHash) return { ok: false, blocked: true, reason: 'note-payload-mismatch' };
@@ -10565,24 +10600,43 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
           const scoreStrict = (txt) => { const s = (txt || '').toLowerCase(); let n = 0; ['problem', 'medication', 'allerg', 'history', 'vital', 'diagnos', 'assessment', 'date of birth', 'dob', 'surg', 'imaging', 'mri', 'immuniz'].forEach((k) => { if (s.indexOf(k) >= 0) n++; }); ['full encounter summary', 'encounter summary', 'performed by', 'reason for visit', 'follow-up', 'assessment & plan'].forEach((k) => { if (s.indexOf(k) >= 0) n += 3; }); if (/inbox|unread messages|message thread/.test(s)) n -= 4; return n; };
           const nrmStrict = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
           const nameTokensStrict = (s) => nrmStrict(s).split(' ').filter((x) => x.length > 1);
+          function mlsExactNameKey(value) {
+            var raw = String(value || '').trim().toLowerCase();
+            try { raw = raw.normalize('NFKD').replace(/[\u0300-\u036f]/g, ''); } catch (e) {}
+            raw = raw.replace(/[.\u2019'`-]/g, '').replace(/\bjunior\b/g, 'jr').replace(/\bsenior\b/g, 'sr');
+            var parts = raw.split(',').map(function (part) { return part.trim(); }).filter(Boolean);
+            var suffix = '';
+            if (parts.length > 1 && /^(jr|sr|ii|iii|iv|v)$/.test(parts[parts.length - 1])) suffix = parts.pop();
+            if (parts.length === 2) raw = parts[1] + ' ' + parts[0];
+            else if (parts.length === 1) raw = parts[0];
+            else if (parts.length > 2) return '';
+            raw = raw.replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+            var words = raw.split(' ').filter(Boolean);
+            while (words.length && /^(mr|mrs|ms|miss|dr|prof)$/.test(words[0])) words.shift();
+            while (words.length && /^(jr|sr|ii|iii|iv|v)$/.test(words[words.length-1])) words.pop();
+            return words.length >= 2 ? words[0]+' '+words[words.length-1] : '';
+          }
+          function mlsExactDobKey(value) {
+            var raw = String(value || '').trim(), m, year, month, day;
+            if ((m = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/.exec(raw))) { year=+m[1]; month=+m[2]; day=+m[3]; }
+            else if ((m = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/.exec(raw))) { year=+m[3]; month=+m[1]; day=+m[2]; }
+            else return '';
+            var date = new Date(Date.UTC(year, month-1, day));
+            return year >= 1850 && date.getUTCFullYear() === year && date.getUTCMonth() === month-1 && date.getUTCDate() === day ? year+'-'+month+'-'+day : '';
+          }
+          function mlsExactIdentityPair(expected, observed) {
+            expected = expected || {}; observed = observed || {};
+            var name = mlsExactNameKey(expected.name), dob = mlsExactDobKey(expected.dob);
+            if (!name || !dob) return {ok:false,reason:'identity-hint-incomplete'};
+            if (observed.ambiguous === true || Number(observed.exactPairCandidateCount || 0) > 1) return {ok:false,reason:'identity-ambiguous'};
+            if (!mlsExactNameKey(observed.name)) return {ok:false,reason:'same-frame-name-missing'};
+            if (name !== mlsExactNameKey(observed.name)) return {ok:false,reason:'same-frame-name-mismatch'};
+            if (!mlsExactDobKey(observed.dob)) return {ok:false,reason:'same-frame-dob-missing'};
+            if (dob !== mlsExactDobKey(observed.dob)) return {ok:false,reason:'same-frame-dob-mismatch'};
+            return {ok:true,reason:'exact-name+dob',mrnConflict:!!(expected.mrn && observed.mrn && String(expected.mrn) !== String(observed.mrn))};
+          }
           const strictNameMatch = (observed, expected) => {
-            /* Live 2026-07-16: athena's banner abbreviates long names - observed
-               "Cubbage-Reilly A" for stored "Ann Cubbage-Reilly" (full surname +
-               first-name INITIAL). Both the first and last stored tokens may
-               match an observed token by exact text, a >=4-char prefix in either
-               direction, or a single-letter initial. Single-letter observed
-               tokens are RETAINED for this check. Every DOB/MRN gate plus the
-               strong-mismatch veto are unchanged, so a genuinely different
-               patient (same surname, different DOB) still fails closed. */
-            const haveAll = nrmStrict(observed).split(' ').filter(Boolean);
-            const need = nameTokensStrict(expected);
-            if (haveAll.length < 2 || need.length < 2) return false;
-            const tokMatch = (h, n) => h === n ||
-              (h.length >= 4 && n.length >= 4 && (h.indexOf(n) === 0 || n.indexOf(h) === 0)) ||
-              (h.length === 1 && h === n.charAt(0));
-            const firstOk = haveAll.some((h) => tokMatch(h, need[0]));
-            const lastOk = haveAll.some((h) => tokMatch(h, need[need.length - 1]));
-            return firstOk && lastOk;
+            return !!mlsExactNameKey(expected) && mlsExactNameKey(observed) === mlsExactNameKey(expected);
           };
           const dobPartsStrict = (s) => {
             const m = String(s || '').match(/\b(\d{1,4})[\/.\-](\d{1,2})[\/.\-](\d{1,4})\b/);
@@ -10601,12 +10655,12 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
           };
           const textHasMrnStrict = (txt, expectedMrn) => { const k = mrnKeyStrict(expectedMrn); return !!(k && new RegExp('(?:^|\\D)' + k + '(?:\\D|$)').test(String(txt || ''))); };
           const identityMatchesTarget = (who) => {
-            if (!who || !strictNameMatch(who.name, want)) return false;
-            const observedDob = String(who.dob || '').trim(), observedMrn = mrnKeyStrict(who.mrn);
-            if (wantDob && observedDob && !sameDobStrict(observedDob, wantDob)) return false;
-            if (wantMrn && observedMrn && observedMrn !== mrnKeyStrict(wantMrn)) return false;
-            return !!((wantDob && observedDob && sameDobStrict(observedDob, wantDob)) || (wantMrn && observedMrn && observedMrn === mrnKeyStrict(wantMrn)));
+            return mlsExactIdentityPair({name:want,dob:wantDob,mrn:wantMrn},who).ok;
           };
+          const textHasPairStrict = (txt) => String(txt || '').split(/\r?\n/).some((line) => {
+            const match = /^\s*(?:patient\s*[:#-]?\s*)?(.{2,100}?)\s+(?:DOB\s*[:#-]?\s*)?(\d{1,4}[/.\-]\d{1,2}[/.\-]\d{1,4})(?:\s|$)/i.exec(line);
+            return !!(match && mlsExactIdentityPair({name:want,dob:wantDob},{name:match[1],dob:match[2]}).ok);
+          });
           const frameIdentity = {};
           (identityFrameResults || []).forEach((r) => { if (r && typeof r.frameId === 'number' && r.result) frameIdentity[r.frameId] = r.result; });
           /* b755 DOOR 3: a frame whose OWN URL carries the requested appointment
@@ -10631,7 +10685,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
             if (!want || (!wantDob && !wantMrn)) return false;
             if (identityMatchesTarget(frameIdentity[f.frameId])) return true;
             if (frameUrlBindsAppointment(f.u)) return true;
-            if (!strictNameMatch(f.t, want)) return false;
+            if (!textHasPairStrict(f.t)) return false;
             return !!((wantDob && textHasDobStrict(f.t, wantDob)) || (wantMrn && textHasMrnStrict(f.t, wantMrn)));
           };
           const rankedStrict = readableFrames.map((f) => ({ f: f, s: scoreStrict(f.t) })).filter((r) => r.s > 0).sort((a, b) => b.s - a.s);
@@ -10660,7 +10714,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
           const pickStrict = (chosenStrict[0] || (rankedStrict.length ? rankedStrict[0].f : null)) || { u: tab.url, t: '' };
           const versionStrict = (chrome.runtime.getManifest && chrome.runtime.getManifest().version) || '';
           const globalNameMatches = !!(want && ident && ident.name && strictNameMatch(ident.name, want));
-          const globalStrongMismatch = !!(globalNameMatches && ((wantDob && ident.dob && !sameDobStrict(ident.dob, wantDob)) || (wantMrn && ident.mrn && mrnKeyStrict(ident.mrn) !== mrnKeyStrict(wantMrn))));
+          const globalStrongMismatch = !!(globalNameMatches && wantDob && (!ident.dob || !sameDobStrict(ident.dob, wantDob)));
           if (want && ident && ident.name && (!globalNameMatches || globalStrongMismatch)) {
             await restoreFocus();
             return chartRespond({ ok: false, reason: 'wrong-chart', attempted: false, captured: false, chartName: ident.name, chartDob: ident.dob || '', expectedMrnDigits: mrnKeyStrict(wantMrn).length, observedMrnDigits: mrnKeyStrict(ident.mrn).length, opened: opened, version: versionStrict, error: 'The open athenaOne chart identity does not match ' + want + '. Nothing was captured for ' + want + '.' });
@@ -10716,7 +10770,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
             if (!f || !f.t) return false;
             if (briefingApptRe && briefingApptRe.test(String(f.u || ''))) return true;
             if (!want || (!wantDob && !wantMrn)) return false;
-            if (!strictNameMatch(f.t, want)) return false;
+            if (!textHasPairStrict(f.t)) return false;
             return !!((wantDob && textHasDobStrict(f.t, wantDob)) || (wantMrn && textHasMrnStrict(f.t, wantMrn)));
           });
           const BRIEFING_CAP = 90000;
@@ -13285,92 +13339,43 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
      on exact DOB + exact surname, inside an already-verified chart walk. */
   var __mlsWalkAliasRec = null;
   function visitIdentityGate(frozen, live) {
-    frozen = frozen || {}; live = live || {};
-    function words(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(function (w) { return w.length > 1; }); }
-    function dob(s) {
-      s = String(s || ''); var iso = s.match(/(\d{4})-(\d{1,2})-(\d{1,2})/), m;
-      if (iso) return iso[1] + ('0' + iso[2]).slice(-2) + ('0' + iso[3]).slice(-2);
-      m = s.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/); if (!m) return '';
-      var y = String(m[3]); if (y.length === 2) y = (Number(y) > 40 ? '19' : '20') + y;
-      return y + ('0' + m[1]).slice(-2) + ('0' + m[2]).slice(-2);
-    }
-    function id(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
-    var wantName = words(frozen.name), haveName = words(live.name);
-    /* alias-3071: a verified chart's own (legal) name, adopted by the walk
-       after the MRN/DOB-anchored pre-gate passed. Never set from an
-       unverified source. */
-    var wantAlias = words(frozen.nameAlias);
-    var wantDob = dob(frozen.dob), haveDob = dob(live.dob);
-    var wantMrn = id(frozen.mrn), haveMrn = id(live.mrn);
-    var __waRec = __mlsWalkAliasRec;
-    var __waOk = !!(__waRec && __waRec.dob === wantDob && __waRec.mrn === wantMrn); /* wa-3072 */
-    if (!wantAlias.length && __waOk && __waRec.name) wantAlias = words(__waRec.name);
-    if (wantName.length < 2 || (!wantDob && !wantMrn)) return { ok: false, reason: 'identity-hint-incomplete' };
-    if (haveName.length < 2) return { ok: false, reason: 'same-frame-name-missing' };
-    var have = {}; haveName.forEach(function (w) { have[w] = 1; });
-    /* Abbreviated-banner names (see strictNameMatch): a want-token may match a
-       live token by exact text, >=4-char prefix in either direction, or a
-       single-letter live initial (athena shows "Cubbage-Reilly A"). Live
-       single-letter tokens are retained for this check only. The DOB/MRN
-       equality gates below are unchanged. */
-    var haveAllTok = String(live.name || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
-    function wantTokenOk(wantTok) {
-      if (have[wantTok]) return true;
-      return haveAllTok.some(function (h) {
-        if (h === wantTok) return true;
-        if (h.length >= 4 && wantTok.length >= 4 && (h.indexOf(wantTok) === 0 || wantTok.indexOf(h) === 0)) return true;
-        return h.length === 1 && h === wantTok.charAt(0);
-      });
-    }
-    var hits = 0; wantName.forEach(function (w) { if (wantTokenOk(w)) hits++; });
-    var nameOk = hits >= 2 && wantTokenOk(wantName[0]) && wantTokenOk(wantName[wantName.length - 1]);
-    if (!nameOk && wantAlias.length >= 2) {
-      var aHits = 0; wantAlias.forEach(function (w) { if (wantTokenOk(w)) aHits++; });
-      if (aHits >= 2 && wantTokenOk(wantAlias[0]) && wantTokenOk(wantAlias[wantAlias.length - 1])) nameOk = true; /* alias-3071 */
-    }
-    if (!nameOk && __waOk && wantDob && haveDob && wantDob === haveDob && wantName.length >= 2 && haveName.length >= 2) {
-      /* wa-3072 acceptance: exact DOB + exact surname token inside a walk that
-         already verified this chart. Covers nickname-vs-legal given names
-         (Tom/Thoma, Bill/William) that no prefix rule can bridge. The single
-         theoretical residue - same-surname same-DOB twins swapped in MID-walk
-         by outside navigation - is far narrower than the prior failure (every
-         nickname record refused entirely), and the doctor-moved latch plus
-         per-visit encounter bindings still stand. The frame's full name is
-         adopted as the walk alias so remaining frames pass by full match. */
-      if (have[wantName[wantName.length - 1]] === 1) {
-        nameOk = true;
-        try { if (!__waRec.name) __waRec.name = String(live.name || ''); } catch (eWa72) {}
-      }
-    }
-    /* 3.0.2 (owner directive): the stable athena patient id is the PRIMARY
-       identity when both sides carry it. Live 2026-07-21: v26.3 FL encounter
-       frames can render a stale or reformatted patient label while the id is
-       correct, and every batch body was refused on the name alone. An id
-       MATCH accepts (name recorded as secondary evidence, a contradictory
-       DOB still refuses); an id MISMATCH refuses exactly as before. No-id
-       charts keep the full name+DOB gate unchanged. */
-    if (wantMrn && haveMrn) {
-      if (wantMrn !== haveMrn) return { ok: false, reason: 'same-frame-mrn-mismatch' };
-      if (wantDob && haveDob && wantDob !== haveDob) return { ok: false, reason: 'same-frame-dob-mismatch' };
-      try {
-        if (!__waOk) __mlsWalkAliasRec = __waRec = { dob: wantDob, mrn: wantMrn, name: '' }; /* wa-3072 arm */
-        if (!nameOk && live.name && !__waRec.name) __waRec.name = String(live.name); /* MRN-verified legal-name sighting */
-      } catch (eWaA) {}
-      return { ok: true, reason: 'mrn' + (wantDob && haveDob ? '+dob' : '') + (nameOk ? '+name' : '+stale-name') };
-    }
-    if (!nameOk) return { ok: false, reason: 'same-frame-name-mismatch' };
-    /* DOB is preferred when frozen. MRN is the exact fallback for records that
-       intentionally omit DOB. Never accept a name-only chart. */
-    if (wantDob) {
-      if (!haveDob) return { ok: false, reason: 'same-frame-dob-missing' };
-      if (wantDob !== haveDob) return { ok: false, reason: 'same-frame-dob-mismatch' };
-    } else {
-      if (!haveMrn) return { ok: false, reason: 'same-frame-mrn-missing' };
-      if (wantMrn !== haveMrn) return { ok: false, reason: 'same-frame-mrn-mismatch' };
-    }
-    if (wantMrn && haveMrn && wantMrn !== haveMrn) return { ok: false, reason: 'same-frame-mrn-mismatch' };
-    try { if (!__waOk) __mlsWalkAliasRec = { dob: wantDob, mrn: wantMrn, name: '' }; } catch (eWaB) {} /* wa-3072 arm */
-    return { ok: true, reason: 'name+' + (wantDob ? 'dob' : 'mrn') };
+function mlsExactNameKey(value) {
+  var raw = String(value || '').trim().toLowerCase();
+  try { raw = raw.normalize('NFKD').replace(/[\u0300-\u036f]/g, ''); } catch (e) {}
+  raw = raw.replace(/[.\u2019'`-]/g, '').replace(/\bjunior\b/g, 'jr').replace(/\bsenior\b/g, 'sr');
+  var parts = raw.split(',').map(function (part) { return part.trim(); }).filter(Boolean);
+  var suffix = '';
+  if (parts.length > 1 && /^(jr|sr|ii|iii|iv|v)$/.test(parts[parts.length - 1])) suffix = parts.pop();
+  if (parts.length === 2) raw = parts[1] + ' ' + parts[0];
+  else if (parts.length === 1) raw = parts[0];
+  else if (parts.length > 2) return '';
+  raw = raw.replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+  var words = raw.split(' ').filter(Boolean);
+  while (words.length && /^(mr|mrs|ms|miss|dr|prof)$/.test(words[0])) words.shift();
+  while (words.length && /^(jr|sr|ii|iii|iv|v)$/.test(words[words.length-1])) words.pop();
+  return words.length >= 2 ? words[0]+' '+words[words.length-1] : '';
+}
+function mlsExactDobKey(value) {
+  var raw = String(value || '').trim(), m, year, month, day;
+  if ((m = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/.exec(raw))) { year=+m[1]; month=+m[2]; day=+m[3]; }
+  else if ((m = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/.exec(raw))) { year=+m[3]; month=+m[1]; day=+m[2]; }
+  else return '';
+  var date = new Date(Date.UTC(year, month-1, day));
+  return year >= 1850 && date.getUTCFullYear() === year && date.getUTCMonth() === month-1 && date.getUTCDate() === day ? year+'-'+month+'-'+day : '';
+}
+function mlsExactIdentityPair(expected, observed) {
+  expected = expected || {}; observed = observed || {};
+  var name = mlsExactNameKey(expected.name), dob = mlsExactDobKey(expected.dob);
+  if (!name || !dob) return {ok:false,reason:'identity-hint-incomplete'};
+  if (observed.ambiguous === true || Number(observed.exactPairCandidateCount || 0) > 1) return {ok:false,reason:'identity-ambiguous'};
+  if (!mlsExactNameKey(observed.name)) return {ok:false,reason:'same-frame-name-missing'};
+  if (name !== mlsExactNameKey(observed.name)) return {ok:false,reason:'same-frame-name-mismatch'};
+  if (!mlsExactDobKey(observed.dob)) return {ok:false,reason:'same-frame-dob-missing'};
+  if (dob !== mlsExactDobKey(observed.dob)) return {ok:false,reason:'same-frame-dob-mismatch'};
+  return {ok:true,reason:'exact-name+dob',mrnConflict:!!(expected.mrn && observed.mrn && String(expected.mrn) !== String(observed.mrn))};
+}
+
+    return mlsExactIdentityPair(frozen, live);
   }
   function realVisit(v, minLen) {
     if (!v) return false;
@@ -15349,19 +15354,45 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   function mlsAlreadyOpenIdentityDecision(lightIdentity, shadowIdentity, expectedName, expectedDob, expectedMrn) {
+function mlsExactNameKey(value) {
+  var raw = String(value || '').trim().toLowerCase();
+  try { raw = raw.normalize('NFKD').replace(/[\u0300-\u036f]/g, ''); } catch (e) {}
+  raw = raw.replace(/[.\u2019'`-]/g, '').replace(/\bjunior\b/g, 'jr').replace(/\bsenior\b/g, 'sr');
+  var parts = raw.split(',').map(function (part) { return part.trim(); }).filter(Boolean);
+  var suffix = '';
+  if (parts.length > 1 && /^(jr|sr|ii|iii|iv|v)$/.test(parts[parts.length - 1])) suffix = parts.pop();
+  if (parts.length === 2) raw = parts[1] + ' ' + parts[0];
+  else if (parts.length === 1) raw = parts[0];
+  else if (parts.length > 2) return '';
+  raw = raw.replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+  var words = raw.split(' ').filter(Boolean);
+  while (words.length && /^(mr|mrs|ms|miss|dr|prof)$/.test(words[0])) words.shift();
+  while (words.length && /^(jr|sr|ii|iii|iv|v)$/.test(words[words.length-1])) words.pop();
+  return words.length >= 2 ? words[0]+' '+words[words.length-1] : '';
+}
+function mlsExactDobKey(value) {
+  var raw = String(value || '').trim(), m, year, month, day;
+  if ((m = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/.exec(raw))) { year=+m[1]; month=+m[2]; day=+m[3]; }
+  else if ((m = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/.exec(raw))) { year=+m[3]; month=+m[1]; day=+m[2]; }
+  else return '';
+  var date = new Date(Date.UTC(year, month-1, day));
+  return year >= 1850 && date.getUTCFullYear() === year && date.getUTCMonth() === month-1 && date.getUTCDate() === day ? year+'-'+month+'-'+day : '';
+}
+function mlsExactIdentityPair(expected, observed) {
+  expected = expected || {}; observed = observed || {};
+  var name = mlsExactNameKey(expected.name), dob = mlsExactDobKey(expected.dob);
+  if (!name || !dob) return {ok:false,reason:'identity-hint-incomplete'};
+  if (observed.ambiguous === true || Number(observed.exactPairCandidateCount || 0) > 1) return {ok:false,reason:'identity-ambiguous'};
+  if (!mlsExactNameKey(observed.name)) return {ok:false,reason:'same-frame-name-missing'};
+  if (name !== mlsExactNameKey(observed.name)) return {ok:false,reason:'same-frame-name-mismatch'};
+  if (!mlsExactDobKey(observed.dob)) return {ok:false,reason:'same-frame-dob-missing'};
+  if (dob !== mlsExactDobKey(observed.dob)) return {ok:false,reason:'same-frame-dob-mismatch'};
+  return {ok:true,reason:'exact-name+dob',mrnConflict:!!(expected.mrn && observed.mrn && String(expected.mrn) !== String(observed.mrn))};
+}
+
     var out = { matched: false, reason: 'identity-not-found', identity: null, credibleCount: 0, exactCount: 0, conflict: false, lightCredible: false, shadowCredibleCount: 0 };
     try {
-      function nameTokens(value) {
-        var suffix = /^(?:jr|sr|ii|iii|iv|v|esq|junior|senior)$/;
-        return String(value || '').replace(/\([^)]*\)/g, ' ').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).filter(function (token) { return token && token.length > 1 && !suffix.test(token); });
-      }
-      function nameMatches(observed, expected) {
-        var have = nameTokens(observed), need = nameTokens(expected), counts = {};
-        if (have.length < 2 || need.length < 2) return false;
-        have.forEach(function (token) { counts[token] = (counts[token] || 0) + 1; });
-        for (var ni = 0; ni < need.length; ni++) { if (!counts[need[ni]]) return false; counts[need[ni]]--; }
-        return true;
-      }
+      function nameMatches(observed, expected) { return !!mlsExactNameKey(expected) && mlsExactNameKey(observed) === mlsExactNameKey(expected); }
       function dateKey(value) {
         var match = /^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/.exec(String(value || '').trim());
         var year, month, day;
@@ -15371,10 +15402,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         return year + '-' + month + '-' + day;
       }
       function credible(value) {
-        return !!(value && /^(?:banner|shadow-labels|shadow-banner)$/.test(String(value.via || '')) && String(value.name || '').trim() && dateKey(value.dob) && /^\d{3,}$/.test(String(value.mrn || '').replace(/\D/g, '')));
+        return !!(value && /^(?:banner|shadow-labels|shadow-banner)$/.test(String(value.via || '')) && String(value.name || '').trim() && dateKey(value.dob) /* exact-pair-30123: MRN optional on credible banner */);
       }
       function exact(value) {
-        return credible(value) && nameMatches(value.name, expectedName) && dateKey(value.dob) === dateKey(expectedDob) && String(value.mrn || '').replace(/\D/g, '') === String(expectedMrn || '').replace(/\D/g, '');
+        return credible(value) && nameMatches(value.name, expectedName) && dateKey(value.dob) === dateKey(expectedDob) /* exact-pair-30123: cached MRN is not authority */;
       }
       var candidates = [];
       if (credible(lightIdentity)) { out.lightCredible = true; candidates.push(lightIdentity); }
@@ -15383,7 +15414,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       out.credibleCount = candidates.length;
       var exacts = candidates.filter(exact);
       out.exactCount = exacts.length;
-      out.conflict = candidates.some(function (candidate) { return !exact(candidate); });
+      var pairIds = new Set(exacts.map(function(c){return String(c.mrn || '');}).filter(Boolean));
+      out.conflict = pairIds.size > 1 || candidates.some(function (candidate) { return !exact(candidate); });
       if (out.conflict) { out.reason = 'identity-conflict'; return out; }
       if (!exacts.length) { out.reason = candidates.length ? 'identity-mismatch' : 'identity-not-found'; return out; }
       out.matched = true;
@@ -15465,6 +15497,42 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
      driver survives the content frame's two navigations. The result row shows
      name + DOB, so the match is verified BEFORE the chart is opened. */
   async function mlsFindPatientOpenDriverFn(name, dob, requestGuard, mrn) {
+function mlsExactNameKey(value) {
+  var raw = String(value || '').trim().toLowerCase();
+  try { raw = raw.normalize('NFKD').replace(/[\u0300-\u036f]/g, ''); } catch (e) {}
+  raw = raw.replace(/[.\u2019'`-]/g, '').replace(/\bjunior\b/g, 'jr').replace(/\bsenior\b/g, 'sr');
+  var parts = raw.split(',').map(function (part) { return part.trim(); }).filter(Boolean);
+  var suffix = '';
+  if (parts.length > 1 && /^(jr|sr|ii|iii|iv|v)$/.test(parts[parts.length - 1])) suffix = parts.pop();
+  if (parts.length === 2) raw = parts[1] + ' ' + parts[0];
+  else if (parts.length === 1) raw = parts[0];
+  else if (parts.length > 2) return '';
+  raw = raw.replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+  var words = raw.split(' ').filter(Boolean);
+  while (words.length && /^(mr|mrs|ms|miss|dr|prof)$/.test(words[0])) words.shift();
+  while (words.length && /^(jr|sr|ii|iii|iv|v)$/.test(words[words.length-1])) words.pop();
+  return words.length >= 2 ? words[0]+' '+words[words.length-1] : '';
+}
+function mlsExactDobKey(value) {
+  var raw = String(value || '').trim(), m, year, month, day;
+  if ((m = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/.exec(raw))) { year=+m[1]; month=+m[2]; day=+m[3]; }
+  else if ((m = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/.exec(raw))) { year=+m[3]; month=+m[1]; day=+m[2]; }
+  else return '';
+  var date = new Date(Date.UTC(year, month-1, day));
+  return year >= 1850 && date.getUTCFullYear() === year && date.getUTCMonth() === month-1 && date.getUTCDate() === day ? year+'-'+month+'-'+day : '';
+}
+function mlsExactIdentityPair(expected, observed) {
+  expected = expected || {}; observed = observed || {};
+  var name = mlsExactNameKey(expected.name), dob = mlsExactDobKey(expected.dob);
+  if (!name || !dob) return {ok:false,reason:'identity-hint-incomplete'};
+  if (observed.ambiguous === true || Number(observed.exactPairCandidateCount || 0) > 1) return {ok:false,reason:'identity-ambiguous'};
+  if (!mlsExactNameKey(observed.name)) return {ok:false,reason:'same-frame-name-missing'};
+  if (name !== mlsExactNameKey(observed.name)) return {ok:false,reason:'same-frame-name-mismatch'};
+  if (!mlsExactDobKey(observed.dob)) return {ok:false,reason:'same-frame-dob-missing'};
+  if (dob !== mlsExactDobKey(observed.dob)) return {ok:false,reason:'same-frame-dob-mismatch'};
+  return {ok:true,reason:'exact-name+dob',mrnConflict:!!(expected.mrn && observed.mrn && String(expected.mrn) !== String(observed.mrn))};
+}
+
     try {
       /* The action guard and the MRN are deliberately separate arguments.
          SearchOpen must preserve BOTH: the guard prevents a late injection from
@@ -15510,6 +15578,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         return false;
       }
       var wantDob = nrmDob(dob);
+      if (!mlsExactIdentityPair({name:name,dob:dob},{name:name,dob:dob}).ok) return {opened:false,reason:'identity-hint-incomplete'};
       var wantMrn = nrmMrn(mrn);
       /* locate the main content frame: deepest big same-origin frame, skipping
          nav/status/messaging frames (prefers the proven /f1/f2/f2 slot). */
@@ -15641,71 +15710,23 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
       if (!chartAs.length) return { opened: false, reason: 'rows-not-rendered' };
       d4 = best.w.document;
-      var lnorm = lname.toLowerCase(), fnorm = fq.toLowerCase();
-      /* v1.81: TWO-TIER first-name matching. A prefix like "pat" matches
-         Patricia AND Patrick (live: "6 results found" -> every such patient
-         failed 'ambiguous'). Tier 1 = the row's first-name cell EQUALS the
-         token (or its first word does); tier 2 = prefix. A single tier-1 hit
-         wins even when tier 2 is ambiguous. DOB (when the app sent one, or
-         shown on the row) still disambiguates first. */
-      var exact = [], prefix = [], vetoedExact = [], vetoedAny = 0;
-      for (var c = 0; c < chartAs.length; c++) {
-        var tr = chartAs[c].closest ? chartAs[c].closest('tr') : null;
-        if (!tr) continue;
-        var cells = Array.prototype.slice.call(tr.querySelectorAll('td,th')).map(function (x) { return (x.innerText || '').trim(); });
-        var rowT = cells.join(' | ').toLowerCase();
-        if (rowT.indexOf(lnorm) < 0) continue;
-        var rowDob = '';
-        for (var cd = 0; cd < cells.length; cd++) { var dm2 = /([01]?\d)\/([0-3]?\d)\/(\d{4})/.exec(cells[cd]); if (dm2) { rowDob = Number(dm2[1]) + '/' + Number(dm2[2]) + '/' + dm2[3]; break; } }
-        var rowMrnMatched = false;
-        if (wantMrn) {
-          for (var cm = 0; cm < cells.length; cm++) {
-            if (mrnCellMatches(cells[cm], wantMrn)) { rowMrnMatched = true; break; }
-          }
-        }
-        var m = { a: chartAs[c], dob: rowDob, mrnMatched: rowMrnMatched };
-        var isExact = false, isPrefix = false;
-        if (!fnorm) { isPrefix = true; }
-        else {
-          for (var cx = 0; cx < cells.length; cx++) {
-            var v = cells[cx].trim().toLowerCase();
-            if (!v || v.length > 40) continue;
-            var w0 = v.split(/\s+/)[0];
-            if (v === fnorm || w0 === fnorm) { isExact = true; break; }
-            /* v1.87: registered nicknames - athena renders "Robert (Bob)"; the
-               roster says "Bob". A word-boundary hit inside the first-name cell
-               counts as exact (the row still had to match the LAST name, and
-               DOB / single-candidate gating still applies). */
-            try { if (new RegExp('\\b' + fnorm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b').test(v)) { isExact = true; break; } } catch (e7) {}
-            if (v.indexOf(fnorm) === 0) isPrefix = true;
-          }
-        }
-        if (wantDob && rowDob && rowDob !== wantDob) {
-          /* v1.94: do NOT silently drop DOB-vetoed name matches - report them.
-             The store/roster DOB can be junk (live: LAURA ZAKORCHEMNY stored
-             12/31/1940 vs athena 05/14/1990 -> every open refused forever). */
-          if (isExact) vetoedExact.push(m);
-          if (isExact || isPrefix) vetoedAny++;
-          continue;
-        }
-        if (isExact) exact.push(m); else if (isPrefix) prefix.push(m);
+      function exactResultRow(row) {
+        var cells = Array.prototype.slice.call(row.querySelectorAll('td,th')).map(function(x){return String(x.innerText||'').trim();});
+        var table = row.closest && row.closest('table'), headers = table ? Array.prototype.slice.call(table.querySelectorAll('thead th,thead td')).map(function(x){return String(x.innerText||'').trim().toLowerCase();}) : [];
+        var fi=headers.findIndex(function(x){return /^(first|given)( name)?$/.test(x);}), li=headers.findIndex(function(x){return /^(last|family|sur)(name| name)?$/.test(x);});
+        var rowName = fi>=0 && li>=0 ? (cells[fi]||'')+' '+(cells[li]||'') : '';
+        if(!rowName) { var names=cells.filter(function(x){return !/[0-9]/.test(x)&&mlsExactNameKey(x)===mlsExactNameKey(name);}); if(names.length===1) rowName=names[0]; }
+        var dates=[];cells.forEach(function(x){var k=mlsExactDobKey(x);if(k&&dates.indexOf(k)<0)dates.push(k);});
+        return {ok:dates.length===1&&mlsExactIdentityPair({name:name,dob:dob},{name:rowName,dob:dates[0]}).ok,dob:dates.length===1?dates[0]:''};
       }
-      var pool = exact.length ? exact : prefix;
-      if (!pool.length) {
-        if (vetoedExact.length === 1) return { opened: false, reason: 'dob-mismatch', count: 1, tier: 'exact', rowDob: vetoedExact[0].dob || '' };
-        if (vetoedAny) return { opened: false, reason: 'dob-mismatch', count: vetoedAny, tier: vetoedExact.length ? 'exact' : 'prefix', rowDob: '' };
-        return { opened: false, reason: 'no-name-match' };
+      var exact = [], prefix = [], pool = [], mrnNarrowed = false;
+      for (var c=0;c<chartAs.length;c++) {
+        var tr=chartAs[c].closest ? chartAs[c].closest('tr') : null;
+        if(!tr) continue;
+        var evidence=exactResultRow(tr);
+        if(evidence.ok) pool.push({a:chartAs[c],dob:evidence.dob,mrnMatched:false});
       }
-      /* MRN is an additional exact discriminator only after the existing name
-         tier and DOB veto have passed. A positive exact-token match narrows an
-         ambiguous pool; an Athena layout that does not expose MRN falls back to
-         the unchanged name+DOB behavior and the chart reader re-verifies MRN. */
-      var mrnNarrowed = false;
-      if (wantMrn) {
-        var mrnPool = pool.filter(function (candidate) { return candidate.mrnMatched === true; });
-        if (mrnPool.length) { mrnNarrowed = mrnPool.length < pool.length; pool = mrnPool; }
-      }
-      if (pool.length > 1) return { opened: false, reason: 'ambiguous', count: pool.length, tier: exact.length ? 'exact' : 'prefix' };
+      if(pool.length!==1) return {opened:false,attempted:false,reason:pool.length?'ambiguous':'no-name-match',count:pool.length,tier:'exact-name-dob'};
       /* rowreverify-1.0.0 (3.0.117, measured live 2026-09-11): the result list
          RE-ORDERS between the read that chose a row and the click that opens it,
          so the chart that opened was a different person's and the app-side merge
@@ -15717,23 +15738,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (!openAllowed()) return deadlineOut();
       await sleep(320);
       if (!openAllowed()) return deadlineOut();
-      var _rvWantMrn = (wantMrn && pool[0].mrnMatched === true) ? wantMrn : '';
       var _rvRows = [];
       try {
-        var _rvD = best.w.document;
-        var _rvAs = Array.prototype.slice.call(_rvD.querySelectorAll('a')).filter(function (a) { return /^chart$/i.test((a.innerText || '').trim()); });
-        for (var _rvI = 0; _rvI < _rvAs.length; _rvI++) {
-          var _rvTr = _rvAs[_rvI].closest ? _rvAs[_rvI].closest('tr') : null;
-          if (!_rvTr) continue;
-          var _rvCells = Array.prototype.slice.call(_rvTr.querySelectorAll('td,th')).map(function (x) { return (x.innerText || '').trim(); });
-          var _rvT = _rvCells.join(' | ').toLowerCase();
-          if (_rvT.indexOf(lnorm) < 0) continue;
-          if (fnorm && _rvT.indexOf(fnorm) < 0) continue;
-          if (_rvWantMrn) { var _rvMrnHit = false; for (var _rvC = 0; _rvC < _rvCells.length; _rvC++) { if (mrnCellMatches(_rvCells[_rvC], _rvWantMrn)) { _rvMrnHit = true; break; } } if (!_rvMrnHit) continue; }
-          if (wantDob) { var _rvDob = ''; for (var _rvC2 = 0; _rvC2 < _rvCells.length; _rvC2++) { var _rvDm = /([01]?\d)\/([0-3]?\d)\/(\d{4})/.exec(_rvCells[_rvC2]); if (_rvDm) { _rvDob = Number(_rvDm[1]) + '/' + Number(_rvDm[2]) + '/' + _rvDm[3]; break; } } if (_rvDob && _rvDob !== wantDob) continue; }
-          _rvRows.push(_rvAs[_rvI]);
-        }
-      } catch (_rvE) { _rvRows = []; }
+        var _rvAs=Array.prototype.slice.call(best.w.document.querySelectorAll('a')).filter(function(a){return /^chart$/i.test((a.innerText||'').trim());});
+        for(var _rvI=0;_rvI<_rvAs.length;_rvI++) {var _rvTr=_rvAs[_rvI].closest ? _rvAs[_rvI].closest('tr') : null;if(_rvTr&&exactResultRow(_rvTr).ok)_rvRows.push(_rvAs[_rvI]);}
+      } catch(e){_rvRows=[];}
       if (_rvRows.length !== 1) return { opened: false, attempted: false, reason: 'search-target-unverified', rowsOnReread: _rvRows.length, error: "athenaOne's search did not show this patient; nothing was opened" };
       if (!openAllowed()) return deadlineOut();
       _rvRows[0].click();
@@ -17299,6 +17308,41 @@ function mlsDismissNavMenuFn(requestGuard) {
  *  - If the rail item cannot be found: ok:false reason 'no-rail'. There is NO
  *    silent fallback to reading whatever surface is on screen (wf_6). */
 async function mlsReadVisitsPaneDriverFn(name, dob, athenaId) {
+function mlsExactNameKey(value) {
+  var raw = String(value || '').trim().toLowerCase();
+  try { raw = raw.normalize('NFKD').replace(/[\u0300-\u036f]/g, ''); } catch (e) {}
+  raw = raw.replace(/[.\u2019'`-]/g, '').replace(/\bjunior\b/g, 'jr').replace(/\bsenior\b/g, 'sr');
+  var parts = raw.split(',').map(function (part) { return part.trim(); }).filter(Boolean);
+  var suffix = '';
+  if (parts.length > 1 && /^(jr|sr|ii|iii|iv|v)$/.test(parts[parts.length - 1])) suffix = parts.pop();
+  if (parts.length === 2) raw = parts[1] + ' ' + parts[0];
+  else if (parts.length === 1) raw = parts[0];
+  else if (parts.length > 2) return '';
+  raw = raw.replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+  var words = raw.split(' ').filter(Boolean);
+  while (words.length && /^(mr|mrs|ms|miss|dr|prof)$/.test(words[0])) words.shift();
+  while (words.length && /^(jr|sr|ii|iii|iv|v)$/.test(words[words.length-1])) words.pop();
+  return words.length >= 2 ? words[0]+' '+words[words.length-1] : '';
+}
+function mlsExactDobKey(value) {
+  var raw = String(value || '').trim(), m, year, month, day;
+  if ((m = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/.exec(raw))) { year=+m[1]; month=+m[2]; day=+m[3]; }
+  else if ((m = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/.exec(raw))) { year=+m[3]; month=+m[1]; day=+m[2]; }
+  else return '';
+  var date = new Date(Date.UTC(year, month-1, day));
+  return year >= 1850 && date.getUTCFullYear() === year && date.getUTCMonth() === month-1 && date.getUTCDate() === day ? year+'-'+month+'-'+day : '';
+}
+function mlsExactIdentityPair(expected, observed) {
+  expected = expected || {}; observed = observed || {};
+  var name = mlsExactNameKey(expected.name), dob = mlsExactDobKey(expected.dob);
+  if (!name || !dob) return {ok:false,reason:'identity-hint-incomplete'};
+  if (observed.ambiguous === true || Number(observed.exactPairCandidateCount || 0) > 1) return {ok:false,reason:'identity-ambiguous'};
+  if (!mlsExactNameKey(observed.name)) return {ok:false,reason:'same-frame-name-missing'};
+  if (name !== mlsExactNameKey(observed.name)) return {ok:false,reason:'same-frame-name-mismatch'};
+  if (!mlsExactDobKey(observed.dob)) return {ok:false,reason:'same-frame-dob-missing'};
+  if (dob !== mlsExactDobKey(observed.dob)) return {ok:false,reason:'same-frame-dob-mismatch'};
+  return {ok:true,reason:'exact-name+dob',mrnConflict:!!(expected.mrn && observed.mrn && String(expected.mrn) !== String(observed.mrn))};
+}
   try {
     var T0 = Date.now();
     /* Bounded for renderer safety, but high enough that an ordinary long-term
@@ -17309,12 +17353,7 @@ async function mlsReadVisitsPaneDriverFn(name, dob, athenaId) {
     if (!String(name || '').trim()) return { ok: false, reason: 'no-patient', error: 'mlsReadVisitsPaneDriverFn requires the requested patient name - refusing an un-gated visits read.' };
     /* ---- normalizers (inline; no background helpers exist in an injected fn) */
     function nrmName(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim(); }
-    function nameMatch(a, b) {
-      var ta = nrmName(a).split(' ').filter(function (x) { return x.length > 1; });
-      var tb = nrmName(b).split(' ').filter(function (x) { return x.length > 1; });
-      var o = ta.filter(function (x) { return tb.indexOf(x) >= 0; }).length;
-      return o >= 2 || (o >= 1 && Math.min(ta.length, tb.length) === 1);
-    }
+    function nameMatch(a,b) { return !!mlsExactNameKey(a) && mlsExactNameKey(a) === mlsExactNameKey(b); }
     function nrmDob(s) {
       /* isodob-1.1.0 (3.0.117): anchored ISO branch first. The M/D/Y regex
          below matches INSIDE an ISO year, so 1962-03-04, 1942-03-04 and
@@ -17501,16 +17540,8 @@ async function mlsReadVisitsPaneDriverFn(name, dob, athenaId) {
       if (lastSeen && lastSeen.name) return { ok: false, reason: 'wrong-chart', chartName: lastSeen.name, chartDob: lastSeen.dob || '', chartMrn: lastSeen.mrn || '', error: 'The open athenaOne chart is ' + lastSeen.name + ', not ' + name + '. No visits were read.' };
       return { ok: false, reason: 'unverified', error: 'No readable patient identity (banner chip) on the open athenaOne chart - refusing to read visits. Nothing was captured.' };
     }
-    var wantDob = nrmDob(dob);
-    if (wantDob) {
-      var haveDob = nrmDob(ident.dob);
-      /* wf_6: a requested DOB that the chart cannot confirm is a REFUSAL, not
-         a pass-through - reason 'unverified-dob'. */
-      if (!haveDob) return { ok: false, reason: 'unverified-dob', chartName: ident.name, chartMrn: ident.mrn || '', error: 'A DOB was requested but the open chart shows no readable DOB - refusing to read visits without full verification.' };
-      if (haveDob !== wantDob) return { ok: false, reason: 'wrong-dob', chartName: ident.name, chartDob: ident.dob || '', chartMrn: ident.mrn || '', error: 'The open chart\'s DOB (' + ident.dob + ') does not match the requested DOB (' + dob + '). No visits were read.' };
-    }
-    var wantId = String(athenaId || '').replace(/\D/g, '');
-    if (wantId && ident.mrn && String(ident.mrn).replace(/\D/g, '') !== wantId) return { ok: false, reason: 'wrong-id', chartName: ident.name, chartDob: ident.dob || '', chartMrn: ident.mrn || '', error: 'The open chart\'s patient ID #' + ident.mrn + ' does not match the requested #' + wantId + '. No visits were read.' };
+    var exactPair = mlsExactIdentityPair({name:name,dob:dob,mrn:athenaId},ident);
+    if(!exactPair.ok) return {ok:false,reason:exactPair.reason,error:'The open chart did not prove the exact first/last name and DOB. No visits were read.'};
     /* ---- 5) click the left-rail "Visits" item (small text label under the
        icon; live-observed rail: Find, Allergies, Problems, Meds, Vaccines,
        Vitals, Results, Visits, History, Quality, Care). Shadow-aware element

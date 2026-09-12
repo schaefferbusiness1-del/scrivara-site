@@ -30,6 +30,42 @@
   'use strict';
   if (root.MLSWriteSafety && root.MLSWriteSafety.version) return; // idempotent
   var VERSION = 'wsg-3.0.0';
+function mlsExactNameKey(value) {
+  var raw = String(value || '').trim().toLowerCase();
+  try { raw = raw.normalize('NFKD').replace(/[\u0300-\u036f]/g, ''); } catch (e) {}
+  raw = raw.replace(/[.\u2019'`-]/g, '').replace(/\bjunior\b/g, 'jr').replace(/\bsenior\b/g, 'sr');
+  var parts = raw.split(',').map(function (part) { return part.trim(); }).filter(Boolean);
+  var suffix = '';
+  if (parts.length > 1 && /^(jr|sr|ii|iii|iv|v)$/.test(parts[parts.length - 1])) suffix = parts.pop();
+  if (parts.length === 2) raw = parts[1] + ' ' + parts[0];
+  else if (parts.length === 1) raw = parts[0];
+  else if (parts.length > 2) return '';
+  raw = raw.replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+  var words = raw.split(' ').filter(Boolean);
+  while (words.length && /^(mr|mrs|ms|miss|dr|prof)$/.test(words[0])) words.shift();
+  while (words.length && /^(jr|sr|ii|iii|iv|v)$/.test(words[words.length-1])) words.pop();
+  return words.length >= 2 ? words[0]+' '+words[words.length-1] : '';
+}
+function mlsExactDobKey(value) {
+  var raw = String(value || '').trim(), m, year, month, day;
+  if ((m = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/.exec(raw))) { year=+m[1]; month=+m[2]; day=+m[3]; }
+  else if ((m = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/.exec(raw))) { year=+m[3]; month=+m[1]; day=+m[2]; }
+  else return '';
+  var date = new Date(Date.UTC(year, month-1, day));
+  return year >= 1850 && date.getUTCFullYear() === year && date.getUTCMonth() === month-1 && date.getUTCDate() === day ? year+'-'+month+'-'+day : '';
+}
+function mlsExactIdentityPair(expected, observed) {
+  expected = expected || {}; observed = observed || {};
+  var name = mlsExactNameKey(expected.name), dob = mlsExactDobKey(expected.dob);
+  if (!name || !dob) return {ok:false,reason:'identity-hint-incomplete'};
+  if (observed.ambiguous === true || Number(observed.exactPairCandidateCount || 0) > 1) return {ok:false,reason:'identity-ambiguous'};
+  if (!mlsExactNameKey(observed.name)) return {ok:false,reason:'same-frame-name-missing'};
+  if (name !== mlsExactNameKey(observed.name)) return {ok:false,reason:'same-frame-name-mismatch'};
+  if (!mlsExactDobKey(observed.dob)) return {ok:false,reason:'same-frame-dob-missing'};
+  if (dob !== mlsExactDobKey(observed.dob)) return {ok:false,reason:'same-frame-dob-mismatch'};
+  return {ok:true,reason:'exact-name+dob',mrnConflict:!!(expected.mrn && observed.mrn && String(expected.mrn) !== String(observed.mrn))};
+}
+
 
   /* ------------------------------------------------------------------ *
    * Shared normalizers (mirror the V2 driver's conventions).           *
@@ -37,11 +73,7 @@
   function text(v) { return String(v == null ? '' : v).replace(/\s+/g, ' ').trim(); }
   function norm(v) { return text(v).toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim(); }
   function digits(v) { return String(v || '').replace(/\D/g, ''); }
-  function nameKey(v) {
-    var raw = text(v), comma = /^\s*([^,]+),\s*(.+)$/.exec(raw);
-    if (comma) raw = comma[2] + ' ' + comma[1];
-    return norm(raw);
-  }
+  function nameKey(v) { return mlsExactNameKey(v); }
   function simpleHash(v) {
     var s = String(v || ''), h = 2166136261;
     for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
@@ -329,18 +361,8 @@
   }
   function verifyPatientIdentity(opts) {
     opts = opts || {};
-    var expected = opts.expected || {}, observed = opts.observed || {};
-    if (!nameKey(expected.name) || !nameKey(observed.name)) return { ok: false, blocked: true, reason: 'patient-unverifiable', error: 'Patient identity could not be read from the chart. Nothing was changed.' };
-    if (nameKey(expected.name) !== nameKey(observed.name)) return { ok: false, blocked: true, reason: 'patient-mismatch', error: 'The open chart is a different patient. Nothing was changed.' };
-    if (digits(expected.mrn) && digits(observed.mrn) && digits(expected.mrn) !== digits(observed.mrn)) return { ok: false, blocked: true, reason: 'patient-mismatch', error: 'The open chart has a different MRN. Nothing was changed.' };
-    /* DOB: verified whenever BOTH sides expose one; a missing observed DOB is
-       tolerated only when MRN already matched exactly. */
-    var expDob = dateDigits(expected.dob), obsDob = dateDigits(observed.dob);
-    if (expDob && obsDob && expDob !== obsDob) return { ok: false, blocked: true, reason: 'patient-mismatch', error: 'The open chart has a different date of birth. Nothing was changed.' };
-    if (expDob && !obsDob && !(digits(expected.mrn) && digits(expected.mrn) === digits(observed.mrn))) {
-      return { ok: false, blocked: true, reason: 'patient-dob-unverifiable', error: 'The chart did not expose a date of birth to verify. Nothing was changed.' };
-    }
-    return null;
+    var verdict = mlsExactIdentityPair(opts.expected, opts.observed);
+    return verdict.ok ? null : {ok:false,blocked:true,reason:'patient-mismatch',detail:verdict.reason,error:'One exact full-name and DOB match is required. Nothing was changed.'};
   }
   function dateDigits(v) {
     var m = /([01]?\d)[\/\-.]([0-3]?\d)[\/\-.](\d{2,4})/.exec(String(v || ''));

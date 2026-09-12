@@ -235,7 +235,7 @@ assert.strictEqual(runRetain([Array.from({ length: 40 }, (v, i) => ({ url: 'http
    its own text - the same two doors frameBoundToTarget uses. Anything else is dropped.
    ===================================================================== */
 const helpersFrom = bg.indexOf('const nrmStrict = (s) =>');
-const helpersTo = bg.indexOf('\n', bg.indexOf('const textHasMrnStrict = (txt, expectedMrn) =>'));
+const helpersTo = bg.indexOf('const frameIdentity = {};', helpersFrom);
 const bindFrom = bg.indexOf('const briefingApptRe = expectedAppointmentId ?');
 const bindTo = bg.indexOf('\n', bg.indexOf('const briefingDiag = { offered:'));
 assert(helpersFrom > 0 && helpersTo > helpersFrom, 'the strict identity predicate slice could not be isolated');
@@ -354,7 +354,7 @@ assert.strictEqual(bindCap.diag.omitted, 1, 'a briefing frame dropped for cap is
    2. IDENTITY AND COVERAGE ARE UNCHANGED (background.js)
    ===================================================================== */
 assert(bg.includes("if (identityMatchesTarget(frameIdentity[f.frameId])) return true;"), 'frameBoundToTarget lost its per-frame identity door');
-assert(bg.includes("if (!strictNameMatch(f.t, want)) return false;\n            return !!((wantDob && textHasDobStrict(f.t, wantDob)) || (wantMrn && textHasMrnStrict(f.t, wantMrn)));"), 'frameBoundToTarget lost its in-frame name+DOB/MRN door');
+assert(bg.includes("if (!textHasPairStrict(f.t)) return false;"), 'frameBoundToTarget lost its exact first/last+DOB text proof');
 assert(bg.includes("if (!frameBoundToTarget(f)) { unboundClinicalFrames++; return; }"), 'unbound clinical frames are no longer counted and skipped');
 assert(bg.includes('textChars: chartTextStrict.length'), 'the coverage receipt no longer measures the bound chart text');
 assert(bg.includes('const chartTextStrict = mergedStrict;'), 'the returned chart text is no longer the merged BOUND frame text');

@@ -29,8 +29,8 @@ const bg = fs.readFileSync(path.join(root, 'background.js'), 'latin1');
 // ---- structural pins ---------------------------------------------------------
 assert(bg.includes('visitIdentityGate(frozenHint, ecIdentity)'), 'candidate-frame identity walk missing');
 assert(bg.includes('enumCandidates'), 'identity-aware frame candidate selection missing');
-assert(/if \(wantMrn && haveMrn\) \{\s*\n\s*if \(wantMrn !== haveMrn\) return \{ ok: false, reason: 'same-frame-mrn-mismatch' \};/.test(bg),
-  'stable-id-primary gate missing or weakened');
+assert(bg.includes('return mlsExactIdentityPair(frozen, live);'),
+  '3.0.123 exact first/last+DOB authority missing');
 
 // ---- behavioral: run the gate ------------------------------------------------
 const gateStart = bg.indexOf('function visitIdentityGate(frozen, live)');
@@ -48,17 +48,17 @@ const gate = (frozen, live) => ctx.gate(frozen, live);
 const FROZEN = { name: 'James B Fortune', dob: '11/04/1939', mrn: '7588619' };
 
 // 1) Stable ID match with a STALE frame name -> accepted (the bug case).
-assert.strictEqual(gate(FROZEN, { name: 'Mary Ward', dob: '11/04/1939', mrn: '7588619' }).ok, true,
-  'a verified id match must not be rejected on a stale frame name');
+assert.strictEqual(gate(FROZEN, { name: 'Mary Ward', dob: '11/04/1939', mrn: '7588619' }).ok, false,
+  'a cached id must not override conflicting first/last name');
 // 2) Normalized name differences with id -> accepted, reason carries name evidence.
 {
   const r = gate(FROZEN, { name: 'FORTUNE, JAMES', dob: '1939-11-04', mrn: '#7588619' });
   assert.strictEqual(r.ok, true);
-  assert(/mrn/.test(r.reason), 'id must be the primary reason');
+  assert.strictEqual(r.reason, 'exact-name+dob', 'the unique pair is the identity authority');
 }
 // 3) Genuine patient mismatch (different id) -> refused.
-assert.strictEqual(gate(FROZEN, { name: 'James B Fortune', dob: '11/04/1939', mrn: '9999999' }).ok, false);
-assert.strictEqual(gate(FROZEN, { name: 'James B Fortune', dob: '11/04/1939', mrn: '9999999' }).reason, 'same-frame-mrn-mismatch');
+assert.strictEqual(gate(FROZEN, { name: 'James B Fortune', dob: '11/04/1939', mrn: '9999999' }).ok, true);
+assert.strictEqual(gate(FROZEN, { name: 'James B Fortune', dob: '11/04/1939', mrn: '9999999' }).mrnConflict, true);
 // 4) Id match but CONTRADICTORY DOB -> refused (gate stays strict).
 assert.strictEqual(gate(FROZEN, { name: 'James B Fortune', dob: '01/01/2000', mrn: '7588619' }).reason, 'same-frame-dob-mismatch');
 // 5) No id on either side: the original strict name+DOB gate is unchanged.
@@ -118,4 +118,4 @@ assert(bg.includes('visits-panel-not-open'),
   'enumeration must refuse an index outside the real Visits and Cases panel');
 assert(bg.includes('visitsSurfaceOpen'),
   'openVisits must verify the RENDERED panel, not the rail-tab active class');
-console.log('PASS visit-body identity 3.0.2: stable-id-primary gate (strict refusals intact) + identity-aware bounded frame-candidate walk with honest refusal + lease/scan consecutive-pull fixes');
+console.log('PASS visit-body identity 3.0.123: exact first/last+DOB authority + identity-aware bounded frame-candidate walk with honest refusal + lease/scan consecutive-pull fixes');

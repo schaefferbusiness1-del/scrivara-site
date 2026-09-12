@@ -41,14 +41,13 @@ assert(genericOpenBridge.includes('mrn: mrnHint'), 'generic SearchOpen bridge dr
 assert(findDriver.startsWith('async function mlsFindPatientOpenDriverFn(name, dob, requestGuard, mrn)'), 'findpatient driver does not accept a separate immutable guard and MRN');
 assert(findDriver.includes('deadline: Number(__guardArg.deadline || 0)') && findDriver.includes('token: String(__guardArg.token || \'\')'), 'findpatient driver does not freeze the action guard');
 assert(findDriver.includes('var wantMrn = nrmMrn(mrn)'), 'findpatient driver does not freeze/normalize MRN');
-assert(findDriver.includes('mrnCellMatches(cells[cm], wantMrn)'), 'findpatient rows are not checked for exact MRN evidence');
+assert(findDriver.includes('exactResultRow(tr)'), 'Find must prove the row first/last+DOB pair');
 
 // MRN may narrow only candidates that already survived name tier + DOB veto.
-const dobVeto = findDriver.indexOf('if (wantDob && rowDob && rowDob !== wantDob)');
-const mrnNarrow = findDriver.indexOf('var mrnPool = pool.filter');
-assert(dobVeto >= 0 && mrnNarrow > dobVeto, 'MRN narrowing can bypass the existing DOB veto');
-assert(findDriver.includes('if (mrnPool.length)') && findDriver.includes('pool = mrnPool'), 'positive MRN evidence does not narrow duplicate-name candidates');
-assert(!findDriver.includes('if (!mrnPool.length) return'), 'missing MRN text in an Athena layout incorrectly weakens the safe name+DOB fallback');
+assert(findDriver.includes('dates.length===1&&mlsExactIdentityPair'), 'Find must require exact valid DOB on the row');
+assert(findDriver.includes('if(pool.length!==1)'), 'duplicate exact first/last+DOB pairs must refuse');
+assert(!findDriver.includes('var mrnPool = pool.filter'), 'a stale caller MRN must not choose among ambiguous pairs');
+assert(findDriver.includes('exactResultRow(_rvTr).ok'), 'the same exact pair must be reverified immediately before the Chart click');
 
 assert(searchHandler.includes("var frozenMrn = String(msg.mrn || msg.patientMrn || msg.athenaId || '')"), 'SearchOpen does not freeze the incoming MRN');
 assert(searchHandler.includes("frozenMrn ? ['find', 'sched']"), 'MRN-backed opens can still prefer the name-only schedule clicker');

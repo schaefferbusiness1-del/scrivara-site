@@ -125,6 +125,24 @@ async function values(page) {
   const browser = await chromium.launch({ channel: 'chrome', headless: true });
   let checks = 0;
   try {
+    // 3.0.123: the caller's optional middle/suffix/MRN cannot veto a unique
+    // live first/last+DOB pair; the observed destination remains locked.
+    for (const hint of [
+      {name:'Dr Synthetic Patient, Jr.',dob:patient.dob,mrn:''},
+      {name:'Synthetic Anothermiddle Patient',dob:patient.dob,mrn:'999999'}
+    ]) {
+      await withPage(browser, fixture(), async page => {
+        const req=request('hpi','Synthetic pair probe.',{mode:'probe',expectedPatient:hint});
+        const probed=await drive(page,req);
+        assert.strictEqual(probed.ok,true,'unique pair with missing/stale caller MRN failed: '+JSON.stringify(probed));
+        assert.strictEqual(probed.context.mrn,patient.mrn,'probe did not lock observed live patient ID');
+        await page.locator('[data-testid="patient-header"]').evaluate(el=>el.setAttribute('data-patient-mrn','999998'));
+        const refused=await drive(page,{...req,mode:'execute',locked:probed.context});
+        assert.strictEqual(refused.ok,false,'recycled live patient ID passed locked execution');
+        assert.strictEqual(await page.locator('#hpi-editor').inputValue(),'','locked-ID mismatch wrote content');
+        checks+=4;
+      });
+    }
     for (const [key, expectedField] of [['hpi','hpi'], ['ros','ros'], ['exam','exam'], ['assessment','assessment'], ['plan','plan']]) {
       await withPage(browser, fixture(), async page => {
         const text = `Synthetic ${key} reviewed text.`;
