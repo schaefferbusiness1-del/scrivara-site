@@ -45,6 +45,7 @@ const runtime = source.slice(iifeStart, iifeClose + 5);
 const timers = [];
 const selected = [];
 const views = [];
+const loaderReasons = [];
 let promptReady = false;
 let opened = false;
 let focused = false;
@@ -70,6 +71,7 @@ const sandbox = {
       return null;
     }
   },
+  __mlsStudyRequestLoader: { ensure(reason) { loaderReasons.push(reason); } },
   showView(key) { views.push(key); }
 };
 sandbox.window = sandbox;
@@ -78,6 +80,7 @@ const studyEntry = sandbox.__mlsFeatureDirectory.filter(entry => entry.route ===
 assert(studyEntry, 'the runtime directory exported no Study route');
 assert.strictEqual(sandbox.mlsOpenFeature(studyEntry), true, 'the Study route refused to open');
 assert.deepStrictEqual(views, ['studio'], 'the Study route did not open AI Studio first');
+assert.deepStrictEqual(loaderReasons, ['feature-directory'], 'Help/Find left Study waiting in the optional-asset backlog');
 assert.strictEqual(timers.length, 1, 'the late-mount focus loop did not schedule its first attempt');
 timers.shift()();
 assert.strictEqual(selected.length, 0, 'a missing Studio merge was mistaken for a selected Build surface');

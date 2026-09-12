@@ -39114,6 +39114,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if (route === 'widget') { if (typeof window.openWidgetBuilder === 'function') window.openWidgetBuilder(); return true; }
       if (route === 'study') {
         if(typeof window.showView==='function') window.showView('studio');
+        try{
+          var studyLoader=window.__mlsStudyRequestLoader;
+          if(studyLoader&&typeof studyLoader.ensure==='function')studyLoader.ensure('feature-directory');
+          else window.dispatchEvent(new Event('mls:study-request-needed'));
+        }catch(eLoad){}
         (function focusStudyPrompt(tries){setTimeout(function(){
           var buildReady=false;
           try{buildReady=!!(window.__mlsStudioMerge&&typeof window.__mlsStudioMerge.select==='function');if(buildReady)window.__mlsStudioMerge.select('build');}catch(e){buildReady=false;}
@@ -54434,7 +54439,61 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_dictate_letter.js"]'))return;var s=document.createElement('script');s.src='feat_mls_dictate_letter.js?v=20260731dl1c2-B820';s.setAttribute('data-mls-asset','feat_mls_dictate_letter.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b940: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
 ;(function(){try{var P=window.__mlsSpeechHubUpgradePolicy;if(P&&P.reloadRequired)return;var A='feat_mls_dictate_anywhere.js',V='da-1.1.1',api=window.__mlsDictateAnywhere,tags=document.querySelectorAll('script[data-mls-asset="'+A+'"]'),i,node;if(api&&api.installed&&api.version===V)return;for(i=0;i<tags.length;i++){node=tags[i];if((!api||api.installed!==true)&&node.getAttribute('data-mls-version')===V)return;}if(api&&typeof api.revert==='function')try{api.revert();}catch(_e){}try{if(api)api.installed=false;}catch(_m){}for(i=0;i<tags.length;i++){tags[i].setAttribute('data-mls-retired-asset',A);tags[i].removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src=A+'?v=20260719da111h1';s.setAttribute('data-mls-asset',A);s.setAttribute('data-mls-version',V);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* version-aware Dictate Anywhere da-1.1.1; one owner/tag and no ghost mic start. */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_study_calm.js"]'))return;var s=document.createElement('script');s.src='feat_mls_study_calm.js?v=20260802sg2f';s.setAttribute('data-mls-asset','feat_mls_study_calm.js');s.async=true;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}},{timeout:2500});}catch(e){}})(); /* b940: deferred past first paint  a late-surface module has no claim on the sign-in seconds (owner 5s bar) */
-;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){var A="feat_mls_study_request.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260912sr240";s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);},{timeout:2500});}catch(e){}})(); /* sr-2.4.0 (2026-09-12): the natural-language Study builder is a first-class top Build surface, not a healthy tool hidden inside the collapsed advanced cohort controls. The loader cache tag advances WITH the source it loads - libtag-1.0.0 discipline. */
+;(function(){try{
+  var A='feat_mls_study_request.js',V='sr-2.4.0',LV='srl-1.0.0',K='__mlsStudyRequestLoader';
+  var prior=window[K];
+  if(prior&&prior.installed===true&&prior.version===LV&&typeof prior.ensure==='function'){
+    prior.ensure('duplicate-bootstrap');return;
+  }
+  var ctl={installed:true,version:LV,state:'idle',node:null,lastReason:'',ensure:null};
+  window[K]=ctl;
+  function current(){return ctl.installed===true&&window[K]===ctl;}
+  function exactOwner(){
+    var api=window.__mlsStudyRequest;
+    return !!(api&&api.installed===true&&api.version===V&&document.getElementById('mlsStudyRequest'));
+  }
+  function retire(node){
+    var api=window.__mlsStudyRequest;
+    try{if(api&&typeof api.revert==='function')api.revert();}catch(e0){}
+    try{if(api)api.installed=false;}catch(e1){}
+    if(node){try{node.setAttribute('data-mls-retired-asset',A);node.removeAttribute('data-mls-asset');node.remove();}catch(e2){}}
+  }
+  function ensure(reason){
+    if(!current())return false;
+    ctl.lastReason=String(reason||'ensure');
+    if(exactOwner()){ctl.state='ready';return true;}
+    if(ctl.node&&ctl.node.isConnected&&ctl.state==='loading')return true;
+    var old=document.querySelector('script[data-mls-asset="'+A+'"]');
+    if(old){
+      if(exactOwner()){ctl.node=old;ctl.state='ready';return true;}
+      retire(old);
+    }
+    var s=document.createElement('script');
+    ctl.node=s;ctl.state='loading';
+    s.src=A+'?v='+(window.__MLS_AV||Date.now());
+    s.setAttribute('data-mls-asset',A);
+    s.setAttribute('data-mls-version',V);
+    s.async=true;
+    s.onload=function(){if(current()&&ctl.node===s)ctl.state=exactOwner()?'ready':'owner-missing';};
+    s.onerror=function(){if(current()&&ctl.node===s){ctl.state='network-error';ctl.node=null;}};
+    (document.body||document.head||document.documentElement).appendChild(s);
+    return true;
+  }
+  ctl.ensure=ensure;
+  function studioOnScreen(){
+    try{var v=document.getElementById('studioView');return !!v&&getComputedStyle(v).display!=='none';}catch(e){return false;}
+  }
+  document.addEventListener('click',function(e){
+    try{var t=e&&e.target&&e.target.closest&&e.target.closest('[data-mls-sm-tab="build"]');if(t)ensure('build-tab');}catch(e0){}
+  },true);
+  window.addEventListener('mls:view-changed',function(){if(studioOnScreen())ensure('studio-view');},true);
+  window.addEventListener('mls:study-request-needed',function(){ensure('request');},true);
+  if(studioOnScreen())ensure('studio-visible');
+  else{
+    var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};
+    sched(function(){ensure('idle');},{timeout:2500,asset:A});
+  }
+}catch(e){}})(); /* srl-1.0.0 / sr-2.4.0 (2026-09-12): Study loads on its actual first-use routes instead of waiting behind the optional-asset backlog; the idle preload remains as a fallback and stale owner/tag pairs are retired before retry. */
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);},A='cloned-feat_mls_study_provenance.js',V='p1sp-1.0.0';function load(){try{var api=window.__mlsP1StudyProvenance,old=document.querySelector('script[data-mls-asset="'+A+'"]');if(api&&api.installed&&api.version===V)return true;if(old){try{if(api&&typeof api.revert==='function')api.revert();}catch(e0){}old.setAttribute('data-mls-retired-asset',A);old.removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src=A+'?v='+(window.__MLS_AV||'p1-preview');s.setAttribute('data-mls-asset',A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);return s;}catch(e){return false;}}window.addEventListener('mls:study-lifecycle',function(e){var d=e&&e.detail||{};if(d.reason==='render')load();},true);if(document.getElementById('mlsStudyOv'))load();else sched(load,{timeout:2800,asset:A});}catch(e){}})(); /* /p1-only stored-evidence provenance, exact Study first-use admission plus idle fallback. */
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_patient_reach_v2.js"]'))return;var s=document.createElement('script');s.src='feat_mls_patient_reach_v2.js?v=20260804pr206';s.async=false;s.setAttribute('data-mls-asset','feat_mls_patient_reach_v2.js');s.addEventListener('load',function(){try{var m=window.__mlsP1Marketing;if(m&&m.installed===true&&typeof m.reconcile==='function')m.reconcile();var l=window.__mlsP1MarketingLoader;if(l&&l.installed===true&&typeof l.guardReach==='function')l.guardReach();}catch(_marketingReconcileError){}});(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* one Reviews/secure-portal owner: real rail workspaces + compact context dialogs + frozen-patient portal delegation; 1p Marketing reconciles or fail-closes Reviews after this late owner installs */
 ;(function(){try{var A='feat_mls_loading_calm.js',V='lb-2.1.0',api=window.__mlsLoadingCalm,tags=document.querySelectorAll('script[data-mls-asset="'+A+'"]'),i,node;if(api&&api.installed&&api.version===V)return;for(i=0;i<tags.length;i++){node=tags[i];if((!api||api.installed!==true)&&node.getAttribute('data-mls-version')===V)return;}if(api&&typeof api.revert==='function')try{api.revert();}catch(_e){}try{if(api)api.installed=false;}catch(_m){}for(i=0;i<tags.length;i++){tags[i].setAttribute('data-mls-retired-asset',A);tags[i].removeAttribute('data-mls-asset');}var s=document.createElement('script');s.src=A+'?v=20260719lb204';s.setAttribute('data-mls-asset',A);s.setAttribute('data-mls-version',V);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* lb-2.1.0 version-aware headless job store; retires b431 floating loading owner/tag before reload. */

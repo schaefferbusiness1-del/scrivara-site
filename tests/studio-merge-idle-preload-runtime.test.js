@@ -40,6 +40,19 @@ const shellSource = fs.readFileSync(SHELL_PATH, 'utf8');
 const mergeSource = fs.readFileSync(MERGE_PATH, 'utf8');
 const studySource = fs.readFileSync(STUDY_PATH, 'utf8');
 
+const studyLoaderMarker = "var A='feat_mls_study_request.js',V='sr-2.4.0',LV='srl-1.0.0'";
+const studyLoaderAt = connectSource.indexOf(studyLoaderMarker);
+const studyLoaderStart = connectSource.lastIndexOf(';(function(){try{', studyLoaderAt);
+const studyLoaderCloseMarker = '}catch(e){}})();';
+const studyLoaderClose = connectSource.indexOf(studyLoaderCloseMarker, studyLoaderAt);
+assert.ok(studyLoaderAt >= 0 && studyLoaderStart >= 0 && studyLoaderClose > studyLoaderAt,
+  'could not lift the real Study first-use loader');
+const STUDY_LOADER_IIFE = connectSource.slice(studyLoaderStart, studyLoaderClose + studyLoaderCloseMarker.length);
+assert.ok(STUDY_LOADER_IIFE.includes('[data-mls-sm-tab="build"]') &&
+  STUDY_LOADER_IIFE.includes("'mls:view-changed'") &&
+  STUDY_LOADER_IIFE.includes("window.__MLS_AV||Date.now()"),
+  'Study loader lost first-use admission or build-following cache identity');
+
 const tourMarker = 'MLS Scribe -- b39 Studio overhaul + ONE auto-start tour';
 const tourMarkerAt = connectSource.indexOf(tourMarker);
 const tourIifeStart = connectSource.indexOf('(function () {', tourMarkerAt);
@@ -191,7 +204,64 @@ const SHELL_HTML = `<!doctype html><html><body>
       await page.close();
     }
 
-    /* ================= 3: the on-screen trigger still fires immediately ================= */
+    /* ============= 3: Study first use bypasses the optional backlog =========== */
+    {
+      const page = await browser.newPage();
+      const firstUseHtml = `<!doctype html><html><body>
+        <div id="studioView" style="display:none">
+          <button type="button" data-mls-sm-tab="build">Build</button>
+          <div class="sx-title">AI Studio</div>
+          <div id="mlsSgPro">Advanced cohort host</div>
+        </div>
+      </body></html>`;
+      await page.route('https://mls-study-first-use.test/**', route =>
+        route.fulfill({ status: 200, contentType: 'text/html', body: firstUseHtml }));
+      await page.route('https://mls-study-first-use.test/feat_mls_study_request.js**', route =>
+        route.fulfill({ status: 200, contentType: 'application/javascript', body: studySource }));
+      await page.goto('https://mls-study-first-use.test/');
+      await page.evaluate(() => {
+        window.__MLS_AV = 'first-use-test';
+        window.__mlsDeferAsset = function (fn) {
+          window.__deferredStudyCallback = fn;
+          return 77;
+        };
+      });
+      await page.addScriptTag({ content: STUDY_LOADER_IIFE });
+
+      const before = await page.evaluate(() => ({
+        queued: typeof window.__deferredStudyCallback === 'function',
+        scripts: document.querySelectorAll('script[data-mls-asset="feat_mls_study_request.js"]').length
+      }));
+      assert.strictEqual(before.queued, true, 'Study lost its quiet background preload fallback');
+      assert.strictEqual(before.scripts, 0, 'hidden Studio fetched Study before either idle time or first use');
+
+      await page.evaluate(() => { document.getElementById('studioView').style.display = 'block'; });
+      await page.locator('[data-mls-sm-tab="build"]').click();
+      await page.waitForSelector('#mlsStudyRequest', { timeout: 5000 });
+      const firstUse = await page.evaluate(() => {
+        const tags = Array.from(document.querySelectorAll('script[data-mls-asset="feat_mls_study_request.js"]'));
+        return {
+          scripts: tags.length,
+          src: tags[0] && tags[0].src,
+          state: window.__mlsStudyRequestLoader && window.__mlsStudyRequestLoader.state,
+          direct: document.getElementById('mlsStudyRequest').parentElement === document.getElementById('studioView')
+        };
+      });
+      assert.strictEqual(firstUse.scripts, 1, 'opening Build did not admit exactly one Study module');
+      assert.ok(/feat_mls_study_request\.js\?v=first-use-test$/.test(firstUse.src),
+        'Study first use did not follow the current app build token');
+      assert.strictEqual(firstUse.state, 'ready', 'Study loader did not verify its mounted owner');
+      assert.strictEqual(firstUse.direct, true, 'first-use loading mounted Study outside the Build surface');
+
+      await page.locator('[data-mls-sm-tab="build"]').click();
+      await page.evaluate(() => window.__deferredStudyCallback());
+      await page.waitForTimeout(50);
+      assert.strictEqual(await page.locator('script[data-mls-asset="feat_mls_study_request.js"]').count(), 1,
+        'a second Build click or later idle callback duplicated the Study module');
+      await page.close();
+    }
+
+    /* ================= 4: the on-screen trigger still fires immediately ================= */
     {
       const page = await browser.newPage();
       await page.setContent(SHELL_HTML);
@@ -214,7 +284,7 @@ const SHELL_HTML = `<!doctype html><html><body>
       await page.close();
     }
 
-    /* ================= 4: placeholder present before the real mount, gone after ================= */
+    /* ================= 5: placeholder present before the real mount, gone after ================= */
     {
       const page = await browser.newPage();
       /* Playwright runs routes in the OPPOSITE order of registration (the
