@@ -140,6 +140,9 @@ async function runtime() {
         dialogVisible: !!(p && getComputedStyle(p).display !== 'none'),
         pill: !!f,
         pillText: f ? String(f.textContent || '').replace(/\s+/g, ' ').trim() : '',
+        title: p && p.querySelector('h3') ? String(p.querySelector('h3').textContent || '').replace(/\s+/g, ' ').trim() : '',
+        pct: p && p.querySelector('[data-pp="pct"]') ? String(p.querySelector('[data-pp="pct"]').textContent || '').trim() : '',
+        tally: p && p.querySelector('[data-pp="tally"]') ? String(p.querySelector('[data-pp="tally"]').textContent || '').replace(/\s+/g, ' ').trim() : '',
         stopText: sb ? String(sb.textContent || '').trim() : '',
         stopUsable: !!(sb && !sb.disabled && getComputedStyle(sb).display !== 'none'),
         engineRunning: !!(window.__mlsDayHistoryPull && window.__mlsDayHistoryPull.state && window.__mlsDayHistoryPull.state.running),
@@ -155,7 +158,7 @@ async function runtime() {
       window.__mlsDayHistoryPull = { state: {
         __si: 1, running: true, total: rows.length, done: done,
         ok: done, failed: 0, chartOnly: 0, current: 'opening the next chart',
-        rows: rows.slice(0, done), runId: 'synthetic-run-' + window.__pullPillSyntheticRunSeq
+        rows: rows.slice(0, done), targetDate: '2026-09-15', runId: 'synthetic-run-' + window.__pullPillSyntheticRunSeq
       } };
     }, [rows, done]);
     const endRun = (rows) => page.evaluate((rows) => {
@@ -163,11 +166,22 @@ async function runtime() {
       window.__mlsDayHistoryPull.state = {
         __si: 1, running: false, total: rows.length, done: rows.length,
         ok: rows.length - failed, failed: failed, chartOnly: 0,
-        finishedAt: Date.now(), rows: rows,
+        finishedAt: Date.now(), rows: rows, targetDate: '2026-09-15', stopped: false,
         dayVerdict: { ok: rows.length - failed, failed: failed, total: rows.length,
           complete: true, tnFailed: 0, tnRead: rows.length, tnNotYet: 0, tnFuture: 0, tnNotesComplete: true }
       };
     }, rows);
+    const endStoppedRun = (saved, stoppedCount) => page.evaluate(([saved, stoppedCount]) => {
+      const rows = [];
+      for (let i = 0; i < saved; i++) rows.push({ k: 'saved-' + i, name: 'Synthetic Saved', pid: 'saved-' + i, ok: true, reason: '' });
+      for (let j = 0; j < stoppedCount; j++) rows.push({ k: 'stopped-' + j, name: 'Synthetic Stopped', pid: 'stopped-' + j, ok: false, reason: 'stopped-by-user' });
+      window.__mlsDayHistoryPull.state = {
+        __si: 1, running: false, total: rows.length, done: rows.length,
+        ok: saved, failed: 0, stoppedRows: stoppedCount, chartOnly: 0,
+        finishedAt: Date.now(), rows: rows, targetDate: '2026-09-15', stopped: true, stopReason: 'stopped-by-user',
+        dayVerdict: { ok: saved, failed: 0, total: rows.length, complete: false, tnFailed: 0, tnRead: 0, tnNotYet: 0, tnFuture: 0, tnNotesComplete: false }
+      };
+    }, [saved, stoppedCount]);
     const clickPill = () => page.evaluate(() => { const f = document.getElementById('mlsPullProgFab'); if (f) f.click(); });
     const clickHide = () => page.evaluate(() => { const b = document.getElementById('mlsPullProgHide'); if (b) b.click(); });
     const seedStaleBar = (text) => page.evaluate((text) => {
@@ -190,6 +204,7 @@ async function runtime() {
     eq(s.dialog, false, 'the pull opened the full-screen dialog on its own at start - this is the owner\'s report');
     ok(s.pill, 'a running pull painted no corner pill, so the doctor is told nothing and Stop pull has no route');
     ok(/show details/.test(s.pillText), `the running pill does not offer the details route: "${s.pillText}"`);
+    ok(/Sep 15, 2026/.test(s.pillText), `the running pill hides the exact target date: "${s.pillText}"`);
     ok(!/Pull done/.test(s.pillText), `a running pull's pill claims it is finished: "${s.pillText}"`);
     measured.a_runningPill = s.pillText;
 
@@ -198,6 +213,7 @@ async function runtime() {
     await page.waitForTimeout(TICK * 2);
     s = await read();
     ok(s.dialogVisible, 'the pill did not open the dialog - the details are unreachable');
+    ok(/Sep 15, 2026/.test(s.title), `the open pull card hides the exact target date: "${s.title}"`);
     eq(s.stopText, 'Stop pull', `"Stop pull" is not on the opened dialog (found "${s.stopText}")`);
     ok(s.stopUsable, 'the opened dialog offers no usable Stop pull - a running pull could not be stopped');
     measured.b_stopRoute = 'pill click -> dialog -> ' + s.stopText;
@@ -300,6 +316,26 @@ async function runtime() {
       `the opened card and the pill disagree about attention: card "${card.tally}" vs pill "${measured.e_donePill}"`);
     eq(card.rows, 5, `the opened result card should list 5 rows, it listed ${card.rows}`);
     measured.f_cardTally = card.tally;
+
+    /* ===== (i) Stop is a calm terminal state, not Done or failed ========= */
+    await startRun(rowsFor(5, -1), 2);
+    await page.waitForTimeout(SETTLE);
+    await clickPill();
+    await page.waitForTimeout(TICK * 2);
+    await page.evaluate(() => { const b = document.getElementById('mlsPullProgStop'); if (b) b.click(); });
+    await endStoppedRun(2, 3);
+    await page.waitForTimeout(SETTLE);
+    s = await read();
+    ok(/^\u23f9?\s*Pull stopped/.test(s.title) || /Pull stopped/.test(s.title),
+      `a stopped pull still says Done: "${s.title}"`);
+    ok(/Sep 15, 2026/.test(s.title), `the stopped card lost the exact target date: "${s.title}"`);
+    eq(s.pct, 'Stopped', `a stopped pull's progress label is not Stopped: "${s.pct}"`);
+    ok(/2 saved/.test(s.tally), `the stopped card lost the histories already saved: "${s.tally}"`);
+    ok(!/need attention/.test(s.tally), `charts skipped by Stop were counted as failures: "${s.tally}"`);
+    const stoppedRows = await page.evaluate(() => Array.from(document.querySelectorAll('#mlsPullProgPanel .pp-row')).map((r) => String(r.textContent || '').replace(/\s+/g, ' ').trim()));
+    eq(stoppedRows.filter((t) => /not read — pull stopped/.test(t)).length, 3,
+      'stopped rows were not shown calmly and separately from real failures');
+    measured.i_stoppedCard = { title: s.title, pct: s.pct, tally: s.tally };
 
     /* leave the app as it was found */
     await page.evaluate(() => {

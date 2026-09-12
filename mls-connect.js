@@ -5074,6 +5074,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); } /* qol-2.2 D1: output lands in title="..." - a quote in a patient name broke out of the attribute */
   function state() { try { return (window.__mlsDayHistoryPull && window.__mlsDayHistoryPull.state) || null; } catch (e) { return null; } }
   function mmss(ms) { var s = Math.max(0, Math.round(ms / 1000)); return Math.floor(s / 60) + 'm ' + ('0' + (s % 60)).slice(-2) + 's'; }
+  function ppDateLabel(raw) {
+    var day = String(raw || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return '';
+    try { return new Date(day + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }); }
+    catch (e) { return day; }
+  }
 
   function css() {
     if (document.getElementById('mlsPullProgCss')) return;
@@ -5157,16 +5163,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        current state wear a stale count. Both the dialog and this pill now read
        the same __mlsDayHistoryPull.state object. */
     var n = (S.done || 0) + '/' + (S.total || 0);
-    var t = 'Pulling ' + n + ' \u2014 show details';
+    var targetDay = ppDateLabel(S.targetDate);
+    var t = 'Pulling ' + n + (targetDay ? ' for ' + targetDay : '') + ' \u2014 show details';
     /* pullzero-1.0.0: "Pulling 0/0" is a count of nothing. Say what is true. */
-    if ((Number(S.total) || 0) === 0 && !(S.phase && S.phase.kind)) t = 'Checking this day \u2014 show details';
+    if ((Number(S.total) || 0) === 0 && !(S.phase && S.phase.kind)) t = 'Checking ' + (targetDay || 'this day') + ' \u2014 show details';
     /* ===== clunky2-pull-1.0.0 (CLUNKY 71) =====
        While the day-note phase runs, every history is already done, so
        "Pulling 23/23" is a finished count riding on an unfinished pull. The
        pill counts the phase that is actually moving. */
     try {
       var ph = S.phase && String(S.phase.kind || '') === 'day-notes' ? S.phase : null;
-      if (ph) t = 'Today\u2019s notes ' + Number(ph.done || 0) + '/' + Number(ph.total || 0) + ' \u2014 show details';
+      if (ph) t = 'Visit notes' + (targetDay ? ' for ' + targetDay : '') + ' ' + Number(ph.done || 0) + '/' + Number(ph.total || 0) + ' \u2014 show details';
     } catch (ePh) {}
     /* ===== end clunky2-pull-1.0.0 (pill) ===== */
     if (f.textContent !== t) f.textContent = t;
@@ -5293,6 +5300,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var good = !!r.ok;
       var raw = String(r.reason == null ? '' : r.reason);
       var pending = !good && (r.pending === true || r.done === false || PP_PENDING.test(raw));
+      var stoppedRow = !good && raw === 'stopped-by-user';
       /* ===== cap-1.0.0 + tny-1.0.0 (two extra truths per row) =====
          sp = the chart is SAVED and only its AI summary is outstanding, so the
               row is a success with a follow-up, never a failure.
@@ -5302,11 +5310,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
               visit had not produced yet could not be read. History verdict on
               the left, note verdict in its own cell. */
       var why = good ? (r.sp === true ? 'saved · summary pending' : (r.axe === 'body-depth' ? 'saved (1 redo)' : 'saved'))
+        : stoppedRow ? 'not read — pull stopped'
         : pending ? (/^queued-for-automatic-recheck/.test(raw) ? 'chart saved — full visit notes queued for automatic re-check' : (/^re-checking/.test(raw) ? 're-checking…' : 'reading…'))
         : (r.cs === true ? 'chart saved \u2014 visit notes incomplete' : ppHumanWhy(raw));
-      var cls = good ? 'pp-ok' : (pending ? 'pp-wait' : 'pp-bad');
-      var glyph = good ? '✓ ' : (pending ? '' : '⚠ ');
-      var title = (!good && !pending && raw && raw !== why) ? ' title="' + esc(raw.slice(0, 200)) + '"' : '';
+      var cls = good ? 'pp-ok' : ((pending || stoppedRow) ? 'pp-wait' : 'pp-bad');
+      var glyph = good ? '✓ ' : ((pending || stoppedRow) ? '' : '⚠ ');
+      var title = (!good && !pending && !stoppedRow && raw && raw !== why) ? ' title="' + esc(raw.slice(0, 200)) + '"' : '';
       var dnRaw = String(r.dn == null ? '' : r.dn), dnCell = '';
       if (dnRaw && !pending) {
         /* dnw-1.0.0: a row waiting on the deferred round is CALM ("retrying"),
@@ -5340,9 +5349,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           : dnRaw === 'future-day' ? 'visit hasn’t happened yet — nothing to read (chart saved)'
           : dnNoNoteCell ? 'no note in athenaOne for this day'
           : dnQueuedCell ? 'queued to read'
-          : dnReadingCell ? 'reading today’s note now'
-          : dnRetrying ? 'today’s note not read yet — retrying'
-          : 'today’s note not read this time (chart saved)' + dnRefusedSuffix(dnRaw);
+          : dnReadingCell ? 'reading that day’s note now'
+          : dnRetrying ? 'that day’s note not read yet — retrying'
+          : 'that day’s note not read this time (chart saved)' + dnRefusedSuffix(dnRaw);
         /* ===== end fdw-1.0.0 / dnote-1.0.0 ===== */
         var dnCls = dnRaw === 'read' ? 'pp-ok'
           : ((dnRaw === 'not-yet' || dnRaw === 'future-day' || dnRetrying || dnQueuedCell || dnReadingCell || dnNoNoteCell) ? 'pp-wait' : 'pp-bad');
@@ -5357,8 +5366,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
             : dnReadingCell
             ? 'MLS is reading this day’s own visit note now.'
             : dnRetrying
-            ? 'Today’s note is queued for another automatic read.'
-            : 'The chart was saved. Today’s note could not be read this time; pull again later.') + '"'
+             ? 'That day’s note is queued for another automatic read.'
+             : 'The chart was saved. That day’s note could not be read this time; pull again later.') + '"'
           : '';
         dnCell = '<span class="' + dnCls + '"' + dnTitle + ' style="opacity:.8">' + esc(dnWhy) + '</span>';
       }
@@ -5371,7 +5380,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (p && p.__ppBuilt) return p;
     if (!p) { p = document.createElement('div'); p.id = PANEL; document.body.appendChild(p); }
     p.innerHTML = '<div class="ppc">' +
-      '<h3>&#128218; Pulling patient histories from athenaOne</h3>' +
+      '<h3 data-pp="title">&#128218; Pulling patient histories from athenaOne</h3>' +
       '<div class="pp-sub">MLS is opening each scheduled patient&#8217;s chart, reading it, and filing it. Each chart usually takes about 15-30 seconds; a busy day can run a few minutes. You can keep working - this keeps going on its own.</div>' +
       '<div class="pp-phase" data-pp="phase" style="display:none"></div>' +
       '<div class="pp-big"><span data-pp="done">0</span> <span style="font-size:16px;color:#B9CEC2">of <span data-pp="total">0</span></span></div>' +
@@ -5514,6 +5523,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var heldForDayNotes = (pct >= 100 && S && S.phase && String(S.phase.kind || '') === 'day-notes' && S.running === true);
     if (heldForDayNotes) pct = 99;
     var p = buildPanel();
+    var targetDay = ppDateLabel(S && S.targetDate);
+    setText(p, 'title', '\ud83d\udcda Pulling patient histories' + (targetDay ? ' for ' + targetDay : '') + ' from athenaOne');
     /* ===== clunky2-pull-1.0.0 (CLUNKY 71) =====
        MEASURED on this panel with a seeded day-note phase: the big number
        read "23 of 23", the pill read "Pulling 23/23", the bar was held at 99%
@@ -5524,7 +5535,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        largest type. The histories total is not lost - it is the "N saved"
        tally directly below, which is what the doctor asks about afterwards. */
     var dnPhaseHead = (S && S.phase && String(S.phase.kind || '') === 'day-notes') ? S.phase : null;
-    setText(p, 'phase', dnPhaseHead ? '→ Today’s notes' : '');
+    setText(p, 'phase', dnPhaseHead ? ('→ Visit notes' + (targetDay ? ' for ' + targetDay : ' for this day')) : '');
     setShown(p, 'phase', !!dnPhaseHead);
     setText(p, 'done', String(dnPhaseHead ? Number(dnPhaseHead.done || 0) : done));
     setText(p, 'total', String(dnPhaseHead ? Number(dnPhaseHead.total || 0) : total));
@@ -5534,7 +5545,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     /* uimap-1.0.0: a bar that sits at 99% saying "99% complete" and never moves
        reads as a stall. The engine already knows WHY it is held; say so, so the
        doctor can see the pull is still doing something rather than stuck. */
-    setText(p, 'pct', heldForDayNotes ? '99% — reading today’s notes' : (pct + '% complete'));
+    setText(p, 'pct', heldForDayNotes ? ('99% — reading visit notes' + (targetDay ? ' for ' + targetDay : ' for this day')) : (pct + '% complete'));
     /* ppt-2.0: "skipped" was the FAILED counter's label - failures called
        skips, counted per settle event. Chart-level truth, no euphemism. */
     var reChecking = Math.max(0, done - ok - failed);
@@ -5560,7 +5571,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        him - and the clause wall keeps every word behind a closed fold. The
        long line is unchanged apart from its address, so nothing is lost and
        the wording other suites pin still ships. */
-    var detailLine = '\u2713 ' + ok + ' histor' + (ok === 1 ? 'y' : 'ies') + ' saved' + (pendingLive ? ' \u00B7 ' + pendingLive + ' summar' + (pendingLive === 1 ? 'y' : 'ies') + ' pending' : '') + (dnQueuedLive ? ' \u00B7 ' + dnQueuedLive + ' today\u2019s note' + (dnQueuedLive === 1 ? '' : 's') + ' queued to read' : '') /* dnote-1.0.0 */ + (dnRetryLive ? ' \u00B7 ' + dnRetryLive + ' today\u2019s note' + (dnRetryLive === 1 ? '' : 's') + ' retrying' : '') + (dnUnreadLive ? ' \u00B7 ' + dnUnreadLive + ' today\u2019s note' + (dnUnreadLive === 1 ? '' : 's') + ' not read this time' : '') + (failed ? ' \u00B7 \u26A0 ' + failed + ' chart' + (failed === 1 ? '' : 's') + ' not saved \u2014 each row below says why' + (chartOnly ? ' (' + chartOnly + ' saved the chart but not every note)' : '') : '') + (reChecking ? ' \u00B7 ' + reChecking + ' re-checking' : '');
+    var noteDayWords = targetDay ? (' for ' + targetDay) : ' for this day';
+    var detailLine = '\u2713 ' + ok + ' histor' + (ok === 1 ? 'y' : 'ies') + ' saved' + (pendingLive ? ' \u00B7 ' + pendingLive + ' summar' + (pendingLive === 1 ? 'y' : 'ies') + ' pending' : '') + (dnQueuedLive ? ' \u00B7 ' + dnQueuedLive + ' visit note' + (dnQueuedLive === 1 ? '' : 's') + noteDayWords + ' queued to read' : '') /* dnote-1.0.0 */ + (dnRetryLive ? ' \u00B7 ' + dnRetryLive + ' visit note' + (dnRetryLive === 1 ? '' : 's') + noteDayWords + ' retrying' : '') + (dnUnreadLive ? ' \u00B7 ' + dnUnreadLive + ' visit note' + (dnUnreadLive === 1 ? '' : 's') + noteDayWords + ' not read this time' : '') + (failed ? ' \u00B7 \u26A0 ' + failed + ' chart' + (failed === 1 ? '' : 's') + ' not saved \u2014 each row below says why' + (chartOnly ? ' (' + chartOnly + ' saved the chart but not every note)' : '') : '') + (reChecking ? ' \u00B7 ' + reChecking + ' re-checking' : '');
     var needAttention = failed + dnUnreadLive;
     setText(p, 'tally', '\u2713 ' + ok + ' saved' + (needAttention ? ' \u00B7 \u26A0 ' + needAttention + ' need attention' : ''));
     var hasMore = detailLine.indexOf('\u00B7') >= 0;
@@ -5593,7 +5605,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        reading today's notes 7 of 23" was the third printing of one fact. */
     setText(p, 'curLbl', dnPhase ? 'Now:' : 'Now reading:');
     setText(p, 'current', dnPhase
-      ? 'reading today\u2019s notes'
+      ? ('reading visit notes' + (targetDay ? ' for ' + targetDay : ' for this day'))
       : String(S.current || 'opening the next chart'));
     /* Rows re-render ONLY when a row actually settles, never on the clock. */
     var sig = done + '|' + ok + '|' + failed + '|' + pendingLive + '|' + dnRetryLive + '|' + dnUnreadLive + '|' + dnQueuedLive /* dnote-1.0.0: a queued->read flip must repaint */ + '|' + ((S.rows || []).length);
@@ -5613,9 +5625,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function renderDone(S) {
     css();
     var ok = S.ok || 0, failed = S.failed || 0, chartOnly = S.chartOnly || 0, total = S.total || 0;
+    var stoppedRun = stopRequested || S.stopped === true || String(S.stopReason || '') === 'stopped-by-user';
+    var stoppedRows = Math.max(0, Number(S.stoppedRows || 0));
+    var targetDay = ppDateLabel(S.targetDate);
+    var reached = stoppedRun ? Math.max(0, total - stoppedRows) : Number(S.done || 0);
     /* pullzero-1.0.0: this run had no chart to read at all \u2014 say that, rather
        than reporting "\u2713 0 histories saved" as if zero were a result. */
-    var zeroDay = (total === 0 && !(S.rows || []).length);
+    var zeroDay = !stoppedRun && (total === 0 && !(S.rows || []).length);
     /* pillfirst-1.0.0: the day-note truth is computed BEFORE the pill
        branch, because the corner pill now has to name what still needs the
        doctor. ONE COUNT, TWO SURFACES: the pill reports the exact number the
@@ -5694,7 +5710,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          day-note debt lcd-1.0.0/dnote-1.0.0 already reduced by what the rows
          themselves prove), so the two surfaces cannot disagree. */
       var attnP = failed + dvTnFailed;
-      if (fD) { var tD = zeroDay ? 'No charts to read \u2014 see why' : ('Pull done \u2014 \u2713 ' + ok + ' saved' + (attnP ? ' \u00B7 \u26A0 ' + attnP + (attnP === 1 ? ' needs' : ' need') + ' attention' : '') + ' \u2014 show details'); if (fD.textContent !== tD) fD.textContent = tD; }
+       if (fD) { var tD = stoppedRun
+         ? ('Pull stopped' + (targetDay ? ' for ' + targetDay : '') + ' \u2014 \u2713 ' + ok + ' saved' + (stoppedRows ? ' \u00B7 ' + stoppedRows + ' not read' : '') + (attnP ? ' \u00B7 \u26A0 ' + attnP + (attnP === 1 ? ' needs' : ' need') + ' attention' : '') + ' \u2014 show details')
+         : (zeroDay ? 'No charts to read \u2014 see why' : ('Pull done' + (targetDay ? ' for ' + targetDay : '') + ' \u2014 \u2713 ' + ok + ' saved' + (attnP ? ' \u00B7 \u26A0 ' + attnP + (attnP === 1 ? ' needs' : ' need') + ' attention' : '') + ' \u2014 show details')); if (fD.textContent !== tD) fD.textContent = tD; }
       var phD = document.getElementById(PANEL); if (phD) phD.remove();
       return;
     }
@@ -5703,10 +5721,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (!p.__ppDoneApplied) {
       p.__ppDoneApplied = 1;
       api.doneShown = (api.doneShown || 0) + 1;
-      try { var h3D = p.querySelector('h3'); if (h3D) h3D.textContent = zeroDay ? '\u2705 Done \u2014 there was no chart to read' : '\u2705 Done \u2014 the pull has finished'; } catch (eH3) {}
-      try { var subD = p.querySelector('.pp-sub'); if (subD) subD.textContent = zeroDay
-        ? 'No chart on this day was eligible to read, so nothing was opened in athenaOne. The schedule itself is unaffected.'
-        : 'Every row below is final. Nothing more will run, and athenaOne is no longer being driven.'; } catch (eSub) {}
+      try { var h3D = p.querySelector('h3'); if (h3D) h3D.textContent = stoppedRun
+        ? '\u23f9 Pull stopped' + (targetDay ? ' \u2014 ' + targetDay : '')
+        : (zeroDay ? '\u2705 Done \u2014 there was no chart to read' : '\u2705 Done \u2014 the pull has finished' + (targetDay ? ' for ' + targetDay : '')); } catch (eH3) {}
+      try { var subD = p.querySelector('.pp-sub'); if (subD) subD.textContent = stoppedRun
+        ? 'You stopped this pull. Everything already read stayed saved; the remaining charts were not opened.'
+        : (zeroDay
+          ? 'No chart on this day was eligible to read, so nothing was opened in athenaOne. The schedule itself is unaffected.'
+          : 'Every row below is final. Nothing more will run, and athenaOne is no longer being driven.'); } catch (eSub) {}
       try { var curLbl = p.querySelector('.pp-cur b'); if (curLbl) curLbl.textContent = 'Result:'; } catch (eCur) {}
       /* ===== clunky2-pull-1.0.0 (CLUNKY 72) =====
          MEASURED on the finished card: the note said '"Retry failed
@@ -5722,13 +5744,15 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         var rbD = document.getElementById('mlsPullProgRetry');
         if (rbD) rbD.style.display = canRetry ? '' : 'none';
         var noteD = p.querySelector('.pp-note');
-        if (noteD) noteD.textContent = zeroDay
-          ? 'Nothing here needs fixing unless you expected charts. If you did: check the day has patients, that each carries a DOB or MRN, and that one signed-in athenaOne tab is open — then pull the day again.'
-          : (!failed
-          ? 'Everything the day asked for was read and saved.'
-          : (canRetry
-            ? 'Rows marked \u26A0 carry their reason. "Retry failed histories" below re-reads only those charts.'
-            : 'Rows marked \u26A0 carry their reason. Open the Visit screen and pull the day again to re-read only those charts.'));
+        if (noteD) noteD.textContent = stoppedRun
+          ? 'Nothing was lost. Pull this day again when you want MLS to read the charts that remain.'
+          : (zeroDay
+            ? 'Nothing here needs fixing unless you expected charts. If you did: check the day has patients, that each carries a DOB or MRN, and that one signed-in athenaOne tab is open — then pull the day again.'
+            : (!failed
+            ? 'Everything the day asked for was read and saved.'
+            : (canRetry
+              ? 'Rows marked \u26A0 carry their reason. "Retry failed histories" below re-reads only those charts.'
+              : 'Rows marked \u26A0 carry their reason. Open the Visit screen and pull the day again to re-read only those charts.')));
       } catch (eNote) {}
       /* ===== end clunky2-pull-1.0.0 (retry) ===== */
       try { var sbD = document.getElementById('mlsPullProgStop'); if (sbD) sbD.style.display = 'none'; } catch (eSb) {}
@@ -5737,7 +5761,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     /* uimap-1.0.0: "N not saved" left the doctor with a number and no meaning \u2014
        not saved WHERE, and what does he do about it. The reason is already on
        every row underneath, so the summary says to look there. */
-    var doneLine = '\u2713 ' + ok + ' histor' + (ok === 1 ? 'y' : 'ies') + ' saved' + (failed ? ' \u00B7 \u26A0 ' + failed + ' chart' + (failed === 1 ? '' : 's') + ' not saved \u2014 each row below says why' + (chartOnly ? ' (' + chartOnly + ' saved the chart but not every note)' : '') : ''); /* dv3-1.0.0 */
+    var doneLine = '\u2713 ' + ok + ' histor' + (ok === 1 ? 'y' : 'ies') + ' saved' + (failed ? ' \u00B7 \u26A0 ' + failed + ' chart' + (failed === 1 ? '' : 's') + ' not saved \u2014 each row below says why' + (chartOnly ? ' (' + chartOnly + ' saved the chart but not every note)' : '') : '') + (stoppedRows ? ' \u00B7 ' + stoppedRows + ' not read because the pull was stopped' : ''); /* dv3-1.0.0 */
     /* pullzero-1.0.0: zero is not a tally, it is the whole story */
     if (zeroDay) doneLine = 'No chart histories were read \u2014 this day had none to read.';
     /* ===== cap-1.0.0 + tny-1.0.0 (the DONE card says all four things) =====
@@ -5768,16 +5792,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if (dnReadingDone > 0) doneLine += ' (reading ' + Math.min(dnCellsDone, dnReadDone + dnNoNoteDone + dnReadingDone) + ' of ' + dnCellsDone + ')';
       else doneLine += ' (queued)';
     }
-    if (dv && dv.complete === true) doneLine += (dnNotesDone && dvTnFailed === 0)
+    if (!stoppedRun && dv && dv.complete === true) doneLine += (dnNotesDone && dvTnFailed === 0)
       ? ' \u2014 everything verified'
       : (!dnNotesDone
         ? ' \u2014 histories verified; this day\u2019s own visit notes are still being read'
         : ' \u2014 histories verified; the visit notes marked above still need attention');
-    setText(p, 'done', String(S.done || 0));
+    setText(p, 'done', String(reached));
     setText(p, 'total', String(total));
     var fillD = p.querySelector('.pp-fill');
-    if (fillD) { var wD = (total ? Math.round(((S.done || 0) / total) * 100) : 100) + '%'; if (fillD.style.width !== wD) fillD.style.width = wD; }
-    setText(p, 'pct', 'Done');
+    if (fillD) { var wD = (total ? Math.round((reached / total) * 100) : (stoppedRun ? 0 : 100)) + '%'; if (fillD.style.width !== wD) fillD.style.width = wD; }
+    setText(p, 'pct', stoppedRun ? 'Stopped' : 'Done');
     /* ===== clunky2-pull-1.0.0 (CLUNKY 71, 127) =====
        MEASURED on the finished card: [data-pp="tally"] and [data-pp="current"]
        held the SAME sentence, printed once at y≈264 and again at y≈355. The

@@ -9,8 +9,8 @@
  * harness (no network, no extension, no Athena, synthetic identities only) and
  * measures the whole lane:
  *
- *   1. after boot, TODAY is read once and empty calendar days are skipped until
- *      the next two scheduled days are warm, inside a bounded horizon
+ *   1. after boot, TODAY is read only with an exact date-bound census and empty
+ *      calendar days are skipped until the next two scheduled days are warm
  *   2. progress reaches the corner pill's ONE source
  *      (window.__mlsDayHistoryPull.state) and nothing else: no dialog is
  *      opened, and a clean walk says nothing at all
@@ -57,6 +57,21 @@ function world(options) {
   const pref = h.rt.__mlsVisitNotesPref;
   const realEnsure = pref.ensureChosenForBulkPull;
   pref.ensureChosenForBulkPull = function () { dialogOpens++; return realEnsure.apply(this, arguments); };
+
+  /* Automatic Today may not trust the reusable calendar row cache. Model the
+     production appointment-only census from the harness's explicitly seeded
+     day; a missing seed is deliberately unverified. */
+  h.rt.__mlsSI.appointmentCensusStatusForDay = function (day) {
+    day = String(day || '');
+    const rows = h.rowDays.get(day);
+    if (day === TODAY && options.todayCensus === false) {
+      return { available: false, exactAppointments: false, date: day, sourceCount: 0, reason: 'no-snapshot' };
+    }
+    if (!h.rowDays.has(day)) {
+      return { available: false, exactAppointments: false, date: day, sourceCount: 0, reason: 'no-snapshot' };
+    }
+    return { available: true, exactAppointments: true, date: day, sourceCount: rows.length, reason: 'exact-appointment-census' };
+  };
 
   /* the corner pill's ONE source, instrumented: every running transition is
      recorded, so "the pill showed this pull" is a measurement, not a claim. */
@@ -239,6 +254,29 @@ let stage = 'start';
     eq(reDue.why, 'new-rows', 'a day due for new rows names some other cause');
     eq(w.si._upcomingDayReady(MONDAY).ready, false,
       'the strip still claims ready after the engine detected a new appointment');
+  }
+
+  /* Today is skipped unless its appointment-only receipt proves this exact
+     date. The walk still advances to untouched future clinic days. */
+  {
+    stage = '3b today census ownership';
+    const unknown = world({ todayCensus: false });
+    unknown.h.seedDay(TODAY, 3);
+    unknown.h.seedDay(TOMORROW, 1);
+    unknown.h.seedDay(DAY_AFTER, 1);
+    const unknownRun = await unknown.si._upcomingRunNow({});
+    eq(unknownRun.days[0].reason, 'schedule-unverified', 'an unverified Today was not named and skipped');
+    eq(unknown.chartsPerDay()[TODAY], undefined, 'an unverified Today opened charts from a reusable row cache');
+    eq(unknown.chartsPerDay()[TOMORROW], 1, 'an unverified Today prevented the next untouched day from being warmed');
+
+    const empty = world();
+    empty.h.seedDay(TODAY, 0);
+    empty.h.seedDay(TOMORROW, 1);
+    empty.h.seedDay(DAY_AFTER, 1);
+    const emptyRun = await empty.si._upcomingRunNow({});
+    eq(emptyRun.days[0].reason, 'verified-empty', 'an exact zero Today was not reported as verified empty');
+    eq(empty.chartsPerDay()[TODAY], undefined, 'a verified-empty Today still opened a chart');
+    eq(empty.chartsPerDay()[TOMORROW], 1, 'a verified-empty Today prevented the next untouched day from being warmed');
   }
 
   /* =========================================================================
@@ -455,6 +493,43 @@ let stage = 'start';
     eq(live.chartsPerDay()[TOMORROW], undefined, 'the walk read tomorrow after the doctor pressed Stop');
     eq(live.toasts.length, 0,
       'a Stop the doctor pressed came back as a "could not be read" line - their own decision, reported as news');
+    const stoppedLedger = JSON.parse(live.h.store.get(live.key('mlsUpcomingPullV1')));
+    const stoppedEntry = stoppedLedger[TODAY + '|all'];
+    eq(stoppedEntry.ok, false, 'a stopped partial day was marked fresh/ok in the upcoming ledger');
+    eq(stoppedEntry.complete, false, 'a stopped partial day was marked complete in the upcoming ledger');
+    eq(stoppedEntry.reason, 'stopped-by-user', 'the ledger hid the Stop behind a generic partial reason');
+    let stoppedDue = live.si._upcomingState().days.find(d => d.day === TODAY);
+    eq(stoppedDue.due, false, 'the scheduler would immediately restart a pull the doctor just stopped');
+    eq(stoppedDue.why, 'retry-wait', 'the stopped day is mislabeled fresh during its bounded retry pause');
+    live.h.setNow(live.h.now() + live.si._upcomingConfig().retryMs + 1);
+    stoppedDue = live.si._upcomingState().days.find(d => d.day === TODAY);
+    eq(stoppedDue.due, true, 'a stopped partial day never became retry-due');
+    eq(stoppedDue.why, 'retry', 'a stopped partial day became due under the wrong reason');
+  }
+
+  /* A stopped future day can contain rows while it waits for its bounded
+     retry. Those rows are not "ready" and cannot consume one of the two warm
+     future-day slots or hide a genuinely untouched clinic day. */
+  {
+    stage = '5d stopped future is not ready quota';
+    const w = world();
+    w.h.seedDay(TODAY, 0);
+    w.h.seedDay(TOMORROW, 2);
+    w.h.seedDay(DAY_AFTER, 1);
+    w.h.seedDay(MONDAY, 1);
+    const ledger = {};
+    ledger[TOMORROW + '|all'] = {
+      at: w.h.now(), rows: 2, ok: false, complete: false, attention: 0,
+      readMode: 'day-facts', reason: 'stopped-by-user'
+    };
+    w.h.store.set(w.key('mlsUpcomingPullV1'), JSON.stringify(ledger));
+    const run = await w.si._upcomingRunNow({});
+    const held = run.days.find(d => d.day === TOMORROW);
+    eq(held.reason, 'retry-wait', 'the stopped future day was reported as fresh while waiting');
+    eq(w.chartsPerDay()[TOMORROW], undefined, 'the bounded retry pause immediately reopened the stopped day');
+    eq(w.chartsPerDay()[DAY_AFTER], 1, 'the stopped rows hid the next untouched future clinic day');
+    eq(w.chartsPerDay()[MONDAY], 1, 'the stopped rows consumed a ready-day slot and hid the second untouched clinic day');
+    eq(run.ran, 2, 'the walk did not fill exactly the two ready future-day slots');
   }
 
   /* =========================================================================
@@ -513,6 +588,9 @@ let stage = 'start';
     w.h.chartFail.add(TODAY + '|' + rows[0].patient_external_id);
     const run = await w.si._upcomingRunNow({});
     ok(run.ran >= 1, 'the walk never reached the day with an unreadable chart');
+    eq(run.reason, 'partial', 'a walk containing an incomplete day still reported overall complete');
+    const partialLedger = JSON.parse(w.h.store.get(w.key('mlsUpcomingPullV1')));
+    eq(partialLedger[TODAY + '|all'].ok, false, 'an incomplete day was stored as fresh/ok');
     eq(w.si._upcomingDayReady(TODAY).ready, false,
       'a partial day is reported ready merely because one chart was read');
     eq(w.toasts.length, 1, 'a day with unreadable rows said something other than one line');

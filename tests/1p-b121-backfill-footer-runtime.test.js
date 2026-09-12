@@ -87,9 +87,13 @@ const sharedSrc = read(SHARED);
   for (const [name, src] of [[FORK, forkSrc], [SHARED, sharedSrc]]) {
     ok(src.indexOf("el.textContent = 'Visit backfill: ' + STATE.status;") < 0,
       name + ' writes the raw, name-bearing status line into the footer again');
-    ok(src.indexOf('"Finishing today\'s notes in the background"') > 0,
+    ok(src.indexOf('"Finishing visit notes in the background"') > 0,
       name + ' lost the sanctioned in-progress sentence');
     ok(src.indexOf('nothing was lost') > 0, name + ' lost the sanctioned deferred sentence');
+    ok(src.indexOf("st.stopped === true || st.stoppedByUser === true || String(st.reason || '') === 'stopped-by-user'") > 0,
+      name + ' can still enqueue visit backfill from a pull the doctor stopped');
+    ok(src.indexOf("if (st.stopped === true) {") > 0 && src.indexOf("stop('stopped-by-user');") > 0,
+      name + ' completion watcher does not inherit the parent pull Stop');
   }
 }
 
@@ -204,8 +208,8 @@ const laneReasonCode = (function () {
 }
 
 /* ============================================== 5  THE QUIET CLASSIFIER === */
-const SENTENCE_RUNNING = "Finishing today's notes in the background (3 left)";
-const SENTENCE_LATER = "Today's notes will finish next time you pull — nothing was lost";
+const SENTENCE_RUNNING = "Finishing visit notes in the background (3 left)";
+const SENTENCE_LATER = "Visit notes will finish next time you pull — nothing was lost";
 const OLD_FOOTER = 'Visit backfill: Jane Q. Doe - open-failed: Open your signed-in athenaOne in another tab, then try again';
 function classifierFrom(shellName) {
   const src = read(shellName);
@@ -473,6 +477,32 @@ async function autoBackfillHonorsFullNotesScope() {
   api.stop();
 }
 
+async function stoppedPullAndTargetDateStayTruthful() {
+  const h = makeSandbox({ openResult: () => OPEN_OK, readResult: () => VISITS_OK });
+  const api = h.api();
+  const row = { name: NAME, pid: 'p1', dob: '01/02/1970', ok: true };
+  eq(api.enqueueFromRun([row], { receipt: {
+    visitNotesRequested: true, stopped: true, stopReason: 'stopped-by-user', targetDate: '2026-09-15'
+  } }), 0, 'a stopped pull armed the independent visit-note backfill');
+  eq(api.state.queue.length, 0, 'a stopped pull left visit-note work running in the background');
+  eq(api.enqueueFromRun([row], { receipt: {
+    visitNotesRequested: true, stoppedByUser: true, targetDate: '2026-09-15'
+  } }), 0, 'a stoppedByUser receipt bypassed the independent backfill stop');
+  eq(api.enqueueFromRun([row], { receipt: {
+    visitNotesRequested: true, reason: 'stopped-by-user', targetDate: '2026-09-15'
+  } }), 0, 'a stopped-by-user reason bypassed the independent backfill stop');
+
+  eq(api.enqueueFromRun([row], { receipt: {
+    visitNotesRequested: true, stopped: false, targetDate: '2026-09-15'
+  } }), 1, 'the clean date-labelled control pull did not arm backfill');
+  const line = api.footerText();
+  ok(/for Tue, Sep 15, 2026/.test(line), 'the footer hides the exact selected pull date: ' + JSON.stringify(line));
+  ok(!/today/i.test(line), 'a future-day pull is still described as today: ' + JSON.stringify(line));
+  api.stop();
+  eq(api.footerText(), '', 'the visit-note footer kept claiming work after Stop');
+  api.revert();
+}
+
 /* ---- 6a  duplicate names retain the completed pull row's exact identity -- */
 async function duplicateNamesStayDistinct() {
   const sameName = 'Alex Q. Sample';
@@ -595,7 +625,7 @@ async function footerIsPhiFree() {
     return !!el && el.textContent.indexOf('Finishing') === 0;
   }), 'the footer never showed the in-progress sentence');
   const running = h.footEl().textContent;
-  ok(/^Finishing today's notes in the background \(\d+ left\)$/.test(running),
+  ok(/^Finishing visit notes in the background \(\d+ left\)$/.test(running),
     'the in-progress footer is not the sanctioned sentence plus a count: ' + JSON.stringify(running));
 
   ok(await h.drive(ended(h)), 'the pump never finished');
@@ -815,6 +845,7 @@ async function legacyMutationIsCaught() {
     await retryIsBounded();
     await quietByConstruction();
     await autoBackfillHonorsFullNotesScope();
+    await stoppedPullAndTargetDateStayTruthful();
     await duplicateNamesStayDistinct();
   }
 

@@ -388,7 +388,7 @@ async function runtime() {
     eq(card.rows.length, 5, `the card should list 5 rows, it listed ${card.rows.length}`);
     eq(orangeCount(card), 4, `expected 4 deferred note cells, got ${orangeCount(card)}`);
     eq(greenCount(card), 1, `expected 1 already-saved note cell, got ${greenCount(card)}`);
-    ok(/today.s note not read this time \(chart saved\)/.test(noteOf(card, 'Quillon').note),
+    ok(/that day.s note not read this time \(chart saved\)/.test(noteOf(card, 'Quillon').note),
       `the deferred row does not carry the deferred wording: "${noteOf(card, 'Quillon').note}"`);
     /* ===== dnote-1.0.0 (b1184): PINS RE-AIMED, and why ====================
        These read 4 and 4 - every non-green note cell, INCLUDING the row whose

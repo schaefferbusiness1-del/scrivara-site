@@ -5828,8 +5828,8 @@
        patient-row-loss shield reads state.running and finally gets its
        signal on modern pulls too. */
     function ppState(){ try{ var g=window.__mlsDayHistoryPull=window.__mlsDayHistoryPull||{}; if(!g.state||g.state.__si!==1){ if(g.state&&g.state.running===true) return null; g.state={__si:1,running:false,total:0,done:0,ok:0,failed:0,current:'',rows:[]}; } return g.state; }catch(e){ return null; } }
-    function ppTally(s){ try{ /* ppt-2.0 (owner 2026-08-09, watching day 9: "2 saved · 19 skipped"): the tally counted settle EVENTS, so a chart that failed three re-check passes then cleared counted 3 into "skipped" and 1 into "saved" forever. CHART-LEVEL truth: latest state per chart key wins; done = distinct charts seen (monotonic - the bar never moves backward, si-1.9.4). */ var latest={}; for(var ti=0;ti<s.rows.length;ti++){ var tr=s.rows[ti]; latest[tr.k||tr.name]=tr; } var tks=Object.keys(latest); var tok=0,tfail=0,tcs=0; for(var tj=0;tj<tks.length;tj++){ var tl=latest[tks[tj]]; if(tl.ok===true) tok++; else if(tl.pending!==true){ tfail++; if(tl.cs===true) tcs++; } } s.ok=tok; s.failed=tfail; s.chartOnly=tcs; s.done=tks.length; if((s.total||0)<tks.length) s.total=tks.length; }catch(e){} }
-    function ppStart(total,base){ var s=ppState(); if(!s) return; if(base>0){ s.running=true; if(total>s.total) s.total=total; return; } s.running=true; s.total=total||0; s.done=0; s.ok=0; s.failed=0; s.current=''; s.rows=[]; s.runId='r'+Date.now().toString(36); s.unresolvedSeq=0; /* srr-1.2: rows accumulate across sub-batches by the si-1.9.4 no-reset law - the runId lets readers slice the CURRENT run without resetting anything (the 22-rows-on-a-20-chart-day trap, 2026-08-08) */ }
+    function ppTally(s){ try{ /* ppt-2.0 (owner 2026-08-09, watching day 9: "2 saved · 19 skipped"): the tally counted settle EVENTS, so a chart that failed three re-check passes then cleared counted 3 into "skipped" and 1 into "saved" forever. CHART-LEVEL truth: latest state per chart key wins; done = distinct charts seen (monotonic - the bar never moves backward, si-1.9.4). A cooperative Stop is the doctor's decision, not a failed chart: keep those rows visible and retryable, but never count them in failed/needs-attention. */ var latest={}; for(var ti=0;ti<s.rows.length;ti++){ var tr=s.rows[ti]; latest[tr.k||tr.name]=tr; } var tks=Object.keys(latest); var tok=0,tfail=0,tcs=0,tstopped=0; for(var tj=0;tj<tks.length;tj++){ var tl=latest[tks[tj]]; if(tl.ok===true) tok++; else if(tl.pending!==true){ if(String(tl.reason||'')==='stopped-by-user') tstopped++; else { tfail++; if(tl.cs===true) tcs++; } } } s.ok=tok; s.failed=tfail; s.chartOnly=tcs; s.stoppedRows=tstopped; s.done=tks.length; if((s.total||0)<tks.length) s.total=tks.length; }catch(e){} }
+    function ppStart(total,base){ var s=ppState(); if(!s) return; var scopeDay=typeof batchScopeDay!=='undefined'?String(batchScopeDay||''):''; if(base>0){ s.running=true; if(total>s.total) s.total=total; if(scopeDay&&!s.targetDate) s.targetDate=scopeDay; return; } s.running=true; s.total=total||0; s.done=0; s.ok=0; s.failed=0; s.stoppedRows=0; s.stopped=false; s.stopReason=''; s.targetDate=scopeDay; s.current=''; s.rows=[]; s.runId='r'+Date.now().toString(36); s.unresolvedSeq=0; /* srr-1.2: rows accumulate across sub-batches by the si-1.9.4 no-reset law - the runId lets readers slice the CURRENT run without resetting anything (the 22-rows-on-a-20-chart-day trap, 2026-08-08) */ }
     function ppCurrent(name){ var s=ppState(); if(s&&s.running) s.current=String(name||''); }
     function ppSettle(name,ok,reason,pending,extra){ var s=ppState(); if(!s||!s.running) return null; var r={name:String(name||''),ok:ok===true,reason:String(reason||''),pending:pending===true,runId:String(s.runId||'')}; if(extra){ r.sr=Number(extra.surfaceResets||0); r.surface=String(extra.chartSurface||''); if(extra.pid) r.pid=String(extra.pid); if(extra.axe) r.axe=String(extra.axe); if(extra.chartSaved===true) r.cs=true; /* qol-2.2 */ if(extra.sp===true) r.sp=true; /* cap-1.0.0 */ if(extra.dn) r.dn=String(extra.dn).slice(0,80); /* tny-1.0.0 */ if(extra.dnDay) r.dnd=String(extra.dnDay).slice(0,10); /* lcd-1.0.0: the note column's OWN day, so a receipt that lands later can prove it belongs to THIS row */ } /* ppt-2.0: rows key by name+pid so same-name patients stay distinct and re-settles REPLACE in the tally rather than double-count. A reporting-only key is reserved for pid-less refused entries. */ r.k=(extra&&extra.reportKey)?String(extra.reportKey):(r.name+'|'+(r.pid||'')); s.rows.push(r); ppTally(s); return r; }
     /* ppu-1.0.0: unresolved-at-entry rows belong to the requested history
@@ -5886,7 +5886,7 @@
        are proved. Every other queued retry stays calm as “re-checking…”. */
     function ppAutomaticRecheckReason(entry){ return ppChartSaved(entry)&&pullVisitBodies===true?"queued-for-automatic-recheck":"re-checking"; }
     function ppResolve(rowRef,ok,reason,extra){ var s=ppState(); if(!s||!rowRef) return; rowRef.ok=ok===true; rowRef.pending=false; rowRef.reason=String(reason||''); if(extra){ if(extra.sp===true) rowRef.sp=true; /* cap-1.0.0 */ if(extra.chartSaved===true) rowRef.cs=true; if(extra.dn) rowRef.dn=String(extra.dn).slice(0,80); /* tny-1.0.0 */ if(extra.dnDay) rowRef.dnd=String(extra.dnDay).slice(0,10); /* lcd-1.0.0 */ } ppTally(s); }
-    function ppEnd(){ var s=ppState(); if(s){ s.finishedAt=Date.now(); s.running=false; s.current=''; s.phase=null; } } /* dn-1.0: the DONE card freezes its clock on finishedAt */
+    function ppEnd(){ var s=ppState(); if(s){ var rec=typeof receipt!=='undefined'&&receipt?receipt:{}; var globalStop=false; try{globalStop=window.__mlsPullStopRequested===true;}catch(eStop){} var wasStopped=rec.stoppedByUser===true||globalStop; s.finishedAt=Date.now(); s.running=false; s.current=''; s.phase=null; s.stopped=wasStopped; s.stopReason=wasStopped?'stopped-by-user':String(rec.reason||''); } } /* dn-1.0: the terminal card freezes its clock on finishedAt; Stop remains terminal truth after the global request flag is cleared */
     /* ===== dnp-1.0.0 (the day-note pass gets its OWN phase) =================
        Owner 2026-08-17: the bar sat at 100% with "18 saved · 5 not saved"
        painted while "saving the pulled day's note (7 of 23)" was still
@@ -11266,7 +11266,7 @@
             res.providerAttributionComplete = providerComplete;
             res.reason = complete
               ? (p1AppointmentCensusComplete ? ((res.censusHistoryPhaseTwo && res.historyPhaseTwoComplete === true) ? "complete-appointment-census-with-history" : (res.censusHistoryPhaseTwo ? "complete-appointment-census-history-partial" : "complete-appointment-census-only")) : (res.reason === "provider-empty" ? "provider-empty" : (r.receipt.authoritativeEmpty ? "empty-day" : (includeHistory ? "complete" : "complete-schedule-only")))) /* bob-1.0.0 */
-              : (__metadataFailure ? String(__metadataFailure.reason || "metadata-persist-failed") : (!scheduleScopeComplete ? "provider-unverified" : (!identityBootstrapComplete ? "identity-bootstrap-partial" : (!calendarReceipt.complete ? "calendar-partial" : (!__scvStoreOk && historyReceipt.complete === true ? __scvReason : (historyReceipt && historyReceipt.reason === "athena-tab-sleeping" ? "athena-tab-sleeping" : "history-partial"))))));
+              : (historyReceipt && historyReceipt.stoppedByUser === true ? "stopped-by-user" : (__metadataFailure ? String(__metadataFailure.reason || "metadata-persist-failed") : (!scheduleScopeComplete ? "provider-unverified" : (!identityBootstrapComplete ? "identity-bootstrap-partial" : (!calendarReceipt.complete ? "calendar-partial" : (!__scvStoreOk && historyReceipt.complete === true ? __scvReason : (historyReceipt && historyReceipt.reason === "athena-tab-sleeping" ? "athena-tab-sleeping" : "history-partial")))))));
             res.scheduleVerified = r.scheduleVerified === true;
             res.providerRosterReceipt = currentProviderRosterReceipt;
             res.scheduleReceipt = r.receipt; res.providerReceipt = res.providerReceipt || null; res.calendarReceipt = calendarReceipt; res.historyReceipt = historyReceipt;
@@ -13529,15 +13529,17 @@
       return c;
     }, 0);
   }
-  /* Automatic work must never infer today's Athena roster from the UI's
-     reusable row cache.  The census is the only date-bound, PHI-free proof. */
+  /* Today's rendered rows can still belong to a previously selected Athena
+     day. Automatic work therefore trusts only the date-bound appointment
+     census. A missing or partial census is unknown, never proof that today
+     should be driven; an exact zero is a verified empty clinic day. */
   function upTodayScheduleProof(day) {
     return safe(function () {
       var si = window.__mlsSI;
       if (!si || !isFn(si.appointmentCensusStatusForDay)) return null;
       var s = si.appointmentCensusStatusForDay(String(day));
-      if (!s || s.day !== String(day) || s.complete !== true) return null;
-      return { empty: s.authoritativeEmpty === true || Number(s.count || s.rows || 0) === 0 };
+      if (!s || String(s.date || "") !== String(day) || s.exactAppointments !== true) return null;
+      return { empty: Number(s.sourceCount || 0) === 0 };
     }, null);
   }
   function upGenerating() {
@@ -13603,6 +13605,9 @@
     var mode = upReadMode();
     if (!mode) return { due: true, why: "visit-notes-unchosen" };
     if (String(e.readMode || "") !== mode) return { due: true, why: "read-mode-changed" };
+    if (e.ok === false) return Date.now() - Number(e.at) >= UP_RETRY_MS
+      ? { due: true, why: "retry" }
+      : { due: false, why: "retry-wait" };
     if (Date.now() - Number(e.at) >= upFreshMs(e)) return { due: true, why: "stale" };
     if (upRowsInMls(step.day) > Number(e.rows || 0)) return { due: true, why: "new-rows" };
     return { due: false, why: "fresh" };
@@ -13680,28 +13685,32 @@
     var led = upLedgerRead();
     var plan = upPlan(today, scopeKey, led);
     _up.running = true; _up.runs = Number(_up.runs || 0) + 1; _up.walk = [];
-    var ran = 0, notice = "", idx = 0, futureScheduled = 0;
+    var ran = 0, notice = "", idx = 0, futureScheduled = 0, incompleteSeen = 0;
     function finish(reason) {
+      if (incompleteSeen > 0 && /^(complete|scan-limit)$/.test(String(reason || ""))) reason = "partial";
       _up.running = false; _up.lastAt = Date.now(); _up.lastReason = String(reason || "");
       if (notice) safe(function () { toast(notice, "warn"); });
       return { ok: true, ran: ran, reason: String(reason || ""), days: _up.walk.slice() };
     }
-    function continueAfter(s, rows) {
-      if (s && s.future === true && Number(rows || 0) > 0) futureScheduled++;
+    function continueAfter(s, rows, ready) {
+      /* Only a genuinely fresh entry or a day progressed in THIS walk fills
+         the two-day work target. A stopped/partial retry-wait entry can carry
+         rows, but stale debt must not hide the next untouched day. */
+      if (s && s.future === true && Number(rows || 0) > 0 && ready === true) futureScheduled++;
       if (futureScheduled >= UP_FUTURE_DAYS) return Promise.resolve(finish("complete"));
       return step();
     }
     function step() {
       if (idx >= plan.length) return Promise.resolve(finish("scan-limit"));
       var s = plan[idx++];
-      /* Today is special: a stale prior-day DaySwitch snapshot must not drive
-         an automatic history read.  Require a fresh explicit census receipt;
-         an authoritative empty result is terminal and is skipped. */
+      /* Today is the one day whose visible grid may be a stale selection.
+         Skip it unless the appointment-only census proves the exact date;
+         continue looking for genuinely scheduled, not-yet-pulled future days. */
       if (!s.future) {
         var todayProof = upTodayScheduleProof(s.day);
         if (!todayProof || todayProof.empty) {
           _up.walk.push({ day: s.day, pulled: false, reason: todayProof ? "verified-empty" : "schedule-unverified" });
-          return continueAfter(s, 0);
+          return continueAfter(s, 0, false);
         }
       }
       /* The setting is authoritative at every day boundary. Finish the day
@@ -13714,8 +13723,9 @@
       }
       var due = upDue(s);
       if (!due.due) {
-        _up.walk.push({ day: s.day, pulled: false, reason: "fresh", rows: Number((s.entry || {}).rows || 0) });
-        return continueAfter(s, Number((s.entry || {}).rows || 0));
+        var entryReady = !!(s.entry && s.entry.ok === true && s.entry.complete === true && Number(s.entry.attention || 0) === 0);
+        _up.walk.push({ day: s.day, pulled: false, reason: due.why, rows: Number((s.entry || {}).rows || 0) });
+        return continueAfter(s, Number((s.entry || {}).rows || 0), entryReady);
       }
       /* the gate is asked again before EVERY day: the doctor may have started
          recording, opened the review sheet, or pressed Pull mid-walk */
@@ -13742,7 +13752,12 @@
              it, and is retried sooner. */
           var touched = Number((res && res.created) || 0) + Number((res && res.repaired) || 0) +
             Number((res && res.skipped) || 0);
-          var read = complete || touched > 0;
+          var stoppedNow = !!(res && (res.stoppedByUser === true || String(res.reason || "") === "stopped-by-user" ||
+            (res.historyReceipt && res.historyReceipt.stoppedByUser === true))) ||
+            safe(function () { return window.__mlsPullStopRequested === true; }, false);
+          var progressed = complete || touched > 0;
+          var ledgerOk = complete && !stoppedNow;
+          if (!ledgerOk) incompleteSeen++;
           /* the needs-attention count is the corner pill's own number, so the
              one line and the pill can never disagree. A pulled-day note on an
              otherwise complete chart is additional debt; a note on an already
@@ -13751,23 +13766,24 @@
             var st = window.__mlsDayHistoryPull && window.__mlsDayHistoryPull.state;
             return st ? Number(st.failed || 0) : 0;
           }, 0) || 0;
-          var attention = Math.max(chartAttention + Number(dayNote.noteOnly || 0), Number(dayNote.problems || 0));
-          led[upEntryKey(s.day, scopeKey)] = { at: Date.now(), rows: rows, ok: read,
+          var attention = stoppedNow ? chartAttention : Math.max(chartAttention + Number(dayNote.noteOnly || 0), Number(dayNote.problems || 0));
+          var resultReason = stoppedNow ? "stopped-by-user" : String((res && res.reason) || "").slice(0, 40);
+          led[upEntryKey(s.day, scopeKey)] = { at: Date.now(), rows: rows, ok: ledgerOk,
             complete: complete, attention: attention, readMode: String((res && res._upReadMode) || ""),
-            reason: String((res && res.reason) || "").slice(0, 40) };
+            reason: resultReason };
           upLedgerWrite(led);
           ran++;
           _up.lastDay = s.day;
-          _up.walk.push({ day: s.day, pulled: true, ok: read, complete: complete, rows: rows,
-            attention: attention, reason: String((res && res.reason) || "").slice(0, 40) });
+          _up.walk.push({ day: s.day, pulled: true, ok: ledgerOk, complete: complete, rows: rows,
+            attention: attention, reason: resultReason });
           /* the ONE line a whole walk is allowed, and only when rows this lane
              actually read could not be read - never for a refusal, which read
              nothing and has nothing to report, and never after a Stop, where
              the unread rows are the doctor's own decision and not news */
-          var stoppedNow = safe(function () { return window.__mlsPullStopRequested === true; }, false);
           if (!notice && attention > 0 && !stoppedNow) notice = upAttentionLine(s.day, attention);
-          if (!read) return finish(String((res && res.reason) || "pull-refused"));
-          return continueAfter(s, rows);
+          if (stoppedNow) return finish("stopped-by-user");
+          if (!progressed) return finish(String((res && res.reason) || "pull-refused"));
+          return continueAfter(s, rows, progressed && !stoppedNow);
         });
       });
     }

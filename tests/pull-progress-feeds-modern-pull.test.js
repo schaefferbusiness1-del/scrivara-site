@@ -162,6 +162,7 @@ assert.strictEqual(S.done, beforeRestettle,
 /* Rows that the batch never visits are terminal retry outcomes, not empty
    space between done and total. This helper only reports the already-decided
    suffix; it does not run a chart operation. */
+ctx.batchScopeDay = '2026-09-15';
 ctx.ppStart(4, 0);
 ctx.ppSettle('Saved synthetic chart', true, '', false, { pid: 'saved-1' });
 const unvisited = [
@@ -174,7 +175,9 @@ ctx.ppSettleUnvisited(unvisited, 1, 'stopped-by-user');
 S = ctx.window.__mlsDayHistoryPull.state;
 assert.strictEqual(S.done, 4, 'the stopped suffix did not fill the visible requested census');
 assert.strictEqual(S.ok, 1, 'reporting the stopped suffix changed the saved count');
-assert.strictEqual(S.failed, 3, 'unvisited stopped rows did not become visible terminal failures');
+assert.strictEqual(S.failed, 0, 'the doctor\'s Stop was counted as failed charts needing attention');
+assert.strictEqual(S.stoppedRows, 3, 'the stopped suffix is not counted separately from real failures');
+assert.strictEqual(S.targetDate, '2026-09-15', 'the progress receipt lost the exact day being pulled');
 assert.strictEqual(S.rows.filter(r => r.reason === 'stopped-by-user').length, 3,
   'the exact stopped retry code was not preserved in progress');
 
@@ -197,6 +200,20 @@ assert(S.running === false, 'end must disarm');
 ctx.ppStart(18, 15);
 assert(S.running === true && S.done === beforeSubBatch.done && S.rows.length === beforeSubBatch.rows && S.total === 18 && beforeSubBatch.total === 4,
   'a sub-batch (base>0) must preserve done/rows - the bar only ever moves forward');
+
+/* Stop is durable terminal truth, not a transient button label. A fresh run
+   clears it and stamps its own exact target date. */
+ctx.receipt = { stoppedByUser: true, reason: 'stopped-by-user' };
+ctx.window.__mlsPullStopRequested = true;
+ctx.ppEnd();
+assert.strictEqual(S.stopped, true, 'ending a stopped pull lost the terminal Stop verdict');
+assert.strictEqual(S.stopReason, 'stopped-by-user', 'the terminal Stop reason drifted');
+ctx.window.__mlsPullStopRequested = false;
+ctx.batchScopeDay = '2026-09-22';
+ctx.ppStart(2, 0);
+S = ctx.window.__mlsDayHistoryPull.state;
+assert.strictEqual(S.stopped, false, 'a new pull inherited the previous Stop verdict');
+assert.strictEqual(S.targetDate, '2026-09-22', 'a new pull inherited the previous target date');
 
 /* legacy engine mid-run is never stolen */
 ctx.window.__mlsDayHistoryPull = { state: { running: true, total: 5 } };  /* no __si marker */

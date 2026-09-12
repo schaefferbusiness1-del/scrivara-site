@@ -3050,6 +3050,7 @@
   var STATE = {
     version: '1.1.0', build: '2026-07-10-b121',
     watching: true, running: false, stopped: false, stopReason: '',
+    targetDate: '',
     queue: [], current: '', progress: '', status: '', inFlight: false,
     done: 0, ok: 0, failed: 0, transient: 0,
     visitsAdded: 0, visitsSkippedExisting: 0, skippedUndated: 0,
@@ -3119,8 +3120,8 @@
   var BF_PROBE_MS = 3500;             /* the presence verb answered 5/5 within 80 ms when live */
   var BF_DIAG_KEEP = 40;
   /* The ONLY two sentences this footer may render, plus a count. */
-  var BF_FOOT_RUNNING = "Finishing today's notes in the background";
-  var BF_FOOT_LATER = "Today's notes will finish next time you pull — nothing was lost";
+  var BF_FOOT_RUNNING = "Finishing visit notes in the background";
+  var BF_FOOT_LATER = "Visit notes will finish next time you pull — nothing was lost";
   /* Same shape as the importer's TN_NO_TAB_REASON. Used only when the importer
      has not loaded yet; the suite EXECUTES it against the owner's measured
      footer text rather than grepping for it. */
@@ -3162,16 +3163,25 @@
   function bfUnfinished() {
     return STATE.queue.length > 0 || STATE.failed > 0 || STATE.transient > 0;
   }
+  function bfTargetLabel() {
+    var day = S(STATE.targetDate).slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return '';
+    try { return new Date(day + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }); }
+    catch (e) { return day; }
+  }
   function bfFootText() {
     if (STATE.stopped) return '';
     var left = bfLeft();
-    if (STATE.running && left > 0) return BF_FOOT_RUNNING + ' (' + left + ' left)';
+    var target = bfTargetLabel();
+    if (STATE.running && left > 0) return BF_FOOT_RUNNING + (target ? ' for ' + target : '') + ' (' + left + ' left)';
     /* Deliberately NOT an instruction. When presence is genuinely absent the
        pull lane's own action-needed surface is what asks the doctor to sign
        in; this quiet line's job is to say the work is not lost, which is true
        in every one of these cases - the queue is kept and only DEFINITIVE
        outcomes are marked done. */
-    if (!STATE.running && bfUnfinished()) return BF_FOOT_LATER;
+    if (!STATE.running && bfUnfinished()) return target
+      ? ('Visit notes for ' + target + ' will finish next time you pull — nothing was lost')
+      : BF_FOOT_LATER;
     return '';
   }
   function bfRender() {
@@ -3845,6 +3855,8 @@
   function enqueueFromRun(rows, opts) {
     opts = opts || {};
     var st = opts.receipt || opts.pullState || pullState();
+    if (st && (st.stopped === true || st.stoppedByUser === true || String(st.reason || '') === 'stopped-by-user')) return 0;
+    STATE.targetDate = S((st && (st.targetDate || st.scopeDay || st.day)) || '').slice(0, 10);
     if (!backfillScopeAllowsVisitBodies(st)) return 0;
     if (!rows) { rows = (st && st.rows) ? st.rows.slice() : []; }
     var okRows = [], badRows = [], added = 0, i;
@@ -3900,9 +3912,16 @@
            say so instead of running silently to no effect. Measured off the
            queue itself (enqueueFromRun's own line is kept byte-for-byte, and
            the pump it kicks cannot shift a patient before its first await). */
-        var bpQueueWas = STATE.queue.length;
-        try { enqueueFromRun((st.rows || []).slice()); } catch (e) {}
-        try { bpEdgeVerdict(Math.max(0, STATE.queue.length - bpQueueWas), st); } catch (e2) {}
+        if (st.stopped === true) {
+          stop('stopped-by-user');
+          STATE.targetDate = S(st.targetDate || '').slice(0, 10);
+          STATE.lastAutoVerdict = { at: Date.now(), queued: 0, reason: 'stopped-by-user', rows: (st.rows || []).length };
+          try { bfRender(); } catch (eStopRender) {}
+        } else {
+          var bpQueueWas = STATE.queue.length;
+          try { enqueueFromRun((st.rows || []).slice()); } catch (e) {}
+          try { bpEdgeVerdict(Math.max(0, STATE.queue.length - bpQueueWas), st); } catch (e2) {}
+        }
       }
       was = now;
     }
