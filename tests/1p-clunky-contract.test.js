@@ -1769,7 +1769,7 @@ async function runtime() {
       out.upd = (function () {
         const shown = Array.prototype.slice.call(document.querySelectorAll('#settingsModal .set-section'))
           .filter(C.visible).map((s) => s.innerText || '').join(' ');
-        return { auto: /Updates are automatic/i.test(shown), manual: /four (setup )?steps over the old folder/i.test(shown) };
+        return { auto: /Updates are automatic/i.test(shown), manual: /one update path and reload instructions/i.test(shown) };
       })();
       try { closeSettings(); } catch (e) {}
       await sleep(400);

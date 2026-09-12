@@ -488,6 +488,7 @@ const tests = [
      honest bar, and the notice layer that never lands on the dock. Drives the
      real shell in real Chrome with a synthetic 28-patient day. */
   '1p-clunky-contract.test.js',
+  'clunky-rooms-lifecycle-runtime.test.js',
   /* The site-wide busy-state contract (busyall-1.0.0), from the owner's rule of
      2026-08-19: "all buttons should have a loading", and the long read that sat
      on a static label for six minutes. Presses every async control surface in
@@ -2519,6 +2520,7 @@ const tests = [
   'patient-row-owns-its-clicks-runtime.test.js',
   'review-note-tab-lands-on-the-note.test.js',
   'review-note-tab-lands-on-the-note-runtime.test.js',
+  'generated-note-visible-runtime.test.js',
   /* NEW 2026-09-11, the pull lane's three wedge classes, executed against the
      SHIPPED day-strip bytes in a vm.
      dslease-1.0.0: a pull start now consults the SAME driver predicate the

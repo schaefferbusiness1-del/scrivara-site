@@ -25788,7 +25788,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         if (!heldABlank) render();                            /* the engine already said why */
         return;
       }
-      S.signedAt = Date.now();
+      S.signedAt = Date.now(); S.editing = false;
       toast('Note signed & saved in MLS.'); render();
     });
     on('ez3SkipSign', function () { S.signedAt = -1; render(); }); /* -1 = user chose to skip */
@@ -28071,7 +28071,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     open: function (screen) {
       var target = screen || 'home';
       if (target === 'doctor') adoptActiveVisitForDoctorOpen();
-      if (target === 'doctor' && noteText().trim()) S.editing = true;
+      if (target === 'doctor' && S.signedAt <= 0 && noteText().trim()) S.editing = true;
       return setEasyMode('doctor', target, 'api-open-doctor', true);
     },
     close: function () {},   /* kept for compat — the workspace IS the tab */

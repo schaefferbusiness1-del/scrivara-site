@@ -4,6 +4,32 @@
 const assert = require('assert'), fs = require('fs'), path = require('path'), http = require('http');
 const {chromium} = require('playwright');
 const root = path.resolve(__dirname, '..');
+// Execute the active owner's exact sign receipt gate and public reopen method.
+// Synthetic receipt only: this proof never signs/saves any real note.
+{
+ const vm = require('vm'), source = fs.readFileSync(path.join(root,'1p-mls-connect.js'),'utf8');
+ const start = source.indexOf("on('ez3Sign', function () {"), end = source.indexOf("on('ez3SkipSign'",start);
+ const api = source.indexOf('var api = {',source.indexOf('function onGenerationSettled('));
+ const open = source.indexOf('open: function (screen)',api), close = source.indexOf('close: function',open);
+ assert(start>=0 && end>start && open>api && close>open,'active owner test spans exist');
+ const state = {editing:true,signedAt:0};
+ const line = {style:{display:'block'},textContent:'Synthetic signature receipt'};
+ const sandbox = {S:state,signed:true,Date,toast(){},render(){},window:{},
+  signBtn:()=>({disabled:false,click(){}}), $:id=>id==='signLine'?line:null,
+  on(id,fn){sandbox.handler=fn;},adoptActiveVisitForDoctorOpen(){},noteText:()=> 'Synthetic note',setEasyMode(){return true;}};
+ vm.createContext(sandbox);
+ vm.runInContext(source.slice(start,end),sandbox);
+ sandbox.handler();
+ assert(state.signedAt>0 && state.editing===false,'successful sign closes editing');
+ vm.runInContext('this.publicApi = {'+source.slice(open,close)+'};',sandbox);
+ sandbox.publicApi.open('doctor');
+ assert.equal(state.editing,false,'reopening a signed visit must not auto-enable editing');
+ state.signedAt=0; sandbox.publicApi.open('doctor');
+ assert.equal(state.editing,true,'reopening an unsigned visit remains immediately editable');
+ sandbox.signed=false;line.style.display='none';sandbox.handler();
+ assert.equal(state.editing,true,'a refused sign preserves editable correction surface');
+ console.log('PASS signed-note owner: success, signed reopen, unsigned reopen, refusal');
+}
 const oldControl = process.env.MLS_EXPECT_OLD_NOTE_HIDDEN === '1';
 const oldBundle = oldControl ? require('child_process').execFileSync('git',['show','6fd82d4d7b0162194e0bdfa340a0b0ead584d3e7:1p-mls-connect.js'],{cwd:root,maxBuffer:20*1024*1024}) : null;
 const instrument = fs.readFileSync(path.join(__dirname, 'review-note-tab-lands-on-the-note-runtime.test.js'), 'utf8');
