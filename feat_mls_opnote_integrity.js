@@ -476,7 +476,7 @@
   var ADAPTABLE_CONFLICTS={mismatch_side:1,mismatch_levels:1,mismatch_levelCount:1,missing_facility_scope:1,mismatch_facility:1};
   function providerScopeHardError(compat){
     var errs=(compat&&compat.errors)||[];
-    for(var i=0;i<errs.length;i++)if(/^(?:mismatch_provider_id|provider_id_unresolved)$/.test(S(errs[i].code))){var err=new Error(S(errs[i].message)||'The selected template does not match the appointment provider identity.');err.code='MLS_OPNOTE_PROVIDER_SCOPE';return err;}
+    for(var i=0;i<errs.length;i++)if(/^(?:mismatch_provider_id|provider_id_unresolved|mismatch_provider|missing_provider_scope)$/.test(S(errs[i].code))){var err=new Error(S(errs[i].message)||'The selected template does not match the appointment provider identity.');err.code='MLS_OPNOTE_PROVIDER_SCOPE';return err;}
     return null;
   }
   function closeCallAdaptation(compat,tpl,ctx){

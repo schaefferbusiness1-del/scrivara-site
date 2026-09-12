@@ -116,9 +116,13 @@ async function main() {
   assert.strictEqual(api._providerScopeHardError(wrongProvider).code, 'MLS_OPNOTE_PROVIDER_SCOPE', 'provider-id mismatch was not classified as a hard refusal');
   const missingCurrentId = api.templateCompatibility('Lumbar medial branch block', sameNameTemplate, { providerName: 'Alex Kim, MD' });
   assert(missingCurrentId.errors.some(error => error.code === 'provider_id_unresolved'), 'template id was allowed to fall back to a name-only current provider');
-  const legacyProvider = { ...sameNameTemplate, providerId: '', providerName: 'Alex Kim, MD' };
+  const legacyProvider = { ...sameNameTemplate, id: 'legacy-provider-bound', providerId: '', providerName: 'Alex Kim, MD' };
   assert.strictEqual(api.templateCompatibility('Lumbar medial branch block', legacyProvider, { providerName: 'Alex Kim, MD' }).pass, true, 'name fallback should work only for two legacy no-id records');
   assert.strictEqual(api.templateCompatibility('Lumbar medial branch block', legacyProvider, { providerId: 'provider-a', providerName: 'Alex Kim, MD' }).pass, false, 'a current provider id was incorrectly ignored for legacy name fallback');
+  const wrongLegacyProvider = api.templateCompatibility('Lumbar medial branch block', legacyProvider, { providerName: 'Different Provider, MD' });
+  assert.strictEqual(api._providerScopeHardError(wrongLegacyProvider).code, 'MLS_OPNOTE_PROVIDER_SCOPE', 'a mismatched legacy provider name was allowed to use the generic draft-anyway path');
+  const missingLegacyProvider = api.templateCompatibility('Lumbar medial branch block', legacyProvider, {});
+  assert.strictEqual(api._providerScopeHardError(missingLegacyProvider).code, 'MLS_OPNOTE_PROVIDER_SCOPE', 'a missing appointment provider was allowed to use a legacy provider-bound template');
 
   context._opPrep = [{
     patientId: 'p-exact', appt: { name: 'Jordan Lee', dob: '1984-05-12', reason: '' },
@@ -159,6 +163,9 @@ async function main() {
   calls = 0;
   await assert.rejects(() => context._genOpNote('Jordan Lee', '2026-07-14', 'Lumbar medial branch block', sameNameTemplate.text, { patientId: 'p-exact', dob: '1984-05-12', templateId: 'provider-bound', providerId: 'provider-b', providerName: 'Alex Kim, MD' }), error => error && error.code === 'MLS_OPNOTE_PROVIDER_SCOPE');
   assert.strictEqual(calls, 0, 'provider-id mismatch reached the drafting network path');
+  list.push(legacyProvider);
+  await assert.rejects(() => context._genOpNote('Jordan Lee', '2026-07-14', 'Lumbar medial branch block', legacyProvider.text, { patientId: 'p-exact', dob: '1984-05-12', templateId: 'legacy-provider-bound', providerName: 'Different Provider, MD' }), error => error && error.code === 'MLS_OPNOTE_PROVIDER_SCOPE');
+  assert.strictEqual(calls, 0, 'legacy provider-name mismatch reached the drafting network path');
 
   context.aiCallRaw = async () => JSON.stringify({ note: ++calls === 1 ? wrong : correct, missing: [] });
   const repaired = await context._genOpNote('Jordan Lee', '2026-07-14', 'Left L5-S1 TFESI', tplText, { patientId: 'p-exact', dob: '1984-05-12' });
