@@ -13802,7 +13802,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           rrWait = Date.now() - rrT0;
         }
         if (axBest && Number.isFinite(axBestFrame)) {
-          var axVisits = [], axRefused = 0, axShapeUnknown = 0, axSigs = [axBest.surfaceSig], axT0 = Date.now();
+          var axVisits = [], axRefused = 0, axShapeUnknown = 0, axAttempted = 0, axSigs = [axBest.surfaceSig], axT0 = Date.now();
           var axCap = Math.min(axBest.encounters.length, Number(cfg.maxVisits) || 40);
           /* qol-2.3 scoped-day on the ax route: this fallback used to read
              EVERY encounter body regardless of frozenHint.onlyDate - a
@@ -13815,7 +13815,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           var axDateSkipped = 0, axScannedAll = true;
           for (var axI = 0; axI < axCap; axI++) {
             if (Date.now() + 6000 >= readDeadline) { axScannedAll = false; break; }
-            var axE = axBest.encounters[axI];
+            var axE = axBest.encounters[axI]; axAttempted++;
             var axNav = await exec(emrId, [axBestFrame], ['axGo', cfg, axE.hrefPath]);
             var axNavOk = bestResult(axNav, function (r) { return r && r.ok === true ? 1 : 0; }).result;
             if (!axNavOk || axNavOk.ok !== true) { axRefused++; continue; }
@@ -13857,9 +13857,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             /* a scoped day with NO in-day encounters, scanned cleanly, is an
                HONEST empty success - not a refusal (qol-2.3) */
             var axKept = axVisits.length, axTotalE = axBest.encounters.length;
+            /* vcensus-1.0.0 (3.0.118): the fallback cannot shrink the known
+               full-history population. Its refusal must survive the shared
+               terminal hop even when every harvested ax body was read. */
+            var axExpected = axOnlyDate ? axTotalE : Math.max(axTotalE, Number(total) || 0);
+            var axCoverageComplete = axOnlyDate ? (axScannedAll && axRefused === 0 && axShapeUnknown === 0) : (axKept === axExpected && axRefused === 0 && axShapeUnknown === 0);
             return {
-              ok: true, reason: '', identity: (axVisits[0] ? { name: axVisits[0].patientName, dob: axVisits[0].patientDob, mrn: axVisits[0].patientMrn } : identity), visits: axVisits, diag: diag,
-              receipt: { complete: axOnlyDate ? (axScannedAll && axRefused === 0 && axShapeUnknown === 0) : (axKept === axTotalE && axRefused === 0 && axShapeUnknown === 0 && (!(total > 0) || axKept >= total)), indexComplete: true, indexRowsKnown: (total || 0), /* axh-3073 */ bodyComplete: axOnlyDate ? (axScannedAll && axRefused === 0) : axKept === axTotalE, fullDetail: axOnlyDate ? (axScannedAll && axRefused === 0) : axKept === axTotalE, onlyDate: axOnlyDate, axDateSkipped: axDateSkipped, expected: axTotalE, parsed: axKept, attempted: axCap, failures: axRefused + axShapeUnknown, cap: cfg.maxVisits, retryCount: 0, surfaceResets: 0, surfaceResetOps: [], chartSurface: 'clincmp-ax-route', axEntry: rrFromPartial ? 'body-depth' : 'starved-walk', axEncounters: axTotalE, axRefused: axRefused, axShapeUnknown: axShapeUnknown, axSigs: axSigs.slice(0, 6), axRouteMs: Date.now() - axT0, axRrWaitMs: rrWait, axRrRecovered: rrRecovered, identityVerified: true, stableKeysComplete: true, timeBudgetMs: readBudgetMs, elapsedMs: Math.max(0, Date.now() - readStartedAt) },
+              ok: axCoverageComplete, reason: axCoverageComplete ? '' : 'visit-bodies-incomplete', identity: (axVisits[0] ? { name: axVisits[0].patientName, dob: axVisits[0].patientDob, mrn: axVisits[0].patientMrn } : identity), visits: axVisits, diag: diag,
+              receipt: { complete: axCoverageComplete, indexComplete: true, indexRowsKnown: (total || 0), /* axh-3073 */ bodyComplete: axCoverageComplete, fullDetail: axCoverageComplete, onlyDate: axOnlyDate, axDateSkipped: axDateSkipped, expected: axExpected, parsed: axKept, attempted: axAttempted, notAttempted: Math.max(0, axExpected - axAttempted), failures: axRefused + axShapeUnknown, cap: cfg.maxVisits, retryCount: 0, surfaceResets: 0, surfaceResetOps: [], chartSurface: 'clincmp-ax-route', axEntry: rrFromPartial ? 'body-depth' : 'starved-walk', axEncounters: axTotalE, axRefused: axRefused, axShapeUnknown: axShapeUnknown, axSigs: axSigs.slice(0, 6), axRouteMs: Date.now() - axT0, axRrWaitMs: rrWait, axRrRecovered: rrRecovered, identityVerified: true, stableKeysComplete: true, timeBudgetMs: readBudgetMs, elapsedMs: Math.max(0, Date.now() - readStartedAt) },
               error: axOnlyDate ? ((axScannedAll && axRefused === 0 && axShapeUnknown === 0) ? '' : ('The scoped ax read kept ' + axKept + ' in-day of ' + axTotalE + ' encounters (' + axDateSkipped + ' other-day skipped, ' + axRefused + ' refused, ' + axShapeUnknown + ' identity-unknown' + (axScannedAll ? '' : ', scan cut by deadline') + ').')) : ((axKept === axTotalE && (!(total > 0) || axKept >= total)) ? '' : ('The ax route read ' + axKept + ' of ' + Math.max(axTotalE, total || 0) + ' known encounters (classic index rows: ' + (total || 0) + '); ' + axRefused + ' refused (identity mismatch or read failure), ' + axShapeUnknown + ' refused as ax-identity-shape-unknown - signatures captured for the next probe shapes.'))
             };
           }
@@ -14353,7 +14358,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       res.receipt.hydStreak = __mlsHydFatigue.streak;
       if (__mlsHydFatigue.pendingStamp) { if (__mlsHydFatigue.pendingStamp === 'proactive') res.receipt.proactiveRefresh = true; else res.receipt.fatigueRefresh = true; __mlsHydFatigue.pendingStamp = false; }
       if (!res.receipt || typeof res.receipt !== 'object') res.receipt = {};
-      var proven = res.ok === true && res.receipt.indexComplete === true && res.receipt.bodyComplete === true && Number(res.receipt.parsed) === Number(res.receipt.expected) && (Number(res.receipt.expected) > 0 || res.receipt.authoritativeEmpty === true || Number(res.receipt.administrativeRows || 0) > 0 || res.receipt.notYetAvailable === true || res.receipt.absenceProven === true); /* scensus-1.0.0: a future scoped day and a PROVEN scoped absence are legitimate zero-row completions */
+      var proven = res.ok === true && res.receipt.complete === true && res.receipt.indexComplete === true && res.receipt.bodyComplete === true && Number(res.receipt.parsed) === Number(res.receipt.expected) && (Number(res.receipt.expected) > 0 || res.receipt.authoritativeEmpty === true || Number(res.receipt.administrativeRows || 0) > 0 || res.receipt.notYetAvailable === true || res.receipt.absenceProven === true); /* scensus-1.0.0: a future scoped day and a PROVEN scoped absence are legitimate zero-row completions */
       res.receipt.complete = proven;
       res.receipt.fullDetail = proven;
       res.receipt.readerVersion = res.readerVersion;
