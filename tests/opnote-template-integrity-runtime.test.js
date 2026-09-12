@@ -100,6 +100,23 @@ async function main() {
   assert.strictEqual(api.bestFor('Jordan Lee', '', '1984-05-12', 'p-exact').tplId, 'gen-rfa', 'exact-patient planned procedure did not drive matching');
   assert.strictEqual(api.bestFor('Jordan Lee', '', '1984-05-12', 'wrong-id').tplId, '', 'wrong patient id was allowed to drive history matching');
 
+  /* A provider name is not an identity. These two roster rows intentionally
+     share a display name; the template must follow the exact appointment id,
+     and legacy name matching is allowed only when both records lack ids. */
+  const sameNameTemplate = { ...template('provider-bound', 'Lumbar medial branch block'), providerId: 'provider-a', providerName: 'Alex Kim, MD' };
+  const exactProvider = api.templateCompatibility('Lumbar medial branch block', sameNameTemplate, { providerId: 'provider-a', providerName: 'Alex Kim, MD' });
+  assert.strictEqual(exactProvider.pass, true, 'matching provider ids should accept the same-name clinician');
+  const wrongProvider = api.templateCompatibility('Lumbar medial branch block', sameNameTemplate, { providerId: 'provider-b', providerName: 'Alex Kim, MD' });
+  assert.strictEqual(wrongProvider.pass, false, 'same provider name with a distinct id was accepted');
+  assert(wrongProvider.errors.some(error => error.code === 'mismatch_provider_id'), 'wrong provider id did not produce an exact-id mismatch');
+  assert.strictEqual(api._closeCallAdaptation(wrongProvider, sameNameTemplate, { providerId: 'provider-b', providerName: 'Alex Kim, MD' }).adapt, false, 'provider-id mismatch was adapted by token overlap');
+  assert.strictEqual(api._providerScopeHardError(wrongProvider).code, 'MLS_OPNOTE_PROVIDER_SCOPE', 'provider-id mismatch was not classified as a hard refusal');
+  const missingCurrentId = api.templateCompatibility('Lumbar medial branch block', sameNameTemplate, { providerName: 'Alex Kim, MD' });
+  assert(missingCurrentId.errors.some(error => error.code === 'provider_id_unresolved'), 'template id was allowed to fall back to a name-only current provider');
+  const legacyProvider = { ...sameNameTemplate, providerId: '', providerName: 'Alex Kim, MD' };
+  assert.strictEqual(api.templateCompatibility('Lumbar medial branch block', legacyProvider, { providerName: 'Alex Kim, MD' }).pass, true, 'name fallback should work only for two legacy no-id records');
+  assert.strictEqual(api.templateCompatibility('Lumbar medial branch block', legacyProvider, { providerId: 'provider-a', providerName: 'Alex Kim, MD' }).pass, false, 'a current provider id was incorrectly ignored for legacy name fallback');
+
   context._opPrep = [{
     patientId: 'p-exact', appt: { name: 'Jordan Lee', dob: '1984-05-12', reason: '' },
     proc: '', tplId: 'si', tplManual: true
@@ -134,6 +151,12 @@ async function main() {
   assert.strictEqual(api.fidelity(inlineGood, inlineTpl).pass, true, 'inline fixed wording under a template heading was not preserved');
 
   let calls = 0;
+  list.push(sameNameTemplate);
+  context.aiCallRaw = async () => { calls += 1; return JSON.stringify({ note: correct, missing: [] }); };
+  calls = 0;
+  await assert.rejects(() => context._genOpNote('Jordan Lee', '2026-07-14', 'Lumbar medial branch block', sameNameTemplate.text, { patientId: 'p-exact', dob: '1984-05-12', templateId: 'provider-bound', providerId: 'provider-b', providerName: 'Alex Kim, MD' }), error => error && error.code === 'MLS_OPNOTE_PROVIDER_SCOPE');
+  assert.strictEqual(calls, 0, 'provider-id mismatch reached the drafting network path');
+
   context.aiCallRaw = async () => JSON.stringify({ note: ++calls === 1 ? wrong : correct, missing: [] });
   const repaired = await context._genOpNote('Jordan Lee', '2026-07-14', 'Left L5-S1 TFESI', tplText, { patientId: 'p-exact', dob: '1984-05-12' });
   assert.strictEqual(calls, 2, 'a structure-breaking draft did not receive exactly one repair attempt');

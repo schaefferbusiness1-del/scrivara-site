@@ -10,7 +10,7 @@
   if (window.__mlsTemplateLibrary && window.__mlsTemplateLibrary.installed) return;
 
   var VERSION='tl-1.6.0', S=function(v){return v==null?'':String(v);}, isFn=function(f){return typeof f==='function';};
-  var state={sets:[],activeSetId:'',selectedSetId:'',activeVersion:0,activeTemplates:[],hydrated:false,applying:false,sourceFilenames:[],pending:null,editingId:'',refreshPromise:null,snapshotTimer:0,snapshotSaving:false,snapshotQueued:false,conflict:null,status:'',statusError:false,unsupported:false};
+  var state={sets:[],activeSetId:'',selectedSetId:'',activeVersion:0,activeTemplates:[],hydrated:false,applying:false,sourceFilenames:[],pending:null,editingId:'',refreshPromise:null,snapshotTimer:0,snapshotSaving:false,snapshotQueued:false,conflict:null,status:'',statusError:false,unsupported:false,accountKey:'',draftScope:'account',providerId:'',providerName:'',providerStableKey:''};
   var originals={},uploadRuns={},activeUpload=null;
   var IMPORT_STAGES=['Validating files','Reading files','Parsing template content','Checking results','Review ready'];
   var PREVIEW_STAGES=['Validating import','Checking ownership','Comparing versions','Preparing import preview'];
@@ -51,6 +51,29 @@
   function cloneTemplates(list){try{return JSON.parse(JSON.stringify(Array.isArray(list)?list:[]));}catch(e){return [];}}
   function currentLocal(){try{return isFn(window.getTemplates)?(window.getTemplates()||[]):[];}catch(e){return [];}}
   function status(message,error){state.status=S(message);if(arguments.length>1)state.statusError=!!error;var el=byId('tlStatus');if(el){el.textContent=state.status;el.style.color=state.statusError?'#a12c2c':'#35536f';}}
+  /* Provider-scoped sets are a different security boundary from a display
+     label. The roster is account-namespaced and is the only authority allowed
+     to turn a picker value into a provider id. In particular, do not accept a
+     name that happens to look unique in this panel: two clinicians can share
+     it, and a stale picker from another account must never reach a write. */
+  function accountKey(){try{return S(window.__mlsSessionAccount||((window.bkUser||{}).id)||((window.bkUser||{}).email)||((window.bkUser||{}).username)||((isFn(window.bkToken)&&window.bkToken())||'')).trim();}catch(e){return '';}}
+  function resetAccountScopedState(){state.sets=[];state.activeSetId='';state.selectedSetId='';state.activeVersion=0;state.activeTemplates=[];state.hydrated=false;state.pending=null;state.conflict=null;state.draftScope='account';state.providerId='';state.providerName='';state.providerStableKey='';}
+  function ensureAccount(){var key=accountKey();if(!state.accountKey){state.accountKey=key;return false;}if(key!==state.accountKey){state.accountKey=key;resetAccountScopedState();status('Account changed. Any uncommitted template selection was cleared.',false);return true;}return false;}
+  function roster(){var r=window.__mlsProviderRoster;return r&&r.installed&&isFn(r.list)&&isFn(r.resolve)?r:null;}
+  function scopeFor(custom){
+    custom=custom||{};var scope=S(custom.scope||(byId('tlScope')&&byId('tlScope').value)||((setFor(state.selectedSetId)||{}).scope)||'account').trim()||'account';
+    if(scope!=='provider')return {ok:true,scope:scope,providerId:'',providerName:'',providerStableKey:''};
+    var r=roster(),entries=r?r.list():[];
+    var ref=custom.providerId||custom.providerStableKey||custom.stableKey||custom.providerName||custom.provider||(byId('tlProvider')&&byId('tlProvider').value)||state.providerId||state.providerStableKey||state.providerName;
+    if(!S(ref).trim())return {ok:false,code:'TEMPLATE_PROVIDER_REQUIRED',message:'Choose a provider for this provider-scoped template set before saving.'};
+    var resolved=null;try{resolved=r&&r.resolve(ref);}catch(e){}
+    if(!resolved||!S(resolved.id).trim())return {ok:false,code:'TEMPLATE_PROVIDER_UNRESOLVED',message:'That provider is no longer a unique roster identity. Refresh the roster and choose one provider before saving.'};
+    var exact=entries.filter(function(entry){return entry&&S(entry.id)===S(resolved.id);});
+    if(exact.length!==1)return {ok:false,code:'TEMPLATE_PROVIDER_AMBIGUOUS',message:'That provider selection is unknown or ambiguous for this account. Choose one roster provider before saving.'};
+    return {ok:true,scope:'provider',providerId:S(exact[0].id),providerName:S(exact[0].name),providerStableKey:S(exact[0].stableKey)};
+  }
+  function requireScope(custom){ensureAccount();var bound=scopeFor(custom);if(!bound.ok){var err=new Error(bound.message);err.code=bound.code;throw err;}state.providerId=bound.providerId;state.providerName=bound.providerName;state.providerStableKey=bound.providerStableKey;return bound;}
+  function setScopeFromSet(set){var bound=scopeFor(set||{});if(bound.ok){state.providerId=bound.providerId;state.providerName=bound.providerName;state.providerStableKey=bound.providerStableKey;}else{state.providerId='';state.providerName='';state.providerStableKey='';}return bound;}
   /* b834 — A VISIBLE LOADING SIGN, BECAUSE THE PLUMBING HAD NONE.
      __mlsLoadingCalm.start() returns a live handle and renders ZERO DOM on this
      surface — measured directly: starting a handle and pushing a stage added 0
@@ -191,9 +214,10 @@
 
   async function request(path,options){
     options=options||{};if(!hosted())throw Object.assign(new Error('Sign in to use the cloud template library.'),{code:'TEMPLATE_OFFLINE'});
-    var requestId=options.requestId||uid('req-'),headers={'Authorization':'Bearer '+window.bkToken(),'X-Request-ID':requestId};
+    var requestId=options.requestId||uid('req-'),requestAccount=accountKey(),headers={'Authorization':'Bearer '+window.bkToken(),'X-Request-ID':requestId};
     if(options.body!==undefined)headers['Content-Type']='application/json';if(options.idempotencyKey)headers['Idempotency-Key']=options.idempotencyKey;
     var response=await window.fetch(window.bkBase()+path,{method:options.method||'GET',headers:headers,body:options.body===undefined?undefined:JSON.stringify(options.body),signal:options.signal});
+    if(requestAccount!==accountKey()){var switched=new Error('Account changed while this template operation was in progress. Nothing was saved.');switched.code='TEMPLATE_ACCOUNT_CHANGED';throw switched;}
     progressLink(options.progress,response);var data={};try{data=await response.json();}catch(e){}
     if(!response.ok){var raw=data&&data.error,err=new Error((raw&&raw.message)||data.message||('Template request failed ('+response.status+').'));err.code=(raw&&raw.code)||'TEMPLATE_REQUEST_FAILED';err.status=response.status;err.details=raw&&raw.details;if(response.status===404&&!(raw&&raw.code)){markUnsupported();err.code='TEMPLATE_UNSUPPORTED';err.message='Cloud template sync is not available on this server yet — templates stay on this device.';}else if(response.status===403&&!(raw&&raw.message)){err.message='Cloud template sets are available on clinician accounts — this account’s templates stay on this device.';}throw err;}
     return data;
@@ -261,11 +285,11 @@
     css();var modal=byId('templatesModal'),anchor=byId('tplList');if(!modal||!anchor||byId('tlPanel'))return;
     var panel=document.createElement('section');panel.id='tlPanel';panel.setAttribute('aria-label','Versioned template library');panel.innerHTML=
       '<h4>☁ Versioned template library</h4><p class="tl-sub">The active set follows this signed-in account. Imports are previewed first; older versions remain recoverable.</p>'+
-      '<div class="tl-grid"><label>Template set<select id="tlSetSelect"></select></label><label>Import scope<select id="tlScope"><option value="account">This account</option><option value="provider">This provider</option><option value="practice">This practice</option></select></label><label>Facility association<input id="tlFacility" placeholder="Optional facility"></label></div>'+
+      '<div class="tl-grid"><label>Template set<select id="tlSetSelect"></select></label><label>Import scope<select id="tlScope"><option value="account">This account</option><option value="provider">This provider</option><option value="practice">This practice</option></select></label><label id="tlProviderWrap" hidden>Provider<select id="tlProvider"></select></label><label>Facility association<input id="tlFacility" placeholder="Optional facility"></label></div>'+
       '<div class="tl-grid" style="margin-top:7px"><label>Set name<input id="tlSetName" placeholder="My validated templates"></label><div></div><div></div></div>'+
       '<div class="tl-actions"><button data-tl="refresh">↻ Refresh</button><button data-tl="activate">✓ Activate selected</button><button data-tl="new">＋ New empty set</button><button data-tl="history">Version history</button><button data-tl="archive">Archive</button><button data-tl="migrate">Move device templates to cloud</button></div>'+
       '<div id="tlActive" class="tl-active"></div><div id="tlStatus" role="status" aria-live="polite"></div><div id="tlConflict"></div><div id="tlVersions"></div>';
-    anchor.parentElement.insertBefore(panel,anchor);panel.addEventListener('click',panelClick);byId('tlSetSelect').addEventListener('change',function(){state.selectedSetId=this.value;renderPanel();});renderPanel();
+    anchor.parentElement.insertBefore(panel,anchor);panel.addEventListener('click',panelClick);byId('tlSetSelect').addEventListener('change',function(){state.selectedSetId=this.value;var selected=setFor(state.selectedSetId);state.draftScope=(selected&&selected.scope)||'account';setScopeFromSet(selected);renderPanel();});byId('tlScope').addEventListener('change',function(){state.draftScope=this.value;if(this.value!=='provider'){state.providerId='';state.providerName='';state.providerStableKey='';}renderPanel();});byId('tlProvider').addEventListener('change',function(){var bound=scopeFor({scope:'provider',providerStableKey:this.value});if(bound.ok){state.providerId=bound.providerId;state.providerName=bound.providerName;state.providerStableKey=bound.providerStableKey;}else{state.providerId='';state.providerName='';state.providerStableKey='';}renderPanel();});renderPanel();
   }
 
   function renderPanel(){
@@ -274,10 +298,13 @@
     state.sets.forEach(function(set){options+='<option value="'+esc(set.id)+'">'+esc(set.name)+(set.active?' · ACTIVE':'')+(set.status==='archived'?' · archived':'')+' · v'+set.version+'</option>';});
     select.innerHTML=options;if(!setFor(state.selectedSetId))state.selectedSetId=state.activeSetId||'';select.value=state.selectedSetId;
     var selected=setFor(state.selectedSetId),active=setFor(state.activeSetId),activeEl=byId('tlActive');
-    if(active)activeEl.innerHTML='<b>Active now:</b> '+esc(active.name)+' · v'+active.version+' · '+active.templateCount+' template'+(active.templateCount===1?'':'s')+' · '+esc(active.scope);
+    if(active)activeEl.innerHTML='<b>Active now:</b> '+esc(active.name)+' · v'+active.version+' · '+active.templateCount+' template'+(active.templateCount===1?'':'s')+' · '+esc(active.scope==='provider'?'provider · '+(active.providerName||'unresolved provider'):active.scope);
     else activeEl.innerHTML='<b>No cloud set is active.</b> Device templates remain unchanged until you explicitly activate a set.';
     activeEl.className='tl-active'+(active?'':' tl-warn');
-    byId('tlScope').value=selected?selected.scope:'account';byId('tlFacility').value=selected?(selected.facility||''):'';byId('tlSetName').value=selected?(selected.name||''):'';
+    var scopeEl=byId('tlScope'),providerEl=byId('tlProvider'),providerWrap=byId('tlProviderWrap');scopeEl.value=selected?selected.scope:(state.draftScope||'account');byId('tlFacility').value=selected?(selected.facility||''):'';byId('tlSetName').value=selected?(selected.name||''):'';
+    var selectedScope=setScopeFromSet(selected||{scope:scopeEl.value,providerId:state.providerId,providerName:state.providerName,providerStableKey:state.providerStableKey});
+    if(providerWrap)providerWrap.hidden=scopeEl.value!=='provider';
+    if(providerEl){var entries=[],r=roster();try{entries=r?r.list():[];}catch(e){}providerEl.innerHTML='<option value="">— choose roster provider —</option>'+entries.filter(function(entry){return entry&&S(entry.id).trim();}).map(function(entry){return '<option value="'+esc(entry.stableKey||entry.id)+'">'+esc(entry.name)+'</option>';}).join('');providerEl.value=selectedScope.ok?(selectedScope.providerStableKey||selectedScope.providerId):'';}
     var activate=byId('tlPanel').querySelector('[data-tl="activate"]'),archive=byId('tlPanel').querySelector('[data-tl="archive"]');
     activate.disabled=!selected||selected.active||selected.status==='archived';archive.disabled=!selected;archive.textContent=selected&&selected.status==='archived'?'Unarchive':'Archive';
     var migrate=byId('tlPanel').querySelector('[data-tl="migrate"]');migrate.style.display=!state.activeSetId&&currentLocal().length?'':'none';
@@ -345,6 +372,7 @@
   }
 
   function refresh(options){
+    ensureAccount();
     options=options||{};if(!hosted()){ensurePanel();status('Offline/local mode: device templates are still available.',false);return Promise.resolve(false);}
     if(state.refreshPromise)return state.refreshPromise;var handle=options.silent?null:progressStart({key:'template-library:refresh',kind:'template_library',label:'Refreshing template library',stages:['Loading template sets','Checking active set','Applying active version'],total:3,timeoutMs:45000,replace:true,cancelable:false});
     state.refreshPromise=(async function(){
@@ -361,8 +389,8 @@
   }
 
   function importBody(custom){
-    custom=custom||{};var selected=setFor(custom.targetSetId!==undefined?custom.targetSetId:state.selectedSetId),pending=custom.templates||((window._tplPendingSplit||[]).filter(function(t){return t&&t.keep!==false&&S(t.text).trim();}));if(!Array.isArray(pending))pending=[];
-    return {targetSetId:selected?selected.id:null,expectedVersion:selected?Number(selected.version):0,setName:S(custom.setName||(byId('tlSetName')&&byId('tlSetName').value)||(selected&&selected.name)||state.sourceFilenames[0]||'Imported templates').replace(/\.[^.]+$/,'').slice(0,120),scope:custom.scope||(byId('tlScope')&&byId('tlScope').value)||(selected&&selected.scope)||'account',facility:custom.facility!==undefined?custom.facility:((byId('tlFacility')&&byId('tlFacility').value)||(selected&&selected.facility)||''),sourceFilenames:custom.sourceFilenames||state.sourceFilenames,templates:pending.map(function(t){return {id:t.id||'',name:t.name||'Template',text:t.text||'',keywords:t.keywords||[],procedure:t.procedure||'',providerId:t.providerId||'',facilityId:t.facilityId||'',facility:t.facility||'',requiredFields:t.requiredFields||[],optionalFields:t.optionalFields||[],prohibitedFields:t.prohibitedFields||[],validatedFacts:t.validatedFacts===true,created:Number(t.created)||Date.now()};}),removeTemplateIds:custom.removeTemplateIds||[]};
+    custom=custom||{};var selected=setFor(custom.targetSetId!==undefined?custom.targetSetId:state.selectedSetId),pending=custom.templates||((window._tplPendingSplit||[]).filter(function(t){return t&&t.keep!==false&&S(t.text).trim();}));if(!Array.isArray(pending))pending=[];var scope=scopeFor(Object.assign({},selected||{},custom));
+    return {targetSetId:selected?selected.id:null,expectedVersion:selected?Number(selected.version):0,setName:S(custom.setName||(byId('tlSetName')&&byId('tlSetName').value)||(selected&&selected.name)||state.sourceFilenames[0]||'Imported templates').replace(/\.[^.]+$/,'').slice(0,120),scope:scope.scope,providerId:scope.providerId||'',providerName:scope.providerName||'',scopeError:scope.ok?'':scope.code,facility:custom.facility!==undefined?custom.facility:((byId('tlFacility')&&byId('tlFacility').value)||(selected&&selected.facility)||''),sourceFilenames:custom.sourceFilenames||state.sourceFilenames,templates:pending.map(function(t){return {id:t.id||'',name:t.name||'Template',text:t.text||'',keywords:t.keywords||[],procedure:t.procedure||'',providerId:t.providerId||'',facilityId:t.facilityId||'',facility:t.facility||'',requiredFields:t.requiredFields||[],optionalFields:t.optionalFields||[],prohibitedFields:t.prohibitedFields||[],validatedFacts:t.validatedFacts===true,created:Number(t.created)||Date.now()};}),removeTemplateIds:custom.removeTemplateIds||[]};
   }
 
   function countsHtml(counts){var keys=['added','updated','duplicated','rejected','unchanged','removed'];return '<div class="tl-counts">'+keys.map(function(key){return '<span class="tl-count '+(key==='rejected'?'bad':'')+'">'+key+': '+(Number(counts&&counts[key])||0)+'</span>';}).join('')+'</div>';}
@@ -402,7 +430,7 @@
 
   function previewImport(custom,providedHandle){
     if(!hosted()){if(isFn(originals.tplAddSplit))return Promise.resolve(originals.tplAddSplit());return Promise.resolve(false);}
-    var body=importBody(custom),fingerprint=body.templates.map(function(t){return t.id+'|'+t.name+'|'+S(t.text).length;}).join('~');
+    ensureAccount();var body=importBody(custom);if(body.scopeError){var scopeErr=scopeFor(custom||{}),err=new Error(scopeErr.message);err.code=body.scopeError;return Promise.reject(err);}var bound=requireScope(body);body.scope=bound.scope;body.providerId=bound.providerId;body.providerName=bound.providerName;delete body.scopeError;var fingerprint=body.templates.map(function(t){return t.id+'|'+t.name+'|'+S(t.text).length;}).join('~');
     var handle=providedHandle||progressStart({key:'template-import-preview:'+fingerprint,kind:'template_import_preview',label:'Previewing template import',stages:PREVIEW_STAGES,total:body.templates.length,timeoutMs:120000,replace:true,cancelable:true,retry:function(next){previewImport(custom,next);}});
     return (async function(){try{
       progressStage(handle,'Validating import',0,body.templates.length,'Validating selected templates.');var data=await request('/api/template-imports/preview',{method:'POST',body:body,requestId:handle&&handle.requestId,progress:handle});
@@ -413,7 +441,7 @@
 
   function importClick(event){var b=event.target&&event.target.closest?event.target.closest('[data-tl-import]'):null;if(!b)return;var action=b.getAttribute('data-tl-import');if(action==='commit')commitPending();else if(action==='cancel'){state.pending=null;state.editingId='';['tplMultiResult','tplFormResult'].forEach(function(id){var box=byId(id);if(box){box.onclick=null;box.innerHTML='';}});}}
   function commitPending(providedHandle){
-    if(!state.pending)return Promise.resolve(false);var pending=state.pending,body=JSON.parse(JSON.stringify(pending.body)),activate=byId('tlActivateAfter');body.activate=!!(activate&&activate.checked);
+    ensureAccount();if(!state.pending)return Promise.resolve(false);var pending=state.pending,body=JSON.parse(JSON.stringify(pending.body)),activate=byId('tlActivateAfter');var bound;try{bound=requireScope(body);}catch(scopeError){status(scopeError.message,true);return Promise.reject(scopeError);}body.scope=bound.scope;body.providerId=bound.providerId;body.providerName=bound.providerName;body.activate=!!(activate&&activate.checked);
     var resultBoxId=pending.fromForm?'tplFormResult':'tplMultiResult';
     var handle=providedHandle||progressStart({key:'template-import-commit:'+pending.idempotencyKey,kind:'template_import',label:'Importing templates',stages:COMMIT_STAGES,total:body.templates.length,timeoutMs:180000,replace:true,cancelable:true,retry:function(next){commitPending(next);}});
     return (async function(){try{
@@ -439,7 +467,7 @@
   async function archiveSelected(){var set=setFor(state.selectedSetId);if(!set)return;var verb=set.status==='archived'?'unarchive':'archive';if(verb==='archive'){var yes=true;try{yes=await ((typeof window.mlsConfirm==='function')?window.mlsConfirm('Archive "'+set.name+'"? Its versions remain recoverable.'):Promise.resolve(window.confirm('Archive "'+set.name+'"? Its versions remain recoverable.')));}catch(e){}if(!yes)return;}request('/api/template-sets/'+encodeURIComponent(set.id)+'/'+verb,{method:'POST',body:{}}).then(function(){status(verb==='archive'?'Template set archived.':'Template set restored.',false);return refresh({silent:true});}).catch(function(error){status(error.message,true);renderPanel();});}
   function showHistory(){var set=setFor(state.selectedSetId),box=byId('tlVersions');if(!set||!box)return;request('/api/template-sets/'+encodeURIComponent(set.id)+'/versions').then(function(data){box.innerHTML=(data.versions||[]).map(function(v){return '<div class="tl-ver"><span>Version '+v.version+(v.current?' · current':'')+' · '+esc(v.createdAt||'')+'</span>'+(v.current?'':'<button data-tl-restore="'+v.version+'">Restore as new version</button>')+'</div>';}).join('')||'No versions.';box.onclick=function(ev){var b=ev.target&&ev.target.closest?ev.target.closest('[data-tl-restore]'):null;if(b)restoreVersion(set.id,b.getAttribute('data-tl-restore'));};}).catch(function(error){status(error.message,true);renderPanel();});}
   async function restoreVersion(id,version){var yes=true;try{yes=await ((typeof window.mlsConfirm==='function')?window.mlsConfirm('Restore version '+version+' as a new recoverable version?'):Promise.resolve(window.confirm('Restore version '+version+' as a new recoverable version?')));}catch(e){}if(!yes)return;request('/api/template-sets/'+encodeURIComponent(id)+'/versions/'+encodeURIComponent(version)+'/restore',{method:'POST',body:{}}).then(function(data){if(data.set.active)applySet(data.set);status('Version '+version+' restored as version '+data.set.version+'.',false);return refresh({applyActive:false,silent:true});}).then(renderPanel).catch(function(error){status(error.message,true);renderPanel();});}
-  function createEmpty(){request('/api/template-sets',{method:'POST',body:{name:(byId('tlSetName')&&byId('tlSetName').value)||'New template set',scope:(byId('tlScope')&&byId('tlScope').value)||'account',facility:(byId('tlFacility')&&byId('tlFacility').value)||''}}).then(function(data){state.selectedSetId=data.set.id;status('Empty set created. It is not active until you choose Activate.',false);return refresh({applyActive:false,silent:true});}).then(renderPanel).catch(function(error){status(error.message,true);renderPanel();});}
+  function createEmpty(custom){custom=custom||{};var requested={scope:custom.scope||(byId('tlScope')&&byId('tlScope').value)||'account',providerId:custom.providerId,providerName:custom.providerName,providerStableKey:custom.providerStableKey};var bound;try{bound=requireScope(requested);}catch(error){status(error.message,true);renderPanel();return Promise.resolve(false);}return request('/api/template-sets',{method:'POST',body:{name:custom.setName||(byId('tlSetName')&&byId('tlSetName').value)||'New template set',scope:bound.scope,providerId:bound.providerId,providerName:bound.providerName,facility:custom.facility!==undefined?custom.facility:((byId('tlFacility')&&byId('tlFacility').value)||'')}}).then(function(data){state.selectedSetId=data.set.id;setScopeFromSet(data.set);status('Empty set created. It is not active until you choose Activate.',false);return refresh({applyActive:false,silent:true});}).then(renderPanel).catch(function(error){status(error.message,true);renderPanel();});}
 
   function panelClick(event){var b=event.target&&event.target.closest?event.target.closest('[data-tl]'):null;if(!b)return;var action=b.getAttribute('data-tl');if(action==='refresh')refresh();else if(action==='activate'&&state.selectedSetId)activateSet(state.selectedSetId);else if(action==='new')createEmpty();else if(action==='history')showHistory();else if(action==='archive')archiveSelected();else if(action==='migrate'){var local=currentLocal();if(!local.length)return;state.sourceFilenames=['Legacy device template library'];previewImport({templates:local,targetSetId:null,setName:'Migrated device templates',scope:'account'}).catch(function(){});}}
 
@@ -449,9 +477,9 @@
   }
 
   function persistSnapshot(list,providedHandle,providedIdempotencyKey){
-    if(!hosted()||!state.activeSetId||state.applying)return Promise.resolve(false);if(state.snapshotSaving){state.snapshotQueued=true;return Promise.resolve(false);}state.snapshotSaving=true;
+    ensureAccount();if(!hosted()||!state.activeSetId||state.applying)return Promise.resolve(false);if(state.snapshotSaving){state.snapshotQueued=true;return Promise.resolve(false);}var activeSet=setFor(state.activeSetId)||{};var bound;try{bound=requireScope(activeSet);}catch(scopeError){status(scopeError.message,true);return Promise.resolve(false);}state.snapshotSaving=true;
     var local=cloneTemplates(list),localIds={};local.forEach(function(t){if(t&&t.id)localIds[t.id]=1;});var removed=state.activeTemplates.filter(function(t){return t&&t.id&&!localIds[t.id];}).map(function(t){return t.id;});
-    var body={targetSetId:state.activeSetId,expectedVersion:state.activeVersion,setName:(setFor(state.activeSetId)||{}).name,templates:local,removeTemplateIds:removed};var idem=providedIdempotencyKey||uid('tpl-edit-');
+    var body={targetSetId:state.activeSetId,expectedVersion:state.activeVersion,setName:activeSet.name,scope:bound.scope,providerId:bound.providerId,providerName:bound.providerName,templates:local,removeTemplateIds:removed};var idem=providedIdempotencyKey||uid('tpl-edit-');
     var handle=providedHandle||progressStart({key:'template-library:save',kind:'template_library',label:'Saving template changes',stages:COMMIT_STAGES,total:local.length,timeoutMs:120000,replace:true,cancelable:true,retry:function(next){persistSnapshot(local,next,idem);}});
     return request('/api/template-imports/commit',{method:'POST',body:body,idempotencyKey:idem,requestId:handle&&handle.requestId,progress:handle}).then(function(data){if(data.result&&data.result.set)applySet(data.result.set);if(handle)handle.complete('Template changes saved as version '+data.result.version+'.');status('Template changes saved as recoverable version '+data.result.version+'.',false);renderPanel();return true;}).catch(function(error){status(error.message,true);state.conflict={kind:'snapshot',body:body,localTemplates:local};if(error.code==='TEMPLATE_VERSION_CONFLICT')return loadConflictVersion().then(function(){status('A newer cloud version exists. Your unsaved device change was preserved for review and retry.',true);renderPanel();if(handle)handle.fail(error);return false;});renderPanel();if(handle)handle.fail(error);return false;}).finally(function(){state.snapshotSaving=false;if(state.snapshotQueued){state.snapshotQueued=false;scheduleSnapshot(currentLocal());}});
   }
@@ -542,6 +570,6 @@
   }
 
   function install(){wrapFunctions();ensurePanel();if(hosted())setTimeout(function(){refresh({silent:true});},0);}
-  window.__mlsTemplateLibrary={installed:true,version:VERSION,state:state,refresh:refresh,previewImport:previewImport,commitPending:commitPending,activateSet:activateSet,applySet:applySet,persistSnapshot:persistSnapshot,render:renderPanel,_request:request,_importBody:importBody};
+  window.__mlsTemplateLibrary={installed:true,version:VERSION,state:state,refresh:refresh,previewImport:previewImport,commitPending:commitPending,activateSet:activateSet,applySet:applySet,persistSnapshot:persistSnapshot,render:renderPanel,_request:request,_importBody:importBody,_createEmpty:createEmpty};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',install,{once:true});else install();
 })();

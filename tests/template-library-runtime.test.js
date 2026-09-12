@@ -386,8 +386,72 @@ async function formSaveVisibility() {
   assert.strictEqual(ids.tplMultiResult.innerHTML, '', 'Save must not render into the bulk-upload box');
 }
 
+/* Provider-scoped sets must carry a roster identity, not a display name. Two
+ * clinicians may legitimately share the same name, so every lifecycle write
+ * below uses an id selected from the canonical account-scoped roster. */
+async function providerScopedSetLifecycle() {
+  const entries = [
+    { id: 'provider-a', stableKey: 'athena:provider-a', name: 'Alex Kim, MD' },
+    { id: 'provider-b', stableKey: 'athena:provider-b', name: 'Alex Kim, MD' }
+  ];
+  const roster = {
+    installed: true,
+    list() { return entries.map(entry => ({ ...entry })); },
+    resolve(ref) {
+      const raw = typeof ref === 'object' ? (ref.stableKey || ref.id || ref.name || '') : String(ref || '');
+      const exact = entries.filter(entry => entry.id === raw || entry.stableKey === raw);
+      if (exact.length === 1) return { ...exact[0] };
+      const names = entries.filter(entry => entry.name.toLowerCase() === raw.toLowerCase());
+      return names.length === 1 ? { ...names[0] } : null;
+    }
+  };
+  const sent = [];
+  const providerSet = (version = 1) => ({ id: 'set-provider', name: 'Provider set', scope: 'provider', providerId: 'provider-a', providerName: 'Alex Kim, MD', providerStableKey: 'athena:provider-a', status: 'current', active: true, version, templateCount: 1 });
+  const h = makeHarness((url, options) => {
+    if (url.includes('/api/template-sets?')) return response(200, { activeSetId: 'set-provider', sets: [providerSet(1)] });
+    if (url.endsWith('/api/template-sets/set-provider')) return response(200, { set: { ...providerSet(1), templates: [{ id: 'base', name: 'Base', text: 'base' }] } });
+    if (url.endsWith('/api/template-imports/preview')) {
+      sent.push({ kind: 'preview', body: JSON.parse(options.body) });
+      return response(200, { preview: { targetSetId: 'set-provider', targetVersion: 1, counts: { added: 1 }, detail: { rejected: [] }, proposedTemplateCount: 2, canCommit: true } });
+    }
+    if (url.endsWith('/api/template-imports/commit')) {
+      const body = JSON.parse(options.body); sent.push({ kind: 'commit', body });
+      return response(200, { result: { status: 'completed', version: 2, counts: { updated: 1 }, set: { ...providerSet(2), templates: body.templates } } });
+    }
+    if (url.endsWith('/api/template-sets')) {
+      const body = JSON.parse(options.body); sent.push({ kind: 'create', body });
+      return response(200, { set: { ...providerSet(1), id: 'created-provider', name: body.name, active: false } });
+    }
+    throw new Error(`Unexpected provider-scope request ${options.method || 'GET'} ${url}`);
+  }, { __mlsProviderRoster: roster });
+  h.setHosted(true);
+  await h.api.refresh();
+  assert.deepStrictEqual(h.api._importBody({ scope: 'provider', providerId: 'provider-a', templates: [] }).providerName, 'Alex Kim, MD', 'rehydrated provider set lost its provider name');
+  await h.api.previewImport({ scope: 'provider', providerId: 'provider-a', templates: [{ id: 'new', name: 'New', text: 'new' }] });
+  await h.api.commitPending();
+  await h.api.persistSnapshot([{ id: 'edit', name: 'Edited', text: 'edited' }]);
+  await h.api._createEmpty({ scope: 'provider', providerId: 'provider-a', setName: 'Created provider set' });
+  for (const entry of sent) {
+    assert.strictEqual(entry.body.providerId, 'provider-a', `${entry.kind} lost the selected provider id`);
+    assert.strictEqual(entry.body.providerName, 'Alex Kim, MD', `${entry.kind} lost the selected provider name`);
+  }
+  const beforeRefusal = h.fetches.length;
+  await assert.rejects(() => h.api.previewImport({ scope: 'provider', providerName: 'Alex Kim, MD', templates: [{ id: 'x', name: 'X', text: 'x' }] }), /unique roster identity/);
+  await assert.rejects(() => h.api.previewImport({ scope: 'provider', providerId: 'missing-provider', templates: [{ id: 'x', name: 'X', text: 'x' }] }), /unique roster identity/);
+  assert.strictEqual(h.fetches.length, beforeRefusal, 'unknown or ambiguous provider scope reached the network');
+  await h.api.previewImport({ scope: 'provider', providerId: 'provider-a', templates: [{ id: 'again', name: 'Again', text: 'again' }] });
+  assert(h.api.state.pending, 'provider preview should be pending before an account boundary');
+  h.setToken('token-b');
+  await h.api.refresh();
+  assert.strictEqual(h.api.state.pending, null, 'account switch retained a pending provider-scoped selection');
+}
+
 function staticContracts() {
   assert(source.includes("box.onclick=importClick"), 'preview controls need a durable delegated click handler');
+  assert(source.includes("id=\"tlProviderWrap\" hidden") && source.includes("providerWrap.hidden=scopeEl.value!=='provider'"),
+    'the roster provider picker must exist only while provider scope is selected');
+  assert(source.includes('function scopeFor(custom)') && source.includes('r.list()') && source.includes('r.resolve(ref)'),
+    'provider-scoped sets must resolve against the canonical structured roster, not a display-name cache');
   assert(source.includes("VERSION='tl-1.6.0'"), 'the add-means-add lane must carry tl-1.6.0 (pin moved deliberately: clean previews auto-commit from the Add click path)');
 
   /* tl-1.7.0 (owner 2026-09-11): the doctor must never have to press "Activate
@@ -460,6 +524,7 @@ function staticContracts() {
   await failedCommitKeepsPreviewAndIdempotency();
   await uploadDedupeAndRetryHandle();
   await formSaveVisibility();
+  await providerScopedSetLifecycle();
   console.log('PASS template library runtime, isolation, preview/commit, auto-activate, conflict, retry, loader, upload, and form-save visibility contracts');
 })().catch(error => {
   console.error(error);

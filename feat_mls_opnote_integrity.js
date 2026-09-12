@@ -392,13 +392,29 @@
   }
   function templateScopeErrors(tpl,ctx) {
     tpl=tpl||{};ctx=ctx||{};var errors=[];
+    /* Provider IDs are identities; provider names are only display text. A
+       same-name clinician with a different roster id is therefore a hard
+       refusal, never a "close call". Name comparison is intentionally allowed
+       only for old records where NEITHER side carries an id. */
+    function providerCheck(){
+      var templateId=S(tpl.providerId||tpl.provider_id).trim(),currentId=S(ctx.providerId||ctx.provider_id).trim();
+      var templateName=scopeValue(tpl.providerName||tpl.provider),currentName=scopeValue(ctx.providerName||ctx.provider);
+      if(templateId||currentId){
+        if(!templateId||!currentId){errors.push({field:'provider',code:'provider_id_unresolved',message:'The selected template and current appointment do not both carry the required provider identity.'});return;}
+        if(templateId!==currentId)errors.push({field:'provider',code:'mismatch_provider_id',message:'The selected template belongs to a different provider identity.'});
+        return;
+      }
+      if(!templateName)return;
+      if(!currentName){errors.push({field:'provider',code:'missing_provider_scope',message:'The selected template is provider-specific, but the current provider is unresolved.'});return;}
+      if(normText(templateName)!==normText(currentName))errors.push({field:'provider',code:'mismatch_provider',message:'The selected template belongs to a different provider.'});
+    }
     function check(kind,expected,actual){
       expected=scopeValue(expected);actual=scopeValue(actual);
       if(!expected)return;
       if(!actual){errors.push({field:kind,code:'missing_'+kind+'_scope',message:'The selected template is '+kind+'-specific, but the current '+kind+' is unresolved.'});return;}
       if(normText(expected)!==normText(actual))errors.push({field:kind,code:'mismatch_'+kind,message:'The selected template belongs to a different '+kind+'.'});
     }
-    check('provider',tpl.providerId||tpl.provider_id||tpl.providerName||tpl.provider,ctx.providerId||ctx.provider_id||ctx.providerName||ctx.provider);
+    providerCheck();
     check('facility',tpl.facilityId||tpl.facility_id||tpl.facilityName||tpl.facility,ctx.facilityId||ctx.facility_id||ctx.facilityName||ctx.facility);
     return errors;
   }
@@ -453,7 +469,12 @@
      relaxation, a surviving approach conflict means BOTH sides are specific
      (TFESI vs interlaminar) — the template narrative describes a different
      technique that forceFacts cannot rewrite. */
-  var ADAPTABLE_CONFLICTS={mismatch_side:1,mismatch_levels:1,mismatch_levelCount:1,missing_provider_scope:1,missing_facility_scope:1,mismatch_provider:1,mismatch_facility:1};
+  var ADAPTABLE_CONFLICTS={mismatch_side:1,mismatch_levels:1,mismatch_levelCount:1,missing_facility_scope:1,mismatch_facility:1};
+  function providerScopeHardError(compat){
+    var errs=(compat&&compat.errors)||[];
+    for(var i=0;i<errs.length;i++)if(/^(?:mismatch_provider_id|provider_id_unresolved)$/.test(S(errs[i].code))){var err=new Error(S(errs[i].message)||'The selected template does not match the appointment provider identity.');err.code='MLS_OPNOTE_PROVIDER_SCOPE';return err;}
+    return null;
+  }
   function closeCallAdaptation(compat,tpl,ctx){
     var errs=(compat&&compat.errors)||[];
     if(!errs.length)return {adapt:false,reasons:[]};
@@ -461,7 +482,6 @@
     for(var i=0;i<errs.length;i++){
       var c=S(errs[i].code),f=S(errs[i].field);
       if(!ADAPTABLE_CONFLICTS[c])return {adapt:false,hard:f||c,reasons:[]};
-      if(c==='mismatch_provider'&&!scopeTokensOverlap(tpl,ctx,'provider'))return {adapt:false,hard:'provider',reasons:[]};
       if(c==='mismatch_facility'&&!scopeTokensOverlap(tpl,ctx,'facility'))return {adapt:false,hard:'facility',reasons:[]};
       if(reasons.indexOf(f)<0)reasons.push(f);
     }
@@ -2151,6 +2171,7 @@
     })();
     var tplCheck=templateCompatibility(procedure,selectedTpl||{text:tplText},ctx),crossAdapt=false;
     if(!tplCheck.pass){
+      var providerScopeError=providerScopeHardError(tplCheck);if(providerScopeError)throw providerScopeError;
       var tplAdapt=closeCallAdaptation(tplCheck,selectedTpl||{},ctx);
       if(tplAdapt.adapt){
         window.__mlsOpNoteTplAdapted={reasons:tplAdapt.reasons.slice(),at:Date.now()};
@@ -2569,7 +2590,8 @@
     try{if(isFn(window._opPatientCtx))base=window._opPatientCtx(appt.name,appt.dob,row&&row.patientId);}catch(e){}
     [base,row&&row._ctx].forEach(function(src){if(!src)return;for(var k in src)if(Object.prototype.hasOwnProperty.call(src,k))ctx[k]=src[k];});
     ctx.templateId=S(row&&row.tplId);
-    if(!ctx.providerId)ctx.providerId=S(appt.providerId||appt.provider_id);
+    var apptProviderId=S(appt.providerId||appt.provider_id).trim();
+    if(apptProviderId)ctx.providerId=apptProviderId;
     var apptProvider=S(appt.providerName||appt.provider_name||appt.provider).trim();
     if(apptProvider){
       var priorProvider=providerKey(ctx.provider||ctx.providerName);
@@ -2600,7 +2622,7 @@
       syncTplStatus(+m[1]);
     },true);
     var one=window.opPrepGenerateOne;
-    if(isFn(one)&&!one.__oni){var oneWrap=async function(i){var row=(window._opPrep||[])[i];window.__mlsLastOpFidelityPass=false;window.__mlsLastOpFidelityError='';window.__mlsLastOpErrorCode='';if(row&&!row.tplManual){var m=bestFor(row.appt.name,row.proc||row.appt.reason,row.appt.dob,row.patientId);row.tplId=m.tplId;row.tplMatchSource=m.source;row.tplMatchReason=m.reason;row.tplAlternatives=(m&&m.alternatives)||[];markGuess(row,m);syncTplStatus(i);}if(row&&row.tplId){var chosen=isFn(window.getTemplateById)?window.getTemplateById(row.tplId):null;var compat=templateCompatibility(row.proc||row.appt.reason,chosen||{},rowGenerationCtx(row));if(!compat.pass){var rowAdapt=closeCallAdaptation(compat,chosen||{},rowGenerationCtx(row));if(rowAdapt.adapt){toast('Adapting the template to this case ('+rowAdapt.reasons.join(', ')+') — the requested procedure details stay authoritative.','');}else{
+    if(isFn(one)&&!one.__oni){var oneWrap=async function(i){var row=(window._opPrep||[])[i];window.__mlsLastOpFidelityPass=false;window.__mlsLastOpFidelityError='';window.__mlsLastOpErrorCode='';if(row&&!row.tplManual){var m=bestFor(row.appt.name,row.proc||row.appt.reason,row.appt.dob,row.patientId);row.tplId=m.tplId;row.tplMatchSource=m.source;row.tplMatchReason=m.reason;row.tplAlternatives=(m&&m.alternatives)||[];markGuess(row,m);syncTplStatus(i);}if(row&&row.tplId){var chosen=isFn(window.getTemplateById)?window.getTemplateById(row.tplId):null;var rowCtx=rowGenerationCtx(row),compat=templateCompatibility(row.proc||row.appt.reason,chosen||{},rowCtx),rowProviderError=providerScopeHardError(compat);if(rowProviderError){row._genErr=rowProviderError.message;window.__mlsLastOpFidelityError=rowProviderError.message;window.__mlsLastOpErrorCode=rowProviderError.code;toast(rowProviderError.message,'err');return false;}if(!compat.pass){var rowAdapt=closeCallAdaptation(compat,chosen||{},rowCtx);if(rowAdapt.adapt){toast('Adapting the template to this case ('+rowAdapt.reasons.join(', ')+') — the requested procedure details stay authoritative.','');}else{
         /* oni-2.14.0 owner directive: warn but still go through. Auto-matched
            rows first try a reroute to a genuinely compatible template ("its
            best fix"); manual picks are respected and adapted in place. */
@@ -2610,7 +2632,7 @@
           var altBest=best(row.proc||row.appt.reason);
           var altId=altBest&&altBest.tpl?S(altBest.tpl.id||altBest.tpl.templateId):'';
           if(altId&&altId!==S(row.tplId)){
-            var altCompat=templateCompatibility(row.proc||row.appt.reason,altBest.tpl,rowGenerationCtx(row));
+            var altCompat=templateCompatibility(row.proc||row.appt.reason,altBest.tpl,rowCtx);
             if(altCompat.pass||closeCallAdaptation(altCompat,altBest.tpl,rowGenerationCtx(row)).adapt){
               row.tplId=altId;row.tplMatchSource='auto-reroute';row.tplMatchReason='Rerouted: previous match was for a different procedure';markGuess(row,{source:'auto-reroute'});syncTplStatus(i);switched=true;
               toast('Switched to compatible template "'+S(altBest.tpl.name).slice(0,60)+'" — '+warnWhat+'.','');
@@ -2689,6 +2711,6 @@
     if(isFn(all)&&!all.__oni){var allWrap=async function(){try{var _tpf=window.__mlsTplPrepFix;if(_tpf&&typeof _tpf.draftAll==='function')return await _tpf.draftAll();}catch(_eDA){}var rows=window._opPrep||[],st=document.getElementById('opPrepStatus'),ok=0,failed=0;for(var i=0;i<rows.length;i++){if(st)st.textContent='Drafting '+(i+1)+'/'+rows.length+' — '+rows[i].appt.name+'…';if(await window.opPrepGenerateOne(i))ok++;else failed++;}if(st)st.textContent=failed?('Drafted '+ok+' of '+rows.length+'. '+failed+' need a confirmed template or a retry.'):('✅ Drafted all '+ok+' op note'+(ok===1?'':'s')+' with template structure verified.');return {drafted:ok,failed:failed};};allWrap.__oni=true;window.opPrepGenerateAll=allWrap;}
   }
 
-  window.__mlsOpNoteIntegrity={installed:true,version:VERSION,classify:procClass,parseProcedureFacts:procedureFacts,templateCompatibility:templateCompatibility,clinicalConsistency:clinicalConsistency,rank:rank,best:best,bestFor:bestFor,matchVisitText:matchVisitText,stripNegated:stripNegated,statesNoProcedure:statesNoProcedure,headings:headings,fixedFragments:fixedFragments,fidelity:fidelity,templateConformance:templateConformance,conformanceLines:conformanceLines,fillDateSlots:fillDateSlots,noteStatesDay:noteStatesDay,parseDayParts:parseDayParts,exactNameMatch:exactNameMatch,alternativesFrom:alternativesFrom,templateSubstance:templateSubstance,scrubUnownedIdentifiers:scrubUnownedIdentifiers,forceFacts:forceFacts,fillProcedureSlots:fillProcedureSlots,reanchor:reanchor,airSections:airSections,sanitizeTemplate:sanitizeTemplate,chartProblems:chartProblems,generate:generate,_historyVisitBelongsTo:historyVisitBelongsTo,_verifiedHistoryVisits:verifiedHistoryVisits,_resolveSelectedTemplate:resolveSelectedTemplate,_generationKey:generationKey,_rowGenerationCtx:rowGenerationCtx,_closeCallAdaptation:closeCallAdaptation,procTitleForNote:procTitleForNote,narrativeBinding:narrativeBinding,guardNarrativeBinding:guardNarrativeBinding};
+  window.__mlsOpNoteIntegrity={installed:true,version:VERSION,classify:procClass,parseProcedureFacts:procedureFacts,templateCompatibility:templateCompatibility,clinicalConsistency:clinicalConsistency,rank:rank,best:best,bestFor:bestFor,matchVisitText:matchVisitText,stripNegated:stripNegated,statesNoProcedure:statesNoProcedure,headings:headings,fixedFragments:fixedFragments,fidelity:fidelity,templateConformance:templateConformance,conformanceLines:conformanceLines,fillDateSlots:fillDateSlots,noteStatesDay:noteStatesDay,parseDayParts:parseDayParts,exactNameMatch:exactNameMatch,alternativesFrom:alternativesFrom,templateSubstance:templateSubstance,scrubUnownedIdentifiers:scrubUnownedIdentifiers,forceFacts:forceFacts,fillProcedureSlots:fillProcedureSlots,reanchor:reanchor,airSections:airSections,sanitizeTemplate:sanitizeTemplate,chartProblems:chartProblems,generate:generate,_historyVisitBelongsTo:historyVisitBelongsTo,_verifiedHistoryVisits:verifiedHistoryVisits,_resolveSelectedTemplate:resolveSelectedTemplate,_generationKey:generationKey,_rowGenerationCtx:rowGenerationCtx,_closeCallAdaptation:closeCallAdaptation,_providerScopeHardError:providerScopeHardError,procTitleForNote:procTitleForNote,narrativeBinding:narrativeBinding,guardNarrativeBinding:guardNarrativeBinding};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',install,{once:true});else install();
 })();
