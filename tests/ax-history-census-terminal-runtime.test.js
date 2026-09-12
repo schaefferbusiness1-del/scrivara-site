@@ -33,7 +33,8 @@ async function run(options) {
     Date: { now: () => now }, Number, String, Math, Array, Object, Promise,
     emrId: 77, cfg: { maxVisits: options.cap || 40 }, total: options.known,
     readDeadline: options.deadline || 200000, readStartedAt: 10000, readBudgetMs: 165000,
-    frozenHint: { ...identity, onlyDate: '' }, identity, diag: {},
+    frozenHint: { ...identity, onlyDate: options.onlyDate || '', todayKey: options.todayKey === undefined ? '2026-09-12' : options.todayKey }, identity, diag: {},
+    mlsVisitDateKeyForHint: value => /^\d{2}\/\d{2}\/\d{4}$/.test(value) ? value.slice(6) + '-' + value.slice(0, 2) + '-' + value.slice(3, 5) : '',
     gate: { ok: false, reason: 'no-chart-frame-candidate' }, rrWait: 0, rrRecovered: false,
     sleep: async ms => { now += ms; }, touchVisitLease() {},
     visitIdentityGate: () => ({ ok: current !== options.wrongIdentity }),
@@ -52,7 +53,7 @@ async function run(options) {
       } else if (op === 'identity') result = identity;
       else if (op === 'axRead') {
         read.push(current);
-        result = { ok: true, headerDate: '08/01/2026', raw: 'Synthetic encounter ' + current + ': history, examination and plan.' };
+        result = { ok: true, headerDate: options.dates && Object.prototype.hasOwnProperty.call(options.dates, current) ? options.dates[current] : '08/01/2026', raw: 'Synthetic encounter ' + current + ': history, examination and plan.' };
       } else throw new Error('Unexpected operation: ' + op);
       return [{ frameId: 5, result }];
     }
@@ -103,5 +104,30 @@ async function run(options) {
   }
   const unknownZero = finish({ ok: true, receipt: { complete: true, indexComplete: true, bodyComplete: true, expected: 0, parsed: 0 } });
   assert.strictEqual(unknownZero.receipt.complete, false, 'unproven empty history became complete');
+
+  const scopedOptions = { known: 4, ids, onlyDate: '2026-08-01', dates: { '102': '07/20/2026', '103': '07/19/2026', '104': '07/18/2026' } };
+  const scoped = await run(scopedOptions);
+  assert.strictEqual(scoped.result.ok, true);
+  assert.strictEqual(scoped.result.receipt.complete, true, 'healthy one-in-day plus three other-day encounters failed terminal completion');
+  assert.strictEqual(scoped.result.receipt.expected, 1);
+  assert.strictEqual(scoped.result.receipt.parsed, 1);
+  assert.strictEqual(scoped.result.receipt.scopeDate, scopedOptions.onlyDate);
+  assert.strictEqual(scoped.result.receipt.sameDayStatus, 'saved');
+  for (const variation of [{ cap: 1 }, { known: 6 }, { dates: { ...scopedOptions.dates, '103': '' } }, { wrongIdentity: '103' }, { deadline: 19000 }]) {
+    const partial = await run({ ...scopedOptions, ...variation });
+    assert.strictEqual(partial.result.ok, false, 'unproven scoped coverage returned success: ' + JSON.stringify(variation));
+    assert.strictEqual(partial.result.receipt.complete, false);
+    assert.strictEqual(partial.result.receipt.expected, partial.result.receipt.parsed + partial.result.receipt.failures + partial.result.receipt.notAttempted, 'scoped census must account for missing, unknown and refused encounters');
+  }
+  const absentOptions = { ...scopedOptions, dates: { ...scopedOptions.dates, '101': '07/21/2026' } };
+  const absent = await run(absentOptions);
+  assert.strictEqual(absent.result.ok, true);
+  assert.strictEqual(absent.result.receipt.complete, true, 'proven scoped absence failed terminal completion');
+  assert.strictEqual(absent.result.receipt.absenceProven, true);
+  assert.strictEqual(absent.result.receipt.sameDayStatus, 'absent');
+  assert.strictEqual(absent.result.receipt.expected, 0);
+  const noClock = await run({ ...absentOptions, todayKey: '' });
+  assert.strictEqual(noClock.result.ok, false, 'scoped absence requires account-local calendar authority');
+  assert.strictEqual(noClock.result.receipt.absenceProven, false);
   console.log('PASS ax history census through terminal receipt: complete, shorter index, cap, navigation failure, identity refusal, deadline, explicit refusal and proven empty cases');
 })().catch(error => { console.error(error); process.exitCode = 1; });

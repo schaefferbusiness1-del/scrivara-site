@@ -118,9 +118,20 @@ assert(!/\bgate: gate\b/.test(bg),
  *    has to survive postMessage: no functions, no DOM nodes, no Error objects.
  *    ecSeen is built once; pin its shape at the source. */
 const ecPush = bg.slice(bg.indexOf('if (!ecRelaxed) ecSeen.push('), bg.indexOf('if (!ecRelaxed) ecSeen.push(') + 260);
-assert(/url: ecUrl\.slice\(0, 110\)/.test(ecPush) && /score: ecScoreN/.test(ecPush),
+assert(/url: ecNoise \? 'shared-ui' : 'chart-ui'/.test(ecPush) && /score: ecScoreN/.test(ecPush),
   'the frame table must hold plain strings and numbers so it survives structured clone');
 assert(!/node:|element:|err:|error: e\b/.test(ecPush),
   'a DOM node or Error in the frame table would make the whole message unclonable and drop it entirely');
+
+// Execute the actual emitted frame object with synthetic PHI canaries.
+const pushAt = bg.indexOf('if (!ecRelaxed) ecSeen.push(');
+const pushSource = bg.slice(pushAt, bg.indexOf('\n', pushAt));
+for (const noise of [false, true]) {
+  const context = { ecRelaxed: false, ecSeen: [], ecUrl: 'https://athenanet.athenahealth.com/987654321?patient=Canary', ecScoreN: 17, ecIdentity: { name: 'Private Canary Name' }, ecDrop: '', ecNoise: noise };
+  require('vm').runInNewContext(pushSource, context);
+  assert.strictEqual(context.ecSeen[0].identityPresent, true);
+  assert.strictEqual(context.ecSeen[0].url, noise ? 'shared-ui' : 'chart-ui');
+  assert(!/Canary|987654321|https:/.test(JSON.stringify(context.ecSeen)), 'frame diagnostics leaked a patient name or raw URL');
+}
 
 console.log('PASS enumerate evidence crosses the hop: the frame table is returned as a real field (objects DO survive; gate.frames never did because gate is never returned), the string summary is kept as belt-and-braces, and new fields cannot be hung on the local gate again');

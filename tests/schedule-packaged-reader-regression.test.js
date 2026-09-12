@@ -54,8 +54,8 @@ function appointment(id, text, options = {}) {
       if (name === 'data-appointment-id') return options.appointmentId || '';
       return '';
     },
-    querySelector() { return null; },
-    querySelectorAll() { return []; }
+    querySelector(selector) { return selector.includes('reason') && options.reason !== undefined ? { textContent: options.reason } : null; },
+    querySelectorAll(selector) { return selector.includes('reason') && options.reason !== undefined ? [{ textContent: options.reason }] : []; }
   };
 }
 
@@ -146,10 +146,10 @@ function legacyNode(text, options = {}) {
     clientHeight: 0,
     scrollWidth: 0,
     clientWidth: 0,
-    getAttribute() { return ''; },
+    getAttribute(name) { return name === 'data-appointment-id' ? options.appointmentId || '' : ''; },
     getBoundingClientRect() { return { left: 0, right: 240, top: 0, width: 240 }; },
-    querySelector() { return null; },
-    querySelectorAll() { return []; }
+    querySelector(selector) { return selector.includes('reason') && options.reason !== undefined ? { textContent: options.reason } : null; },
+    querySelectorAll(selector) { return selector.includes('reason') && options.reason !== undefined ? [{ textContent: options.reason }] : []; }
   };
 }
 
@@ -231,6 +231,21 @@ function timeAt(index) {
 }
 
 (async () => {
+  // Both shipped schedule readers preserve a complete exposed appointment field.
+  {
+    const note = 'Left L3-L5 block, 40 mg.\n' + 'Additional scheduling detail. '.repeat(30).trim();
+    const modern = appointment('complete-note', '8:00 AM Sample, Jane (58yo F)', { appointmentId: '40001', reason: note });
+    const modernResult = await runtime.mlsSchedDomInline(scheduleDoc({columns:[column(0,[modern])],headers:[header('Doctor_One_MD',0)]}),{});
+    const legacy = legacyNode('8:00 AM Sample, Jane (58yo F)', { appointmentId: '40001', reason: note });
+    const hdr = legacyNode('Doctor_One_MD');
+    const legacyResult = await runtime.mlsSchedDomInline(legacyScheduleDoc([legacyContainer([legacy],hdr)],[hdr]),{});
+    for (const result of [modernResult,legacyResult]) {
+      assert.strictEqual(result.appts.length,1);
+      assert.strictEqual(result.appts[0].schedulingNote,note);
+      assert.strictEqual(result.appts[0].schedulingNoteReceipt.complete,true);
+      assert.strictEqual(mergeReaderResult(result).appts[0].schedulingNote,note);
+    }
+  }
   // The actual structure lane must canonicalize Athena's "Last, First" row,
   // rather than returning a one-token first name that the merge rejects.
   {

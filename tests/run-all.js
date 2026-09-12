@@ -1410,6 +1410,7 @@ const tests = [
   'already-open-appointment-short-circuit.test.js',
   'appointment-id-bootstrap-contract.test.js',
   'exact-row-recovery-runtime.test.js',
+  'schedule-complete-note-runtime.test.js',
   'athena-native-persistence-runtime.test.js',
   'athena-native-persistence-proof-contract.test.js',
   'savenamed-active-surface-runtime.test.js',

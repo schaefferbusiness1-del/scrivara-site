@@ -7649,7 +7649,19 @@ var mlsProv = (function () {
       return matches.length ? { ambiguous: matches.length !== 1, row: matches.length === 1 ? matches[0] : null } : null;
     }
     function mergeRowFields(prior, a, lane) {
+      if (a && a.schedulingNoteReceipt && clean(prior.appointmentId) && clean(prior.appointmentId) === clean(a.appointmentId)) {
+        var priorNote = prior.schedulingNoteReceipt, incomingNote = a.schedulingNoteReceipt;
+        if (!(priorNote && priorNote.status === 'conflicting-fields')) {
+          if (priorNote && priorNote.complete && incomingNote.complete && String(prior.schedulingNote || '') !== String(a.schedulingNote || '')) {
+            prior.schedulingNote = ''; prior.reason = ''; prior.schedulingNoteReceipt = {version:1,source:'schedule-reason-field',status:'conflicting-fields',complete:false,chars:0};
+          } else if (!priorNote || !priorNote.complete || incomingNote.complete) {
+            prior.schedulingNote = a.schedulingNote || ''; prior.schedulingNoteReceipt = incomingNote;
+            if (incomingNote.complete && a.schedulingNote) prior.reason = a.schedulingNote;
+          }
+        }
+      }
       ['provider', 'providerId', 'provider_id', 'athenaProviderId', 'athena_provider_id', 'appointmentId', 'appointment_id', 'athenaAppointmentId', 'athena_appointment_id', 'date', 'appt_date', 'reason', 'status'].forEach(function (field) {
+        if (field === 'reason' && prior.schedulingNoteReceipt && prior.schedulingNoteReceipt.status === 'conflicting-fields') return;
         if (!clean(prior[field]) && clean(a && a[field])) { prior[field] = a[field]; mergedFields++; }
       });
       ['dob', 'mrn'].forEach(function (field) {
@@ -9074,6 +9086,48 @@ async function mlsSchedDomInline(doc, CFG){
     if(!texts.length){try{var parH=list.parentElement;if(parH)[].slice.call(parH.querySelectorAll('[class*="appointment-header"],[class*="provider-header"],[class*="provider-name"],[class*="column-header"],header,h1,h2,h3,h4')).slice(0,20).forEach(function(h){var insideH=false;try{insideH=list.contains?list.contains(h):false;}catch(_eHV6){}if(!insideH)addT(tx(h),5,h);});}catch(_eHV7){}}
     return texts;}
 /* 2026-07-29 SNAPSHOT identity verification. Athena's React check-in widget can replace a row's subtree continuously, so live DOM walks lose the race no matter how many settle passes run (live-proven: an appointment row vanished between two probes seconds apart while a single synchronous outerHTML capture read it intact). Capture the row's outerHTML in ONE synchronous read and parse identity from that STRING: a string cannot churn. Evidence bar unchanged: the shared confident name parse as everywhere else; a structurally patient-bound region name (encounter-link anchor, patient-name node, data-patient-name) including the First-Last capitalized-pair shape is accepted ONLY when the same row carries an appointment id - the id + confident-name bar the structured lane already uses. Conflicting ids, foreign times, multiple distinct region names, or any other ambiguity stays refused as mutating. */
+    /* schedule-note-30121: preserve the complete exposed field, separately
+       from the historical type snippet. Receipts carry counts/codes only. */
+    function _scheduleNoteD(row,snapshot,appointmentId){
+      var source=snapshot?'schedule-reason-snapshot':'schedule-reason-field';
+      function answer(status,text,chars){return{text:text||'',receipt:{version:1,source:source,status:status,complete:status==='captured'||status==='empty',chars:chars||0}};}
+      var wanted=String(appointmentId||'').trim();
+      if(!wanted)return answer('appointment-unbound');
+      var root=row;
+      if(snapshot){
+        if(snapshot.length>=60000)return answer('snapshot-truncated');
+        try{var tpl=doc.createElement('template');tpl.innerHTML=snapshot;root=tpl.content;}catch(eNoteSnap){return answer('snapshot-unreadable');}
+      }
+      function bound(){
+        try{
+          if(!root||(!snapshot&&root.isConnected===false))return false;
+          var ids={},nodes=[root].concat([].slice.call(root.querySelectorAll('[data-appointment-id], [data-appt-id], [data-appointmentid]')));
+          nodes.forEach(function(n){['data-appointment-id','data-appt-id','data-appointmentid'].forEach(function(k){var v=n.getAttribute&&n.getAttribute(k);if(v&&String(v).trim())ids[String(v).trim()]=1;});});
+          if(!Object.keys(ids).length)[].slice.call(root.querySelectorAll('a[href]')).forEach(function(n){var m=/[?&#/](?:appointmentid|appointment_id|appointment|apptid)[=\/:]([a-z0-9_-]{2,})/i.exec(String(n.getAttribute('href')||''));if(m)ids[m[1]]=1;});
+          return Object.keys(ids).length===1&&ids[wanted]===1;
+        }catch(eNoteBound){return false;}
+      }
+      if(!bound())return answer('row-changed');
+      try{
+        var fields=[].slice.call(root.querySelectorAll('[class*="reason"], [data-testid*="reason"], [aria-label*="reason"]'));
+        if(!fields.length)return answer('source-not-rendered');
+        var values=[],largest='';
+        fields.forEach(function(n){var t=String(n.textContent||'').replace(/\r\n?/g,'\n').trim();if(values.indexOf(t)<0)values.push(t);if(t.length>largest.length)largest=t;});
+        if(!bound())return answer('row-changed');
+        if(largest.length>16000)return answer('too-large','',largest.length);
+        if(values.some(function(t){return t&&largest.indexOf(t)<0;}))return answer('conflicting-fields');
+        return answer(largest?'captured':'empty',largest,largest.length);
+      }catch(eNoteRead){return answer('source-unreadable');}
+    }
+    function _mergeScheduleNoteD(target,note){
+      if(!target||!note||!note.receipt)return;
+      var prior=target.schedulingNoteReceipt;
+      if(prior&&prior.status==='conflicting-fields'){target.reason='';return;}
+      if(prior&&prior.complete&&note.receipt.complete&&String(target.schedulingNote||'')!==String(note.text||'')){target.schedulingNote='';target.reason='';target.schedulingNoteReceipt={version:1,source:'schedule-reason-field',status:'conflicting-fields',complete:false,chars:0};return;}
+      if(prior&&prior.complete&&!note.receipt.complete)return;
+      target.schedulingNote=note.text||'';target.schedulingNoteReceipt=note.receipt;
+      if(note.receipt.complete&&note.text)target.reason=note.text;
+    }
     function _snapCapture(row){try{var h=String((row&&row.outerHTML)||'');return h.length>60000?h.slice(0,60000):h;}catch(_eSC0){return '';}}
     function _snapDecode(s){return String(s||'').replace(/&nbsp;/gi,' ').replace(/&amp;/gi,'&').replace(/&lt;/gi,'<').replace(/&gt;/gi,'>').replace(/&quot;/gi,'"').replace(/&#0*39;/g,"'").replace(/&apos;/gi,"'");}
     function _snapText(html){return cl(_snapDecode(String(html||'').replace(/<script[\s\S]*?<\/script>/gi,' ').replace(/<style[\s\S]*?<\/style>/gi,' ').replace(/<[^>]*>/g,' ')));}
@@ -9201,14 +9255,14 @@ async function mlsSchedDomInline(doc, CFG){
             var nameTokens=name.replace(/[^A-Za-z'â€™\-]+/g,' ').trim().split(/\s+/).filter(Boolean);
             if(!tm||nameTokens.length<2){_legacyUnresolvedL.push({time:tm||'',provider:provider||'',appointmentId:appointmentId||'',rawKey:_legacyNormL(raw),node:row});return;}
             var rowProof=_scheduleRowProofD(row);
-            _legacyClaimedNodesL.push(row);_legacyObsL.push({time:tm,name:name,provider:provider||'',providerKey:_legacyNormL(provider),appointmentId:appointmentId||'',providerId:providerId||'',reason:_legacyReasonL(row),status:_mlsApptStatusD(raw),dob:rowProof.dob||'',mrn:rowProof.mrn||'',dobConflict:rowProof.dobConflict===true,mrnConflict:rowProof.mrnConflict===true,rawKey:_legacyNormL(raw)});
+            _legacyClaimedNodesL.push(row);_legacyObsL.push({time:tm,name:name,provider:provider||'',providerKey:_legacyNormL(provider),appointmentId:appointmentId||'',providerId:providerId||'',reason:_legacyReasonL(row),status:_mlsApptStatusD(raw),dob:rowProof.dob||'',mrn:rowProof.mrn||'',dobConflict:rowProof.dobConflict===true,mrnConflict:rowProof.mrnConflict===true,rawKey:_legacyNormL(raw)});_mergeScheduleNoteD(_legacyObsL[_legacyObsL.length-1],_scheduleNoteD(row,_snapCapture(row),appointmentId));
           });
         });
         /* 2026-07-29 bounded per-row re-verify: a legacy row whose DOM changed underneath the reader lands in _legacyUnresolvedL. Re-locate THAT row by its stable key (its own still-connected node, its appointment id, else a unique unclaimed same-time row) after a short settle and re-verify, up to 2 extra passes. Rows that still refuse are classified: no-identity-cell means PROVABLY no appointment id, no patient-name shape and no DOB/MRN (a hold/block/frame row); everything else stays mutating and keeps the day incomplete. A patient row is never guessed. */
         var _lgPassesL=0,_lgSnapRecovL=0,_lgSlotWordsL=/^(open|available|unavailable|blocked?|hold|reserved|lunch|break|admin|administrative|meeting|closed|buffer|frozen|freeze|slot|slots|capacity|frame)$/i;
         function _lgNoIdentityL(row,raw){try{if(_legacyAttrL(row,['data-appointment-id','data-appt-id','data-appointmentid','appointmentid']))return false;var proof=_scheduleRowProofD(row);if(proof.dob||proof.mrn||proof.dobConflict||proof.mrnConflict)return false;var parsed=null;try{parsed=mlsParseName(raw);}catch(_eNI1){}if(parsed&&parsed.confident)return false;var nm=cl(pn(raw));if(nm&&nm.replace(/[^A-Za-z'\- ]+/g,' ').trim().split(/\s+/).filter(Boolean).length>=2)return false;if(_legacySlotL(raw))return true;var toks=cl(String(raw||'').replace(RTG,' ')).replace(/[^A-Za-z'\- ]+/g,' ').split(/\s+/).filter(Boolean).filter(function(w){return !STOP.test(w)&&!CI.test(w.toLowerCase())&&!_lgSlotWordsL.test(w);});return toks.length===0;}catch(_eNI0){return false;}}
         function _lgRelocateL(u){try{if(u.node&&u.node.isConnected!==false&&(!doc.contains||doc.contains(u.node)))return u.node;}catch(_eRL0){}try{if(u.appointmentId){var el=doc.querySelector('[data-appointment-id="'+u.appointmentId+'"],[data-appointmentid="'+u.appointmentId+'"],[data-appt-id="'+u.appointmentId+'"]');if(el)return el;}}catch(_eRL1){}try{var cands=[].slice.call(doc.querySelectorAll('[class~="filled-appointment-row"]')).filter(function(r2){return u.time&&ft(tx(r2))===u.time&&_legacyClaimedNodesL.indexOf(r2)<0;});if(cands.length===1)return cands[0];}catch(_eRL2){}return null;}
-        while(_lgPassesL<2&&_legacyUnresolvedL.length&&__scheduleActionAllowed()){_lgPassesL++;if(!(await __scheduleActionSleep(280)))break;var _lgStillL=[];for(var _lgI=0;_lgI<_legacyUnresolvedL.length;_lgI++){var _lgU=_legacyUnresolvedL[_lgI],_lgRow=_lgRelocateL(_lgU);if(_lgRow){var _lgSnap=_snapCapture(_lgRow);if(_lgSnap){var _lgIdn=_snapIdentity(_lgSnap,_lgU.time,_lgU.appointmentId);if(_lgIdn.ok){_lgSnapRecovL++;_legacyClaimedNodesL.push(_lgRow);_legacyObsL.push({time:_lgIdn.time||_lgU.time,name:_lgIdn.name,provider:_lgU.provider||'',providerKey:_legacyNormL(_lgU.provider||''),appointmentId:_lgU.appointmentId||_lgIdn.appointmentId||'',providerId:'',reason:'',status:_mlsApptStatusD(_snapText(_lgSnap)),dob:_lgIdn.dob||'',mrn:_lgIdn.mrn||'',dobConflict:false,mrnConflict:false,rawKey:_legacyNormL(_snapText(_lgSnap))});continue;}_lgU._unvKind=_lgIdn.noIdentity?'no-identity-cell':'mutating';_lgU._relocated=true;_lgU._snap=true;_lgU._snapParse=String(_lgIdn.snapshotParse||'');_lgU._passes=_lgPassesL;_lgStillL.push(_lgU);continue;}var _lgRaw=tx(_lgRow),_lgTm=ft(_lgRaw);if(_legacySlotL(_lgRaw)){_lgU._unvKind='no-identity-cell';_lgU._relocated=true;_lgU._passes=_lgPassesL;_lgStillL.push(_lgU);continue;}var _lgParsed=null,_lgNm='';try{_lgParsed=mlsParseName(_lgRaw);}catch(_ePR2){}if(_lgParsed&&_lgParsed.confident)_lgNm=cl(_lgParsed.display);else _lgNm=cl(pn(_lgRaw));var _lgTk=_lgNm.replace(/[^A-Za-z'\- ]+/g,' ').trim().split(/\s+/).filter(Boolean);if(_lgTm&&_lgTk.length>=2){var _lgProof=_scheduleRowProofD(_lgRow);_legacyClaimedNodesL.push(_lgRow);_legacyObsL.push({time:_lgTm,name:_lgNm,provider:_lgU.provider||'',providerKey:_legacyNormL(_lgU.provider||''),appointmentId:_lgU.appointmentId||_legacyAttrL(_lgRow,['data-appointment-id','data-appt-id','data-appointmentid','appointmentid'])||'',providerId:_legacyAttrL(_lgRow,['data-provider-id','data-rendering-provider-id','data-resource-id','providerid'])||'',reason:_legacyReasonL(_lgRow),status:_mlsApptStatusD(_lgRaw),dob:_lgProof.dob||'',mrn:_lgProof.mrn||'',dobConflict:_lgProof.dobConflict===true,mrnConflict:_lgProof.mrnConflict===true,rawKey:_legacyNormL(_lgRaw)});continue;}_lgU._unvKind=_lgNoIdentityL(_lgRow,_lgRaw)?'no-identity-cell':'mutating';_lgU._relocated=true;_lgU._passes=_lgPassesL;_lgU.node=_lgRow;_lgStillL.push(_lgU);}else{_lgU._unvKind=_lgU._unvKind||'mutating';_lgU._relocated=false;_lgU._passes=_lgPassesL;_lgStillL.push(_lgU);}}_legacyUnresolvedL=_lgStillL;}
+        while(_lgPassesL<2&&_legacyUnresolvedL.length&&__scheduleActionAllowed()){_lgPassesL++;if(!(await __scheduleActionSleep(280)))break;var _lgStillL=[];for(var _lgI=0;_lgI<_legacyUnresolvedL.length;_lgI++){var _lgU=_legacyUnresolvedL[_lgI],_lgRow=_lgRelocateL(_lgU);if(_lgRow){var _lgSnap=_snapCapture(_lgRow);if(_lgSnap){var _lgIdn=_snapIdentity(_lgSnap,_lgU.time,_lgU.appointmentId);if(_lgIdn.ok){_lgSnapRecovL++;_legacyClaimedNodesL.push(_lgRow);_legacyObsL.push({time:_lgIdn.time||_lgU.time,name:_lgIdn.name,provider:_lgU.provider||'',providerKey:_legacyNormL(_lgU.provider||''),appointmentId:_lgU.appointmentId||_lgIdn.appointmentId||'',providerId:'',reason:'',status:_mlsApptStatusD(_snapText(_lgSnap)),dob:_lgIdn.dob||'',mrn:_lgIdn.mrn||'',dobConflict:false,mrnConflict:false,rawKey:_legacyNormL(_snapText(_lgSnap))});_mergeScheduleNoteD(_legacyObsL[_legacyObsL.length-1],_scheduleNoteD(_lgRow,_lgSnap,_lgU.appointmentId||_lgIdn.appointmentId));continue;}_lgU._unvKind=_lgIdn.noIdentity?'no-identity-cell':'mutating';_lgU._relocated=true;_lgU._snap=true;_lgU._snapParse=String(_lgIdn.snapshotParse||'');_lgU._passes=_lgPassesL;_lgStillL.push(_lgU);continue;}var _lgRaw=tx(_lgRow),_lgTm=ft(_lgRaw);if(_legacySlotL(_lgRaw)){_lgU._unvKind='no-identity-cell';_lgU._relocated=true;_lgU._passes=_lgPassesL;_lgStillL.push(_lgU);continue;}var _lgParsed=null,_lgNm='';try{_lgParsed=mlsParseName(_lgRaw);}catch(_ePR2){}if(_lgParsed&&_lgParsed.confident)_lgNm=cl(_lgParsed.display);else _lgNm=cl(pn(_lgRaw));var _lgTk=_lgNm.replace(/[^A-Za-z'\- ]+/g,' ').trim().split(/\s+/).filter(Boolean);if(_lgTm&&_lgTk.length>=2){var _lgProof=_scheduleRowProofD(_lgRow);_legacyClaimedNodesL.push(_lgRow);_legacyObsL.push({time:_lgTm,name:_lgNm,provider:_lgU.provider||'',providerKey:_legacyNormL(_lgU.provider||''),appointmentId:_lgU.appointmentId||_legacyAttrL(_lgRow,['data-appointment-id','data-appt-id','data-appointmentid','appointmentid'])||'',providerId:_legacyAttrL(_lgRow,['data-provider-id','data-rendering-provider-id','data-resource-id','providerid'])||'',reason:_legacyReasonL(_lgRow),status:_mlsApptStatusD(_lgRaw),dob:_lgProof.dob||'',mrn:_lgProof.mrn||'',dobConflict:_lgProof.dobConflict===true,mrnConflict:_lgProof.mrnConflict===true,rawKey:_legacyNormL(_lgRaw)});_mergeScheduleNoteD(_legacyObsL[_legacyObsL.length-1],_scheduleNoteD(_lgRow,'',_legacyObsL[_legacyObsL.length-1].appointmentId));continue;}_lgU._unvKind=_lgNoIdentityL(_lgRow,_lgRaw)?'no-identity-cell':'mutating';_lgU._relocated=true;_lgU._passes=_lgPassesL;_lgU.node=_lgRow;_lgStillL.push(_lgU);}else{_lgU._unvKind=_lgU._unvKind||'mutating';_lgU._relocated=false;_lgU._passes=_lgPassesL;_lgStillL.push(_lgU);}}_legacyUnresolvedL=_lgStillL;}
         var _legacyByIdL={},_legacyByKeyL={},_legacyRowsFinalL=[];
         _legacyObsL.forEach(function(a){
           var base=a.time+'|'+_legacyNormL(a.name),key=base+'|'+(a.providerKey||'')+'|'+_scheduleProofKeyD(a),prior=null;
@@ -9224,7 +9278,7 @@ async function mlsSchedDomInline(doc, CFG){
                instead of importing a coin-flip name. */
             var _pnConf=_legacyNormL(prior.name||''),_anConf=_legacyNormL(a.name||'');
             if(_pnConf&&_anConf&&_pnConf!==_anConf){prior._copyNameConflict=(prior._copyNameConflict||0)+1;prior._conflictName=a.name;}
-            if(!prior.provider&&a.provider){prior.provider=a.provider;prior.providerKey=a.providerKey;}if(!prior.providerId&&a.providerId)prior.providerId=a.providerId;if(!prior.appointmentId&&a.appointmentId)prior.appointmentId=a.appointmentId;if(!prior.reason&&a.reason)prior.reason=a.reason;_mergeScheduleProofD(prior,a);return;}
+            if(!prior.provider&&a.provider){prior.provider=a.provider;prior.providerKey=a.providerKey;}if(!prior.providerId&&a.providerId)prior.providerId=a.providerId;if(!prior.appointmentId&&a.appointmentId)prior.appointmentId=a.appointmentId;if(!prior.reason&&a.reason)prior.reason=a.reason;_mergeScheduleProofD(prior,a);if(prior.appointmentId&&prior.appointmentId===a.appointmentId)_mergeScheduleNoteD(prior,{text:a.schedulingNote||'',receipt:a.schedulingNoteReceipt});return;}
           _legacyByKeyL[key]=a;if(a.appointmentId)_legacyByIdL[a.appointmentId]=a;_legacyRowsFinalL.push(a);
         });
         var _legacyAttributedL={};_legacyRowsFinalL.forEach(function(a){if(a.providerKey)_legacyAttributedL[a.time+'|'+_legacyNormL(a.name)+'|'+_scheduleProofKeyD(a)]=1;});
@@ -9237,12 +9291,12 @@ var _legacyUnresolvedSeenL={},_legacyUnresolvedCountL=0;
         _legacyRowsFinalL=_legacyRowsFinalL.filter(function(a){
           if(a._copyNameConflict){
             _legacyUnresolvedCountL++;
-            _legacyUnvRowsL.push({kind:'copy-name-conflict',time:a.time||'',appointmentId:a.appointmentId||'',names:[String(a.name||''),String(a._conflictName||'')]});
+            _legacyUnvRowsL.push({kind:'copy-name-conflict',time:a.time||'',appointmentId:a.appointmentId||'',nameConflict:true});
             return false;
           }
           return true;
         });
-        out.appts=_legacyRowsFinalL.map(function(a){return{time:a.time,name:a.name,provider:a.provider||'',providerId:a.providerId||'',appointmentId:a.appointmentId||'',reason:a.reason||'',status:a.status||'',dob:a.dob||'',mrn:a.mrn||''};});
+        out.appts=_legacyRowsFinalL.map(function(a){return{time:a.time,name:a.name,provider:a.provider||'',providerId:a.providerId||'',appointmentId:a.appointmentId||'',reason:a.reason||'',schedulingNote:a.schedulingNote||'',schedulingNoteReceipt:a.schedulingNoteReceipt||null,status:a.status||'',dob:a.dob||'',mrn:a.mrn||''};});
         out.providers=_legacyProviderOrderL.slice();
         var _legacyRosterCompleteL=_legacyHeaderProofL&&_legacyAllBoundL&&out.providers.length>0;
         out.providerRoster=out.providers.map(function(raw){return{stableKey:'athena:'+_legacyNormL(raw),raw:raw,name:raw,source:'athena-schedule-header'};});
@@ -9334,6 +9388,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
               var prior=_candS[logicalKey];
               if(!prior)_candS[logicalKey]={prov:prov,time:tm,name:nm,reason:_reasonS(t),status:_mlsApptStatusD(t),appointmentId:anchor.appointmentId||'',base:tm+'|'+nameKey,providerKey:provKey,dob:proof.dob||'',mrn:proof.mrn||'',dobConflict:proof.dobConflict===true,mrnConflict:proof.mrnConflict===true};
               else{if(!prior.prov&&prov){prior.prov=prov;prior.providerKey=provKey;}if(!prior.reason)prior.reason=_reasonS(t);_mergeScheduleProofD(prior,proof);}
+              _mergeScheduleNoteD(_candS[logicalKey],_scheduleNoteD(b,_snapCapture(b),anchor.appointmentId));
             });
           });
           return{valid:valid,unresolved:unresolved,signature:_visibleSigS()};
@@ -9454,7 +9509,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
         while(_reverifyPassesS<2&&_unvPendingCountS()>0&&__scheduleActionAllowed()){_reverifyPassesS++;if(!(await _sleepS(Math.max(240,_settleBaseS))))break;var _rvHdrS=_hdrsS();if(_rvHdrS.length)_cachedHdrS=_rvHdrS;_collectS(_cachedHdrS);}
         /* 2026-07-29 snapshot recovery: for each still-unverified pending row, ONE synchronous outerHTML capture at relocation time, parsed as a STRING (_snapIdentity) - a string cannot lose to React subtree churn. A confident snapshot identity joins _candS through the normal dedup; anything else is classified below and never guessed. */
         function _unvLocateS(p,k){try{if(p.appointmentId){var el=doc.querySelector('[data-appointment-id="'+p.appointmentId+'"],[data-appointmentid="'+p.appointmentId+'"],[data-appt-id="'+p.appointmentId+'"]');if(el)return el;}}catch(_eUL1){}try{if(String(k).indexOf('node:')===0){var nid=String(k).slice(5,String(k).lastIndexOf('|')),el2=null;if(nid&&doc.getElementById)el2=doc.getElementById(nid);if(!el2&&nid)el2=doc.querySelector('[data-testid="'+nid+'"]');if(el2)return el2;}}catch(_eUL2){}try{var cands=[].slice.call(doc.querySelectorAll('[class*="PatientAppointment_appointment-container"]')).filter(function(b){var t=cl(b.textContent);if(ft(t)!==p.time)return false;var nm=_nmS(t);return !nm||_normS(nm).split(/\s+/).filter(Boolean).length<2;});if(cands.length===1)return cands[0];}catch(_eUL3){}return null;}
-        var _snapRecoveredS=0;Object.keys(_pendingS).forEach(function(pk3){var p=_pendingS[pk3];if(!(p.strong||p.seen>=2))return;if(p.appointmentId&&_candS['appt:'+p.appointmentId])return;var elR=_unvLocateS(p,pk3);p._liveEl=elR||null;var snapR=elR?_snapCapture(elR):'';p._snapHad=!!snapR;if(!snapR)return;var idnR=_snapIdentity(snapR,p.time,p.appointmentId);if(idnR.ok){var provKeyR=_normS(p.prov),nameKeyR=_normS(idnR.name),aidR=p.appointmentId||idnR.appointmentId||'';var proofKeyR=idnR.mrn?('mrn:'+String(idnR.mrn).toLowerCase().replace(/[^a-z0-9]/g,'')):(idnR.dob?('dob:'+String(idnR.dob).replace(/[^0-9]/g,'')):'');var lkR=aidR?('appt:'+aidR):('person:'+(idnR.time||p.time)+'|'+nameKeyR+'|'+provKeyR+'|'+proofKeyR);if(!_candS[lkR])_candS[lkR]={prov:p.prov||'',time:idnR.time||p.time,name:idnR.name,reason:'',status:_mlsApptStatusD(_snapText(snapR)),appointmentId:aidR,base:(idnR.time||p.time)+'|'+nameKeyR,providerKey:provKeyR,dob:idnR.dob||'',mrn:idnR.mrn||'',dobConflict:false,mrnConflict:false};delete _pendingS[pk3];_snapRecoveredS++;return;}p._snapNoIdentity=idnR.noIdentity===true;p._snapParse=String(idnR.snapshotParse||'');});
+        var _snapRecoveredS=0;Object.keys(_pendingS).forEach(function(pk3){var p=_pendingS[pk3];if(!(p.strong||p.seen>=2))return;if(p.appointmentId&&_candS['appt:'+p.appointmentId])return;var elR=_unvLocateS(p,pk3);p._liveEl=elR||null;var snapR=elR?_snapCapture(elR):'';p._snapHad=!!snapR;if(!snapR)return;var idnR=_snapIdentity(snapR,p.time,p.appointmentId);if(idnR.ok){var provKeyR=_normS(p.prov),nameKeyR=_normS(idnR.name),aidR=p.appointmentId||idnR.appointmentId||'';var proofKeyR=idnR.mrn?('mrn:'+String(idnR.mrn).toLowerCase().replace(/[^a-z0-9]/g,'')):(idnR.dob?('dob:'+String(idnR.dob).replace(/[^0-9]/g,'')):'');var lkR=aidR?('appt:'+aidR):('person:'+(idnR.time||p.time)+'|'+nameKeyR+'|'+provKeyR+'|'+proofKeyR);if(!_candS[lkR])_candS[lkR]={prov:p.prov||'',time:idnR.time||p.time,name:idnR.name,reason:'',status:_mlsApptStatusD(_snapText(snapR)),appointmentId:aidR,base:(idnR.time||p.time)+'|'+nameKeyR,providerKey:provKeyR,dob:idnR.dob||'',mrn:idnR.mrn||'',dobConflict:false,mrnConflict:false};_mergeScheduleNoteD(_candS[lkR],_scheduleNoteD(elR,snapR,aidR));delete _pendingS[pk3];_snapRecoveredS++;return;}p._snapNoIdentity=idnR.noIdentity===true;p._snapParse=String(idnR.snapshotParse||'');});
         var _rawRowsS=Object.keys(_candS).map(function(k){return _candS[k];}),_finalRowsS=[],_apptRowsS={},_baseRowsS={};
         _rawRowsS.forEach(function(a){
           if(a.appointmentId){
@@ -9474,7 +9529,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
         });
         var _resolvedTPsS={};_finalRowsS.forEach(function(a){_resolvedTPsS[a.time+'|'+(a.providerKey||'')]=1;_resolvedTPsS[a.time+'|']=1;});
         var _unmS=0,_unvRowsS=[],_unvSlotWordsS=/^(open|available|unavailable|blocked?|hold|reserved|lunch|break|admin|administrative|meeting|closed|buffer|frozen|freeze|slot|slots|capacity|frame)$/i;function _unvNoIdentityS(el){if(!el)return false;var t=cl(el.textContent);try{if(cl(el.getAttribute('data-appointment-id')||el.getAttribute('data-appointmentid')||el.getAttribute('data-appt-id')))return false;}catch(_eUN1){}var proof=_scheduleRowProofD(el);if(proof.dob||proof.mrn||proof.dobConflict||proof.mrnConflict)return false;var nm=_nmS(t);if(nm&&_normS(nm).split(/\s+/).filter(Boolean).length>=2)return false;if(_slotS(t))return true;var toks=cl(String(t).replace(RTG,' ')).replace(/[^A-Za-z'\- ]+/g,' ').split(/\s+/).filter(Boolean).filter(function(w){return !STOP.test(w)&&!CI.test(w.toLowerCase())&&!_unvSlotWordsS.test(w);});return toks.length===0;}Object.keys(_pendingS).forEach(function(k){var p=_pendingS[k],pk=_normS(p.prov);if(p.appointmentId&&_apptRowsS[p.appointmentId])return;if(!p.strong&&_resolvedTPsS[p.time+'|'+pk])return;if(!(p.strong||p.seen>=2))return;_unmS++;if(_unvRowsS.length<20){var kindU,relocU=p._snapHad===true||!!p._liveEl;if(p._snapHad===true)kindU=p._snapNoIdentity===true?'no-identity-cell':'mutating';else{var elU=p._liveEl||_unvLocateS(p,k);relocU=relocU||!!elU;kindU=_unvNoIdentityS(elU)?'no-identity-cell':'mutating';}_unvRowsS.push({kind:kindU,time:p.time||'',provider:p.prov||'',appointmentId:p.appointmentId||'',relocated:relocU,passes:_reverifyPassesS,snapshot:p._snapHad===true,snapshotParse:p._snapHad===true?String(p._snapParse||''):'',lane:'structure-id'});}});
-        out.appts=_finalRowsS.map(function(a){return{time:a.time,name:a.name,provider:a.prov||'',reason:a.reason||'',status:a.status||'',appointmentId:a.appointmentId||'',dob:a.dob||'',mrn:a.mrn||''};});
+        out.appts=_finalRowsS.map(function(a){return{time:a.time,name:a.name,provider:a.prov||'',reason:a.reason||'',schedulingNote:a.schedulingNote||'',schedulingNoteReceipt:a.schedulingNoteReceipt||null,status:a.status||'',appointmentId:a.appointmentId||'',dob:a.dob||'',mrn:a.mrn||''};});
         if(out.appts.length||_unmS||_provOrderS.length){
           out.appts.forEach(function(a){if(a.provider)_noteProvS(a.provider);});
           var _declProvS=0;try{var _pmS,_ptS=String(doc.body&&doc.body.innerText||''),_preS=/\b(\d{1,3})\s+providers?\b/gi;while((_pmS=_preS.exec(_ptS)))_declProvS=Math.max(_declProvS,Number(_pmS[1]||0));}catch(_e){}
@@ -13604,7 +13659,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         (enR || []).forEach(function (r0) {
           var res0 = r0 && r0.result;
           var tail0 = '';
-          try { tail0 = String((res0 && res0.frameUrl) || '').replace(/[?#].*$/, '').split('/').slice(-1)[0].slice(0, 40); } catch (eT0) {}
+          try { var tailMatch0 = /\/(stm\.esp|globalnav\.esp|statusbar\.esp|findpatient\.esp|summary|exam|briefing|visits)(?:[?#]|$)/i.exec(String((res0 && res0.frameUrl) || '')); tail0 = tailMatch0 ? tailMatch0[1].toLowerCase() : 'other-surface'; } catch (eT0) {}
           if (res0 && res0.ok && !enOkShape) enOkShape = { frameId: r0.frameId, selector: String(res0.selector || '').slice(0, 40), count: Number(res0.count) || 0, indexComplete: res0.indexComplete === true, authoritativeEmpty: res0.authoritativeEmpty === true, urlTail: tail0, urlNoise: noiseResult(r0) };
           if (noiseResult(r0)) { if (enNoiseTails.length < 8) enNoiseTails.push(String(r0.frameId) + ':' + tail0); return; }
         });
@@ -13716,7 +13771,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           }
           if (ecNoise && !(ecGate && ecGate.ok)) ecDrop = 'noise-surface';
         }
-        if (!ecRelaxed) ecSeen.push({ url: ecUrl.slice(0, 110), score: ecScoreN, nm: String((ecIdentity && ecIdentity.name) || '').slice(0, 34), drop: ecDrop || (ecNoise ? 'noise-identity-verified' : 'kept') });
+        if (!ecRelaxed) ecSeen.push({ url: ecNoise ? 'shared-ui' : 'chart-ui', score: ecScoreN, identityPresent: !!(ecIdentity && ecIdentity.name), drop: ecDrop || (ecNoise ? 'noise-identity-verified' : 'kept') });
         if (ecDrop) continue;
         if (!ecPicked || ecGate.ok) { identity = ecIdentity; gate = ecGate; ecPicked = true; }
         if (ecGate.ok) { enumRes = ecCand.result; listFrame = ecCand.frameId; break; }
@@ -13807,15 +13862,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (axBest && Number.isFinite(axBestFrame)) {
           var axVisits = [], axRefused = 0, axShapeUnknown = 0, axAttempted = 0, axSigs = [axBest.surfaceSig], axT0 = Date.now();
           var axCap = Math.min(axBest.encounters.length, Number(cfg.maxVisits) || 40);
-          /* qol-2.3 scoped-day on the ax route: this fallback used to read
-             EVERY encounter body regardless of frozenHint.onlyDate - a
-             fast-lane (bodies-off) pull that landed here silently widened to
-             the whole chart. The harvest anchors carry no dates, so the body
-             is read FIRST (passive) and an out-of-day encounter is dropped
-             BEFORE the 5.2s identity poll; only in-day bodies are ever kept.
-             An unparseable header date fails CLOSED (skipped, counted). */
+          /* Scoped reads inspect every harvested encounter under the same
+             identity proof. Only positively dated other-day encounters are
+             excluded; caps, missing dates and missing index rows stay partial. */
           var axOnlyDate = String((frozenHint && frozenHint.onlyDate) || "");
-          var axDateSkipped = 0, axScannedAll = true;
+          var axDateSkipped = 0, axDateUnknown = 0, axScannedAll = axCap === axBest.encounters.length;
           for (var axI = 0; axI < axCap; axI++) {
             if (Date.now() + 6000 >= readDeadline) { axScannedAll = false; break; }
             var axE = axBest.encounters[axI]; axAttempted++;
@@ -13824,13 +13875,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             if (!axNavOk || axNavOk.ok !== true) { axRefused++; continue; }
             await sleep(1800);
             touchVisitLease();
-            var axBodyEarly = null;
-            if (axOnlyDate) {
-              var axRdE = await exec(emrId, [axBestFrame], ['axRead', cfg]);
-              axBodyEarly = bestResult(axRdE, function (r) { return (r && r.ok && r.raw) ? r.raw.length : 0; }).result;
-              if (!axBodyEarly || !axBodyEarly.ok) { axRefused++; continue; }
-              if (mlsVisitDateKeyForHint(axBodyEarly.headerDate) !== axOnlyDate) { axDateSkipped++; continue; }
-            }
             var axIdOk = false, axIdent = null;
             var axIdDeadline = Math.min(readDeadline, Date.now() + 5200);
             do {
@@ -13848,27 +13892,37 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               }
               continue;
             }
-            var axBody = axBodyEarly;
+            var axBody = null;
             if (!axBody) {
               var axRd = await exec(emrId, [axBestFrame], ['axRead', cfg]);
               axBody = bestResult(axRd, function (r) { return (r && r.ok && r.raw) ? r.raw.length : 0; }).result;
             }
             if (!axBody || !axBody.ok) { axRefused++; continue; }
+            /* scoped-census-30121: identity precedes every date decision.
+               Unknown dates cannot prove that an encounter is out of scope. */
+            if (axOnlyDate) {
+              var axBodyDate = mlsVisitDateKeyForHint(axBody.headerDate);
+              if (!axBodyDate) { axDateUnknown++; continue; }
+              if (axBodyDate !== axOnlyDate) { axDateSkipped++; continue; }
+            }
             axVisits.push({ date: axBody.headerDate || '', type: 'ax encounter', raw: axBody.raw, cpt: [], icd10: [], source: 'athena-copy', patientName: (axIdent && axIdent.name) || '', patientDob: (axIdent && axIdent.dob) || '', patientMrn: (axIdent && axIdent.mrn) || '', binding: { rowKey: 'enc:' + axE.eid, encounterId: axE.eid, index: axI } });
           }
-          if (axVisits.length || (axOnlyDate && axScannedAll && axRefused === 0 && axShapeUnknown === 0)) {
+          if (axVisits.length || axOnlyDate) {
             /* a scoped day with NO in-day encounters, scanned cleanly, is an
                HONEST empty success - not a refusal (qol-2.3) */
             var axKept = axVisits.length, axTotalE = axBest.encounters.length;
             /* vcensus-1.0.0 (3.0.118): the fallback cannot shrink the known
                full-history population. Its refusal must survive the shared
                terminal hop even when every harvested ax body was read. */
-            var axExpected = axOnlyDate ? axTotalE : Math.max(axTotalE, Number(total) || 0);
-            var axCoverageComplete = axOnlyDate ? (axScannedAll && axRefused === 0 && axShapeUnknown === 0) : (axKept === axExpected && axRefused === 0 && axShapeUnknown === 0);
+            var axKnown = Math.max(axTotalE, Number(total) || 0);
+            var axExpected = axOnlyDate ? Math.max(0, axKnown - axDateSkipped) : axKnown;
+            var axTodayValid = /^\d{4}-\d{2}-\d{2}$/.test(String(frozenHint.todayKey || ''));
+            var axCoverageComplete = axKept === axExpected && axRefused === 0 && axShapeUnknown === 0 && axDateUnknown === 0 && (!axOnlyDate || (axScannedAll && (axKept > 0 || axTodayValid)));
+            var axSameDay = axOnlyDate ? (axCoverageComplete ? (axKept ? 'saved' : 'absent') : 'partial') : '';
             return {
               ok: axCoverageComplete, reason: axCoverageComplete ? '' : 'visit-bodies-incomplete', identity: (axVisits[0] ? { name: axVisits[0].patientName, dob: axVisits[0].patientDob, mrn: axVisits[0].patientMrn } : identity), visits: axVisits, diag: diag,
-              receipt: { complete: axCoverageComplete, indexComplete: true, indexRowsKnown: (total || 0), /* axh-3073 */ bodyComplete: axCoverageComplete, fullDetail: axCoverageComplete, onlyDate: axOnlyDate, axDateSkipped: axDateSkipped, expected: axExpected, parsed: axKept, attempted: axAttempted, notAttempted: Math.max(0, axExpected - axAttempted), failures: axRefused + axShapeUnknown, cap: cfg.maxVisits, retryCount: 0, surfaceResets: 0, surfaceResetOps: [], chartSurface: 'clincmp-ax-route', axEntry: rrFromPartial ? 'body-depth' : 'starved-walk', axEncounters: axTotalE, axRefused: axRefused, axShapeUnknown: axShapeUnknown, axSigs: axSigs.slice(0, 6), axRouteMs: Date.now() - axT0, axRrWaitMs: rrWait, axRrRecovered: rrRecovered, identityVerified: true, stableKeysComplete: true, timeBudgetMs: readBudgetMs, elapsedMs: Math.max(0, Date.now() - readStartedAt) },
-              error: axOnlyDate ? ((axScannedAll && axRefused === 0 && axShapeUnknown === 0) ? '' : ('The scoped ax read kept ' + axKept + ' in-day of ' + axTotalE + ' encounters (' + axDateSkipped + ' other-day skipped, ' + axRefused + ' refused, ' + axShapeUnknown + ' identity-unknown' + (axScannedAll ? '' : ', scan cut by deadline') + ').')) : ((axKept === axTotalE && (!(total > 0) || axKept >= total)) ? '' : ('The ax route read ' + axKept + ' of ' + Math.max(axTotalE, total || 0) + ' known encounters (classic index rows: ' + (total || 0) + '); ' + axRefused + ' refused (identity mismatch or read failure), ' + axShapeUnknown + ' refused as ax-identity-shape-unknown - signatures captured for the next probe shapes.'))
+              receipt: { complete: axCoverageComplete, indexComplete: true, indexRowsKnown: (total || 0), /* axh-3073 */ bodyComplete: axCoverageComplete, fullDetail: axCoverageComplete, onlyDate: axOnlyDate, scopeDate: axOnlyDate, sameDayStatus: axSameDay, noSubstitution: !!axOnlyDate, absenceProven: axSameDay === 'absent', temporalAuthority: axOnlyDate ? (axTodayValid ? 'account-local' : 'absent') : undefined, axDateSkipped: axDateSkipped, dateUnknownRows: axDateUnknown, expected: axExpected, parsed: axKept, attempted: axAttempted, notAttempted: Math.max(0, axKnown - axAttempted), failures: axRefused + axShapeUnknown + axDateUnknown, cap: cfg.maxVisits, retryCount: 0, surfaceResets: 0, surfaceResetOps: [], chartSurface: 'clincmp-ax-route', axEntry: rrFromPartial ? 'body-depth' : 'starved-walk', axEncounters: axTotalE, axRefused: axRefused, axShapeUnknown: axShapeUnknown, axSigs: axSigs.slice(0, 6), axRouteMs: Date.now() - axT0, axRrWaitMs: rrWait, axRrRecovered: rrRecovered, identityVerified: true, stableKeysComplete: true, timeBudgetMs: readBudgetMs, elapsedMs: Math.max(0, Date.now() - readStartedAt) },
+              error: axOnlyDate ? (axCoverageComplete ? '' : ('The scoped ax read kept ' + axKept + ' in-day of ' + axTotalE + ' encounters (' + axDateSkipped + ' other-day skipped, ' + axRefused + ' refused, ' + axShapeUnknown + ' identity-unknown, ' + axDateUnknown + ' date-unknown' + (axScannedAll ? '' : ', scan capped or cut by deadline') + ').')) : ((axKept === axTotalE && (!(total > 0) || axKept >= total)) ? '' : ('The ax route read ' + axKept + ' of ' + Math.max(axTotalE, total || 0) + ' known encounters (classic index rows: ' + (total || 0) + '); ' + axRefused + ' refused (identity mismatch or read failure), ' + axShapeUnknown + ' refused as ax-identity-shape-unknown - signatures captured for the next probe shapes.'))
             };
           }
           if (!rrFromPartial && (axShapeUnknown || axRefused)) {
