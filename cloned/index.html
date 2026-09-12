@@ -10804,13 +10804,38 @@ function _studioPrefsValue(budget){
     return JSON.stringify(planned);
   }catch(e){ return null; }
 }
+function _mlsPrefsScope(opts){
+  opts=opts||{};
+  const key=uns('draftTuningV1'),token=bkToken(),epoch=window.__mlsSessionEpoch,startupId=opts.startupId;
+  return ()=>key===uns('draftTuningV1')&&token===bkToken()&&epoch===window.__mlsSessionEpoch&&
+    sfStartupValid({startupId:startupId,signal:opts.signal,cancelled:opts.cancelled});
+}
+async function _mlsDraftTuningCloud(mode,opts,valid){
+  try{
+    if(!valid()) return {ok:false,legacy:false};
+    if(typeof window.__mlsEnsureDraftTuning==='function') await window.__mlsEnsureDraftTuning();
+    if(!valid()) return {ok:false,legacy:false};
+    const api=window.__mlsDraftTuning,method=mode==='load'?'cloudLoad':'cloudSync';
+    if(!api||typeof api[method]!=='function') return {ok:false,legacy:false};
+    const result=await api[method]({signal:opts.signal,valid:valid});
+    if(!valid()) return {ok:false,legacy:false};
+    return result;
+  }catch(e){ return {ok:false,legacy:false}; }
+}
 function syncPrefsToServer(opts){
   opts=opts||{};
   if(!backendMode()||!bkToken()) return Promise.resolve(false);   // hosted mode only
+  const valid=_mlsPrefsScope(opts);
+  return _mlsDraftTuningCloud('sync',opts,valid).then(function(tuningSync){
+  if(!valid()) return false;
+  // Omnibus is whole-blob replacement. An unresolved dedicated save must not
+  // erase a legacy-only account copy by posting the remaining keys without it.
+  if(!tuningSync.ok&&!tuningSync.legacy) return false;
   try{
     const prefs={};
     PREF_SYNC_KEYS.forEach(k=>{
       if(k==='studio_widgets') return;      // sized last, against what is left
+      if(k==='draftTuningV1'&&!tuningSync.legacy) return; // only a definitive old endpoint permits legacy writes
       const v=localStorage.getItem(uns(k));
       if(v!==null) prefs[k]=v;              // store raw string values as-is
     });
@@ -10828,6 +10853,8 @@ function syncPrefsToServer(opts){
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},
       body:JSON.stringify({prefs:prefs})
     }).then(async r=>{
+      if(!valid()) return false;
+      if(tuningSync.legacy&&window.__mlsDraftTuning&&window.__mlsDraftTuning.cloudLegacyResult) window.__mlsDraftTuning.cloudLegacyResult({ok:r.ok,valid:valid,signal:opts.signal});
       if(r.status===428){ try{ await handleAccountSetupRequired(r); }catch(e){} if(opts.required) throw new Error('Account setup is still waiting for a required step.'); return false; }
       /* Only the SERVER's acceptance may light the "☁ in your account" badge on a
          creation card. An optimistic badge would be exactly the lie this whole
@@ -10837,33 +10864,40 @@ function syncPrefsToServer(opts){
         try{ if(typeof renderStudioSaved==='function'&&currentView==='studio') renderStudioSaved(); }catch(e){}
       }
       if(!r.ok){
-        if(opts.notify) toast('Saved on this device — cloud sync failed ('+r.status+'); it will retry on your next save.','warn');
+        if(opts.notify) toast((tuningSync.ok?'Visit formats are saved in your account. Other settings':'Saved on this device — settings')+' could not sync ('+r.status+').','warn');
         if(opts.required) throw new Error('Your account settings were not saved (server '+r.status+'). Try again.');
         return false;
       }
-      return true;
+      return tuningSync.ok||tuningSync.legacy;
     }).catch((err)=>{ /* offline / transient — next save retries */
-      if(opts.notify) toast('Saved on this device — cloud sync unreachable; it will retry on your next save.','warn');
+      if(valid()&&tuningSync.legacy&&window.__mlsDraftTuning&&window.__mlsDraftTuning.cloudLegacyResult) window.__mlsDraftTuning.cloudLegacyResult({ok:false,valid:valid,signal:opts.signal});
+      if(valid()&&opts.notify) toast(tuningSync.ok?'Visit formats are saved in your account. Other settings could not sync.':'Saved on this device — account sync could not be confirmed.','warn');
       if(opts.required) throw err;
       return false;
     });
   }catch(e){ if(opts.required) return Promise.reject(e); return Promise.resolve(false); /* ordinary settings saves stay best-effort */ }
+  });
 }
 async function loadPrefsFromServer(opts){
   opts=opts||{};
   if(!backendMode()||!bkToken()) return false;
+  const valid=_mlsPrefsScope(opts);
   try{
+    const tuningLoad=await _mlsDraftTuningCloud('load',opts,valid);
+    if(!valid()) return false;
     const init={headers:{'Authorization':'Bearer '+bkToken()}};
     if(opts.signal) init.signal=opts.signal;
     const r=await fetch(bkBase()+'/api/prefs',init);
+    if(!valid()) return false;
     if(r.status===428){ await handleAccountSetupRequired(r); return false; }
     if(!sfStartupValid(opts)||!r.ok) return false; // incl. 401 — refreshMe handles auth
     let d={}; try{ d=await r.json(); }catch(e){ return false; }
-    if(!sfStartupValid(opts)) return false;
+    if(!valid()) return false;
     const prefs=(d&&d.prefs)||null;
     if(!prefs||typeof prefs!=='object') return false;
-    let changed=false;
+    let changed=!!tuningLoad.changed;
     PREF_SYNC_KEYS.forEach(k=>{
+      if(k==='draftTuningV1'&&!tuningLoad.legacy) return;
       if(!Object.prototype.hasOwnProperty.call(prefs,k)) return;
       const sv=prefs[k];
       if(typeof sv!=='string') return;     // blob stores raw strings only

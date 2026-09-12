@@ -1856,6 +1856,8 @@
     activeFamily = 'opnote';
   }
   function onSessionBoundary() {
+    cloudView = null;
+    paintCloudStatus();
     storageBoundaryEpoch++;
     resetSectionImport(true);
     if (working || workingScope || modalWasOpen) {
@@ -2289,9 +2291,13 @@
       '<button type="button" class="btn-ghost" id="mlsVnTplOpNoteLink" style="margin:-4px 0 12px">Open operative note templates</button>' +
       '<div id="mlsVnTplRows"></div>' +
       '<p class="mini" id="mlsVnTplStatus" role="status" style="margin:6px 0 0;color:var(--muted)"></p>' +
+      '<div id="mlsDtCloudStatus" role="status"></div><div id="mlsDtCloudChoices" hidden><button type="button" class="btn-ghost" id="mlsDtCloudKeep">Keep this device</button><button type="button" class="btn-ghost" id="mlsDtCloudUse">Use account copy</button></div>' +
       '<input type="file" id="mlsVnTplFile" aria-hidden="true" tabindex="-1" accept="' + VISIT_TEMPLATE_FILE_ACCEPT + '" style="display:none">';
     var rows = sec.querySelector('#mlsVnTplRows');
     VISIT_TEMPLATE_SECTIONS.forEach(function (row) { rows.appendChild(buildVisitTemplateRow(row[0], row[1], row[2])); });
+    sec.querySelector('#mlsDtCloudKeep').addEventListener('click', function () { resolveCloud('local'); });
+    sec.querySelector('#mlsDtCloudUse').addEventListener('click', function () { resolveCloud('remote'); });
+    paintCloudStatus();
     var link = sec.querySelector('#mlsVnTplOpNoteLink');
     if (link) link.addEventListener('click', function () {
       try { if (typeof window.openTemplates === 'function') window.openTemplates(); }
@@ -2367,6 +2373,7 @@
       }
     } catch (eRail) {}
     paintVisitTemplates();
+    paintCloudStatus();
     return true;
   }
   /* The route the visit room's one-line link takes. */
@@ -2390,6 +2397,178 @@
       return false;
     }
     return focus(0);
+  }
+  /* Dedicated account copy. Metadata is local-only and never enters prefs.
+     No profile union: deletion and active selection are deliberate choices. */
+  var cloudQueues = Object.create(null), cloudView = null;
+  function canonicalCloud(value) {
+    function stable(v) {
+      if (Array.isArray(v)) return v.map(stable);
+      if (v && typeof v === 'object') { var out = {}; Object.keys(v).sort().forEach(function (key) { out[key] = stable(v[key]); }); return out; }
+      return v;
+    }
+    return JSON.stringify(stable(sanitize(value)));
+  }
+  async function cloudHash(text) {
+    var bytes = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+    return Array.from(new Uint8Array(bytes)).map(function (b) { return b.toString(16).padStart(2, '0'); }).join('');
+  }
+  function cloudContext(opts) {
+    opts = opts || {};
+    var scope = storageScope(), token = typeof window.bkToken === 'function' ? window.bkToken() : '';
+    var base = typeof window.bkBase === 'function' ? window.bkBase() : '';
+    return { scope: scope, token: token, base: base, opts: opts, valid: function () {
+      return scopeCurrent(scope) && token === (typeof window.bkToken === 'function' ? window.bkToken() : '') &&
+        !(opts.signal && opts.signal.aborted) && (!opts.valid || opts.valid());
+    } };
+  }
+  function cloudKey(ctx, suffix) { return ctx.scope.key + '::cloud-' + suffix; }
+  function paintCloudStatus() {
+    var status = q('mlsDtCloudStatus'), choices = q('mlsDtCloudChoices');
+    var view = cloudView && scopeCurrent(cloudView.scope) ? cloudView : null;
+    if (status) status.textContent = view ? view.message : '';
+    if (choices) choices.hidden = !(view && view.conflict);
+  }
+  function cloudStatus(ctx, message, conflict) {
+    if (!ctx.valid()) return;
+    cloudView = { scope: ctx.scope, message: message, conflict: conflict || null };
+    paintCloudStatus();
+  }
+  function cloudConflict(ctx, localHash, remote, revision, remoteHash) {
+    cloudStatus(ctx, 'This device and your account have different saved formats. Both copies are safe. Choose which copy to use.',
+      { localHash: localHash, remote: remote, revision: revision, remoteHash: remoteHash });
+    return { ok: false, legacy: false, conflict: true };
+  }
+  function cloudMeta(ctx, revision, sha256) {
+    if (ctx.valid()) localStorage.setItem(cloudKey(ctx, 'baseline'), JSON.stringify({ revision: revision, sha256: sha256 }));
+  }
+  async function cloudRequest(ctx, method, body) {
+    if (!ctx.valid()) throw scopeError();
+    var init = { method: method, headers: { Authorization: 'Bearer ' + ctx.token }, signal: ctx.opts.signal, cache: 'no-store' };
+    if (body) { init.headers['Content-Type'] = 'application/json'; init.body = JSON.stringify(body); }
+    var response = await fetch(ctx.base + '/api/prefs/draft-tuning', init);
+    if (!ctx.valid()) throw scopeError();
+    return response;
+  }
+  async function runCloud(ctx, mode, decision) {
+    if (!ctx.valid()) return { ok: false, legacy: false };
+    if (!ctx.token || typeof window.backendMode !== 'function' || !window.backendMode()) {
+      cloudStatus(ctx, 'Saved on this device. Sign in to save formats to your account.');
+      return { ok: false, legacy: false };
+    }
+    var raw = localStorage.getItem(ctx.scope.key), local = raw ? canonicalCloud(JSON.parse(raw)) : null;
+    var editingAtStart = working ? JSON.stringify(working) : null;
+    var localHash = local === null ? null : await cloudHash(local);
+    function unchanged() { return ctx.valid() && localStorage.getItem(ctx.scope.key) === raw; }
+    if (!unchanged()) return { ok: false, legacy: false };
+    var blocked = localStorage.getItem(cloudKey(ctx, 'too-large'));
+    if (blocked && blocked === localHash && !decision) {
+      cloudStatus(ctx, 'Saved on this device. These formats are too large for account storage; the account copy is unchanged. Shorten them before trying again.');
+      return { ok: false, legacy: false, tooLarge: true };
+    }
+    cloudStatus(ctx, mode === 'load' ? 'Checking your account formats…' : 'Saving formats to your account…');
+    var response = await cloudRequest(ctx, 'GET');
+    if (!unchanged()) return { ok: false, legacy: false };
+    if (response.status === 404 || response.status === 405) {
+      cloudStatus(ctx, 'Saved on this device. This server uses the older account sync.');
+      return { ok: false, legacy: true };
+    }
+    if (!response.ok) throw new Error('Account formats could not be checked (' + response.status + ').');
+    var account = await response.json();
+    if (!unchanged()) return { ok: false, legacy: false };
+    if (!account || !Number.isInteger(account.revision) || account.revision < 0 ||
+        !has(['segment', 'legacy', 'none'], account.source) || (account.source === 'segment' ? account.revision < 1 : account.revision !== 0) ||
+        (account.draftTuning !== null && (!account.draftTuning || typeof account.draftTuning !== 'object' || Array.isArray(account.draftTuning)))) throw new Error('The account format response could not be read.');
+    var remote = account.draftTuning === null ? null : canonicalCloud(account.draftTuning);
+    var remoteHash = remote === null ? null : await cloudHash(remote);
+    if (!unchanged()) return { ok: false, legacy: false };
+    var meta = null;
+    try { meta = JSON.parse(localStorage.getItem(cloudKey(ctx, 'baseline')) || 'null'); } catch (_) {}
+    var same = localHash === remoteHash;
+    if (decision && (decision.localHash !== localHash || decision.revision !== account.revision || decision.remoteHash !== remoteHash))
+      return cloudConflict(ctx, localHash, remote, account.revision, remoteHash);
+    var defaultHash = remote === null ? await cloudHash(canonicalCloud(defaultState())) : null;
+    if (!unchanged()) return { ok: false, legacy: false };
+    if (decision && decision.choice === 'remote' && remote === null) {
+      localStorage.removeItem(ctx.scope.key);
+      cloudMeta(ctx, 0, defaultHash);
+      localStorage.removeItem(cloudKey(ctx, 'too-large'));
+      try { window.dispatchEvent(new CustomEvent('mls:draft-tuning-saved')); } catch (_) {}
+      if (working) working = defaultState();
+      VISIT_TEMPLATE_SECTIONS.forEach(function (row) {
+        visitTemplateEditorClose(row[0]);
+        var select = q('mlsVnTplProfile_' + row[0]); if (select) select.value = read().families[row[0]].activeProfile;
+      });
+      paintVisitTemplates(); if (working) loadUi(activeFamily);
+      cloudStatus(ctx, 'The account has no saved formats. This device now uses MLS defaults.');
+      return { ok: true, legacy: false, changed: true };
+    }
+    var adopt = decision ? decision.choice === 'remote' :
+      (local === null || (meta && meta.sha256 === localHash));
+    var migrateLegacy = mode === 'sync' && same && local !== null && account.source === 'legacy';
+    if ((same && !migrateLegacy) || (!same && adopt && remote !== null)) {
+      if (!same) {
+        if (!unchanged()) return { ok: false, legacy: false };
+        var openEditor = VISIT_TEMPLATE_SECTIONS.some(function (row) { var el = q('mlsVnTplEditor_' + row[0]); return el && el.getAttribute('data-open') === '1'; });
+        if (!decision && (openEditor || (working ? JSON.stringify(working) : null) !== editingAtStart)) {
+          cloudStatus(ctx, 'Your template edits are still open. Save or close the editor, then save Settings to check account formats.');
+          return { ok: false, legacy: false };
+        }
+        localStorage.setItem(ctx.scope.key, remote);
+        raw = remote;
+        if (working) working = sanitize(JSON.parse(remote));
+        VISIT_TEMPLATE_SECTIONS.forEach(function (row) { visitTemplateEditorClose(row[0]); var select = q('mlsVnTplProfile_' + row[0]); if (select) select.value = read().families[row[0]].activeProfile; });
+        try { window.dispatchEvent(new CustomEvent('mls:draft-tuning-saved')); } catch (_) {}
+        paintVisitTemplates();
+        if (working) loadUi(activeFamily);
+      }
+      if (remoteHash !== null) cloudMeta(ctx, account.revision, remoteHash);
+      if (ctx.valid()) localStorage.removeItem(cloudKey(ctx, 'too-large'));
+      if (mode === 'sync' && account.source === 'legacy' && remote !== null) return runCloud(ctx, 'sync');
+      cloudStatus(ctx, remote === null ? 'No account formats saved yet.' : 'Formats saved in your account.');
+      return { ok: true, legacy: false, changed: !same };
+    }
+    if (mode === 'conflict') return cloudConflict(ctx, localHash, remote, account.revision, remoteHash);
+    var canPut = migrateLegacy || decision && decision.choice === 'local' ||
+      (remote === null && meta && meta.revision === 0 && meta.sha256 === defaultHash) ||
+      (!meta && remote === null) || (meta && meta.revision === account.revision && meta.sha256 === remoteHash);
+    if (!canPut || local === null) return cloudConflict(ctx, localHash, remote, account.revision, remoteHash);
+    var put = await cloudRequest(ctx, 'PUT', { draftTuning: JSON.parse(local), baseRevision: account.revision });
+    if (!unchanged()) return { ok: false, legacy: false };
+    if (put.status === 409) {
+      return runCloud(ctx, 'conflict');
+    }
+    if (put.status === 413) {
+      localStorage.setItem(cloudKey(ctx, 'too-large'), localHash);
+      cloudStatus(ctx, 'Saved on this device. These formats are too large for account storage; the account copy is unchanged. Shorten them before trying again.');
+      return { ok: false, legacy: false, tooLarge: true };
+    }
+    if (!put.ok) throw new Error('Account formats could not be saved (' + put.status + ').');
+    var receipt = await put.json();
+    if (!unchanged()) return { ok: false, legacy: false };
+    if (!receipt || !Number.isInteger(receipt.revision) || receipt.revision < 1 || receipt.revision < account.revision || !receipt.draftTuning) throw new Error('The account save could not be confirmed.');
+    var accepted = canonicalCloud(receipt.draftTuning), acceptedHash = await cloudHash(accepted);
+    if (!unchanged()) return { ok: false, legacy: false };
+    cloudMeta(ctx, receipt.revision, acceptedHash);
+    if (acceptedHash !== localHash) return cloudConflict(ctx, localHash, accepted, receipt.revision, acceptedHash);
+    localStorage.removeItem(cloudKey(ctx, 'too-large'));
+    cloudStatus(ctx, 'Formats saved in your account.');
+    return { ok: true, legacy: false };
+  }
+  function cloudRun(mode, opts, decision) {
+    var ctx = cloudContext(opts), queueKey = ctx.scope.key + ':' + ctx.scope.sessionEpoch + ':' + ctx.scope.boundaryEpoch;
+    var previous = cloudQueues[queueKey] || Promise.resolve();
+    var next = previous.catch(function () {}).then(function () { return runCloud(ctx, mode, decision); }).catch(function () {
+      cloudStatus(ctx, 'Saved on this device. The account copy could not be confirmed. Try saving again when connected.');
+      return { ok: false, legacy: false };
+    });
+    cloudQueues[queueKey] = next;
+    return next;
+  }
+  function resolveCloud(choice) {
+    if (!cloudView || !scopeCurrent(cloudView.scope) || !cloudView.conflict) return Promise.resolve(false);
+    var decision = Object.assign({ choice: choice }, cloudView.conflict);
+    return cloudRun('sync', {}, decision);
   }
   function boot() {
     mountSettings();
@@ -2434,6 +2613,13 @@
     visitTemplateSections: VISIT_TEMPLATE_SECTIONS.map(function (row) { return row[0]; }),
     beginSettings: beginSettings,
     saveFromUi: saveFromUi,
+    cloudSync: function (opts) { return cloudRun('sync', opts); },
+    cloudLoad: function (opts) { return cloudRun('load', opts); },
+    resolveCloud: resolveCloud,
+    cloudLegacyResult: function (opts) {
+      var ctx = cloudContext(opts);
+      cloudStatus(ctx, opts.ok ? 'Formats saved in your account using the older sync.' : 'Saved on this device. The older account sync could not save your formats.');
+    },
     _extra: clone(EXTRA),
     _enums: clone(ENUMS)
   };
