@@ -378,6 +378,7 @@ function makeSandbox(options) {
         later({ source: 'mls-ext', type: 'mlsAppReadVisitsResult', resp: opts.readResult(reads.length) });
       }
     },
+    _calAppts: opts.calRows || [],
     getPatients: () => patients,
     upsertPatient: () => true,
     renderProfile: () => {},
@@ -472,7 +473,113 @@ async function autoBackfillHonorsFullNotesScope() {
   api.stop();
 }
 
-/* ---- 6a  the footer never prints a patient name -------------------------- */
+/* ---- 6a  duplicate names retain the completed pull row's exact identity -- */
+async function duplicateNamesStayDistinct() {
+  const sameName = 'Alex Q. Sample';
+  const patients = [
+    { id: 'p-a', name: sameName, dob: '01/02/1970', athenaId: 'synthetic-a', visits: [] },
+    { id: 'p-b', name: sameName, dob: '03/04/1980', athenaId: 'synthetic-b', visits: [] }
+  ];
+  const h = makeSandbox({
+    patients,
+    /* Deliberately reverse the schedule rows. A first-name-match lookup would
+       hand p-a the wrong DOB; the settled pull row must remain authoritative. */
+    calRows: [
+      { name: sameName, dob: '03/04/1980' },
+      { name: sameName, dob: '01/02/1970' }
+    ],
+    openResult: () => OPEN_OK,
+    readResult: (n) => ({
+      ok: true,
+      identity: { name: sameName, dob: n === 1 ? '01/02/1970' : '03/04/1980' },
+      visits: []
+    })
+  });
+  const api = h.api();
+  const pullRows = [
+    { name: sameName, pid: 'p-a', dob: '01/02/1970', athenaId: 'synthetic-a', ok: true },
+    { name: sameName, pid: 'p-b', dob: '03/04/1980', athenaId: 'synthetic-b', ok: true }
+  ];
+  eq(api.enqueueFromRun(pullRows, { receipt: { visitNotesRequested: true } }), 2,
+    'two settled rows with the same name collapsed into one queued patient');
+  eq(api.state.queue.length, 2, 'the same-name queue lost a patient');
+  assert.deepStrictEqual(Array.from(api.state.queue, (row) => ({
+    pid: String(row.pid), key: String(row.key), dob: String(row.dob), athenaId: String(row.athenaId)
+  })), [
+    { pid: 'p-a', key: 'pid:p-a', dob: '01/02/1970', athenaId: 'synthetic-a' },
+    { pid: 'p-b', key: 'pid:p-b', dob: '03/04/1980', athenaId: 'synthetic-b' }
+  ], 'the queued identities/DOBs no longer match their originating pull rows');
+  checks++;
+  ok(await h.drive(() => !api.state.running && api.state.done === 2),
+    'the same-name patients did not both complete as separate queue items');
+  eq(api.state.rows.length, 2, 'the same-name patients did not produce two final rows');
+  eq(api.enqueueFromRun(pullRows, { receipt: { visitNotesRequested: true } }), 0,
+    'completed same-name rows were not remembered by their separate patient IDs');
+  api.revert();
+
+  const ambiguous = makeSandbox({ patients, openResult: () => OPEN_OK, readResult: () => VISITS_OK });
+  eq(ambiguous.api().enqueueFromRun([{ name: sameName, ok: true }],
+    { receipt: { visitNotesRequested: true } }), 0,
+  'a name-only duplicate silently selected the first store patient');
+  eq(ambiguous.api().state.queue.length, 0, 'an ambiguous name-only row reached the queue');
+  eq(ambiguous.api().enqueueFromRun([{ name: sameName, pid: 'p-missing', dob: '01/02/1970', ok: true }],
+    { receipt: { visitNotesRequested: true } }), 0,
+  'a missing claimed patient ID fell back to a same-name patient');
+  ambiguous.api().revert();
+
+  const numeric = makeSandbox({
+    patients: [
+      { id: 0, name: sameName, dob: '01/02/1970', athenaId: 0, visits: [] },
+      { id: 1, name: sameName, dob: '03/04/1980', athenaId: 'numeric-b', visits: [] }
+    ],
+    openResult: () => OPEN_OK,
+    readResult: () => VISITS_OK
+  });
+  eq(numeric.api().enqueueFromRun([
+    { name: sameName, pid: 0, dob: 'unknown', athenaId: 0, ok: true },
+    { name: sameName, pid: 1, dob: '03/04/1980', athenaId: 'numeric-b', ok: true }
+  ], { receipt: { visitNotesRequested: true } }), 2,
+  'numeric patient ID 0 was treated as missing');
+  assert.deepStrictEqual(Array.from(numeric.api().state.queue, (row) => ({
+    key: String(row.key), dob: String(row.dob), athenaId: String(row.athenaId)
+  })), [
+    { key: 'pid:0', dob: '01/02/1970', athenaId: '0' },
+    { key: 'pid:1', dob: '03/04/1980', athenaId: 'numeric-b' }
+  ], 'numeric IDs were lost, not distinct, or malformed pull DOB text overrode a valid store DOB');
+  checks++;
+  numeric.api().revert();
+
+  const idPatient = [{
+    id: 'p-id', name: 'Taylor Q. Example', dob: '05/06/1990',
+    athenaId: 'athena-stable', mrn: 'mrn-stable', visits: []
+  }];
+  const mrnOnly = makeSandbox({ patients: idPatient, openResult: () => OPEN_OK, readResult: () => VISITS_OK });
+  eq(mrnOnly.api().enqueueFromRun([
+    { name: 'Taylor Q. Example', mrn: 'mrn-stable', ok: true }
+  ], { receipt: { visitNotesRequested: true } }), 1,
+  'an MRN-only settled row could not resolve its unique store patient');
+  eq(String(mrnOnly.api().state.queue[0].pid), 'p-id', 'MRN-only lookup resolved the wrong store patient');
+  mrnOnly.api().revert();
+
+  const conflictingIds = makeSandbox({ patients: idPatient, openResult: () => OPEN_OK, readResult: () => VISITS_OK });
+  eq(conflictingIds.api().enqueueFromRun([
+    { name: 'Taylor Q. Example', athenaId: 'athena-stable', mrn: 'wrong-mrn', ok: true }
+  ], { receipt: { visitNotesRequested: true } }), 0,
+  'a row with a matching Athena ID but contradictory MRN reached the queue');
+  conflictingIds.api().revert();
+
+  const foreignNamespace = makeSandbox({ patients: idPatient, openResult: () => OPEN_OK, readResult: () => VISITS_OK });
+  eq(foreignNamespace.api().enqueueFromRun([{
+    name: 'Taylor Q. Example', dob: '05/06/1990', athenaId: 'athena-stable',
+    patient_external_id: 'appointment-namespace-not-local', ok: true
+  }], { receipt: { visitNotesRequested: true } }), 1,
+  'an appointment patient_external_id was mistaken for a local patient ID');
+  eq(String(foreignNamespace.api().state.queue[0].pid), 'p-id',
+    'the appointment namespace displaced the exact resolved local patient');
+  foreignNamespace.api().revert();
+}
+
+/* ---- 6b  the footer never prints a patient name -------------------------- */
 async function footerIsPhiFree() {
   const h = makeSandbox({
     openResult: () => OPEN_FAILED,
@@ -517,7 +624,7 @@ async function footerIsPhiFree() {
   api.revert();
 }
 
-/* ---- 6b  open-failed -> presence VERIFIED -> retried -> recovered -------- */
+/* ---- 6c  open-failed -> presence VERIFIED -> retried -> recovered -------- */
 async function presenceVerifiedRecovers() {
   const h = makeSandbox({
     openResult: (n) => (n === 1 ? OPEN_FAILED : OPEN_OK),
@@ -550,7 +657,7 @@ async function presenceVerifiedRecovers() {
   api.revert();
 }
 
-/* ---- 6c  presence ABSENT -> honest, and nothing re-driven --------------- */
+/* ---- 6d  presence ABSENT -> honest, and nothing re-driven --------------- */
 async function presenceAbsentIsHonest() {
   const h = makeSandbox({
     openResult: () => OPEN_FAILED,
@@ -575,7 +682,7 @@ async function presenceAbsentIsHonest() {
   api.revert();
 }
 
-/* ---- 6d  no presence verb at all -> nothing re-driven ------------------- */
+/* ---- 6e  no presence verb at all -> nothing re-driven ------------------- */
 async function noProbeMeansNoRetry() {
   const h = makeSandbox({
     si: null,
@@ -598,7 +705,7 @@ async function noProbeMeansNoRetry() {
   api.revert();
 }
 
-/* ---- 6e  the retry is BOUNDED: two rounds, 2 s then 6 s ---------------- */
+/* ---- 6f  the retry is BOUNDED: two rounds, 2 s then 6 s ---------------- */
 async function retryIsBounded() {
   const h = makeSandbox({
     openResult: () => OPEN_FAILED,
@@ -628,7 +735,7 @@ async function retryIsBounded() {
   api.revert();
 }
 
-/* ---- 6f  the block cannot raise a toast -------------------------------- */
+/* ---- 6g  the block cannot raise a toast -------------------------------- */
 async function quietByConstruction() {
   const quiet = { classify: CLASSIFY };
   const h = makeSandbox({
@@ -659,7 +766,7 @@ async function quietByConstruction() {
   api2.revert();
 }
 
-/* ---- 6g  mutation control: the harness catches BOTH original defects ----- */
+/* ---- 6h  mutation control: the harness catches BOTH original defects ----- */
 async function legacyMutationIsCaught() {
   const h = makeSandbox({
     moduleSrc: LEGACY_CONTROL_SRC,
@@ -708,6 +815,7 @@ async function legacyMutationIsCaught() {
     await retryIsBounded();
     await quietByConstruction();
     await autoBackfillHonorsFullNotesScope();
+    await duplicateNamesStayDistinct();
   }
 
   clearTimeout(watchdog);
@@ -717,5 +825,6 @@ async function legacyMutationIsCaught() {
     'no-athena-tab refusal asks __mlsSI._athenaPresenceProbe and is re-driven ONLY while presence is verified (2 s then ' +
     '6 s, two rounds, then stop), absent or unknowable presence re-drives nothing, reason codes come from ' +
     '_todayNoteReasonCode, and the real quietnotify classifier keeps both sentences quiet while the replaced footer is a ' +
-    'live action-class negative control; OFF receipts/settings cannot arm automatic visit backfill while an explicit ON receipt can');
+    'live action-class negative control; OFF receipts/settings cannot arm automatic visit backfill while an explicit ON receipt can; ' +
+    'same-name patients retain distinct local IDs/DOBs and an ambiguous name-only row refuses closed');
 })().catch((err) => { console.error(err); process.exit(1); });

@@ -2896,29 +2896,124 @@
     try { return (typeof window._calAppts === 'function') ? (window._calAppts() || []) : (window._calAppts || []); } catch (e) { return []; }
   }
   function schedDobFor(name) {
+    /* A name-only schedule lookup is a last-resort hint. It is usable only when
+       every exact-name row agrees on the same DOB; first-row-wins can cross two
+       same-name patients. */
     var k = nrm(name); if (!k) return '';
-    var rows = calRows();
-    for (var i = 0; i < rows.length; i++) { var a = rows[i]; if (a && a.name && a.dob && nrm(a.name) === k) return S(a.dob); }
+    var rows = calRows(), seen = '', raw = '';
+    for (var i = 0; i < rows.length; i++) {
+      var a = rows[i], nd;
+      if (!a || !a.name || !a.dob || nrm(a.name) !== k) continue;
+      nd = normDob(a.dob); if (!nd) continue;
+      if (seen && seen !== nd) return '';
+      seen = nd; if (!raw) raw = S(a.dob);
+    }
+    return seen ? raw : '';
+  }
+  function fieldText(obj, key) {
+    if (!obj || typeof obj !== 'object' || obj[key] == null) return '';
+    return S(obj[key]).trim();
+  }
+  function entryPid(entry) {
+    if (!entry || typeof entry !== 'object') return '';
+    /* patient_external_id is deliberately not a local-PID alias: appointment
+       rows can carry a different or stale namespace. */
+    var fields = ['pid', 'patientId', 'patient_id', '_mlsTargetPatientId'];
+    for (var i = 0; i < fields.length; i++) {
+      var value = fieldText(entry, fields[i]);
+      if (value) return value;
+    }
     return '';
   }
-  /* resolve a pull-row / caller name to the ONE store row it belongs to:
-   * exact -> token-sorted ("Last, First" vs "First Last") -> bidirectional substring */
-  function resolveStorePatient(name) {
-    var k = nrm(name); if (!k) return null;
-    var ps = getPats(), i, pn;
-    for (i = 0; i < ps.length; i++) { if (ps[i] && nrm(ps[i].name) === k) return ps[i]; }
-    var kt = tokset(name);
-    if (kt) { for (i = 0; i < ps.length; i++) { if (ps[i] && tokset(ps[i].name) === kt) return ps[i]; } }
-    for (i = 0; i < ps.length; i++) {
-      pn = nrm(ps[i] && ps[i].name);
-      if (pn && (pn.indexOf(k) >= 0 || k.indexOf(pn) >= 0)) return ps[i];
+  function entryIds(entry) {
+    if (!entry || typeof entry !== 'object') return { athenaId: '', mrn: '' };
+    return {
+      athenaId: fieldText(entry, 'athenaId').toLowerCase(),
+      mrn: fieldText(entry, 'mrn').toLowerCase()
+    };
+  }
+  function patientIds(p) {
+    return {
+      athenaId: S(p && p.athenaId).trim().toLowerCase(),
+      mrn: S(p && p.mrn).trim().toLowerCase()
+    };
+  }
+  function idsContradict(p, ids) {
+    var got = patientIds(p), expected;
+    expected = ids.athenaId;
+    if (expected && ((got.athenaId && got.athenaId !== expected) || (!got.athenaId && got.mrn && got.mrn !== expected))) return true;
+    expected = ids.mrn;
+    if (expected && ((got.mrn && got.mrn !== expected) || (!got.mrn && got.athenaId && got.athenaId !== expected))) return true;
+    return false;
+  }
+  function matchesSuppliedIds(p, ids) {
+    var got = patientIds(p), matched = false;
+    if (ids.athenaId) {
+      if ((got.athenaId || got.mrn) !== ids.athenaId) return false;
+      matched = true;
+    }
+    if (ids.mrn) {
+      if ((got.mrn || got.athenaId) !== ids.mrn) return false;
+      matched = true;
+    }
+    return matched;
+  }
+  function nameTier(a, b) {
+    var ka = nrm(a), kb = nrm(b); if (!ka || !kb) return 0;
+    if (ka === kb) return 3;
+    var ta = tokset(a), tb = tokset(b);
+    if (ta && ta === tb) return 2; /* "Last, First" vs "First Last" */
+    return (ka.indexOf(kb) >= 0 || kb.indexOf(ka) >= 0) ? 1 : 0;
+  }
+  function identityContradicts(p, name, dob, ids) {
+    if (!p) return true;
+    if (name && !nameTier(p.name, name)) return true;
+    var pd = normDob(p.dob);
+    if (dob && pd && dob !== pd) return true;
+    if (idsContradict(p, ids)) return true;
+    return false;
+  }
+  /* Resolve the ONE store row a pull row belongs to. A supplied local patient
+     ID is authoritative but still contradiction-checked. A supplied Athena ID
+     must be unique. Name tiers never pick the first of multiple candidates;
+     DOB narrows a name tier, otherwise ambiguity refuses closed. */
+  function resolveStorePatient(entry) {
+    var name = S(entry && entry.name != null ? entry.name : entry).trim();
+    var pid = entryPid(entry), ids = entryIds(entry);
+    var dob = normDob(entry && typeof entry === 'object' ? entry.dob : '');
+    var ps = getPats(), i, p, hits, tier;
+    if (pid) {
+      p = byId(pid);
+      return (!p || identityContradicts(p, name, dob, ids)) ? null : p;
+    }
+    if (ids.athenaId || ids.mrn) {
+      hits = [];
+      for (i = 0; i < ps.length; i++) {
+        p = ps[i];
+        if (p && matchesSuppliedIds(p, ids) && !identityContradicts(p, name, dob, ids)) hits.push(p);
+      }
+      return hits.length === 1 ? hits[0] : null;
+    }
+    if (!name) return null;
+    for (tier = 3; tier >= 1; tier--) {
+      hits = [];
+      for (i = 0; i < ps.length; i++) {
+        p = ps[i];
+        if (p && nameTier(p.name, name) === tier) hits.push(p);
+      }
+      if (!hits.length) continue;
+      if (dob) {
+        hits = hits.filter(function (candidate) { return normDob(candidate && candidate.dob) === dob; });
+      }
+      return hits.length === 1 ? hits[0] : null;
     }
     return null;
   }
   function byId(id) {
-    if (!id) return null;
+    if (id == null || S(id).trim() === '') return null;
     var ps = getPats();
-    for (var i = 0; i < ps.length; i++) { if (ps[i] && ps[i].id === id) return ps[i]; }
+    id = S(id).trim();
+    for (var i = 0; i < ps.length; i++) { if (ps[i] && S(ps[i].id).trim() === id) return ps[i]; }
     return null;
   }
   function visitCount(p) { return (p && Array.isArray(p.visits)) ? p.visits.length : 0; }
@@ -3545,7 +3640,7 @@
     return (async function () {
       /* row.definitive: true -> _doneKeys marked (never re-hit); false -> retryable */
       var row = { name: item.name, key: item.key, ok: false, added: 0, skipped: 0, reason: '', definitive: false };
-      var p = byId(item.pid) || resolveStorePatient(item.name);
+      var p = resolveStorePatient(item);
       if (!p) { row.reason = 'no-record'; row.definitive = true; return row; }
       if (visitCount(p) >= CFG.minVisits && !item.force) { row.ok = true; row.reason = 'already-has-visits'; row.definitive = true; return row; }
       var dobOut = normDob(item.dob) || S(item.dob).slice(0, 20);
@@ -3722,10 +3817,9 @@
     opts = opts || {};
     var name = S(entry && entry.name != null ? entry.name : entry).trim();
     if (!name) return false;
-    var p = resolveStorePatient(name);
-    if (!p || !p.id) return false;                              /* addVisit needs a store row */
-    var key = nrm(p.name);                                      /* ONE key: resolved store-row name (wf_9 #6) */
-    if (!key) return false;
+    var p = resolveStorePatient(entry);
+    if (!p || p.id == null || S(p.id).trim() === '') return false; /* addVisit needs a store row */
+    var key = 'pid:' + S(p.id).trim();                           /* stable local identity: same names remain distinct */
     if (!opts.force && _doneKeys[key]) return false;
     for (var i = 0; i < STATE.queue.length; i++) { if (STATE.queue[i].key === key) return false; }
     if (!opts.force && visitCount(p) >= CFG.minVisits) return false;
@@ -3733,10 +3827,11 @@
       name: p.name || name,
       pid: p.id,
       key: key,
-      /* schedule DOB first (same source the live pull trusts), store DOB fallback (wf_9 #6) */
-      dob: schedDobFor(name) || schedDobFor(p.name) || S((entry && entry.dob) || p.dob || ''),
+      /* Preserve the exact pull row first, then its resolved store row. A
+         name-only schedule DOB is last and only returns when all rows agree. */
+      dob: normDob(entry && entry.dob) || normDob(p.dob) || normDob(schedDobFor(p.name || name)) || '',
       /* row.athenaId is stamped by the parallel dedup module; mrn is the legacy slot */
-      athenaId: S((entry && entry.athenaId) || p.athenaId || p.mrn || ''),
+      athenaId: fieldText(entry, 'athenaId') || fieldText(entry, 'mrn') || fieldText(p, 'athenaId') || fieldText(p, 'mrn'),
       force: !!opts.force,
       busyRetries: 0, abortRetries: 0
     });
@@ -3758,8 +3853,10 @@
       if (/^identity-mismatch/i.test(S(r.reason))) continue;    /* the proven gate already rejected this chart */
       (r.ok ? okRows : badRows).push(r);
     }
-    for (i = 0; i < okRows.length; i++) { if (enqueueOne({ name: okRows[i].name, athenaId: okRows[i].athenaId }, opts)) added++; }
-    for (i = 0; i < badRows.length; i++) { if (enqueueOne({ name: badRows[i].name, athenaId: badRows[i].athenaId }, opts)) added++; }
+    /* Carry the whole settled row: ppSettle's pid is the exact local identity.
+       Reconstructing only name+athenaId reintroduced duplicate-name ambiguity. */
+    for (i = 0; i < okRows.length; i++) { if (enqueueOne(okRows[i], opts)) added++; }
+    for (i = 0; i < badRows.length; i++) { if (enqueueOne(badRows[i], opts)) added++; }
     if (added) {
       STATE.stopped = false; STATE.stopReason = ''; STATE.consecFail = 0;  /* a fresh pull re-arms a stopped pump */
       say('Pull finished - queueing ' + added + ' patient' + (added === 1 ? '' : 's') + ' for an individual-visits backfill.');
