@@ -1,9 +1,9 @@
 'use strict';
-/* 1p ALL-ACTIONS-READY CONTRACT (MLS Assist 3.0.62 / wsg-2.0.0, owner directive
-   2026-08-12): does the 1p writeflow render every action READY (write_note, save_draft,
-   stage_billing, sign_encounter, place_order) with the 3.0.62 capabilities, and
-   fall back honestly without them? Runs the REAL 1p-feat_mls_writeflow.js in a
-   vm, both ways. Synthetic data only. */
+/* Legacy filename, current policy contract (owner ruling 2026-09-02): even a
+   legacy extension capability advertisement cannot make signing, billing, or
+   orders executable. The real 1p writeflow must expose exactly write_note and
+   save_draft while retaining the other reviewed payloads for direct Athena
+   entry. Runs both capability shapes with synthetic data only. */
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
@@ -34,31 +34,32 @@ const opts = {
 };
 function summarize(m) { return m.rows.map(r => `${r.id}:${r.action || '-'}:${r.capability}`).join(' | '); }
 
-const capable = boot({ supervisedOrderPlacementV2: true, destinationTeachingV2: true, athenaFinalActionsV1: true }).buildUnifiedManifest(opts);
-console.log('CAPABLE  ', summarize(capable));
-const byId = Object.fromEntries(capable.rows.map(r => [r.id, r]));
+const legacyCaps = boot({ supervisedOrderPlacementV2: true, destinationTeachingV2: true, athenaFinalActionsV1: true }).buildUnifiedManifest(opts);
+console.log('LEGACY-CAPS', summarize(legacyCaps));
+const byId = Object.fromEntries(legacyCaps.rows.map(r => [r.id, r]));
 assert.strictEqual(byId['write-note'].capability, 'ready');
 assert.strictEqual(byId['save-draft'].capability, 'ready');
-assert.strictEqual(byId['stage-billing'].action, 'stage_billing'); assert.strictEqual(byId['stage-billing'].capability, 'ready');
-assert.strictEqual(byId['sign-encounter'].action, 'sign_encounter'); assert.strictEqual(byId['sign-encounter'].capability, 'ready');
-const orderRow = capable.rows.find(r => r.action === 'place_order');
-assert(orderRow, 'no typed place_order row'); assert.strictEqual(orderRow.capability, 'ready'); assert.strictEqual(orderRow.payload.order.clientOrderId, 'ord-1');
-const medRow = capable.rows.find(r => r.kind === 'orders' && r.action === '' && /medication|Medication/.test(r.label + r.reason));
+assert.strictEqual(byId['stage-billing'].action, ''); assert.strictEqual(byId['stage-billing'].capability, 'manual');
+assert.strictEqual(byId['sign-encounter'].action, ''); assert.strictEqual(byId['sign-encounter'].capability, 'manual');
+const orderRow = byId['order-draft-2-0'];
+assert(orderRow, 'reviewed order row disappeared'); assert.strictEqual(orderRow.action, ''); assert.strictEqual(orderRow.capability, 'manual'); assert.strictEqual(orderRow.payload.order.clientOrderId, 'ord-1');
+assert(/directly in Athena|direct entry in Athena/i.test(orderRow.reason + ' ' + orderRow.consequence), 'reviewed order does not name the manual destination');
+const medRow = legacyCaps.rows.find(r => r.kind === 'orders' && r.action === '' && /medication|Medication/.test(r.label + r.reason));
 assert(medRow && medRow.capability === 'manual', 'medication order must stay manual (no adapter)');
 assert(/no typed MLS adapter/.test(medRow.reason), 'medication reason must name the adapter gap, not policy: ' + medRow.reason);
-for (const r of capable.rows) assert(!/MLS does not stage billing|never clicks it|MLS does not place|never becomes an MLS action/.test(r.reason + r.consequence), 'old policy text leaked into capable row ' + r.id + ': ' + r.reason + ' / ' + r.consequence);
+for (const r of legacyCaps.rows) assert(!/Update MLS Assist|until then/i.test(r.reason + r.consequence), 'manual policy falsely advertises an extension upgrade in ' + r.id + ': ' + r.reason + ' / ' + r.consequence);
 
 const stale = boot({ supervisedOrderPlacementV2: true, destinationTeachingV2: true }).buildUnifiedManifest(opts);
 console.log('OLD-EXT  ', summarize(stale));
 const s = Object.fromEntries(stale.rows.map(r => [r.id, r]));
-assert.strictEqual(s['stage-billing'].action, ''); assert.strictEqual(s['stage-billing'].capability, 'manual'); assert(/Update MLS Assist/.test(s['stage-billing'].reason));
-assert.strictEqual(s['sign-encounter'].action, ''); assert(/Update MLS Assist/.test(s['sign-encounter'].reason));
+assert.strictEqual(s['stage-billing'].action, ''); assert.strictEqual(s['stage-billing'].capability, 'manual'); assert(/directly in Athena/i.test(s['stage-billing'].reason + ' ' + s['stage-billing'].consequence));
+assert.strictEqual(s['sign-encounter'].action, ''); assert(/yourself in Athena|directly in Athena/i.test(s['sign-encounter'].reason + ' ' + s['sign-encounter'].consequence));
 assert(!stale.rows.some(r => r.action === 'place_order'), 'old extension must not get a typed order row');
 const staleOrder = stale.rows.find(r => r.kind === 'orders' && /MRI/.test(r.label));
-assert(staleOrder && staleOrder.capability === 'manual' && /Update MLS Assist/.test(staleOrder.reason), 'stale order row must name the cure: ' + (staleOrder && staleOrder.reason));
+assert(staleOrder && staleOrder.capability === 'manual' && /directly in Athena|direct entry in Athena/i.test(staleOrder.reason + ' ' + staleOrder.consequence), 'manual order row must name the Athena destination: ' + (staleOrder && staleOrder.reason));
 
 /* identity-missing must still block EVERY typed row, capability or not */
 const noMrn = boot({ supervisedOrderPlacementV2: true, destinationTeachingV2: true, athenaFinalActionsV1: true }).buildUnifiedManifest({ ...opts, patient: { ...opts.patient, mrn: '' } });
 for (const r of noMrn.rows) if (r.action) assert.strictEqual(r.capability, 'blocked', 'identity gate must block ' + r.id);
 console.log('NO-MRN   ', summarize(noMrn));
-console.log('PASS 1p all actions ready (3.0.62): capable = 5 typed READY rows (note, billing, save, sign, order); old extension = honest manual + Update MLS Assist; missing MRN blocks every typed row.');
+console.log('PASS current Athena action policy: legacy capabilities cannot override note/save-only execution; billing, signing, and orders stay visible and manual; missing MRN blocks every executable row.');

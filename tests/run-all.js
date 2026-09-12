@@ -520,14 +520,10 @@ const tests = [
      real Chrome — so a control that stops working, or a footer that promises
      Cancel over a setting that already committed, fails here. */
   '1p-settings-redesign-contract.test.js',
-  /* The residue of that audit: the four items two lanes in a row closed as
-     "never rendered in this harness" plus the op-note rail's write churn.
-     Each one needed a state the previous probes never built - an UNBOUND
-     Athena manifest, a capable-extension manifest with a selectable Sign &
-     Save radio, an ACTION-NEEDED notice on a 390px screen, and the op-note
-     room actually re-rendering - so this suite asserts the state arrived
-     BEFORE it asserts anything about the fix. It also pins why the Settings
-     rebuild (feat_mls_settings_exact.js) can never activate on /1p. */
+  /* The residue of that audit: an UNBOUND Athena manifest, current-policy
+     manual Sign & Save rows even under legacy capability flags, an
+     ACTION-NEEDED notice on a 390px screen, and the op-note rail's write
+     churn. The suite asserts each state arrived before checking the fix. */
   '1p-residue-contract.test.js',
   /* Owner 2026-08-18, "make it so it would work in theory if I did do it":
      the five things a real YEAR pull has to survive - one day-stepping path,
@@ -658,6 +654,7 @@ const tests = [
   '1p-copilot-studio-safety-runtime.test.js',
   '1p-athena-occurrence-search-runtime.test.js',
   '1p-study-launch-observer-runtime.test.js',
+  '1p-study-builder-procedure-handoff-runtime.test.js',
   '1p-study-session-modal-runtime.test.js',
   '1p-study-provenance-runtime.test.js',
   '1p-provider-roster-session-loader-runtime.test.js',
@@ -751,10 +748,10 @@ const tests = [
   '1p-patient-search-tokens.test.js',
   '1p-writeflow-booking-row-fallback.test.js',
   '1p-writeflow-stale-review-rebind.test.js',
-  /* MLS Assist 3.0.62 / wsg-2.0.0 (owner directive 2026-08-12): with the
-     capable extension every supervised action - note, billing, save, sign,
-     one exact reviewed order - renders READY on /1p; an older extension gets
-     honest manual rows that name the cure; a missing MRN still blocks all. */
+  /* Current owner ruling (2026-09-02): only reviewed note writes and Save
+     Draft are executable. Legacy final-action capability flags cannot widen
+     billing, signing, claims, orders, or prescriptions beyond manual review;
+     a missing MRN still blocks every executable row. */
   '1p-athena-all-actions-ready-3062.test.js',
   '1p-avatar-loader-runtime.test.js',
   '1p-calm-dock-owner-runtime.test.js',

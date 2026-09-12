@@ -1,9 +1,9 @@
 'use strict';
 
-/* Render the canonical unified Athena sheet with one supported READY order,
-   one medication that must stay manual, and one unaccepted suggestion that
-   must stay blocked. This is a synthetic read-only probe: the test never
-   clicks Confirm and therefore never sends an execute request. */
+/* Render the canonical unified Athena sheet with one exact reviewed order,
+   one medication, and one unaccepted suggestion. Current owner policy keeps
+   both reviewed orders manual and the suggestion blocked; opening this sheet
+   must send neither a probe nor an execute request. */
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
@@ -142,7 +142,6 @@ const manifest = window.__mlsWriteFlow.openUnifiedConfirmation({
   patient: { patientId: 'pt-order-1', name: 'Example Patient', dob: '01/02/1980', mrn: '123' },
   expectedContext: { visitDate: '07/14/2026', provider: 'Example Doctor, MD', appointmentId: '54321' },
   receiptSessionId: 'what-goes-where-order-runtime', previewHash: 'what-goes-where-order-preview',
-  preferredAction: 'place_order',
   plan: [{
     kind: 'orders',
     orderDrafts: [{
@@ -161,9 +160,10 @@ const manifest = window.__mlsWriteFlow.openUnifiedConfirmation({
   }]
 });
 
-const readyOrder = manifest.rows.find(row => row.action === 'place_order');
-assert(readyOrder && readyOrder.capability === 'ready', 'fixture did not produce one supported READY order');
-assert.strictEqual(manifest.rows.filter(row => row.action === 'place_order').length, 1, 'fixture exposed more than one executable order');
+const reviewedOrder = manifest.rows.find(row => row.payload.orderType === 'imaging');
+assert(reviewedOrder && reviewedOrder.capability === 'manual' && !reviewedOrder.action, 'exact reviewed order did not remain manual');
+assert(reviewedOrder.payload.order && reviewedOrder.payload.order.clientOrderId === 'reviewed-imaging-order-1', 'manual review lost the exact canonical order payload');
+assert.strictEqual(manifest.rows.filter(row => row.action === 'place_order').length, 0, 'fixture exposed retired order execution');
 const manualMedication = manifest.rows.find(row => row.payload.orderType === 'medication');
 const blockedSuggestion = manifest.rows.find(row => /suggestion only/i.test(row.reviewStatus));
 assert(manualMedication && manualMedication.capability === 'manual' && !manualMedication.action, 'medication boundary is no longer manual');
@@ -174,32 +174,22 @@ const wait = () => new Promise(resolve => setTimeout(resolve, 12));
   const card = byId.mlsAthenaUnifiedConfirm && byId.mlsAthenaUnifiedConfirm.children[0];
   assert(card, 'unified Athena sheet did not render');
   const radios = card.querySelectorAll('input[name="mlsAthenaUnifiedAction"]');
-  assert.strictEqual(radios.length, 1, 'only the single supported READY order may render an action radio');
-  assert.strictEqual(radios[0].value, readyOrder.id, 'the rendered action radio is not bound to the immutable READY order row');
-  assert.strictEqual(radios[0].checked, true, 'preferred place_order was not pre-selected');
+  assert.strictEqual(radios.length, 0, 'manual and blocked order rows must not render action radios');
   assert(/What &rarr; Where &rarr; How/.test(card.innerHTML), 'compact destination guide is missing');
-  assert(/What:<\/b> Reviewed MRI lumbar spine order/.test(card.innerHTML), 'ready order does not plainly identify the artifact');
-  assert(/Where:<\/b> Athena encounter > Orders > Imaging/.test(card.innerHTML), 'ready order does not plainly identify its exact Athena destination');
-  assert(/READY · SEPARATE CONFIRMATION/.test(card.innerHTML), 'ready order does not plainly state its separate-confirmation status');
+  assert(/What:<\/b> Reviewed MRI lumbar spine order/.test(card.innerHTML), 'manual order does not plainly identify the artifact');
+  assert(/Where:<\/b> Athena encounter > Orders > Imaging/.test(card.innerHTML), 'manual order does not plainly identify its exact Athena destination');
   assert(/MANUAL IN ATHENA/.test(card.innerHTML), 'medication row does not plainly state its manual boundary');
   assert(/BLOCKED · NOTHING SENT/.test(card.innerHTML), 'unaccepted suggestion does not plainly state its blocked boundary');
-  assert(/Orders and other Athena items \(3\).*1 order can be sent with separate confirmation/.test(card.innerHTML), 'order drawer still falsely says every order is manual');
+  assert(/Complete final actions in Athena yourself \(3\).*nothing here is sent/.test(card.innerHTML), 'order drawer advertises retired order execution');
   assert(!/Review the generated encounter-note text/.test(card.innerHTML), 'order-only review still renders a false generic Encounter-note hero');
 
-  assert.strictEqual(sent.filter(message => message.type === 'mlsAppAthenaActionV2').length, 1, 'opening the sheet must make exactly one read-only order probe');
-  const probe = sent.find(message => message.type === 'mlsAppAthenaActionV2');
-  assert.strictEqual(probe.mode, 'probe', 'opening the sheet performed a non-probe order action');
-  assert.strictEqual(probe.action, 'place_order', 'preferred READY order was not auto-probed');
-  assert.strictEqual(probe.rowHash, readyOrder.rowHash, 'order probe lost the immutable row hash');
-  assert.strictEqual(probe.clientOrderId, readyOrder.payload.order.clientOrderId, 'order probe lost the immutable client order ID');
+  assert.strictEqual(sent.filter(message => message.type === 'mlsAppAthenaActionV2').length, 0, 'opening a manual-only order sheet contacted Athena');
 
   await wait();
   const go = byId.mlsAthenaUnifiedGo;
-  assert(go && go.disabled === false, 'valid order read-only probe did not enable the shared confirmation button');
-  assert.strictEqual(go.getAttribute('data-mls-athena-action'), 'place_order', 'shared confirmation button was not armed for the selected order');
-  assert.strictEqual(go.getAttribute('data-mls-row-hash'), readyOrder.rowHash, 'shared confirmation button lost the order row hash');
-  assert.strictEqual(go.getAttribute('data-mls-client-order-id'), readyOrder.payload.order.clientOrderId, 'shared confirmation button lost the order ID');
-  assert.strictEqual(sent.filter(message => message.mode === 'execute').length, 0, 'render/probe test executed an order without a clinician confirmation');
+  assert(go && go.disabled === true, 'manual-only order sheet enabled the shared confirmation button');
+  assert.strictEqual(go.getAttribute('data-mls-athena-action') || '', '', 'shared confirmation button was armed for a manual order');
+  assert.strictEqual(sent.filter(message => message.mode === 'execute').length, 0, 'render test executed an order');
 
   const namedManifest = window.__mlsWriteFlow.openUnifiedConfirmation({
     patient: { patientId: 'pt-order-1', name: 'Example Patient', dob: '01/02/1980', mrn: '123' },
@@ -299,18 +289,18 @@ const wait = () => new Promise(resolve => setTimeout(resolve, 12));
   const genericCard = byId.mlsAthenaUnifiedConfirm.children[0];
   assert(/Review the generated encounter-note text/.test(genericCard.innerHTML), 'true generic note lost its full-text review hero');
   assert(/What: Reviewed encounter-note draft/.test(genericCard.innerHTML) && /Where:<\/b> Athena encounter > Encounter note/.test(genericCard.innerHTML), 'generic note What/Where metadata is unclear');
-  assert(/What: Reviewed E\/M and CPT\/HCPCS coding payload/.test(genericCard.innerHTML) && /Where:<\/b> Athena encounter > Billing \/ Charges slate/.test(genericCard.innerHTML), 'billing What/Where metadata is unclear');
+  assert(/What: Reviewed E\/M and CPT\/HCPCS coding/.test(genericCard.innerHTML) && /Where:<\/b> Athena encounter > Billing \/ Charges slate/.test(genericCard.innerHTML), 'billing What/Where metadata is unclear');
   assert(/What: Save the reviewed encounter draft/.test(genericCard.innerHTML) && /Where:<\/b> Athena encounter > Save \/ Save Draft control/.test(genericCard.innerHTML), 'Save Draft What/Where metadata is unclear');
   assert(/What: Sign &amp; Save the reviewed encounter/.test(genericCard.innerHTML) && /Where:<\/b> Athena encounter > Sign &amp; Save control/.test(genericCard.innerHTML), 'Sign & Save What/Where metadata is unclear');
-  assert.strictEqual(genericCard.querySelectorAll('input[name="mlsAthenaUnifiedAction"]').length, 4, 'generic note, billing, Save Draft, and Sign & Save must remain separate selectable actions');
+  assert.strictEqual(genericCard.querySelectorAll('input[name="mlsAthenaUnifiedAction"]').length, 2, 'only reviewed note and Save Draft may remain selectable');
   const allTypedActions = new Set([
     ...manifest.rows.filter(row => row.action).map(row => row.action),
     ...genericManifest.rows.filter(row => row.action).map(row => row.action)
   ]);
-  assert.deepStrictEqual([...allTypedActions].sort(), ['place_order', 'save_draft', 'sign_encounter', 'stage_billing', 'write_note'], 'the unified UI no longer preserves all five typed Athena actions');
-  assert.strictEqual(sent.filter(message => message.mode === 'execute').length, 0, 'five-action render coverage executed an Athena action');
+  assert.deepStrictEqual([...allTypedActions].sort(), ['save_draft', 'write_note'], 'legacy capabilities widened the current note/save-only action set');
+  assert.strictEqual(sent.filter(message => message.mode === 'execute').length, 0, 'render coverage executed an Athena action');
 
-  console.log('PASS Athena What/Where/How runtime: all five typed actions preserved; named/generic/procedure destinations exact; one supported order probe-ready; manual/blocked orders nonselectable; zero execute requests');
+  console.log('PASS Athena What/Where/How runtime: only note/save execute; named/generic/procedure destinations exact; reviewed orders stay manual and suggestions blocked; zero order probes or executes');
 })().catch(error => {
   console.error(error);
   process.exitCode = 1;

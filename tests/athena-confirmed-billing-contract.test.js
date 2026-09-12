@@ -85,9 +85,8 @@ assert.strictEqual(reviewCalls[0].patient.name, 'Example Patient');
 directSnapshot.billing.cptCodes[0] = 'M5450';
 assert.deepStrictEqual(JSON.parse(JSON.stringify(reviewCalls[0].plan[0].billing)), { emCode: '99214', cptCodes: ['J3301'], invalid: [] }, 'post-preview coding mutation changed the reviewed billing snapshot');
 
-/* The canonical review keeps billing manual for an older/unknown extension,
- * then exposes one exact separately confirmed staging action only when the
- * installed extension advertises the typed final-action contract. */
+/* The canonical review keeps billing manual under current product policy.
+ * A legacy typed-final-action capability advertisement cannot widen it. */
 const billingDocument = {
   readyState: 'loading', body: {}, addEventListener() {}, getElementById() { return null; },
   querySelectorAll() { return []; }, createElement() { return {}; }
@@ -117,28 +116,29 @@ const billingReviewOpts = {
 };
 const legacyBillingManifest = billingFlow.buildUnifiedManifest(billingReviewOpts);
 const legacyBillingRow = legacyBillingManifest.rows.find(row => row.id === 'stage-billing');
-assert.strictEqual(legacyBillingRow.capability, 'manual', 'billing must remain manual without the typed extension capability');
-assert.strictEqual(legacyBillingRow.action, '', 'billing exposed an executable action without the typed extension capability');
-assert(/update MLS Assist|previous write-safety policy/i.test(legacyBillingRow.reason), 'manual billing fallback did not name the missing capability and cure');
+assert.strictEqual(legacyBillingRow.capability, 'manual', 'billing must remain manual');
+assert.strictEqual(legacyBillingRow.action, '', 'billing exposed an executable action');
+assert(/directly in Athena/i.test(legacyBillingRow.reason + ' ' + legacyBillingRow.consequence), 'manual billing row did not name the Athena destination');
+assert(!/update MLS Assist/i.test(legacyBillingRow.reason + ' ' + legacyBillingRow.consequence), 'manual billing row advertised an upgrade that cannot change product policy');
 
 billingWindow.__mlsExtensionCapabilities = { athenaFinalActionsV1: true, supervisedOrderPlacementV2: true };
 const capableBillingManifest = billingFlow.buildUnifiedManifest(billingReviewOpts);
 const capableBillingRow = capableBillingManifest.rows.find(row => row.id === 'stage-billing');
-assert.strictEqual(capableBillingRow.capability, 'ready', 'exact billing did not become separately confirmable under the typed capability');
-assert.strictEqual(capableBillingRow.action, 'stage_billing', 'capable billing lost its exact typed action');
-assert.deepStrictEqual(Array.from(capableBillingRow.payload.billing.cptCodes), ['20610'], 'capable billing lost or widened its frozen CPT/HCPCS payload');
-assert(Object.isFrozen(capableBillingRow) && Object.isFrozen(capableBillingRow.payload) && Object.isFrozen(capableBillingRow.payload.billing.cptCodes), 'capable billing payload is not immutable');
+assert.strictEqual(capableBillingRow.capability, 'manual', 'legacy capability advertisement made billing executable');
+assert.strictEqual(capableBillingRow.action, '', 'legacy capability advertisement restored a billing action');
+assert.deepStrictEqual(Array.from(capableBillingRow.payload.billing.cptCodes), ['20610'], 'manual billing review lost or widened its frozen CPT/HCPCS payload');
+assert(Object.isFrozen(capableBillingRow) && Object.isFrozen(capableBillingRow.payload) && Object.isFrozen(capableBillingRow.payload.billing.cptCodes), 'manual billing payload is not immutable');
 assert.strictEqual(capableBillingManifest.rows.find(row => row.kind === 'dx').capability, 'manual', 'diagnosis review became executable billing');
 assert.strictEqual(capableBillingManifest.rows.find(row => row.kind === 'orders').capability, 'manual', 'untyped order prose became executable');
 
 const missingIdentityBilling = billingFlow.buildUnifiedManifest(Object.assign({}, billingReviewOpts, {
   patient: { patientId: 'billing-patient-1', name: 'Example Patient', dob: '', mrn: '123' }
 })).rows.find(row => row.id === 'stage-billing');
-assert.strictEqual(missingIdentityBilling.capability, 'blocked', 'billing did not fail closed without complete immutable patient identity');
+assert.strictEqual(missingIdentityBilling.capability, 'manual', 'review-only billing payload disappeared without complete immutable patient identity');
 const missingEncounterBilling = billingFlow.buildUnifiedManifest(Object.assign({}, billingReviewOpts, {
   expectedContext: {}, requireExpectedVisit: true
 })).rows.find(row => row.id === 'stage-billing');
-assert.strictEqual(missingEncounterBilling.capability, 'blocked', 'billing did not fail closed without exact historical encounter context');
+assert.strictEqual(missingEncounterBilling.capability, 'manual', 'review-only billing payload disappeared without exact historical encounter context');
 
 /* The direct and unified controllers must refuse before a probe or execute
  * whenever capability, typed codes, proof/hash binding, token, identity, or
@@ -444,7 +444,7 @@ assert(phoneStart.indexOf("_athenaAsyncBindingStillSafe(phoneBindingCandidate,'p
 const generation = between(app, 'async function generateNote()', 'function autoPopulateExtras(result)');
 assert(generation.indexOf("_athenaGuardBoundEditor('note generation')") < generation.indexOf('generationBinding='), 'note generation must refuse a patient/bound-visit mismatch');
 assert(generation.indexOf("_athenaAsyncBindingStillSafe(generationBinding,'note generation',generationEpoch)") < generation.indexOf('currentSoap=_reorderNoteForStyle(result.note'), 'a delayed AI result must be discarded after any patient/visit change');
-const generationAwait = generation.indexOf('callOpenAI(transcript,key,{signal:run.controller.signal,evidence:evidence})');
+const generationAwait = generation.indexOf('callOpenAI(transcript,key,{signal:run.controller.signal,evidence:evidence');
 assert(generationAwait >= 0, 'note generation no longer routes through callOpenAI');
 assert(generation.indexOf('generationFingerprint=_athenaEditorFingerprint()') < generationAwait && generation.indexOf('generationFormat=currentFormat') < generationAwait, 'note generation did not capture the exact same-visit editor state before AI');
 assert(generation.indexOf('_athenaEditorFingerprint()!==generationFingerprint', generationAwait) < generation.indexOf('currentSoap=_reorderNoteForStyle(result.note'), 'a delayed note result could overwrite newer clinician edits in the same visit');

@@ -8,13 +8,12 @@
    THE DEFECT, MEASURED. _athenaOrderReviewBundle() rebuilt every accepted
    draft as {type,fields,summary,originalText,source,complete} and DROPPED
    clientOrderId, reviewStatus, displayLabel, query, catalogCode and catalogId.
-   All six are required by the write-flow's canonicalOrder(), so a complete,
-   clinician-accepted, catalog-bound imaging order reached the review with
-   reviewStatus undefined and was refused as "order-not-reviewed" - it
-   degraded to a manual row, and the doctor re-typed into Athena an order MLS
-   had already reviewed. The single-order route (_athenaOrderPlacementCandidate
-   -> _athenaOpenSingleOrderReview) carried the identity correctly, which is
-   why no existing suite caught it: the two routes disagreed.
+   All six are required by the write-flow's canonicalOrder(), so dropping them
+   made the review lose the exact accepted proposal and report the wrong manual
+   reason. Current owner policy keeps every order manual, but the frozen payload
+   and truthful direct-Athena route must still survive this join. The single-
+   order route carried the identity correctly, which is why no existing suite
+   caught it: the two routes disagreed.
 
    WHY THIS SUITE AND NOT A UNIT TEST OF THE BUNDLE. The existing
    orders-unified-review-contract test hands the manifest builder drafts that
@@ -24,7 +23,7 @@
    own write-flow manifest builder.
 
    NO GATE IS WEAKENED, AND THIS SUITE PROVES IT BOTH WAYS. An accepted order
-   with NO catalog binding must stay off the ready path, and its reason must
+   with NO catalog binding must stay off the canonical exact-payload path, and its reason must
    name the real blocker rather than falsely claiming the clinician never
    reviewed it. An unaccepted suggestion must stay blocked.
    ========================================================================== */
@@ -124,10 +123,8 @@ async function runtime() {
       null, { timeout: 60000 });
 
     const out = await page.evaluate((orders) => {
-      /* A capable MLS Assist. The supervised single-order contract is what
-         turns an eligible order into a typed place_order row; without it the
-         row is correctly manual, and this suite would be measuring the
-         extension rather than the join it is here to measure. */
+      /* Legacy capability bits are deliberately advertised here to prove they
+         cannot widen the current note/save-only execution policy. */
       window.__mlsExtensionCapabilities = { athenaFinalActionsV1: true, supervisedOrderPlacementV2: true };
       const report = { errs: [] };
       try { window.currentOrders = orders; } catch (e) { report.errs.push('assign:' + e.message); }
@@ -186,17 +183,17 @@ async function runtime() {
     eq(imaging.query, 'MRI Lumbar spine', 'the bundle dropped the exact Athena catalog search query');
     eq(imaging.catalogId, 'athena-catalog-imaging-77', 'the bundle dropped the durable Athena catalog id');
     eq(imaging.source, 'ai-suggestion-accepted', 'the accepted AI suggestion lost its accepted source label');
-    eq(imaging.complete, true, 'the complete imaging draft was not marked complete, so nothing downstream can go ready');
+    eq(imaging.complete, true, 'the complete imaging draft was not marked complete, so its exact reviewed payload was lost');
 
-    /* ---- the join reaches the review AS ELIGIBLE ------------------------ */
+    /* ---- the join reaches the review intact, but remains MANUAL ---------- */
     const imagingRow = out.rows.filter((r) => r.orderType === 'imaging')[0];
     ok(!!imagingRow, `the imaging order produced no manifest row at all: ${JSON.stringify(out.rows)}`);
-    eq(imagingRow.action, 'place_order',
-      `an eligible accepted catalog-bound order degraded to a non-typed row (eligibility="${imagingRow.eligibility}", message="${imagingRow.eligibilityMessage}") - this is the exact P0 defect`);
-    eq(imagingRow.capability, 'ready',
-      `an eligible accepted catalog-bound order reached the main Athena review as "${imagingRow.capability}" instead of ready: ${JSON.stringify(imagingRow)}`);
-    eq(imagingRow.reason, '', `a capable exact order is still described as blocked or manual: ${JSON.stringify(imagingRow.reason)}`);
-    ok(!!imagingRow.order, 'the ready row carries no canonical order payload');
+    eq(imagingRow.action, '', 'legacy capability flags restored a place_order action');
+    eq(imagingRow.capability, 'manual',
+      `an accepted catalog-bound order reached the main Athena review as "${imagingRow.capability}" instead of manual: ${JSON.stringify(imagingRow)}`);
+    ok(/directly in Athena|direct entry in Athena/i.test(imagingRow.reason), `the exact order does not name its manual Athena route: ${JSON.stringify(imagingRow.reason)}`);
+    ok(!/Update MLS Assist/i.test(imagingRow.reason), `the exact order advertises a meaningless extension update: ${JSON.stringify(imagingRow.reason)}`);
+    ok(!!imagingRow.order, 'the manual row carries no canonical order payload');
     eq(imagingRow.order.clientOrderId, 'o-census-imaging-1', 'the manifest row lost the immutable client order id');
     eq(imagingRow.order.query, 'MRI Lumbar spine', 'the manifest row lost the exact catalog query');
     eq(imagingRow.order.catalogId, 'athena-catalog-imaging-77', 'the manifest row lost the durable catalog id');
@@ -210,8 +207,8 @@ async function runtime() {
     eq(ptRow.order, null, 'an order with no catalog binding must carry no canonical order payload');
     eq(ptRow.eligibility, 'catalog-identity-required',
       `the unbound PT order is refused for the wrong reason ("${ptRow.eligibility}") - the doctor is told the order was never reviewed when the real gap is its catalog binding`);
-    ok(/catalog/i.test(ptRow.eligibilityMessage),
-      `the refusal message does not name the catalog binding: ${JSON.stringify(ptRow.eligibilityMessage)}`);
+    ok(/catalog|order code|order ID/i.test(ptRow.eligibilityMessage) && /review/i.test(ptRow.eligibilityMessage),
+      `the refusal message does not name the exact Athena-match review requirement: ${JSON.stringify(ptRow.eligibilityMessage)}`);
 
     /* ---- an unaccepted suggestion is still not a reviewed draft --------- */
     const suggestionRows = out.rows.filter((r) => /suggestion only/i.test(r.reviewStatus));

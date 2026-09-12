@@ -204,26 +204,18 @@
   function esc(s) { return S(s).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
   function activePt() { try { return (typeof window.activePatient === 'function') ? window.activePatient() : null; } catch (e) { return null; } }
   function supervisedOrderPlacementReady() { try { return !!(window.__mlsExtensionCapabilities && window.__mlsExtensionCapabilities.supervisedOrderPlacementV2 === true); } catch (e) { return false; } }
-  /* Owner directive 2026-08-12: billing staging and Sign & Save are MLS
-     actions. The installed extension is the transport authority: until it
-     advertises athenaFinalActionsV1, its write-safety layers refuse these
-     executes, so the rows say that instead of promising a send that the
-     bridge would reject. The moment a capable extension is installed these
-     rows go ready with zero further site change. */
-  /* The current owner policy applies even if an older extension advertises
-     final-action capabilities. Signing, billing and orders stay in Athena. */
+  /* Current owner ruling (2026-09-02): MLS may write reviewed note text and
+     may run the encounter Save / Save Draft step. Signing, billing, claims,
+     and orders stay manual in Athena. A legacy capability advertisement can
+     never override that product policy. */
   function athenaFinalActionsReady() { return false; }
   var FINAL_ACTION_EXT_BLOCK = 'Complete this action directly in Athena. MLS only writes reviewed note text and saves unsigned drafts.';
 
   /* ---------------- explicit Athena actions ------------------------------ */
-  /* Owner directive 2026-08-12 (extension released 2026-08-17 as MLS Assist
-     3.0.62): reviewed note write, Save Draft, billing staging, Sign & Save AND
-     one exact reviewed order are ALL confirmable MLS actions. Every action
-     still runs one-at-a-time behind the same read-only probe, identity lock,
-     one-use token, and explicit per-action clinician confirm. The texts below
-     are the FALLBACK rendered only while the installed extension does not yet
-     advertise athenaFinalActionsV1 (an older MLS Assist): they say so and name
-     the cure instead of promising a send the bridge would refuse. */
+  /* Keep every reviewed destination visible, but expose executable controls
+     only for write_note and save_draft. The other rows preserve exact payloads
+     for direct Athena review/entry and never advertise an extension upgrade as
+     a cure for a product-policy boundary. */
   var ATHENA_ACTIONS = {
     write_note: {
       label: 'Write reviewed note',
@@ -247,8 +239,8 @@
     }
   };
   var ATHENA_EXECUTABLE_ACTIONS = { write_note: true, save_draft: true };
-  /* Capable-mode row text: rendered when the installed extension adverts
-     athenaFinalActionsV1 (MLS Assist 3.0.62+). */
+  /* Historical capable-mode descriptions remain beside the dormant guarded
+     branches as defense-in-depth fixtures. Current policy never renders them. */
   var ATHENA_FINAL_READY = {
     stage_billing: {
       label: 'Stage billing in Athena',
@@ -1387,7 +1379,7 @@
   var GENERICSAVE_PLAN_PENDING = 'Every checked note section is already in Athena and verified. The Save draft you selected is the next press; it unlocks when its own read-only Athena check passes.';
   var UNIFIED_MANUAL = {
     dx: { label: 'Diagnoses (ICD-10)', destination: 'Athena encounter > Assessment & Plan > Diagnoses', consequence: 'MLS has no typed, exact-result ICD-10 adapter in this workflow. These diagnoses remain visible for manual entry and are not sent.' },
-    orders: { label: 'Orders', destination: 'Athena encounter > Orders', consequence: 'Only one complete reviewed imaging, PT, referral, or DME order can be placed by MLS, and only after a fresh clinician confirmation. Prose, incomplete drafts, Rx, and injections remain manual or blocked.' },
+    orders: { label: 'Orders', destination: 'Athena encounter > Orders', consequence: 'Reviewed order drafts stay visible with their exact Athena route. MLS does not place orders; complete every order directly in Athena. Incomplete or unaccepted drafts remain blocked until reviewed.' },
     rx: { label: 'Prescriptions', destination: 'Athena encounter > Prescriptions', consequence: 'Medication details, pharmacy, safety checks, and e-signing require Athena review. MLS will not prescribe from this page.' },
     referrals: { label: 'Referrals', destination: 'Athena encounter > Orders > Referral', consequence: 'Referral routing requires a typed order and destination. You complete this one in Athena yourself.' },
     pt: { label: 'Physical therapy', destination: 'Athena encounter > Orders > PT', consequence: 'PT orders require a typed order and clinical review. You complete this one in Athena yourself.' },
@@ -1519,7 +1511,7 @@
     var missing = schema.required.filter(function (key) { return !S(fields[key]).trim(); });
     if (missing.length) return { ok: false, reason: 'missing-order-fields', error: 'Complete the required ' + type + ' field(s): ' + missing.join(', ') + '.' };
     var reviewStatus = S(item.reviewStatus).toLowerCase().trim();
-    if (!/^(accepted|reviewed|accepted\s*\/\s*reviewed draft)$/.test(reviewStatus)) return { ok: false, reason: 'order-not-reviewed', error: 'The clinician must accept and review this order before it can be placed.' };
+    if (!/^(accepted|reviewed|accepted\s*\/\s*reviewed draft)$/.test(reviewStatus)) return { ok: false, reason: 'order-not-reviewed', error: 'The clinician must accept and review this order before it can appear as a reviewed Athena draft.' };
     var source = S(item.source).trim();
     if (!/^(provider-entered|ai-suggestion-accepted|rule-suggestion-accepted)$/.test(source)) return { ok: false, reason: 'unsupported-order-source', error: 'The order source is not an allowlisted reviewed source.' };
     var displayLabel = S(item.displayLabel).trim();
@@ -1528,7 +1520,7 @@
     var catalogCode = S(item.catalogCode).trim(), catalogId = S(item.catalogId).trim();
     if (!clientOrderId) return { ok: false, reason: 'order-id-required', error: 'This reviewed order is missing its immutable local order ID.' };
     if (!displayLabel || !query) return { ok: false, reason: 'catalog-query-required', error: 'This reviewed order needs the exact Athena order name to search for.' };
-    if (!catalogCode && !catalogId) return { ok: false, reason: 'catalog-identity-required', error: 'A durable Athena order code or order ID is required before this order can be placed.' };
+    if (!catalogCode && !catalogId) return { ok: false, reason: 'catalog-identity-required', error: 'A durable Athena order code or order ID is required before MLS can freeze an exact Athena match for review.' };
     if (clientOrderId.length > 160 || displayLabel.length > 300 || query.length > 300 || catalogCode.length > 100 || catalogId.length > 160) return { ok: false, reason: 'order-field-too-long', error: 'One or more order identity fields is too long.' };
     var order = { clientOrderId: clientOrderId, type: type, displayLabel: displayLabel, catalogCode: catalogCode, catalogId: catalogId, query: query, fields: fields, reviewStatus: 'accepted', source: source };
     return { ok: true, order: deepFreeze(order) };
@@ -1587,10 +1579,10 @@
           payload: payload, order: UNIFIED_ORDER.orders + index / 1000 });
         return;
       }
-      var staleExt = fullySpecified && !(athenaFinalActionsReady() && supervisedOrderPlacementReady());
+      var manualFinalAction = fullySpecified && !(athenaFinalActionsReady() && supervisedOrderPlacementReady());
       addRow({ id: 'order-draft-' + planIndex + '-' + index, action: '', kind: 'orders', label: fullySpecified ? ATHENA_ACTIONS.place_order.label + ': ' + payload.order.displayLabel : payload.orderTypeLabel,
         destination: payload.proposedDestination, capability: fullySpecified || highRisk ? 'manual' : 'blocked', source: payload.sourceLabel, reviewStatus: payload.reviewStatus,
-        reason: staleExt ? FINAL_ACTION_EXT_BLOCK + ' MLS keeps this exact reviewed text visible for you to enter by hand until then.' : (highRisk ? 'Complete in Athena. Medication and injection orders have no typed MLS adapter, so they stay in the clinician\'s hands.' : (payload.orderEligibilityMessage || 'This reviewed draft is incomplete, or MLS could not match it to one exact Athena order item. Complete it in Athena.')),
+        reason: highRisk ? 'Complete in Athena. Medication and injection orders have no typed MLS adapter, so they stay in the clinician\'s hands.' : (manualFinalAction ? FINAL_ACTION_EXT_BLOCK + ' MLS keeps this exact reviewed text visible for direct entry in Athena.' : (payload.orderEligibilityMessage || 'This reviewed draft is incomplete, or MLS could not match it to one exact Athena order item. Complete it in Athena.')),
         consequence: fullySpecified ? ATHENA_ACTIONS.place_order.consequence : (highRisk ? 'This medication or injection order remains visible for manual Athena entry; no typed adapter exists, so MLS will not prescribe, inject, submit, or place it.' : 'Nothing is sent or executed for this incomplete or unbound draft.'),
         payload: payload, order: UNIFIED_ORDER.orders + index / 1000 });
     });
@@ -6834,7 +6826,7 @@
       var statusColor = ready ? '#205c43' : (blocked ? '#8b2525' : '#7a5a16');
       var statusText = ready ? 'READY · SEPARATE CONFIRMATION' : (row.capability === 'manual' ? 'MANUAL IN ATHENA' : 'BLOCKED · NOTHING SENT');
       var howText = ready
-        ? 'Select this row, then use its own Confirm & Send. MLS places only this reviewed Athena order and runs no other action.'
+        ? 'This retired executable state is not available under current policy. Review or copy the proposal, then complete it yourself in Athena.'
         : (row.capability === 'manual'
           ? 'Review or copy this text, then complete it yourself in Athena. MLS never sends this row.'
           : 'Nothing is sent from this row. Resolve the reason below before it can become a reviewed Athena action.');
@@ -7902,9 +7894,8 @@
          is no longer snapped shut a beat after it paints. It opens only when it
          HAS a row - an empty drawer is not rendered at all - and the count
          stays in the summary either way. */
-      var readyOrderCount = orderRows.filter(function (row) { return row.capability === 'ready' && !!row.action; }).length;
       rowsHtml += '<details open data-mls-fix-drawer="1" data-mls-clunky-seen="1" style="margin-top:12px"><summary style="cursor:pointer;font-weight:750;color:#6d5010;font-size:12px">' +
-        (readyOrderCount ? ('Orders and other Athena items (' + drawerCount + ') — ' + readyOrderCount + ' order' + (readyOrderCount === 1 ? '' : 's') + ' can be sent with separate confirmation') : ('Complete final actions in Athena yourself (' + drawerCount + ') — nothing here is sent')) + '</summary>' +
+        ('Complete final actions in Athena yourself (' + drawerCount + ') — nothing here is sent') + '</summary>' +
         /* sheetux-1.0.0: each group states its shared "How" ONCE, here. */
         (manualRows.length ? unifiedGroupHead('You finish this in Athena', '#7a5a16', 'Review or copy each one here, then complete it yourself in Athena. Nothing is sent from these rows; the exact text stays here for you to copy.') +
           manualRows.map(function (row) { return unifiedManualRowHtml(manifest, row); }).join('') : '') +

@@ -157,18 +157,16 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 5));
 
   for (const action of ['stage_billing', 'sign_encounter', 'place_order']) {
     const refused = await window.__mlsWriteFlow.startAthenaAction(action, opts);
-    assert.strictEqual(refused.error, 'final-action-capability-required', `${action} crossed the UI controller without the extension capability`);
+    assert.strictEqual(refused.error, 'manual-only-final-action', `${action} crossed the current manual-only final-action policy`);
   }
-  assert.deepStrictEqual(sent, [], 'a final action crossed the bridge without the extension capability');
+  assert.deepStrictEqual(sent, [], 'a manual final action crossed the bridge');
 
   window.__mlsExtensionCapabilities = { athenaFinalActionsV1: true, supervisedOrderPlacementV2: true };
-  const noBilling = await window.__mlsWriteFlow.startAthenaAction('stage_billing', opts);
-  assert.strictEqual(noBilling.error, 'no-billing-codes');
-  const noProof = await window.__mlsWriteFlow.startAthenaAction('sign_encounter', opts);
-  assert.strictEqual(noProof.error, 'verified-note-write-required');
-  const noOrder = await window.__mlsWriteFlow.startAthenaAction('place_order', opts);
-  assert.strictEqual(noOrder.error, 'unsupported-order-type');
-  assert.deepStrictEqual(sent, [], 'a final action with missing payload/proof crossed the bridge');
+  for (const action of ['stage_billing', 'sign_encounter', 'place_order']) {
+    const refused = await window.__mlsWriteFlow.startAthenaAction(action, opts);
+    assert.strictEqual(refused.error, 'manual-only-final-action', `legacy capability flags widened ${action}`);
+  }
+  assert.deepStrictEqual(sent, [], 'legacy capabilities allowed a manual final action across the bridge');
 
   await window.__mlsWriteFlow.startAthenaAction('write_note', opts);
   await tick();
@@ -190,21 +188,13 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 5));
   assert.strictEqual(sent[2].noteText, sent[1].noteText, 'note payload changed between visible probe and final confirmation');
   assert(!sent.some(x => ['stage_billing', 'sign_encounter', 'place_order'].includes(x.action)), 'a final action auto-chained from the note write');
 
-  await window.__mlsWriteFlow.startAthenaAction('sign_encounter', opts);
+  const refusedSign = await window.__mlsWriteFlow.startAthenaAction('sign_encounter', opts);
   await tick();
-  assert.deepStrictEqual(sent.map(x => x.mode), ['probe', 'probe', 'execute', 'probe'], 'Sign did not begin with its own read-only probe');
-  assert.strictEqual(sent[3].action, 'sign_encounter');
-  assert.strictEqual(sent[3].noteWriteProof, 'proof-runtime-note', 'Sign probe lost the exact verified note-write proof');
-  assert.strictEqual(sent.filter(x => x.action === 'sign_encounter' && x.mode === 'execute').length, 0, 'Sign executed before its own clinician confirmation');
+  assert.strictEqual(refusedSign.error, 'manual-only-final-action', 'a verified note write unlocked retired Sign execution');
+  assert.deepStrictEqual(sent.map(x => x.mode), ['probe', 'probe', 'execute'], 'manual Sign sent a probe or execute request');
+  assert.strictEqual(sent.filter(x => x.action === 'sign_encounter').length, 0, 'manual Sign crossed the bridge');
 
-  byId.mlsAthenaActionGo.listeners.click[0]({ target: byId.mlsAthenaActionGo });
-  await tick();
-  assert.deepStrictEqual(sent.map(x => x.mode), ['probe', 'probe', 'execute', 'probe', 'execute']);
-  assert.strictEqual(sent[4].action, 'sign_encounter');
-  assert.strictEqual(sent[4].noteWriteProof, 'proof-runtime-note');
-  assert.strictEqual(sent.filter(x => x.action === 'sign_encounter' && x.mode === 'execute').length, 1, 'one Sign confirmation did not emit exactly one execute');
-
-  console.log('PASS Athena confirmation runtime: incapable/missing-proof final actions refuse; note and proof-gated Sign each require their own exact probe and clinician confirmation');
+  console.log('PASS Athena confirmation runtime: note write requires its own exact probe and confirmation; billing, Sign, and orders remain manual despite legacy flags and verified note proof');
 })().catch(err => {
   console.error(err);
   process.exitCode = 1;

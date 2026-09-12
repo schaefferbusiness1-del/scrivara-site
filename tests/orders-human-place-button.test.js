@@ -152,13 +152,16 @@ assert(!/Review for Athena/.test(context._athenaOrderPlacementControl(incomplete
 assert(!/Review for Athena/.test(context._athenaOrderPlacementControl(medicationOrder)), 'medication row received a reviewed-payload button');
 assert(!/Review for Athena/.test(context._athenaOrderPlacementControl(suggestionOnly)), 'suggestion-only row received a reviewed-payload button');
 const safeControl = context._athenaOrderPlacementControl(safeOrder);
-assert(/Send to Athena/.test(safeControl), 'complete reviewed supported row is missing its supervised Athena review button');
-assert(/One Confirm &amp; Send places exactly this catalog item/.test(safeControl), 'capable button does not disclose the one-confirm, one-order consequence');
+assert(/Review for Athena/.test(safeControl), 'complete reviewed supported row is missing its Athena review button');
+assert(/does not place the order/.test(safeControl) && /complete it directly in Athena/.test(safeControl), 'review button does not disclose the manual Athena route');
+assert(!/Send to Athena|Update MLS Assist/.test(safeControl), 'review button advertises a retired placement or upgrade route');
+assert.strictEqual(context._athenaOrderPlacementCapabilityReady(), false, 'legacy extension flags widened the current manual-only order policy');
 
 context.window.__mlsExtensionCapabilities = {};
 const oldExtensionControl = context._athenaOrderPlacementControl(safeOrder);
 assert(/Review for Athena/.test(oldExtensionControl), 'manual review should not depend on an execution capability handshake');
-assert(/Update MLS Assist/.test(oldExtensionControl) && !/disabled/.test(oldExtensionControl), 'older clients must keep an enabled review route while truthfully naming the required update');
+assert(!/Update MLS Assist|Send to Athena/.test(oldExtensionControl) && !/disabled/.test(oldExtensionControl), 'older clients must keep the same truthful manual review route');
+assert.strictEqual(oldExtensionControl, safeControl, 'legacy capability flags changed the order review promise');
 context.window.__mlsExtensionCapabilities = { athenaFinalActionsV1: true, supervisedOrderPlacementV2: true };
 
 const missingMrn = Object.freeze(Object.assign({}, exactBinding, {
@@ -184,9 +187,9 @@ assert.strictEqual(captured.plan[0].orderDrafts[0].clientOrderId, 'order-safe-1'
 assert.strictEqual(captured.plan[0].orderSuggestions.length, 0, 'suggestions leaked into the exact reviewed payload');
 assert(Object.isFrozen(captured.patient) && Object.isFrozen(captured.expectedContext), 'patient/visit snapshots must be immutable');
 assert(Object.isFrozen(captured.plan) && Object.isFrozen(captured.plan[0]) && Object.isFrozen(captured.plan[0].orderDrafts), 'one-order review plan must be immutable');
-assert(/one-click confirm/i.test(captured.plan[0].consequence));
-assert(/places only it/i.test(captured.plan[0].consequence));
-assert(/does not prescribe, sign, or bill/i.test(captured.plan[0].consequence));
+assert(/exact destination/i.test(captured.plan[0].consequence));
+assert(/complete the order directly in Athena/i.test(captured.plan[0].consequence));
+assert(/does not select, place, prescribe, sign, submit, or bill/i.test(captured.plan[0].consequence));
 
 for (const blockedId of ['order-incomplete-1', 'order-rx-1', 'order-suggestion-1']) {
   assert.strictEqual(context.reviewAndPlaceOrderInAthena(blockedId, null), null, blockedId + ' should be blocked');
@@ -197,24 +200,24 @@ assert.strictEqual(context.reviewAndPlaceOrderInAthena('order-safe-1', null), nu
 assert.strictEqual(confirmationCalls, 1, 'duplicate local order id opened another confirmation');
 assert.strictEqual(directActionCalls, 0);
 
-assert(source.includes('Send to Athena') && source.includes('Review for Athena'), 'production UI must expose the capable action and older-client manual review labels');
+assert(source.includes('Review for Athena'), 'production UI must expose the manual order review label');
 assert(!/Review &amp; place in Athena/.test(controlSource), 'production row still advertises order placement');
-assert(/athenaFinalActionsV1/.test(controlSource) && /supervisedOrderPlacementV2/.test(controlSource), 'capable order action is not gated on both extension safety capabilities');
+assert(!/athenaFinalActionsV1|supervisedOrderPlacementV2|Update MLS Assist|Send to Athena/.test(controlSource), 'order review control still branches on retired execution capabilities');
+assert(/return false/.test(capabilitySource), 'legacy capability reader can still enable order placement');
 assert(source.includes('id="ordCatalogCode"') && source.includes('id="ordCatalogId"'), 'Orders builder has no safe way to bind a normal reviewed draft to a durable Athena catalog identity');
 assert(source.includes("o._reviewStatus='accepted'") && source.includes('delete o.complete'), 'editing/binding a legacy draft does not record the clinician review or clear stale incomplete state');
 assert(!/preferredAction\s*:\s*['"]place_order['"]/.test(placeSource), 'button bypasses the manifest by preselecting place_order');
 assert(!/startAthenaAction|sendToEMRviaAssist|sendMessage\s*\(/.test(placeSource), 'row button contains a direct or generic Athena write path');
 assert(/openUnifiedConfirmation/.test(placeSource), 'row button does not use the immutable unified review');
-assert(/one-click confirm/.test(placeSource) && /places only it/.test(placeSource) && /nothing was placed/i.test(placeSource), 'row review lost its capable consequence or truthful pre-confirm status');
+assert(/complete the order directly in Athena/.test(placeSource) && /Nothing was placed/.test(placeSource), 'row review lost its manual consequence or truthful status');
+assert(!/Update MLS Assist|_rpCapable|one-click confirm|places only it/.test(placeSource), 'row review still advertises retired placement behavior');
 
 for (const lane of connectSources) {
-  assert(!/Orders — drafts only, always/.test(lane.source), lane.file + ' still labels the enabled supervised order lane as permanently draft-only');
-  assert(!/MLS NEVER places or sends an order/.test(lane.source), lane.file + ' still claims supervised order placement never occurs');
-  assert(!/Clinical orders are NEVER auto-sent\. You place those yourself, always\./.test(lane.source), lane.file + ' still carries the pre-placement onboarding promise');
-  assert(!/orders are never sent/i.test(lane.source), lane.file + ' still uses an unscoped blanket order refusal');
-  assert(/never places orders automatically/.test(lane.source), lane.file + ' does not preserve the no-automatic-order safety promise');
-  assert(/one exact supported order can be placed only after your separate confirmation/.test(lane.source), lane.file + ' does not explain the enabled one-order confirmation path');
+  assert(!/one exact supported order can be placed|MLS can place one exact supported order/.test(lane.source), lane.file + ' still advertises retired order placement');
+  assert(/MLS shows the exact Athena route; you complete every order directly in Athena/.test(lane.source), lane.file + ' does not explain the manual order route');
+  assert(/Clinical orders are never placed by MLS/.test(lane.source), lane.file + ' does not state the current owner policy');
   assert(/this visit action never sends an order/.test(lane.source), lane.file + ' does not distinguish visit writeback from the separately confirmed order action');
+  assert(/Orders stay visible with their exact route and are completed directly in Athena/.test(lane.source), lane.file + ' does not explain how the reviewed order is completed');
 }
 
-console.log('PASS order review UI: one exact immutable patient/visit payload, unsafe rows blocked, capable one-confirm order routing, older-client manual fallback, and no direct placement action');
+console.log('PASS order review UI: one exact immutable patient/visit payload, unsafe rows blocked, manual Athena routing regardless of legacy flags, and no direct placement action');

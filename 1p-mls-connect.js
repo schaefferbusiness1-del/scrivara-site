@@ -1139,7 +1139,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         '📋 Paste a transcript — already have text? Paste it and generate.',
         '📱 Record on phone — scan a QR code and use your phone as the mic. No app needed.',
         '📄 After-visit summary — a patient-friendly summary of the visit.',
-        '📦 Orders — reviewed drafts first. MLS never places orders automatically; one exact supported order can be placed only after your separate confirmation.'
+        '📦 Orders — reviewed drafts first. MLS shows the exact Athena route; you complete every order directly in Athena.'
       ])
     },
     {
@@ -1158,7 +1158,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       ], [
         'MLS verifies patient identity (ID + DOB, not just name) before any write.',
         'You confirm the note inside the EMR itself — MLS never signs there for you.',
-        'Clinical orders are NEVER auto-sent. MLS can place one exact supported order only after you review and separately confirm that order.',
+        'Clinical orders are never placed by MLS. It preserves the exact reviewed proposal and route so you can complete it directly in Athena.',
         'If anything does not match, MLS refuses to write rather than guess.'
       ])
     },
@@ -6577,21 +6577,46 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
   function openAthenaSearch() {
     var filters = readFilters();
+    var note = $("sbv2Note");
     try {
       if (window.__mlsStudy && typeof window.__mlsStudy.open === "function") {
-        window.__mlsStudy.open();
-        setTimeout(function () {
+        /* The destination fields live only on tab B. The old call opened the
+           default tab A, waited once for 250 ms, then silently ignored the
+           missing tab-B fields. That made the top procedure hand-off look
+           dead. Open the exact tab, try synchronously (the normal path), and
+           keep a small bounded retry for a slow/on-demand modal paint. */
+        var opened = window.__mlsStudy.open("B");
+        if (opened === false) { if (note) note.textContent = "Study / Import could not open yet. Try again in a moment."; return; }
+        var attempts = 0, maxAttempts = 30;
+        function setFilter(field, value) {
+          if (!field || !value) return;
+          field.value = value;
+          try {
+            if (typeof Event === "function" && field.dispatchEvent) {
+              field.dispatchEvent(new Event("input", { bubbles: true }));
+              field.dispatchEvent(new Event("change", { bubbles: true }));
+            }
+          } catch (eEvent) {}
+        }
+        function prefill() {
+          attempts++;
           try {
             var procField = document.getElementById("mlsStudyBProc");
             var fromField = document.getElementById("mlsStudyBFrom");
             var toField = document.getElementById("mlsStudyBTo");
-            if (procField && (filters.proc || filters.icd)) { procField.value = filters.proc || filters.icd; procField.dispatchEvent(new Event("input", { bubbles: true })); }
-            if (fromField && filters.from) fromField.value = filters.from;
-            if (toField && filters.to) toField.value = filters.to;
-          } catch (e) {}
-        }, 250);
+            if (procField && fromField && toField) {
+              setFilter(procField, filters.proc || filters.icd);
+              setFilter(fromField, filters.from);
+              setFilter(toField, filters.to);
+              return;
+            }
+          } catch (eFields) {}
+          if (attempts < maxAttempts) { setTimeout(prefill, 100); return; }
+          if (note) note.textContent = "Study opened on By procedure, but its filters are still loading. Keep it open and select Search Athena when the fields appear.";
+        }
+        prefill();
       } else {
-        var note = $("sbv2Note"); if (note) note.textContent = "Athena procedure search isn't loaded in this build yet.";
+        if (note) note.textContent = "Athena procedure search isn't loaded in this build yet.";
       }
     } catch (e) {}
   }
@@ -10342,7 +10367,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       targets: ["#pushAllEmrBtn", "#emrBtn"],
       title: "Send to Athena",
       body: "Tap <b>\ud83d\ude80 Send to Athena</b>. Athena\u2019s <b>own review &amp; confirm screen</b> opens \u2014 nothing is " +
-            "written to the chart until you confirm it there, and <b>this visit action never sends an order</b>. Each supported order uses its own exact review and separate confirmation. Then move on to the next patient.",
+            "written to the chart until you confirm it there, and <b>this visit action never sends an order</b>. Orders stay visible with their exact route and are completed directly in Athena. Then move on to the next patient.",
       badge: "\ud83d\udd12 Safe by design"
     },
     {
@@ -20218,7 +20243,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       '<span>Read the note. <span class="h2-btn">\u270F\uFE0F Edit note</span> to change anything, <span class="h2-btn">\uD83D\uDD04 Regenerate</span> for a fresh draft. <span class="h2-btn">\u2714 Review &amp; Sign</span> signs and saves the note in MLS \u2014 it never signs anything in Athena (or <span class="h2-btn">Send without signing</span>). One tap away: <span class="h2-btn">\uD83D\uDCE4 Send to patient</span>, <span class="h2-btn">\uD83E\uDD16 Ask Copilot</span>, <span class="h2-btn">\uD83D\uDCA1 Recommendations</span>.</span></div></div>' +
 
       '<div class="h2-step"><span class="h2-n">5</span><div><b>Send to Athena</b>' +
-      '<span>Tap <span class="h2-btn">\uD83D\uDE80 Send to Athena</span>. Athena\u2019s own review &amp; confirm screen opens \u2014 nothing is written to the chart until you confirm it there, and this visit action never sends an order. Each supported order uses its own exact review and separate confirmation. Then <span class="h2-btn">\u27A1 Next patient</span>.</span></div></div>' +
+      '<span>Tap <span class="h2-btn">\uD83D\uDE80 Send to Athena</span>. Athena\u2019s own review &amp; confirm screen opens \u2014 nothing is written to the chart until you confirm it there, and this visit action never sends an order. Orders stay visible with their exact route and are completed directly in Athena. Then <span class="h2-btn">\u27A1 Next patient</span>.</span></div></div>' +
 
       '<div class="h2-box"><b>\uD83D\uDDC2 Doctor | Staff \u2014 the pill at the top of the Visit tab.</b><br>' +
       '<b>Doctor room</b> (default) is the five steps above.<br>' +

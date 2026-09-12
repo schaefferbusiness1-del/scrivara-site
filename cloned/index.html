@@ -4041,7 +4041,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         <span id="noteActionGateWhy">Capture or paste the visit above, then press Generate.</span>
         <button class="btn-ghost" type="button" id="noteActionGateGo" style="margin-left:8px;font-size:12.5px;padding:5px 11px" onclick="noteActionGateNext()">Take me to the transcript</button>
       </div>
-      <div class="mini" style="color:var(--muted);margin-top:6px;line-height:1.6"><b>Last step — Review Athena actions</b>: every row shows <b>What → exact Where → How → Result</b>. Each READY note section, Save Draft, billing, Sign &amp; Save, or supported catalog-bound imaging/PT/referral/DME order gets its own exact-patient, exact-encounter check and confirmation. Medication/injection orders, unaccepted suggestions, prescriptions, attestation and claim submission remain manual. Nothing auto-chains.</div>
+      <div class="mini" style="color:var(--muted);margin-top:6px;line-height:1.6"><b>Last step — Review Athena actions</b>: every row shows <b>What → exact Where → How → Result</b>. Reviewed note sections and Save Draft can be READY after an exact-patient, exact-encounter check. Billing, Sign &amp; Save, claims, orders, prescriptions and attestation stay visible for review but must be completed directly in Athena. Nothing auto-chains.</div>
       <!-- Orders combined into the Visit flow: auto-built from the note, editable here, included in Submit. -->
       <div id="visitOrdersCard" style="display:none;margin-top:12px;background:#eef6ff;border:1px solid #d2e4fb;border-radius:10px;padding:11px 14px">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:7px"><span style="font-weight:700;font-size:13.5px;color:var(--brand-dk)">📋 Orders for this visit</span><span style="font-size:12px;color:var(--muted)">AI suggestions stay suggestions until you add and review them</span><button class="btn-ghost" style="margin-left:auto;font-size:12px;padding:5px 11px" onclick="showView('orders')">＋ Add / manage</button></div>
@@ -38196,11 +38196,11 @@ function parseSuggestedOrder(str){
 function _autoSaveAiOrders(){
   return false;
 }
-/* Build one typed, clinician-reviewed order for the supervised Athena adapter.
-   The executable object deliberately contains only the canonical order keys;
-   prose shown in the confirmation is never reinterpreted as an order. */
+/* Legacy capability reader retained for handshake compatibility. Current
+   owner policy keeps orders review-only in MLS regardless of an older
+   extension advertising its retired placement capability. */
 function _athenaOrderPlacementCapabilityReady(){
-  try{return !!(window.__mlsExtensionCapabilities&&window.__mlsExtensionCapabilities.supervisedOrderPlacementV2===true);}catch(e){return false;}
+  return false;
 }
 (function _wireAthenaOrderPlacementCapability(){
   try{
@@ -38219,9 +38219,9 @@ function _athenaOrderPlacementCapabilityReady(){
          actually changed. */
       var _hsVer=String(d.version||'');
       var _hsCap=!!(d.capabilities&&d.capabilities.supervisedOrderPlacementV2===true);
-      /* 2026-08-12 owner directive: the extension may also advertise
-         athenaFinalActionsV1 (billing staging + Sign & Save execute). Carry it
-         through the same change-only handshake. */
+      /* Keep legacy capability bits in the change-only handshake so older
+         clients do not churn this UI. Product policy is enforced separately:
+         these retired flags never make billing, signing, or orders executable. */
       var _hsFinal=!!(d.capabilities&&d.capabilities.athenaFinalActionsV1===true);
       var _hsSig=_hsVer+'|'+_hsCap+'|'+_hsFinal;
       if(window.__mlsExtensionHandshakeSig===_hsSig)return;
@@ -38259,7 +38259,7 @@ function _athenaOrderPlacementCandidate(order){
   if(!spec)return blocked('Manual in Athena','This order type does not have a proven typed Athena adapter.');
   if(!String(item.id||'').trim())return blocked('Review required','This order is missing its immutable local order id.');
   if(String(item.id||'').trim().length>160)return blocked('Review required','This order id is too long for the exact Athena adapter.');
-  if(item.complete===false||String(item._reviewStatus||'').toLowerCase()!=='accepted'||(item._ai&&!item._reviewStatus))return blocked('Review required','Only a clinician-accepted reviewed order can be placed.');
+  if(item.complete===false||String(item._reviewStatus||'').toLowerCase()!=='accepted'||(item._ai&&!item._reviewStatus))return blocked('Review required','Only a clinician-accepted order can open the exact Athena review.');
   var raw=item.fields||{},normalizedFields={},fields={};
   spec.all.forEach(function(key){normalizedFields[key]=String(raw[key]||'').trim();});
   var overlong=spec.all.filter(function(key){return normalizedFields[key].length>MAX_ORDER_FIELD;});
@@ -38281,7 +38281,7 @@ function _athenaOrderPlacementCandidate(order){
   if(!/^(provider-entered|ai-suggestion-accepted|rule-suggestion-accepted)$/.test(source))return blocked('Review required','This order source is not approved for supervised placement.');
   var catalogCode=String(item.catalogCode||raw.catalogCode||raw.catalog_code||'').trim();
   var catalogId=String(item.catalogId||raw.catalogId||raw.catalog_id||'').trim();
-  if(!catalogCode&&!catalogId)return blocked('Bind exact Athena catalog item','A durable Athena catalog code or catalog ID is required before this order can be placed.',{displayLabel:displayLabel,query:displayLabel});
+  if(!catalogCode&&!catalogId)return blocked('Bind exact Athena catalog item','A durable Athena catalog code or catalog ID is required before MLS can freeze an exact Athena match for review.',{displayLabel:displayLabel,query:displayLabel});
   if(catalogCode.length>100||catalogId.length>160)return blocked('Review required','The Athena catalog code or ID is too long.');
   var canonical={
     clientOrderId:String(item.id),type:type,displayLabel:displayLabel,
@@ -38290,7 +38290,7 @@ function _athenaOrderPlacementCandidate(order){
     query:displayLabel,fields:fields,reviewStatus:'accepted',source:source
   };
   try{Object.freeze(fields);Object.freeze(canonical);}catch(e2){}
-  return Object.freeze({eligible:true,badge:'Ready for confirmation',reason:'',order:canonical});
+  return Object.freeze({eligible:true,badge:'Ready for Athena review',reason:'',order:canonical});
 }
 /* Freeze the already-bound patient and visit separately from the order. The
    adapter still has to discover exactly one matching Athena encounter; a
@@ -38319,12 +38319,7 @@ function _athenaOrderPlacementControl(order){
   var candidate=_athenaOrderPlacementCandidate(order);
   if(!candidate.eligible)return '<span style="font-size:11.5px;color:var(--muted);font-weight:700" title="'+esc(candidate.reason)+'">'+esc(candidate.badge)+'</span>';
   var encoded=encodeURIComponent(String(order.id||''));
-  /* Owner directive 2026-08-12 (MLS Assist 3.0.62+): a complete, accepted,
-     catalog-bound order is placed by MLS after one explicit confirm in the
-     Athena review. With an older MLS Assist the review still opens, but the
-     order row says the extension must be updated and stays manual. */
-  var _opCapable=false;try{_opCapable=!!(window.__mlsExtensionCapabilities&&window.__mlsExtensionCapabilities.athenaFinalActionsV1===true&&window.__mlsExtensionCapabilities.supervisedOrderPlacementV2===true);}catch(_eCap){}
-  return '<button type="button" class="btn-green" style="font-size:12px;padding:7px 11px;white-space:nowrap" onclick="event.stopPropagation();reviewAndPlaceOrderInAthena(decodeURIComponent(\''+encoded+'\'),this)" title="'+(_opCapable?'Open the Athena review for this frozen proposal. One Confirm &amp; Send places exactly this catalog item in the verified encounter and verifies it by read-back.':'Review this frozen proposal in the Athena review. Update MLS Assist (3.0.62 or newer) to let MLS place it after your confirm; until then complete the exact order in Athena.')+'">'+(_opCapable?'Send to Athena':'Review for Athena')+'</button>';
+  return '<button type="button" class="btn-green" style="font-size:12px;padding:7px 11px;white-space:nowrap" onclick="event.stopPropagation();reviewAndPlaceOrderInAthena(decodeURIComponent(\''+encoded+'\'),this)" title="Review this frozen proposal and its exact Athena destination. MLS does not place the order; complete it directly in Athena.">Review for Athena</button>';
 }
 /* Compact orders list shown ON the Visit page (Orders combined into Visit). */
 function renderVisitOrders(){
@@ -38646,10 +38641,9 @@ function copyOrders(){
     .then(()=>toast('Orders copied.','ok'))
     .catch(()=>toast('Could not copy.','err'));
 }
-/* Open one immutable order payload in the Athena review. With MLS Assist
-   3.0.62+ (athenaFinalActionsV1 + supervisedOrderPlacementV2) the review's
-   place_order row is READY and one Confirm & Send places exactly that catalog
-   item; with an older extension the row stays manual and says so. */
+/* Open one immutable order payload in the Athena review. Orders remain manual
+   under current owner policy: the review preserves the exact proposal and
+   destination, while the clinician completes it directly in Athena. */
 function reviewAndPlaceOrderInAthena(orderId,btn){
   var matches=(Array.isArray(currentOrders)?currentOrders:[]).filter(function(item){return item&&String(item.id)===String(orderId);});
   if(matches.length!==1){toast('MLS could not freeze exactly one order. Nothing was sent to Athena.','err');return null;}
@@ -38662,10 +38656,7 @@ function reviewAndPlaceOrderInAthena(orderId,btn){
     toast('The Athena review is still loading. Nothing was sent; wait a moment and try again.','err');
     return null;
   }
-  var _rpCapable=false;try{_rpCapable=!!(window.__mlsExtensionCapabilities&&window.__mlsExtensionCapabilities.athenaFinalActionsV1===true&&window.__mlsExtensionCapabilities.supervisedOrderPlacementV2===true);}catch(_eRp){}
-  var consequence=_rpCapable
-    ?('Review this frozen '+candidate.order.type+' proposal. After your one-click confirm, MLS selects exactly this catalog item in the verified Athena encounter, places only it, and verifies it by an isolated read-back. It does not prescribe, sign, or bill.')
-    :('Review this frozen '+candidate.order.type+' proposal. Your installed MLS Assist still enforces the previous write-safety policy; update it (3.0.62 or newer) to let MLS place this exact catalog item after your confirm. Until then, place it directly in Athena.');
+  var consequence='Review this frozen '+candidate.order.type+' proposal and its exact destination. MLS does not select, place, prescribe, sign, submit, or bill it; complete the order directly in Athena.';
   var drafts=Object.freeze([candidate.order]);
   var orderPlan=Object.freeze({kind:'orders',body:consequence,consequence:consequence,orderDrafts:drafts,orderSuggestions:Object.freeze([])});
   var reviewPatient=Object.freeze({name:String(binding.patient.name||''),dob:String(binding.patient.dob||''),mrn:String(binding.patient.mrn||''),patientId:String(binding.patient.patientId||'')});
@@ -38675,7 +38666,7 @@ function reviewAndPlaceOrderInAthena(orderId,btn){
     noteTimestamp:binding.noteTimestamp||null,requireExpectedVisit:binding.historical===true,visitBindingId:String(binding.id||''),
     receiptSessionId:'order-review-'+String(binding.id||'current')+'-'+candidate.order.clientOrderId
   });
-  if(manifest)toast(_rpCapable?'Order review opened. Nothing is placed until you press Confirm & Send on the READY order row.':'Order review opened. Update MLS Assist to place it from here; nothing was placed.','');
+  if(manifest)toast('Order review opened. Nothing was placed; complete the exact order directly in Athena.','');
   return manifest||null;
 }
 /* Keep the overview as a route/manual-review surface. */
