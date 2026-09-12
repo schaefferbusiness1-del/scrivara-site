@@ -24948,10 +24948,35 @@ try{ window.opPrepSendToAthena=opPrepSendToAthena; }catch(_eSA){}
    clinician's own credential never leaves this page, and the surgeon's link
    never enters this app's storage.
 
+   ONE LINK PER HAND-OFF, WHICHEVER WAY IT GOES (opnote-send-1.0.0, 2026-09-11).
+   The owner used to copy the link out of this dialog and paste it into his own
+   email. Now, when the surgeon has an address on their card, the hand-off ends
+   on a screen that offers to send it for him. That press does NOT mint on top
+   of an existing link: opSurgeonSend deliberately stops before minting when
+   there is an address, and the server's send route mints AND mails inside the
+   one press. Choosing "Just show me the link" mints instead. So every hand-off
+   creates exactly one live link, never two, and a surgeon's mailbox can never
+   collect a spare working credential nobody sent.
+
+   A SEND THAT FAILS STILL HANDS BACK THE LINK. The server mints first and only
+   then tries the mail, and it reports a mail it could not send as an ordinary
+   answer rather than a failure - so a refusal lands on the same screen as a
+   success, with the link and Copy still there and one plain sentence saying
+   what happened. Losing the link to a mail problem would throw away the press
+   that made it.
+
    NOTHING ELSE ON THIS CARD MOVES. opPrepSave and opPrepSendToAthena are
    untouched - this is an additional destination for a finished draft, not a
    change to either existing one. */
 var _opSurgeonRow=null, _opSurgeonClients=[];
+/* What the hand-off screens still need after the pick dialog is gone.
+   _opSurgeonDialog replaces the WHOLE modal every time it paints, so nothing
+   can be read back out of a field once a later screen is up - the address and
+   the count have to be captured at the moment they are known. The link is held
+   here only so the screen can be repainted around it (after an address is
+   added, for instance); opSurgeonClose clears it, nothing writes it to storage,
+   nothing logs it, and it is never put in a toast. */
+var _opSurgeonId='', _opSurgeonTo='', _opSurgeonTyped='', _opSurgeonCount=0, _opSurgeonUrl='', _opSurgeonLine='', _opSurgeonLineOk=false, _opSurgeonBusy='';
 async function _opSurgeonApi(path,opts){
   opts=opts||{};
   opts.headers=Object.assign({'Authorization':'Bearer '+bkToken()},opts.headers||{});
@@ -24971,7 +24996,7 @@ function _opSurgeonDialog(inner){
   document.body.appendChild(d);
   return d;
 }
-function opSurgeonClose(){ var d=document.getElementById('opSurgeonModal'); if(d&&d.parentNode) d.parentNode.removeChild(d); _opSurgeonRow=null; }
+function opSurgeonClose(){ var d=document.getElementById('opSurgeonModal'); if(d&&d.parentNode) d.parentNode.removeChild(d); _opSurgeonRow=null; _opSurgeonId=''; _opSurgeonTo=''; _opSurgeonTyped=''; _opSurgeonCount=0; _opSurgeonUrl=''; _opSurgeonLine=''; _opSurgeonLineOk=false; _opSurgeonBusy=''; }
 function _opSurgeonBlanks(){ try{ return window.opNoteBlankTokens((((window._opPrep||[])[_opSurgeonRow])||{}).note||'')||[]; }catch(e){ return []; } }
 function _opSurgeonPick(){
   var blanks=_opSurgeonBlanks();
@@ -24988,12 +25013,54 @@ function _opSurgeonPick(){
 }
 function _opSurgeonSay(t){ var m=document.getElementById('opSurgeonMsg'); if(m) m.textContent=t; }
 function _opSurgeonField(id){ var e=document.getElementById(id); return e?String(e.value||'').trim():''; }
-function _opSurgeonShowLink(url,n){
+/* The one sentence the last action left behind, if it left one. Green when it
+   worked, red when it did not - the words carry the meaning either way. */
+function _opSurgeonLineHtml(){
+  if(!_opSurgeonLine) return '';
+  return '<div class="mini" style="font-weight:700;margin-top:8px;color:'+(_opSurgeonLineOk?'#1c6b45':'#8b2525')+'">'+esc(_opSurgeonLine)+'</div>';
+}
+function _opSurgeonWaitCount(n){ return '<div class="mini" style="color:var(--muted);margin-top:6px">The op note is waiting on their page with '+n+' field'+(n===1?'':'s')+' to fill in.</div>'; }
+/* HOW THEY HEAR ABOUT IT. Reached only when the surgeon has an address on their
+   card. NO LINK EXISTS YET at this point, by design: whichever button is
+   pressed mints exactly one, so one hand-off can never leave two live
+   credentials behind. Both buttons finish the hand-off, so there is nothing
+   here that walks away from a note already waiting for them. */
+function _opSurgeonHandoff(){
+  var n=_opSurgeonCount;
   var h='<div style="font-weight:800;font-size:17px">Ready for them</div>';
-  h+='<div class="mini" style="color:var(--muted);margin-top:6px">The op note is waiting on their page with '+n+' field'+(n===1?'':'s')+' to fill in.</div>';
+  h+=_opSurgeonWaitCount(n);
+  h+='<div class="mini" style="margin-top:10px;font-weight:700">It will go to '+esc(_opSurgeonTo)+'.</div>';
+  h+=_opSurgeonLineHtml();
+  h+='<div id="opSurgeonMsg" class="mini" style="color:#8b2525;font-weight:700;margin-top:8px"></div>';
+  h+='<div class="row" style="gap:8px;margin-top:14px">';
+  h+=(_opSurgeonBusy==='mail')
+    ? '<button class="btn-primary" disabled>Sending...</button>'
+    : '<button class="btn-primary"'+(_opSurgeonBusy?' disabled':'')+' onclick="opSurgeonMail()">Email it to them</button>';
+  h+=(_opSurgeonBusy==='link')
+    ? '<button class="btn-ghost" disabled>One moment...</button>'
+    : '<button class="btn-ghost"'+(_opSurgeonBusy?' disabled':'')+' onclick="opSurgeonLinkOnly()">Just show me the link</button>';
+  h+='</div>';
+  _opSurgeonDialog(h);
+}
+function _opSurgeonShowLink(url,n){
+  _opSurgeonUrl=String(url||'');
+  _opSurgeonCount=n;
+  var h='<div style="font-weight:800;font-size:17px">Ready for them</div>';
+  h+=_opSurgeonWaitCount(n);
+  h+=_opSurgeonLineHtml();
   h+='<input id="opSurgeonLink" readonly value="'+esc(url)+'" style="width:100%;margin-top:12px;min-height:40px;padding:6px 9px;border:1px solid var(--line);border-radius:10px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px">';
   h+='<div class="mini" style="color:#8b2525;font-weight:700;margin-top:6px">Copy this now - it is not shown again.</div>';
   h+='<div class="row" style="gap:8px;margin-top:14px"><button class="btn-primary" onclick="opSurgeonCopy()">Copy link</button><button class="btn-ghost" onclick="opSurgeonClose()">Done</button></div>';
+  /* Nothing to send TO, so nothing is offered: a button that can only fail is
+     worse than the sentence that says why it is missing. The field beside it
+     fixes the cause. It deliberately does not offer to send this one - that
+     link is already minted, and a second one for the same op note is the exact
+     thing this lane must not do. */
+  if(!_opSurgeonTo&&!_opSurgeonTyped){
+    h+='<div class="mini" style="color:var(--muted);margin-top:16px;border-top:1px solid var(--line);padding-top:12px">No email address is saved for this surgeon, so add one here and the next op note can go straight to them.</div>';
+    h+='<div class="row" style="gap:8px;margin-top:6px;flex-wrap:wrap"><input id="opSurgeonAddEmail" placeholder="Email" style="flex:1;min-width:170px;min-height:40px;padding:6px 9px;border:1px solid var(--line);border-radius:10px"><button class="btn-ghost"'+(_opSurgeonBusy?' disabled':'')+' onclick="opSurgeonSaveEmail()">Save email</button></div>';
+  }
+  h+='<div id="opSurgeonMsg" class="mini" style="color:#8b2525;font-weight:700;margin-top:8px"></div>';
   _opSurgeonDialog(h);
 }
 function opSurgeonCopy(){
@@ -25012,15 +25079,23 @@ async function opPrepForSurgeon(i){
   _opSurgeonPick();
 }
 async function opSurgeonSend(){
+  if(_opSurgeonBusy) return;
   var i=_opSurgeonRow; var row=(window._opPrep||[])[i]; if(!row) return;
   var pick=document.getElementById('opSurgeonPick');
   var clientId=pick?String(pick.value||''):'';
+  var known=null;
+  _opSurgeonTyped=''; _opSurgeonTo=''; _opSurgeonUrl=''; _opSurgeonLine=''; _opSurgeonLineOk=false;
   var newName=_opSurgeonField('opSurgeonName');
   if(newName){
+    _opSurgeonTyped=_opSurgeonField('opSurgeonEmail');
     try{
       var made=await _opSurgeonApi('/api/opnote-clients',{method:'POST',body:JSON.stringify({name:newName,practice:_opSurgeonField('opSurgeonPractice'),email:_opSurgeonField('opSurgeonEmail')})});
       clientId=(made&&made.client&&made.client.id)||'';
     }catch(e){ _opSurgeonSay('That surgeon could not be added. Try again in a moment.'); return; }
+  }else{
+    /* The address comes off the card the list already handed back, so asking
+       whether this one can be sent costs no extra request. */
+    for(var k=0;k<_opSurgeonClients.length;k++){ if(String((_opSurgeonClients[k]||{}).id||'')===clientId){ known=_opSurgeonClients[k]; break; } }
   }
   if(!clientId){ _opSurgeonSay('Pick a surgeon, or type a name to add one.'); return; }
   var blanks=_opSurgeonBlanks();
@@ -25028,12 +25103,65 @@ async function opSurgeonSend(){
   try{
     await _opSurgeonApi('/api/opnote-jobs',{method:'POST',body:JSON.stringify({clientId:clientId,templateId:row.tplId||null,title:title,noteText:String(row.note||''),blanks:blanks})});
   }catch(e){ _opSurgeonSay('That did not go through. Try again in a moment.'); return; }
+  _opSurgeonId=clientId;
+  _opSurgeonCount=blanks.length;
+  _opSurgeonTo=String((known&&known.email)||'').trim();
+  /* An address on their card is the whole question. With one, this stops here
+     WITHOUT minting and lets the owner choose - opSurgeonMail asks the server
+     to mint and mail inside a single press, so the hand-off still produces one
+     link. Without one, there is nothing to choose between, so mint and show. */
+  if(_opSurgeonTo){ _opSurgeonHandoff(); return; }
   try{
     var minted=await _opSurgeonApi('/api/opnote-clients/'+encodeURIComponent(clientId)+'/link',{method:'POST'});
     _opSurgeonShowLink((minted&&minted.link&&minted.link.url)||'',blanks.length);
   }catch(e){ _opSurgeonSay('The op note is waiting for them, but the link did not come back. Open this again to get one.'); }
 }
-try{ window.opPrepForSurgeon=opPrepForSurgeon; window.opSurgeonSend=opSurgeonSend; window.opSurgeonCopy=opSurgeonCopy; window.opSurgeonClose=opSurgeonClose; }catch(_eOS){}
+/* THE SEND. One press does the whole thing on the server - mint, then mail -
+   and hands the link back either way. _opSurgeonBusy is set before the first
+   await, so a second press while it is in flight does nothing at all and no
+   surgeon can be mailed twice off one hand-off. */
+async function opSurgeonMail(){
+  if(_opSurgeonBusy) return;
+  if(!_opSurgeonId||!_opSurgeonTo) return;
+  _opSurgeonBusy='mail'; _opSurgeonLine=''; _opSurgeonLineOk=false; _opSurgeonHandoff();
+  var d=null;
+  try{ d=await _opSurgeonApi('/api/opnote-clients/'+encodeURIComponent(_opSurgeonId)+'/link/send',{method:'POST'}); }
+  catch(e){ d=null; }
+  _opSurgeonBusy='';
+  var url=(d&&d.link&&d.link.url)||'';
+  /* Nothing came back at all, so nothing was made either - stay where we are,
+     say so, and leave the other way out sitting right there. */
+  if(!url){ _opSurgeonLine='The email did not go out. Show the link instead and send it to them yourself.'; _opSurgeonLineOk=false; _opSurgeonHandoff(); return; }
+  if(d.sent===true){ _opSurgeonLine='Sent to '+_opSurgeonTo+'. The link is below as well.'; _opSurgeonLineOk=true; }
+  else{ _opSurgeonLine='The email did not go out. Copy the link below and send it to them yourself.'; _opSurgeonLineOk=false; }
+  _opSurgeonShowLink(url,_opSurgeonCount);
+}
+async function opSurgeonLinkOnly(){
+  if(_opSurgeonBusy) return;
+  if(!_opSurgeonId) return;
+  _opSurgeonBusy='link'; _opSurgeonLine=''; _opSurgeonLineOk=false; _opSurgeonHandoff();
+  try{
+    var minted=await _opSurgeonApi('/api/opnote-clients/'+encodeURIComponent(_opSurgeonId)+'/link',{method:'POST'});
+    _opSurgeonBusy='';
+    _opSurgeonShowLink((minted&&minted.link&&minted.link.url)||'',_opSurgeonCount);
+  }catch(e){ _opSurgeonBusy=''; _opSurgeonLine='The link did not come back. Try again in a moment.'; _opSurgeonLineOk=false; _opSurgeonHandoff(); }
+}
+async function opSurgeonSaveEmail(){
+  if(_opSurgeonBusy) return;
+  var addr=_opSurgeonField('opSurgeonAddEmail');
+  if(!addr){ _opSurgeonSay('Type their email address first.'); return; }
+  if(!_opSurgeonId){ _opSurgeonSay('That surgeon could not be found. Close this and open it again.'); return; }
+  _opSurgeonBusy='save';
+  try{
+    var d=await _opSurgeonApi('/api/opnote-clients/'+encodeURIComponent(_opSurgeonId),{method:'PATCH',body:JSON.stringify({email:addr})});
+    _opSurgeonTo=String((d&&d.client&&d.client.email)||addr).trim();
+  }catch(e){ _opSurgeonBusy=''; _opSurgeonSay('That email could not be saved. Try again in a moment.'); return; }
+  _opSurgeonBusy='';
+  _opSurgeonLine='Saved. The next op note for them can be emailed straight from here.';
+  _opSurgeonLineOk=true;
+  _opSurgeonShowLink(_opSurgeonUrl,_opSurgeonCount);
+}
+try{ window.opPrepForSurgeon=opPrepForSurgeon; window.opSurgeonSend=opSurgeonSend; window.opSurgeonCopy=opSurgeonCopy; window.opSurgeonClose=opSurgeonClose; window.opSurgeonMail=opSurgeonMail; window.opSurgeonLinkOnly=opSurgeonLinkOnly; window.opSurgeonSaveEmail=opSurgeonSaveEmail; }catch(_eOS){}
 function opPrepSave(i){
   var row=(window._opPrep||[])[i]; if(!row) return;
   var note=row.note||''; if(!note.trim()){ try{ toast('Nothing to save yet.','err'); }catch(e){} return; }

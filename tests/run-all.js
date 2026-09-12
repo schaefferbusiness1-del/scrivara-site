@@ -1252,6 +1252,12 @@ const tests = [
      Send-to-Athena suite above it is expected red between a 1p shell edit and
      the derive step. The client-page suite boots opnotes.html itself. */
   'opnote-prepare-for-surgeon-runtime.test.js',
+  /* opnote-send-1.0.0: the press that mails that link from inside MLS. Its one
+     job is to count links at the wire - a hand-off that minted one to show and
+     a second one to mail would leave a working credential nobody ever sent,
+     live for 30 days. It reads all four shells, so it is expected red between a
+     1p shell edit and the derive step like the two around it. */
+  'opnote-send-link-runtime.test.js',
   'opnotes-client-page-runtime.test.js',
   'opnote-template-binding-gate-runtime.test.js',
   'opnote-procedure-title-junk-strip.test.js',
