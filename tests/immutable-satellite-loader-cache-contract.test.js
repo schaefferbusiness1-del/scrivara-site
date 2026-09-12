@@ -52,7 +52,7 @@ const assets = [
   ['feat_mls_pull_device_picker.js', '20260729pdp110', '20260717pdp100'],
   ['feat_mls_caldedupe_render.js', '20260727dd110', '20260629dd1c1'],
   ['feat_mls_force_full_phone.js', '20260719ffp200', '20260630c1'],
-  ['feat_mls_header_exact.js', '20260802hx303', '20260716hx301'],
+  ['feat_mls_header_exact.js', '20260912hx304', '20260802hx303'],
   ['feat_mls_loading_calm.js', '20260719lb204', '20260719lb203'],
   ['feat_mls_provider_passthrough.js', '20260820pp1c6', '20260722pp1c5'],
   /* Bumped, not reshaped: two suites pin this asset to a LITERAL token, and the

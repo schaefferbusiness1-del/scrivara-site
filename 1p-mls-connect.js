@@ -52231,7 +52231,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
 
 /* ---- loader: mls-opnote-pro (op-note professional format + Save-as-PDF) ---- */
-(function(){try{if(window.__mlsOpNoteProLoader)return;window.__mlsOpNoteProLoader=1;var s=document.createElement('script');s.src='mls-opnote-pro.js?v=20260826lib8';s.async=true;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
+(function(){try{if(window.__mlsOpNoteProLoader)return;window.__mlsOpNoteProLoader=1;var s=document.createElement('script');s.src='mls-opnote-pro.js?v=20260912lib9';s.async=true;(document.head||document.documentElement).appendChild(s);}catch(e){}})();
 
 /* ---- loader: mls-procedure-report (Analysis › 📊 Procedure Report: counts by type, Office/ASC place-of-service, RVU/$ totals, PDF/CSV) ---- */
 (function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){
@@ -52482,7 +52482,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_visit_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_visit_exact.js?v=20260726dkn1';s.setAttribute('data-mls-asset','feat_mls_visit_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe Visit design-exact rebuild (STAGING ONLY) — additive, reversible (delete this line + feat_mls_visit_exact.js) */
 
-;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_header_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_header_exact.js?v=20260802hx303';s.setAttribute('data-mls-asset','feat_mls_header_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe header/nav design-exact (STAGING ONLY) — additive, reversible (delete this line + feat_mls_header_exact.js) */
+;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_header_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_header_exact.js?v=20260912hx304';s.setAttribute('data-mls-asset','feat_mls_header_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe header/nav design-exact (STAGING ONLY) — additive, reversible (delete this line + feat_mls_header_exact.js) */
 
 ;(function(){try{if(document.querySelector('script[data-mls-asset="feat_mls_calendar_exact.js"]'))return;var s=document.createElement('script');s.src='feat_mls_calendar_exact.js?v=20260727cx212';s.setAttribute('data-mls-asset','feat_mls_calendar_exact.js');s.async=false;(document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* MLSscribe Calendar design-exact (STAGING ONLY) — additive, reversible (delete this line + feat_mls_calendar_exact.js) */
 

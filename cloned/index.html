@@ -23936,6 +23936,71 @@ function _opConformanceHtml(i,row){
       +'</div>';
   }catch(e){ return ''; }
 }
+/* ===== opfinal-1.0.0 — ONE FINAL REVIEW AT EVERY EXIT =====================
+   The generator owns the deterministic contract; this shell only presents its
+   structured result and applies a safe proposal after the WHOLE action passes.
+   No local regex may become a second, drifting finalizer. */
+function _opFinalizerApi(){
+  try{ var api=window.__mlsOpNoteIntegrity; return api&&api.installed&&typeof api.preflightRow==='function'&&typeof api.preflightBatch==='function'?api:null; }catch(e){ return null; }
+}
+function _opFinalizerUnavailable(boundary){
+  return {ok:false,status:'review',boundary:boundary||'review',issues:[{code:'FINALIZER_UNAVAILABLE',field:'system',blocking:true,message:'Final safety review is still loading. Wait a moment and try again.'}],repairs:[],receipt:{version:1,status:'review',issueCodes:['FINALIZER_UNAVAILABLE'],repairCodes:[]}};
+}
+function _opFinalizerMarkup(i,result){
+  if(!result) return '';
+  var issues=result.issues||[],repairs=result.repairs||[];
+  if(result.ok&&!repairs.length) return '<div id="opFinalReview_'+i+'" data-op-final-status="ready" style="display:none"></div>';
+  var blocked=!result.ok,codes=issues.map(function(x){return String(x.code||'REVIEW_REQUIRED');});
+  var h='<div id="opFinalReview_'+i+'" data-op-final-status="'+(blocked?'review':'repair')+'" data-op-final-codes="'+esc(codes.join(','))+'" role="'+(blocked?'alert':'status')+'" style="margin-top:9px;border:1px solid '+(blocked?'#e0a8a4':'#ead08c')+';background:'+(blocked?'#fff4f2':'#fff9e8')+';color:'+(blocked?'#8b2525':'#76570b')+';border-radius:9px;padding:9px 11px;font-size:12.5px">';
+  if(blocked){
+    h+='<b>Review required before this note can leave MLS</b><ul style="margin:5px 0 0 18px;padding:0">';
+    for(var j=0;j<issues.length;j++)h+='<li data-op-final-code="'+esc(issues[j].code||'REVIEW_REQUIRED')+'">'+esc(issues[j].message||'Review this note.')+'</li>';
+    h+='</ul>';
+  }else{
+    var n=0;for(var k=0;k<repairs.length;k++)n+=Number(repairs[k].count||0);
+    h+='<b>Safe cleanup ready</b> — '+n+' verified identity, age, or delimiter correction'+(n===1?'':'s')+' will be applied when this note is saved, exported, or sent.';
+  }
+  return h+'</div>';
+}
+function _opFinalizerPreview(row,boundary){
+  var api=_opFinalizerApi();if(!api)return _opFinalizerUnavailable(boundary);
+  try{return api.preflightRow(row,boundary||'display',{applyRepairs:false,requirePatient:true})||_opFinalizerUnavailable(boundary);}catch(e){return _opFinalizerUnavailable(boundary);}
+}
+function _opFinalizerPaint(i,result){
+  try{
+    var host=document.getElementById('opFinalReview_'+i);if(host){var wrap=document.createElement('div');wrap.innerHTML=_opFinalizerMarkup(i,result);var next=wrap.firstChild;if(next)host.parentNode.replaceChild(next,host);}
+    var row=(window._opPrep||[])[i];if(row)row._finalReview=result;
+  }catch(e){}
+}
+function _opFinalizerRun(i,boundary,applyRepairs,requireProvider){
+  var row=(window._opPrep||[])[i],api=_opFinalizerApi(),result;
+  if(!row)return _opFinalizerUnavailable(boundary);
+  try{result=api?api.preflightRow(row,boundary,{applyRepairs:!!applyRepairs,requirePatient:true,requireProvider:requireProvider!==false}):_opFinalizerUnavailable(boundary);}catch(e){result=_opFinalizerUnavailable(boundary);}
+  row._finalReview=result;
+  if(result&&result.ok&&applyRepairs){
+    row.note=String(result.note||row.note||'');row.opFinalization=result.receipt||null;row.opFinalizationContext=result.context||null;
+    try{row.missing=opNoteBlankTokens(row.note)||[];}catch(e2){}
+    try{var ta=document.getElementById('opPrepNote_'+i);if(ta&&ta.value!==row.note)ta.value=row.note;}catch(e3){}
+  }
+  _opFinalizerPaint(i,result);return result;
+}
+function _opFinalizationChanged(i,value){
+  var row=(window._opPrep||[])[i];if(!row)return;row.note=value;row.edited=(value!==row._genNote);
+  _opFinalizerPaint(i,_opFinalizerPreview(row,'display'));
+}
+function _opFinalizerBatch(day,boundary){
+  var api=_opFinalizerApi(),batch;
+  if(!api)return {ok:false,status:'review',rows:[],issueCount:1,issues:_opFinalizerUnavailable(boundary).issues};
+  try{batch=api.preflightBatch(day,boundary,{applyRepairs:true,requirePatient:true});}catch(e){batch=null;}
+  if(!batch)return {ok:false,status:'review',rows:[],issueCount:1,issues:_opFinalizerUnavailable(boundary).issues};
+  for(var i=0;i<(batch.rows||[]).length;i++){
+    var item=batch.rows[i],at=item.rowIndex,row=(day[i]||{}).row,result=item.result;
+    if(row)row._finalReview=result;
+    if(batch.ok&&row&&result&&result.ok){row.note=String(result.note||row.note||'');row.opFinalization=result.receipt||null;row.opFinalizationContext=result.context||null;try{row.missing=opNoteBlankTokens(row.note)||[];}catch(e2){}}
+    if(at!=null)_opFinalizerPaint(at,result);
+  }
+  return batch;
+}
 function opPrepRender(){
   var box=document.getElementById('opPrepList'); var empty=document.getElementById('opPrepEmpty'); var genAll=document.getElementById('opPrepGenAllBtn'); if(!box) return;
   /* b476 (owner 2026-07-21): bulk drafting re-renders this whole list after
@@ -24055,7 +24120,8 @@ function opPrepRender(){
            as [FILL:] tokens — all visible at once, directly above the note text. */
       }
       h+=_opConformanceHtml(i,row);
-      h+='<textarea id="opPrepNote_'+i+'" style="width:100%;min-height:220px;font-size:12.5px;margin-top:10px;font-family:ui-monospace,Menlo,Consolas,monospace" oninput="window._opPrep['+i+'].note=this.value;window._opPrep['+i+'].edited=(this.value!==window._opPrep['+i+']._genNote)">'+esc(row.note||'')+'</textarea>';
+      h+='<textarea id="opPrepNote_'+i+'" style="width:100%;min-height:220px;font-size:12.5px;margin-top:10px;font-family:ui-monospace,Menlo,Consolas,monospace" oninput="_opFinalizationChanged('+i+',this.value)">'+esc(row.note||'')+'</textarea>';
+      h+=_opFinalizerMarkup(i,_opFinalizerPreview(row,'display'));
       /* opnsend-2.0.0: the Athena control is DISABLED while the canonical
          parser still counts an unresolved field - the same parser opPrepSave
          and pushHistoryNoteToAthena both gate on - so the card can never offer
@@ -24220,6 +24286,12 @@ async function opPrepGenerateOne(i){
       out=await _genOpNote(row.appt.name, (row.dateStr||_opTomorrowDateStr()), (row.proc||row.appt.reason||tpl.name), _tplTextForDraft(tpl.text), ctx);
     }
     row.note=out.note||''; row.missing=out.missing||[]; row.values={}; row.gen=true; row._blankIdx=0;
+    row.opFinalization=(out&&out.finalization)||null;row.opFinalizationContext=(out&&out.finalizationContext)||null;
+    /* Public-preview drafts and any older generator still pass through the same
+       result contract.  Provider may remain an honest draft blank here; every
+       final action below requires verified provider provenance. */
+    var _generatedFinal=_opFinalizerRun(i,'generation',true,false);
+    if(!_generatedFinal||!_generatedFinal.ok)throw new Error((_generatedFinal&&_generatedFinal.issues&&_generatedFinal.issues[0]&&_generatedFinal.issues[0].message)||'Final safety review stopped this draft.');
     row._genNote=row.note; row.edited=false; /* b392: fresh draft = pristine baseline for the edit guard */
     /* b940: an unambiguous "the generator ran and produced this" stamp. Draft-all
        counts successes by watching it change. Comparing the note TEXT instead was
@@ -25042,6 +25114,49 @@ var _opSurgeonRow=null, _opSurgeonClients=[];
    added, for instance); opSurgeonClose clears it, nothing writes it to storage,
    nothing logs it, and it is never put in a toast. */
 var _opSurgeonId='', _opSurgeonTo='', _opSurgeonTyped='', _opSurgeonCount=0, _opSurgeonUrl='', _opSurgeonLine='', _opSurgeonLineOk=false, _opSurgeonBusy='', _opSurgeonUnsure=false;
+/* opsendid-1.0.0: A LOST RESPONSE MUST NOT CREATE A SECOND JOB.
+   The persisted map contains only opaque hashes and random keys — never note,
+   patient, surgeon, or practice text.  The same exact serialized outbound
+   request reuses its key until the server confirms success.  Changing the
+   client, title, template, note, or blanks changes the intent hash; a confirmed
+   success removes it, so a genuinely new handoff receives a fresh key. */
+var OP_SURGEON_IDEM_STORE='opSurgeonIdempotencyV1';
+var _opIdemMemory={};
+function _opHandoffHash(value,seed){var h=(seed==null?2166136261:seed)>>>0,s=String(value==null?'':value);for(var i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619);}return (h>>>0).toString(36);}
+function _opIdemStoreName(){try{return typeof uns==='function'?uns(OP_SURGEON_IDEM_STORE):OP_SURGEON_IDEM_STORE;}catch(e){return OP_SURGEON_IDEM_STORE;}}
+function _opIdemRead(){try{var raw=localStorage.getItem(_opIdemStoreName());if(raw==null||raw==='')return _opIdemMemory;var x=JSON.parse(raw);if(x&&typeof x==='object'&&!Array.isArray(x)){_opIdemMemory=x;return x;}}catch(e){}return _opIdemMemory;}
+function _opIdemWrite(state){_opIdemMemory=state||{};try{localStorage.setItem(_opIdemStoreName(),JSON.stringify(_opIdemMemory));}catch(e){}}
+function _opHandoffIntent(kind,outboundBody){
+  /* Hash the EXACT serialized request body twice with independent seeds.  The
+     service fingerprints client, title, template name/text, note and blanks;
+     using anything less can reuse a key for a different server digest. */
+  var raw=String(kind||'')+'|'+String(outboundBody||'');
+  return 'intent-'+_opHandoffHash(raw,374761393)+'-'+_opHandoffHash(raw,3266489909);
+}
+function _opIdemFor(intent){
+  var state=_opIdemRead(),hit=state[intent];if(hit&&hit.key)return String(hit.key);
+  var rnd='';try{if(window.crypto&&typeof window.crypto.randomUUID==='function')rnd=window.crypto.randomUUID();}catch(e){}
+  if(!rnd)rnd=Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,14)+'-'+Math.random().toString(36).slice(2,14);
+  var key='opnote-'+rnd.replace(/[^A-Za-z0-9-]/g,'');state[intent]={key:key,updated:Date.now()};
+  var names=Object.keys(state).sort(function(a,b){return Number((state[b]||{}).updated||0)-Number((state[a]||{}).updated||0);});for(var i=64;i<names.length;i++)delete state[names[i]];
+  _opIdemWrite(state);return key;
+}
+function _opIdemConfirmed(intent,key){var state=_opIdemRead();if(state[intent]&&String(state[intent].key)===String(key)){delete state[intent];_opIdemWrite(state);}}
+/* Web Locks is atomic across same-origin tabs.  The lock name contains only the
+   two opaque intent hashes; no note, patient, client, or practice text.  An
+   unavailable lock refuses the second simultaneous press instead of creating
+   a second server key.  Older engines keep the persisted retry behavior. */
+async function _opWithHandoffLock(intent,work){
+  var locks=null;try{locks=window.navigator&&window.navigator.locks;}catch(e){}
+  if(!locks||typeof locks.request!=='function')return await work();
+  var unavailable=false;
+  var value=await locks.request('mls-opnote-handoff:'+String(intent||''),{mode:'exclusive',ifAvailable:true},async function(lock){
+    if(!lock){unavailable=true;return null;}
+    return await work();
+  });
+  if(unavailable){var err=new Error('This handoff is already being sent in another tab.');err.code='OPNOTE_SEND_IN_PROGRESS';throw err;}
+  return value;
+}
 /* opsendfix-1.0.0: EVERY REQUEST ON THIS SURFACE ANSWERS, ONE WAY OR ANOTHER.
    A request that hangs used to leave _opSurgeonBusy set for the rest of the
    page's life, and the hand-off screen repaints from that flag - so a slow
@@ -25056,10 +25171,13 @@ async function _opSurgeonApi(path,opts){
   var ac=null,timer=0;
   try{ if(typeof AbortController==='function'){ ac=new AbortController(); opts.signal=ac.signal; } }catch(e){}
   if(ac) timer=setTimeout(function(){ try{ ac.abort(); }catch(e){} },OP_SURGEON_WAIT_MS);
-  var r;
-  try{ r=await fetch(bkBase()+path,opts); }
+  var r,d;
+  /* Keep the abort alive until the BODY is consumed.  fetch() resolves at
+     headers; clearing here let a stalled r.json() hold the cross-tab lock and
+     the full-screen handoff forever.  A missing/malformed body is uncertainty,
+     not success, and therefore rejects while preserving the retry key. */
+  try{ r=await fetch(bkBase()+path,opts);d=await r.json(); }
   finally{ if(timer) clearTimeout(timer); }
-  var d={}; try{ d=await r.json(); }catch(e){}
   if(!r.ok){ var err=new Error((d&&d.error&&d.error.message)||('Request failed ('+r.status+').')); err.status=r.status; throw err; }
   return d;
 }
@@ -25155,14 +25273,18 @@ function _opJobStoreRead(){
   catch(e){ return {}; }
 }
 function _opRememberJob(row,id){
-  if(!row||!id) return;
-  row.opJobId=String(id);
+  if(!row||!id) return false;
+  var rememberedId=String(id),rowKey=String(row.opKey||''),durable=false;
+  row.opJobId=rememberedId;
   try{
+    if(!rowKey) throw new Error('missing row key');
     var store=_opJobStoreRead();
-    store[String(row.opKey||'')]=String(id);
+    store[rowKey]=rememberedId;
     localStorage.setItem(_opJobStoreKey(),JSON.stringify(store));
+    durable=String(_opJobStoreRead()[rowKey]||'')===rememberedId;
   }catch(e){}
   try{ _opPaintReturnedButton(); }catch(e){}
+  return durable&&String(row.opJobId||'')===rememberedId;
 }
 /* Put the remembered ids back on the rows the day has just rebuilt. Safe to run
    whenever the day changes; a key with no row is simply skipped. */
@@ -25280,6 +25402,8 @@ function opSurgeonCopy(){
 async function opPrepForSurgeon(i){
   var row=(window._opPrep||[])[i];
   if(!row||!String(row.note||'').trim()){ try{ toast('Draft the op note first - there is nothing to hand over yet.','err'); }catch(e){} return; }
+  var finalCheck=_opFinalizerRun(i,'surgeon-open',true);
+  if(!finalCheck||!finalCheck.ok){try{toast((finalCheck&&finalCheck.issues&&finalCheck.issues[0]&&finalCheck.issues[0].message)||'Review this op note before handing it off.','err');}catch(e){}return;}
   _opSurgeonRow=i;
   _opSurgeonDialog('<div style="font-weight:800;font-size:17px">Prepare for a surgeon</div><div class="mini" style="color:var(--muted);margin-top:10px">One moment.</div>');
   try{ var d=await _opSurgeonApi('/api/opnote-clients'); _opSurgeonClients=(d&&d.clients)||[]; }
@@ -25323,6 +25447,15 @@ async function opSurgeonSendDay(){
   if(_opSurgeonBusy) return;
   var day=_opSurgeonDayRows();
   if(!day.length){ _opSurgeonSay('There are no drafted op notes to send yet.'); return; }
+  /* Atomic preflight: all rows pass before any repair is applied or request is
+     made.  A 25/26 result is a refusal, not a partial day. */
+  var finalDay=_opFinalizerBatch(day,'surgeon-day');
+  if(!finalDay||!finalDay.ok){
+    var firstIssue=null,fr=finalDay&&finalDay.rows||[];
+    for(var fi=0;fi<fr.length&&!firstIssue;fi++)firstIssue=fr[fi].result&&fr[fi].result.issues&&fr[fi].result.issues[0];
+    if(!firstIssue&&finalDay&&finalDay.issues)firstIssue=finalDay.issues[0];
+    _opSurgeonSay('Nothing was sent. '+((firstIssue&&firstIssue.message)||'Final safety review is unavailable; wait a moment and try again.'));return;
+  }
   _opSurgeonBusy='send';
   _opSurgeonTyped=''; _opSurgeonTo=''; _opSurgeonUrl=''; _opSurgeonLine=''; _opSurgeonLineOk=false; _opSurgeonUnsure=false;
   var who=await _opSurgeonResolve();
@@ -25335,18 +25468,27 @@ async function opSurgeonSendDay(){
     jobs.push({ templateId:r.tplId||null, templateName:tp?tp.name:'', templateText:tp?tp.text:'',
       title:(String(r.proc||'').trim()||'Op note'), noteText:String(r.note||''), blanks:bl });
   }
+  var dayBody=JSON.stringify({clientId:who.id,jobs:jobs});
+  var dayIntent=_opHandoffIntent('day',dayBody),dayIdem='';
   var res=null;
-  try{ res=await _opSurgeonApi('/api/opnote-jobs/batch',{method:'POST',body:JSON.stringify({clientId:who.id,jobs:jobs})}); }
-  catch(e){ _opSurgeonBusy=''; _opSurgeonSay('That did not go through. Try again in a moment.'); return; }
+  try{ res=await _opWithHandoffLock(dayIntent,async function(){dayIdem=_opIdemFor(dayIntent);return await _opSurgeonApi('/api/opnote-jobs/batch',{method:'POST',headers:{'Idempotency-Key':dayIdem},body:dayBody});}); }
+  catch(e){ _opSurgeonBusy=''; _opSurgeonSay(e&&e.code==='OPNOTE_SEND_IN_PROGRESS'?'These op notes are already being sent in another tab. Wait for that handoff to finish.':'That did not go through. Try again in a moment.'); return; }
   var made=Number((res&&res.created)||0);
+  var allConfirmed=made===jobs.length&&jobs.length>0,rememberedAll=false;
   /* The verdicts come back in the order the day was sent, so row n of the day
      is verdict n. A row whose verdict is a refusal is deliberately left with no
      job id: the point of holding one is that a note can come back, and this one
      never went. */
   try{
     var verd=(res&&res.results)||[];
-    for(var v=0;v<day.length&&v<verd.length;v++){ if(verd[v]&&verd[v].ok) _opRememberJob(day[v].row,String(verd[v].id||'')); }
-  }catch(e){}
+    rememberedAll=verd.length===day.length;
+    for(var v=0;v<day.length;v++){
+      var returnedId=String(verd[v]&&verd[v].id||'');
+      if(!verd[v]||!verd[v].ok||!returnedId){rememberedAll=false;continue;}
+      if(!_opRememberJob(day[v].row,returnedId))rememberedAll=false;
+    }
+  }catch(e){rememberedAll=false;}
+  if(allConfirmed&&rememberedAll)_opIdemConfirmed(dayIntent,dayIdem);
   if(!made){ _opSurgeonBusy=''; _opSurgeonSay('None of those op notes could be sent. Try again in a moment.'); return; }
   _opSurgeonId=who.id;
   _opSurgeonCount=blanksTotal;
@@ -25364,6 +25506,8 @@ async function opSurgeonSendDay(){
 async function opSurgeonSend(){
   if(_opSurgeonBusy) return;
   var i=_opSurgeonRow; var row=(window._opPrep||[])[i]; if(!row) return;
+  var finalOne=_opFinalizerRun(i,'surgeon-send',true);
+  if(!finalOne||!finalOne.ok){_opSurgeonSay('Nothing was sent. '+((finalOne&&finalOne.issues&&finalOne.issues[0]&&finalOne.issues[0].message)||'Final safety review is unavailable; wait a moment and try again.'));return;}
   _opSurgeonBusy='send';
   _opSurgeonTyped=''; _opSurgeonTo=''; _opSurgeonUrl=''; _opSurgeonLine=''; _opSurgeonLineOk=false; _opSurgeonUnsure=false;
   _opSurgeonSent=0; _opSurgeonAsked=0;
@@ -25373,10 +25517,14 @@ async function opSurgeonSend(){
   var blanks=_opSurgeonBlanks();
   var title=String(row.proc||'').trim()||'Op note';
   var tplOne=_opSurgeonTplOf(row);
+  var oneBody=JSON.stringify({clientId:clientId,templateId:row.tplId||null,templateName:tplOne?tplOne.name:'',templateText:tplOne?tplOne.text:'',title:title,noteText:String(row.note||''),blanks:blanks});
+  var oneIntent=_opHandoffIntent('single',oneBody),oneIdem='';
   try{
-    var madeOne=await _opSurgeonApi('/api/opnote-jobs',{method:'POST',body:JSON.stringify({clientId:clientId,templateId:row.tplId||null,templateName:tplOne?tplOne.name:'',templateText:tplOne?tplOne.text:'',title:title,noteText:String(row.note||''),blanks:blanks})});
-    _opRememberJob(row,(madeOne&&madeOne.job&&madeOne.job.id)||'');
-  }catch(e){ _opSurgeonBusy=''; _opSurgeonSay('That did not go through. Try again in a moment.'); return; }
+    var madeOne=await _opWithHandoffLock(oneIntent,async function(){oneIdem=_opIdemFor(oneIntent);return await _opSurgeonApi('/api/opnote-jobs',{method:'POST',headers:{'Idempotency-Key':oneIdem},body:oneBody});});
+    var madeOneId=(madeOne&&madeOne.job&&madeOne.job.id)||'';
+    var madeOneRemembered=_opRememberJob(row,madeOneId);
+    if(madeOneId&&madeOneRemembered)_opIdemConfirmed(oneIntent,oneIdem);
+  }catch(e){ _opSurgeonBusy=''; _opSurgeonSay(e&&e.code==='OPNOTE_SEND_IN_PROGRESS'?'This op note is already being sent in another tab. Wait for that handoff to finish.':'That did not go through. Try again in a moment.'); return; }
   _opSurgeonId=clientId;
   _opSurgeonCount=blanks.length;
   _opSurgeonTo=String((known&&known.email)||'').trim();
@@ -25548,11 +25696,30 @@ async function opSurgeonGiveTemplates(){
 function opPrepSave(i){
   var row=(window._opPrep||[])[i]; if(!row) return;
   var note=row.note||''; if(!note.trim()){ try{ toast('Nothing to save yet.','err'); }catch(e){} return; }
+  var finalCheck=_opFinalizerRun(i,'save',true);
+  var providerDraft=false;
+  if(!finalCheck||!finalCheck.ok){
+    var finalIssues=(finalCheck&&finalCheck.issues)||[];
+    /* A missing provider SETUP may be retained locally as an unmistakable
+       draft so recovery/setup users are never stranded.  This exception is
+       deliberately exact: a literal unverified provider, bad identity, age,
+       delimiter, residue, or unavailable finalizer still refuses the write.
+       Export and both handoff paths have no such exception. */
+    providerDraft=finalIssues.length>0&&finalIssues.every(function(x){return x&&x.code==='PROVIDER_REQUIRED_FOR_FINAL';});
+    if(!providerDraft){try{toast((finalIssues[0]&&finalIssues[0].message)||'Final safety review is unavailable; wait a moment and try again.','err');}catch(e){}return;}
+    var draftCheck=_opFinalizerRun(i,'save-draft',true,false);
+    if(!draftCheck||!draftCheck.ok){try{toast((draftCheck&&draftCheck.issues&&draftCheck.issues[0]&&draftCheck.issues[0].message)||'This draft still needs review before it can be saved.','err');}catch(e2){}return;}
+    row.opFinalization=finalCheck.receipt||null;
+    row.opFinalizationContext=finalCheck.context||draftCheck.context||null;
+    _opFinalizerPaint(i,finalCheck);
+  }
+  note=row.note||'';
   /* ONE canonical parser decides completeness. A note with ANY unresolved
      placeholder can only be saved as an explicitly labeled DRAFT: it never
      finalizes, and drafts never update completed-visit/last-visit state. */
   var unresolved=opNoteBlankTokens(note);
-  var isComplete=unresolved.length===0;
+  if(providerDraft&&!unresolved.some(function(x){return x&&x.key==='verified_operating_provider';}))unresolved.push({key:'verified_operating_provider',label:'verified operating provider'});
+  var isComplete=unresolved.length===0&&!providerDraft;
   var p=_opResolvePatient(row.appt.name,row.appt.dob,row.patientId);
   if(!p){ try{ toast('Op note not saved: exact patient identity could not be verified. Re-open it from that patient’s chart.','err'); }catch(e){} return; }
   var __opSaved=false;
@@ -25561,11 +25728,11 @@ function opPrepSave(i){
     var cc=p.name+' — '+_opCcDate(row)+(row.proc||row.appt.reason||'Operative note')+(isComplete?' (op note)':' (op-note draft)');
     var ex=row._noteId?ns.find(function(x){ return x.id===row._noteId; }):null;   // finalize the SAME draft we auto-saved (no duplicate)
     var vs=_opVisitStamp(row,p);   /* opvs-1.0.0: the operative day/provider/appointment this note belongs to */
-    if(ex){ ex.patient=p.name; ex.patientId=p.id; ex.text=note; ex.cc=cc; ex.kind='opnote'; ex.isDraft=!isComplete; ex.updated=Date.now(); if(!ex.source) ex.source='manual-ai';
+    if(ex){ ex.patient=p.name; ex.patientId=p.id; ex.text=note; ex.cc=cc; ex.kind='opnote'; ex.isDraft=!isComplete; ex.updated=Date.now(); ex.opFinalization=row.opFinalization||null;ex.opFinalizationContext=row.opFinalizationContext||null;if(!ex.source) ex.source='manual-ai';
       /* fill only from evidence; never blank a value the record already has */
       if(vs.visitDate) ex.visitDate=vs.visitDate; if(vs.provider) ex.provider=vs.provider;
       if(vs.appointmentId) ex.appointmentId=vs.appointmentId; if(vs.visitTimestamp) ex.visitTimestamp=vs.visitTimestamp; }
-    else { var n={ id:'n'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), patient:p.name, patientId:p.id, cc:cc, text:note, kind:'opnote', source:'manual-ai', created:Date.now(), updated:Date.now(), signed:false, isDraft:!isComplete, visitDate:vs.visitDate, provider:vs.provider, appointmentId:vs.appointmentId, visitTimestamp:vs.visitTimestamp }; ns.unshift(n); row._noteId=n.id; }
+    else { var n={ id:'n'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), patient:p.name, patientId:p.id, cc:cc, text:note, kind:'opnote', source:'manual-ai', created:Date.now(), updated:Date.now(), signed:false, isDraft:!isComplete, visitDate:vs.visitDate, provider:vs.provider, appointmentId:vs.appointmentId, visitTimestamp:vs.visitTimestamp, opFinalization:row.opFinalization||null, opFinalizationContext:row.opFinalizationContext||null }; ns.unshift(n); row._noteId=n.id; }
     saveNotes(ns);
     /* opsv-1.0.0 (owner 2026-07-24: "every save must be verified"): PROVE the
        write before claiming it. The notes store is plain JSON sharing the ~5MB
