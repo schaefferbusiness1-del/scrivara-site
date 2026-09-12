@@ -486,6 +486,73 @@ const SHELL_HTML = `<!doctype html><html><body>
     assert.strictEqual(afterSettingsSave.mode, 'strict',
       'pressing Save settings threw away the follow-mode saved on the simple screen');
 
+    /* The lower screen has one explicit operative-template route. Old Settings
+       outlines remain inspectable but cannot be overwritten by its controls. */
+    const legacy = await page.evaluate(() => {
+      const api = window.__mlsDraftTuning, editor = api.profileEditor('opnote');
+      const row = editor.list()[0];
+      editor.update(row.id, { templateText: 'LEGACY OPERATIVE OUTLINE: preserve this text' });
+      editor.select(row.id);
+      api.beginSettings();
+      window.__templateOpens = 0;
+      window.openTemplates = () => { window.__templateOpens++; };
+      return { id: row.id, text: editor.list().find(item => item.id === row.id).templateText };
+    });
+    assert.equal(await page.locator('#mlsDraftTuningSection .set-head').textContent(), 'Other document formats');
+    assert.equal(await page.locator('#mlsDtSectionTemplateText').getAttribute('readonly'), '');
+    assert.equal(await page.locator('#mlsDtSectionImportOpen').isVisible(), false);
+    assert.equal(await page.locator('#mlsDtSectionDelete').isDisabled(), true);
+    assert.equal(await page.locator('#mlsDtReset').isDisabled(), true);
+    await page.click('#mlsDtProcedureTemplatesLink');
+    assert.equal(await page.evaluate(() => window.__templateOpens), 1);
+    await page.evaluate(() => {
+      document.getElementById('mlsDtSectionTemplateText').value = 'WRONG SURFACE OVERWRITE';
+      document.getElementById('mlsDtSectionDelete').dispatchEvent(new Event('click'));
+      document.getElementById('mlsDtReset').dispatchEvent(new Event('click'));
+      window.__mlsDraftTuning.saveFromUi();
+    });
+    assert.equal(await page.evaluate(id => window.__mlsDraftTuning.profiles('opnote').find(row => row.id === id).templateText, legacy.id), legacy.text);
+
+    /* A stale visit option must route to the first screen, never create a
+       second editor via familyId's SOAP fallback. */
+    for (const family of ['soap', 'hpi', 'plan', '']) {
+      await page.evaluate(family => {
+        const select = document.getElementById('mlsDtFamily');
+        const option = document.createElement('option'); option.value = family; select.appendChild(option);
+        select.value = family; select.dispatchEvent(new Event('change', { bubbles: true })); option.remove();
+      }, family);
+      assert.equal(await page.inputValue('#mlsDtFamily'), 'opnote');
+      assert.equal(await page.locator('#mlsVisitNoteTemplatesSection:visible').count(), 1);
+    }
+
+    const beforeReload = await page.evaluate(() => localStorage.getItem(window.uns('draftTuningV1')));
+    await page.reload();
+    await page.evaluate(() => {
+      window.uns = key => 'account-vntpl::' + key;
+      window.getGenLength = () => 'standard'; window.getGenInstr = () => '';
+      window.saveSettings = () => {};
+    });
+    await page.addScriptTag({ path: MODULE_PATH });
+    for (let n = 0; n < 3; n++) {
+      await page.evaluate(() => {
+        document.getElementById('mlsVisitNoteTemplatesSection').remove();
+        window.__mlsDraftTuning.mountVisitTemplates();
+        window.__mlsDraftTuning.beginSettings();
+      });
+      assert.equal(await page.locator('#mlsVisitNoteTemplatesSection:visible').count(), 1);
+      assert.equal(await page.locator('#mlsVnTplFile').count(), 1);
+      const available = await page.evaluate(() => window.__mlsDraftTuning.visitTemplateSections.map(family => ({
+        family,
+        stored: window.__mlsDraftTuning.profiles(family).map(row => row.id),
+        shown: Array.from(document.querySelectorAll('#mlsVnTplProfile_' + family + ' option'), option => option.value)
+      })));
+      for (const row of available) {
+        assert(row.shown.length >= 2, row.family + ' lost multiple saved formats');
+        assert.deepEqual(row.shown, row.stored, row.family + ' has inaccessible saved templates');
+      }
+      assert.equal(await page.evaluate(() => localStorage.getItem(window.uns('draftTuningV1'))), beforeReload,
+        'reload or remount changed stored template data');
+    }
     await page.close();
   } finally {
     await browser.close();

@@ -209,6 +209,19 @@ const SHELL_HTML = `<!doctype html><html><body>
       assert.strictEqual(state.oldSectionExists, true,
         'the older AI output formats section (#mlsDraftTuningSection) should still exist alongside the new card');
 
+      for (let pass = 0; pass < 3; pass++) {
+        await page.click('[data-mls-settings-group="account"]');
+        await page.evaluate(() => {
+          document.getElementById('mlsVisitNoteTemplatesSection').remove();
+          window.__mlsDraftTuning.mountVisitTemplates();
+          window.__mlsDraftTuning.mountVisitTemplates();
+        });
+        assert.equal(await page.locator('#mlsVisitNoteTemplatesSection:visible').count(), 0);
+        await page.click('[data-mls-settings-group="notes"]');
+        assert.equal(await page.locator('#mlsVisitNoteTemplatesSection:visible').count(), 1,
+          'tab switch/remount must restore exactly one visit-template owner');
+      }
+
       await page.close();
     }
     /* The first-day guide must explain blocked presses and spotlight the real

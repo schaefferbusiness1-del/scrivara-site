@@ -100,7 +100,7 @@ try {
   assert.strictEqual(await page.evaluate(() => JSON.stringify(Object.keys(localStorage).sort().map(key => [key, localStorage.getItem(key)]))), storageBeforeReset,
     'Reset persisted before the Settings footer was saved');
 
-  await page.selectOption('#mlsDtFamily', 'opnote');
+  await page.selectOption('#mlsDtFamily', 'general_draft');
   for (const id of CONTROL_IDS) {
     assert.strictEqual(await page.locator('#' + id).count(), 1, 'HPI example control is not mounted: ' + id);
   }
@@ -120,21 +120,21 @@ try {
     assert.ok(String(accept).toLowerCase().includes(token), 'file picker does not accept ' + token);
   }
 
-  // The same visible Configure/import action must open for every draft family;
+  // The same visible Configure/import action must open for every other document;
   // previously the controls rendered for all families but the click silently
   // returned outside HPI/ROS/Exam/Assessment/Plan.
   await page.click('#mlsDtSectionImportCancel');
   assert.strictEqual(await page.getAttribute('#mlsDtSectionImportOpen', 'aria-expanded'), 'false',
     'Cancel did not expose the importer as collapsed');
   const familyIds = await page.evaluate(() => window.__mlsDraftTuning.familyIds.filter(family =>
-    !['soap', 'hpi', 'ros', 'exam', 'assessment', 'plan'].includes(family)));
+    !['soap', 'hpi', 'ros', 'exam', 'assessment', 'plan', 'opnote'].includes(family)));
   for (const family of familyIds) {
     await page.selectOption('#mlsDtFamily', family);
     await page.click('#mlsDtSectionImportOpen');
     assert.ok(await page.locator('#mlsDtSectionImportPanel').isVisible(), family + ' Configure/import button did not open');
     await page.click('#mlsDtSectionImportCancel');
   }
-  await page.selectOption('#mlsDtFamily', 'opnote');
+  await page.selectOption('#mlsDtFamily', 'general_draft');
   await page.click('#mlsDtSectionImportOpen');
 
   const profileId = await page.evaluate(() => {

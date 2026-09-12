@@ -1089,7 +1089,7 @@
   var working = null;
   var workingScope = null;
   var workingScopeInvalid = false;
-  var activeFamily = 'soap';
+  var activeFamily = 'opnote';
   var modalWasOpen = false;
   var sectionImportSession = null;
   var sectionImportEpoch = 0;
@@ -1131,6 +1131,10 @@
       (typeof sectionImportSession.scopeCurrent !== 'function' || sectionImportSession.scopeCurrent()));
   }
   function openSectionImport() {
+    if (activeFamily === 'opnote') {
+      if (typeof window.openTemplates === 'function') window.openTemplates();
+      return;
+    }
     if (!isProfileFamily(activeFamily) || !q('mlsDtSectionProfile')) return;
     if (workingScopeInvalid || !workingScope || !scopeCurrent(workingScope)) {
       sectionImportStatus(scopeError().message, true);
@@ -1359,8 +1363,8 @@
       'box-sizing:border-box;white-space:normal;padding:8px 10px;line-height:1.3}';
     try { (document.head || document.documentElement).appendChild(style); } catch (e) {}
     sec.innerHTML =
-      '<p class="set-head">🤖 AI output formats</p>' +
-      '<p class="set-desc">Choose an output, then review the saved format and template that will shape it. Uploading an example creates an editable preview; nothing is kept until you apply it and save Settings. Visit note templates have their own simpler screen above.</p>' +
+      '<p class="set-head">Other document formats</p>' +
+      '<p class="set-desc">For after-visit summaries, referrals and other documents. For SOAP, HPI, ROS, Exam, Assessment or Plan, use Visit note templates above. Operative note styles are available here; upload and edit operative templates in Templates. Apply a document preview and save Settings to keep it.</p>' +
       '<div class="field"><label for="mlsDtFamily">Output type</label><select class="sf-select" id="mlsDtFamily"></select></div>' +
       '<div id="mlsDtEffectiveSummary" role="status" style="margin:8px 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--soft,#f8fafc);font-size:13px;line-height:1.45"></div>' +
       '<button type="button" class="btn-ghost" id="mlsDtProcedureTemplatesLink" style="display:none;margin:-4px 0 12px">Open procedure template library</button>' +
@@ -1411,6 +1415,13 @@
     family.addEventListener('change', function () {
       resetSectionImport(true);
       captureUi(activeFamily);
+      /* A stale option or an empty selection must never reopen the retired
+         visit editor. The data API still supports every family; this UI does not. */
+      if (!has(FAMILY_IDS, family.value) || visitTemplateFamily(family.value)) {
+        family.value = activeFamily;
+        openVisitTemplates();
+        return;
+      }
       activeFamily = familyId(family.value);
       var appliedStatus = q('mlsDtAppliedStatus'); if (appliedStatus) appliedStatus.textContent = '';
       loadUi(activeFamily);
@@ -1479,6 +1490,7 @@
       if (profiles.length <= 1) { paintProfileButtons(profiles); return; }
       var wanted = p.activeProfile, index = profiles.findIndex(function (row) { return row.id === wanted; });
       if (index < 0) index = 0;
+      if (activeFamily === 'opnote' && profiles[index].templateText) return;
       profiles = profiles.filter(function (row) { return row.id !== wanted; });
       p.profiles = profiles;
       p.activeProfile = profiles[Math.min(index, profiles.length - 1)].id;
@@ -1493,6 +1505,7 @@
     q('mlsDtReset').addEventListener('click', function () {
       resetSectionImport(true);
       if (!working) working = read();
+      if (activeFamily === 'opnote' && working.families.opnote.profiles.some(function (row) { return !!row.templateText; })) return;
       working.families[activeFamily] = familyDefaults(activeFamily);
       loadUi(activeFamily);
       var resetStatus = q('mlsDtResetStatus');
@@ -1554,14 +1567,15 @@
       ? ' This Settings format has a ' + templateText.length + '-character template.' + modeSentence
       : ' This Settings format has no template, so template fidelity is inactive; its format and comments can still guide the draft.';
     var procedureSentence = id === 'opnote'
-      ? ' Patient-specific procedure templates are selected separately in Op Notes and remain unchanged.' : '';
+      ? ' This screen changes operative note style only. Upload and edit operative templates in Templates. Any older saved outline below is read-only and remains stored.' : '';
+    if (id === 'opnote') templateSentence = '';
     var fieldSentence = id === 'soap'
       ? ' Visit notes always keep the five fields HPI, ROS, Exam, Assessment, and Plan.'
       : (SECTION_FAMILIES.indexOf(id) >= 0 ? ' This customizes only the matching ' + label + ' field inside that five-field visit note.' : '');
     summary.textContent = label + ' will use Settings format “' + profileLabel + '”.' + templateSentence + routing + fieldSentence + procedureSentence;
     if (preview) {
       preview.textContent = templateText ? templateText.slice(0, 600) : '';
-      preview.style.display = templateText ? '' : 'none';
+      preview.style.display = templateText && id !== 'opnote' ? '' : 'none';
     }
   }
   function fillSectionControls(id, value, templateMode, activeProfile, profiles) {
@@ -1579,7 +1593,10 @@
     if (modeHost) modeHost.style.display = isSection ? '' : 'none';
     if (templateHost) templateHost.style.display = isSection ? '' : 'none';
     if (templateTextHost) templateTextHost.style.display = isSection ? '' : 'none';
-    if (importHost) importHost.style.display = isSection ? '' : 'none';
+    if (importHost) importHost.style.display = isSection && id !== 'opnote' ? '' : 'none';
+    if (templateText) templateText.readOnly = id === 'opnote';
+    var templateLabel = document.querySelector('label[for="mlsDtSectionTemplateText"]');
+    if (templateLabel) templateLabel.textContent = id === 'opnote' ? 'Previously saved operative outline (read-only)' : 'Template / outline for this saved format';
     if (familyInstructionsHost) familyInstructionsHost.style.display = isSection && !isClinicalSection ? '' : 'none';
     var instructionLabel = q('mlsDtInstructionsLabel');
     if (instructionLabel) instructionLabel.textContent = isSection ? 'AI prompt comments for this saved format' : 'AI prompt comments for this saved format';
@@ -1593,6 +1610,7 @@
     if (name) name.value = selected.label || '';
     if (when) when.value = selected.when || '';
     if (templateText) templateText.value = selected.templateText || '';
+    if (templateTextHost && id === 'opnote') templateTextHost.style.display = selected.templateText ? '' : 'none';
     modeLabel.textContent = SECTION_MODE_LABELS[id];
     mode.innerHTML = optionHtml(SECTION_MODES[id]);
     mode.value = value || SECTION_MODES[id][0][0];
@@ -1621,8 +1639,10 @@
     var add = q('mlsDtSectionAdd'), remove = q('mlsDtSectionDelete'), status = q('mlsDtSectionProfileStatus');
     profiles = Array.isArray(profiles) ? profiles : [];
     var section = isProfileFamily(activeFamily);
+    var selectedId = (q('mlsDtSectionProfile') || {}).value;
+    var protectsOutline = activeFamily === 'opnote' && profiles.some(function (row) { return row.id === selectedId && !!row.templateText; });
     if (add) { add.disabled = !section || profiles.length >= MAX_SECTION_PROFILES; add.setAttribute('aria-disabled', add.disabled ? 'true' : 'false'); }
-    if (remove) { remove.disabled = !section || profiles.length <= 1; remove.setAttribute('aria-disabled', remove.disabled ? 'true' : 'false'); }
+    if (remove) { remove.disabled = !section || profiles.length <= 1 || protectsOutline; remove.setAttribute('aria-disabled', remove.disabled ? 'true' : 'false'); remove.title = protectsOutline ? 'This format contains a preserved, read-only operative outline.' : ''; }
     if (status) status.textContent = !section ? '' : (profiles.length + ' of ' + MAX_SECTION_PROFILES + ' saved formats. ' +
       (profiles.length >= MAX_SECTION_PROFILES ? 'Remove one before adding another.' :
         (profiles.length <= 1 ? 'The final format cannot be removed.' : 'Names, rules, templates, and comments are saved independently.')));
@@ -1649,6 +1669,12 @@
     var button = q('mlsDtReset'), status = q('mlsDtResetStatus');
     if (!button) return;
     var current = working && working.families ? sanitizeFamily(activeFamily, working.families[activeFamily]) : familyDefaults(activeFamily);
+    if (activeFamily === 'opnote' && current.profiles.some(function (row) { return !!row.templateText; })) {
+      button.disabled = true; button.setAttribute('aria-disabled', 'true');
+      button.title = 'Previously saved operative outlines are preserved.';
+      if (status) status.textContent = 'Reset unavailable while this output contains previously saved operative outlines. Style fields remain editable.';
+      return;
+    }
     /* Compare canonical sanitized values. The raw defaults and sanitized
        values can carry identical profile fields in a different property
        order; order-sensitive JSON comparison made Reset appear available at
@@ -1663,7 +1689,9 @@
   function loadUi(id) {
     if (!mountSettings()) return;
     if (!working) working = read();
-    id = familyId(id); activeFamily = id;
+    id = familyId(id);
+    if (visitTemplateFamily(id)) id = 'opnote';
+    activeFamily = id;
     var p = working.families[id] || familyDefaults(id);
     q('mlsDtFamily').value = id;
     paintSectionImportScope(id);
@@ -1727,7 +1755,7 @@
          next save is his decision about it - including a decision to leave
          it empty. Latch it so nothing proposes over that again. */
       if (whenOffered[id + '::' + selected.id]) selected.whenAuto = 1;
-      selected.templateText = cleanTemplate(q('mlsDtSectionTemplateText').value, MAX_SECTION_TEMPLATE);
+      if (id !== 'opnote') selected.templateText = cleanTemplate(q('mlsDtSectionTemplateText').value, MAX_SECTION_TEMPLATE);
       selected.instructions = cleanReusableText(q('mlsDtInstructions').value, MAX_INSTRUCTIONS);
       p.profiles = profiles.map(function (row) { return row.id === selected.id ? selected : row; });
       // Clinical section instructions are profile-owned. Generic families

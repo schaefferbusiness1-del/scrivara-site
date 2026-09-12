@@ -163,7 +163,8 @@ const { chromium } = require('playwright');
 
     await page.selectOption('#mlsDtFamily', 'opnote');
     assert.equal(await page.locator('#mlsDtProcedureTemplatesLink').evaluate(el => el.style.display), '', 'Op Note does not expose the separate procedure template library');
-    assert.match(await page.textContent('#mlsDtEffectiveSummary'), /Settings format.*procedure templates are selected separately in Op Notes/i, 'Op Note summary conflates Settings and procedure templates');
+    assert.match(await page.textContent('#mlsDtEffectiveSummary'), /operative note style only.*Upload and edit operative templates in Templates/i, 'Op Note summary conflates Settings style and operative templates');
+    assert.equal(await page.locator('#mlsDtSectionImportOpen').isVisible(), false, 'operative import is still available from the wrong surface');
     await page.click('#mlsDtProcedureTemplatesLink');
     assert.equal(await page.evaluate(() => window.__openedProcedureTemplates), 1, 'procedure template library link did not use the existing opener');
     await page.selectOption('#mlsDtFamily', 'general_draft');
