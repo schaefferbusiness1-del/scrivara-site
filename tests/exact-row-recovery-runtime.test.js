@@ -136,7 +136,12 @@ function worker(opts = {}) {
     async mlsExecTO(call) {
       const kind = call.func.name;
       calls.push({ kind, args: call.args });
-      if (kind === 'mlsFindPatientOpenDriverFn') return { r: [{ frameId: 0, result: { opened: false, reason: opts.findReason || 'no-results', count: 0 } }] };
+      if (kind === 'mlsFindPatientOpenDriverFn') {
+        // A blank-DOB retry would open the same-name but conflicting patient.
+        // The request must remain refused before this operation is attempted.
+        if (opts.exactDobConflict && call.args[1] === '') return { r: [{ frameId: 0, result: { opened: true, rowDob: '01/02/1980' } }] };
+        return { r: [{ frameId: 0, result: { opened: false, reason: opts.findReason || 'no-results', count: opts.exactDobConflict ? 1 : 0, tier: opts.exactDobConflict ? 'exact' : '' } }] };
+      }
       if (kind === 'mlsAthenaGotoDate') {
         const r = [{ frameId: 4, result: { done: true, schedDate: opts.wrongDate ? '2026-09-13' : '2026-09-14', dateUnverified: opts.unverifiedDate === true } }];
         if (opts.conflictingDates) r.push({ frameId: 5, result: { done: true, schedDate: '2026-09-13' } });
@@ -178,10 +183,16 @@ async function workerTests() {
     assert(scans.every(c => c.args[3] === '40001' && c.args[4] === true), 'fallback became a name-only scan');
     assert.strictEqual(r.diag.scheduleRegrounds, 1);
   }
-  for (const opts of [{ wrongDate: true }, { unverifiedDate: true }, { conflictingDates: true }, { noDate: true }, { noId: true }, { findReason: 'ambiguous' }, { findReason: 'dob-mismatch' }]) {
+  for (const opts of [{ wrongDate: true }, { unverifiedDate: true }, { conflictingDates: true }, { noDate: true }, { noId: true }, { findReason: 'ambiguous' }, { findReason: 'dob-mismatch' }, { findReason: 'dob-mismatch', exactDobConflict: true }]) {
     const w = worker(opts), r = await w.run();
     assert.strictEqual(r.ok, false, 'unsafe recovery accepted: ' + JSON.stringify(r));
     assert.strictEqual(w.calls.filter(c => c.kind === 'mlsSearchOpenDriverFn').length, 0, 'unsafe recovery clicked a row');
+    if (opts.exactDobConflict) {
+      const finds = w.calls.filter(c => c.kind === 'mlsFindPatientOpenDriverFn');
+      assert.strictEqual(finds.length, 1, 'a DOB contradiction must not retry with weakened identity');
+      assert.strictEqual(finds[0].args[1], '01/02/1970', 'the frozen DOB must remain intact');
+      assert.strictEqual(r.reason, 'dob-mismatch');
+    }
     assert(/^[a-z][a-z0-9-]{1,39}$/.test(r.reason), 'no precise closed refusal code');
   }
 }

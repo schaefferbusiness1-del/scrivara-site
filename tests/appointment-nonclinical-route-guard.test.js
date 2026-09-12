@@ -83,8 +83,10 @@ assert.strictEqual(prove(syntheticId, [{ frameId: 1, url: schedule }], [{ frameI
     assert.strictEqual(benign.result.diag.apptIdBound, true, 'safe React row lost exact appointment binding');
     assert(benign.clicks > 0, 'safe React row was not clicked');
 
-    assert(background.includes("lname && t.indexOf(lname) !== -1 && (!fname || t.indexOf(fname) !== -1)"),
-      'exact row lost its expected first/last-name echo gate');
+    assert(driverSource.includes('if (rowNameMatches(t, true))') &&
+      driverSource.includes('!rowNameMatches(rowText(row), idBound)') &&
+      driverSource.includes('if (idBound !== true) return false;'),
+      'exact row selection and final click must share the name echo gate; punctuation folding stays exact-ID-only');
     assert(background.includes("requireAppointmentId === true ? { el: null, sc: 0, scanned: 0 } : scanOnce()"),
       'exact appointment mode regained a name-only fallback');
 

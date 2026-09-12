@@ -16162,26 +16162,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 }
                 break;
               }
-              /* v1.94: the store/roster DOB can be junk. When the search found
-                 EXACTLY ONE exact-name row and only the DOB veto blocked it,
-                 re-run once with no DOB and open that single match. Read-only:
-                 the chart read + every save/write gate still verifies the REAL
-                 banner name+DOB downstream, so a true different-person row can
-                 be opened but never saved against the wrong record. 2+ rows
-                 stay refused (ambiguous) exactly as before. */
-              if (findRes && findRes.reason === 'dob-mismatch' && findRes.count === 1 && findRes.tier === 'exact') {
-                if (senderTab) progress(senderTab, 'DOB on file differs from athena for “' + (msg.name || '') + '” — opening the single exact name match (read-only)…', openGuard.token);
-                var fxo = await execOpen({ target: { tabId: tab.id }, world: 'MAIN', args: [msg.name || '', '', findGuard, frozenMrn], func: mlsFindPatientOpenDriverFn }, 42000);
-                if (fxo.timeout) { failOpenDeadline('DOB-override open'); return; }
-                var fro = (fxo && fxo.r && fxo.r[0] && fxo.r[0].result) || null;
-                if (fro && fro.opened) {
-                  try { self.__mlsOpenPref = 'findpatient'; } catch (e0) {}
-                  try { self.__mlsExpectOpen = { name: msg.name || '', dob: msg.dob || '', mrn: frozenMrn, tabId: tab.id, at: Date.now() }; self.__mlsWriteTarget = { name: msg.name || '', dob: msg.dob || '', mrn: frozenMrn, tabId: tab.id, appTabId: senderTab || null, at: Date.now() }; } catch (e0) {}
-                  var __encOpen = await mlsEnsureEncounterOpen(tab.id);
-                sendResponse({ ok: true, opened: true, encounterOpen: __encOpen, via: 'findpatient', candidates: 1, dobOverride: true, rowDob: fro.rowDob || '', rowMrnMatched: fro.rowMrnMatched === true, diag: { route: 'findpatient-dob-override', rowDobKnown: fro.rowDob ? 1 : 0, rowMrnMatched: fro.rowMrnMatched === true } }); return;
-                }
-                findRes = fro || findRes;
-              }
+              /* A DOB contradiction is terminal even for one exact-name
+                 result. Never erase the frozen DOB to force that chart open;
+                 the refusal below retains the original identity evidence. */
               /* v2.9.6 COMPOUND-SURNAME RETRY (live case 2026-07-13: "Priscilla
                  Pennington Zytkowicz" -> searched "Zytkowicz,Priscilla" -> no-results,
                  but her athenaOne last name IS "Pennington Zytkowicz"; the reshaped
