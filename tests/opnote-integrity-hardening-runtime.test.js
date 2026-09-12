@@ -148,13 +148,43 @@ async function main() {
   await betaPromise;
   await alphaRejected;
 
-  // oni-2.14.0 (owner 2026-07-23): a cross-scope template WARNS but still goes
-  // through — the wrapper no longer refuses; the underlying generator runs.
-  templates = [scopedA];
-  context._opPrep = [{ patientId: patient.id, appt: { name: patient.name, dob: patient.dob, reason: 'Lumbar ESI' }, proc: 'Lumbar ESI', tplId: scopedA.id, tplManual: true }];
-  const blocked = await context.opPrepGenerateOne(0);
-  assert.strictEqual(blocked, false, 'stub generation produced no note yet reported success');
-  assert.strictEqual(uiCalls, 1, 'cross-scope template must warn and proceed to the generator (owner directive), not refuse');
+  // A provider-bound template is outside the generic draft-anyway lane. Stable
+  // provider ids are identities, so an explicit mismatch must stop before the
+  // underlying generator even if every other template fact is compatible.
+  const providerScopedA = { ...scopedA, providerId: 'provider-alpha', facilityName: 'Beta Center' };
+  templates = [providerScopedA];
+  context._opPrep = [{
+    patientId: patient.id,
+    appt: {
+      name: patient.name, dob: patient.dob, reason: 'Lumbar ESI',
+      providerId: 'provider-beta', providerName: 'Beta Doctor', facilityName: 'Beta Center'
+    },
+    proc: 'Lumbar ESI', tplId: providerScopedA.id, tplManual: true
+  }];
+  const providerBlocked = await context.opPrepGenerateOne(0);
+  assert.strictEqual(providerBlocked, false, 'provider-id mismatch unexpectedly reported generation success');
+  assert.strictEqual(context.__mlsLastOpErrorCode, 'MLS_OPNOTE_PROVIDER_SCOPE', 'provider-id mismatch lost its explicit refusal code');
+  assert.strictEqual(uiCalls, 0, 'provider-id mismatch reached the underlying generator');
+
+  // oni-2.14.0 (owner 2026-07-23): a NON-provider cross-scope template WARNS
+  // but still goes through. Here only the facility differs; no provider scope
+  // is declared on the template, so the underlying generator must run.
+  const facilityScopedA = {
+    id: 'esi-facility-alpha', name: 'Lumbar ESI', text: sharedText,
+    facilityName: 'Alpha Center'
+  };
+  templates = [facilityScopedA];
+  context._opPrep = [{
+    patientId: patient.id,
+    appt: {
+      name: patient.name, dob: patient.dob, reason: 'Lumbar ESI',
+      providerId: 'provider-beta', providerName: 'Beta Doctor', facilityName: 'Beta Center'
+    },
+    proc: 'Lumbar ESI', tplId: facilityScopedA.id, tplManual: true
+  }];
+  const warned = await context.opPrepGenerateOne(0);
+  assert.strictEqual(warned, false, 'stub generation produced no note yet reported success');
+  assert.strictEqual(uiCalls, 1, 'non-provider cross-scope template must warn and proceed to the generator (owner directive), not refuse');
 
   // Cross-PROCEDURE template: generation itself must adapt instead of throwing,
   // and the requested-fact safety net must still be the gate that passed.
