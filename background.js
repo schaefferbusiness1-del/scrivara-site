@@ -13515,6 +13515,10 @@ function mlsExactIdentityPair(expected, observed) {
         var fbPreR = null;
         try { var fbPre = await exec(emrId, [0], ['surfaceProbe', cfg]); fbPreR = bestResult(fbPre, function (r) { return r ? 1 : 0; }).result || null; } catch (eFbP) {}
         if (fbPreR && fbPreR.interstitial) {
+          /* contfix-1.1.0 (3.0.126): press athena's own Continue on the exact retry page, then re-probe. */
+          try { var __contX = await mlsExecTO({ target: { tabId: emrId, allFrames: true }, func: mlsAthenaContinueFn }, 6000); if (__contX && __contX.r && __contX.r.some(function (e) { return e && e.result && e.result.clicked; })) { await sleep(4000); try { var fbPre2 = await exec(emrId, [0], ['surfaceProbe', cfg]); fbPreR = bestResult(fbPre2, function (r) { return r ? 1 : 0; }).result || fbPreR; } catch (eFbP2) {} } } catch (eContFix) {}
+        }
+        if (fbPreR && fbPreR.interstitial) {
           /* interstitial weather: reloading NOW is the 2026-08-08 mistake.
              Cool down without reloading; the spacing gate prevents a refire
              storm. streak stays - if the weather clears, the next window can
@@ -14711,6 +14715,7 @@ function mlsExactIdentityPair(expected, observed) {
       var cfg = await loadVisitsCfgBound(1500);
       var pre = null;
       try { pre = bestResult(await exec(tabId, [0], ['surfaceProbe', cfg]), function (r) { return r ? 1 : 0; }).result || null; } catch (eImP) {}
+      if (pre && pre.interstitial) { /* contfix-1.1.0 (3.0.126) */ try { var __contX = await mlsExecTO({ target: { tabId: tabId, allFrames: true }, func: mlsAthenaContinueFn }, 6000); if (__contX && __contX.r && __contX.r.some(function (e) { return e && e.result && e.result.clicked; })) { await new Promise(function (r) { setTimeout(r, 4000); }); try { pre = bestResult(await exec(tabId, [0], ['surfaceProbe', cfg]), function (r) { return r ? 1 : 0; }).result || pre; } catch (eImP2) {} } } catch (eContFix) {} }
       if (pre && pre.interstitial) return { ok: false, reason: 'interstitial-weather', error: 'athenaOne is showing its temporary-error page; reloading now can end the signed-in session. Nothing was refreshed.' };
       try { await exec(tabId, [0], ['surfaceRefresh', cfg]); } catch (eImR) {}
       await new Promise(function (r) { setTimeout(r, 12000); });
@@ -16108,6 +16113,10 @@ function mlsExactIdentityPair(expected, observed) {
           var order = bootstrapIdentity ? ['sched'] : (frozenMrn ? ['find', 'sched'] : (frozenApptId ? ['sched', 'find'] : ((self.__mlsOpenPref === 'schedule') ? ['sched', 'find'] : ['find', 'sched'])));
           var sched = null, findRes = null;
           for (var oi = 0; oi < order.length; oi++) {
+            /* contfix-1.1.0 (3.0.126): athena's "unable to complete the requested action" retry page can sit
+               in the work tab between legs; press its own Continue (exact page, exact control, never a
+               sign/order/billing page) before opening anything, then settle. */
+            try { var __contX = await execOpen({ target: { tabId: tab.id, allFrames: true }, func: mlsAthenaContinueFn }, 5000); if (__contX && __contX.r && __contX.r.some(function (e) { return e && e.result && e.result.clicked; })) { if (!(await waitOpen(2500))) { failOpenDeadline('the Athena retry-page settle'); return; } } } catch (eContFix) {}
             if (order[oi] === 'sched') {
               /* Exact ids/date let an ordinary failed Find route recover on
                  its real schedule. It becomes the STRICT bootstrap route,
