@@ -19,56 +19,18 @@ function between(source, begin, end) {
   return source.slice(a, b);
 }
 
-const contractSource = between(
-  background,
-  "var ROUTE_CONTRACT_VERSION = 'athena-routes-1';",
-  '/* ---- normalizers (identical to the proven visits driver)'
-);
-const contract = Function(`${contractSource}\nreturn { version: ROUTE_CONTRACT_VERSION, aliases: ROUTE_ALIASES, policy: ROUTE_POLICY, canonical: canonicalRouteKey };`)();
-
-assert(/^athena-routes-\d+$/.test(contract.version), 'typed write routes must stay versioned');
-assert.strictEqual(contract.canonical('hpi'), 'hpi');
-assert.strictEqual(contract.canonical('history'), '', 'ambiguous history must never route to a drawer or generic note');
-assert.strictEqual(contract.canonical('past_surgical_history'), 'past_surgical_history');
-assert.strictEqual(contract.canonical('followup'), 'follow_up');
-assert.strictEqual(contract.canonical('totally_unknown'), '');
-
-for (const key of ['encounter_note', 'hpi', 'ros', 'physical_exam', 'assessment_narrative', 'plan', 'follow_up']) {
-  assert.strictEqual(contract.policy[key].draft, true, `${key} should be a supervised narrative draft route`);
-}
-for (const key of ['procedure_note', 'past_surgical_history', 'diagnoses_icd10', 'medications_rx', 'orders_preview', 'lab_order', 'imaging_order', 'referral_order', 'pt_order']) {
-  assert.strictEqual(contract.policy[key].draft, false, `${key} must remain preview/target-only`);
-}
-for (const key of ['billing_preview', 'billing_em', 'billing_cpt']) {
-  assert.notStrictEqual(contract.policy[key].draft, true, `${key} must not become a generic narrative draft route`);
-}
-
-const defsSource = between(background, 'var DEFS = {', 'function bestFieldFor(key)');
-const defs = Function(`${defsSource}\nreturn DEFS;`)();
-assert(defs.hpi.test('History of Present Illness'));
-assert(!defs.hpi.test('Surgical & Procedure History'));
-assert(defs.past_surgical_history.test('Surgical & Procedure History'));
-assert(defs.diagnoses_icd10.test('Add Assessment ICD-10'));
-assert(!defs.assessment_narrative.test('Add Charge CPT'));
-
-const fieldPicker = between(background, 'function bestFieldFor(key)', '/* ---- History-pane navigation');
-assert(!/DEFS\.note/.test(fieldPicker), 'field picker must not have a generic note fallback');
-assert(!/\+?=\s*9000/.test(fieldPicker), 'focused fields must not outrank exact destinations');
-assert(/if \(!re\) return null/.test(fieldPicker));
-
-const writer = between(background, 'async function writeField(', '/* ---- run the sections');
-assert(!writer.includes('\\u200B'), 'zero-width placeholders are not valid deletion/persistence evidence');
-assert(!/persisted\s*=\s*true/.test(writer), 'same-editor readback must never claim persistence');
-assert(/serverVerified:\s*false/.test(writer));
-assert(/replace-needs-explicit-confirmation/.test(writer));
-assert(/empty-write-disabled/.test(writer), 'generic deletion must be disabled');
-
+/* draftonly-1.1.0 (3.0.125): the v2.05 unified write driver (typed routes, DEFS,
+   bestFieldFor, writeField, the mlsAppWriteV2Request orchestration) was deleted.
+   The supervised ActionV2 driver is the only writer; the legacy message name
+   still answers an explicit fail-closed refusal for stale cached pages. */
+assert(!background.includes('async function mlsUnifiedWriteDriverFn('), 'the unified write driver must stay deleted');
+assert(!background.includes("var ROUTE_CONTRACT_VERSION = 'athena-routes-1';"), 'the legacy typed-route contract must stay deleted with its driver');
+assert(!/function bestFieldFor\(key\)|async function writeField\(/.test(background), 'no legacy field picker or field writer may remain');
 const v2Start = background.indexOf("if (!msg || msg.type !== 'mlsAppWriteV2Request') return;");
 assert(v2Start >= 0);
-const v2Handler = background.slice(v2Start);
-assert(/unknown-section-key/.test(v2Handler));
-assert(/ambiguous-athena-tabs/.test(v2Handler));
-assert(/__mlsWriteTarget/.test(v2Handler));
+const v2Handler = background.slice(v2Start, background.indexOf('})();', v2Start));
+assert(/unified-confirmation-required/.test(v2Handler), 'the legacy message must answer an explicit refusal');
+assert(!/mlsExecTO\(|__mlsWriteTarget|ambiguous-athena-tabs/.test(v2Handler), 'no legacy tab-pick or mutation orchestration may remain after the refusal');
 assert(!/mlsRecoverAthenaTab/.test(v2Handler), 'a possibly-started write must never reload/retry Athena');
 
 const legacyBridge = between(content, "if (d.type === 'mlsAppPushVisit')", "if (d.type === 'mlsAppSearchProcedure')");

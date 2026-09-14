@@ -252,8 +252,8 @@ function mlsExactIdentityPair(expected, observed) {
        The closed action map permits only note writes and draft saves.
        clickOnce refuses every forbidden final control without exception.
        These matchers mirror write_safety_guard.js. */
-    var WS_FORBIDDEN_LABELS = [/\bsign\b/, /\bsigns?\s+and\s+saves?\b/, /\bco\s?sign\b/, /\battest\b/, /\bsubmit\b/, /\bsend\b/, /\bapprove\b/, /\bfinali[sz]e\b/, /\bplace\s+orders?\b/, /\badd\s+orders?\b/, /\bprescribe\b/, /\be\s?(?:rx|prescribe|prescription)\b/, /\btransmit\b/, /\bpost\s+charges?\b/, /\bfile\s+claims?\b/, /\bsubmit\s+claims?\b/, /\bbill\s+(?:now|patient|insurance)\b/, /\bclose\s+encounter\b/, /\bdelete\s+(?:chart|patient|encounter)\b/];
-    var WS_FORBIDDEN_ATTRS = ['signoff','sign-off','sign_off','signandsave','sign-and-save','sign_and_save','signsave','signencounter','sign-encounter','sign_encounter','placeorder','place-order','place_order','submitorder','submit-order','submit_order','sendorder','send-order','send_order','approveorder','approve-order','prescribe','e-rx','erx-send','sendrx','send-rx','transmitrx','transmit-rx','sendtopharmacy','send-to-pharmacy','finalizenote','finalize-note','finalize_note','postcharge','post-charge','post_charge','submitclaim','submit-claim','fileclaim','file-claim','closeencounter','close-encounter','mls-forbidden'];
+    var WS_FORBIDDEN_LABELS = [/\bsign\b/, /\bsigns?\s+and\s+saves?\b/, /\bco\s?sign\b/, /\battest\b/, /\bsubmit\b/, /\bsend\b/, /\bapprove\b/, /\bfinali[sz]e\b/, /\bplace\s+orders?\b/, /\badd\s+orders?\b/, /\bprescribe\b/, /\be\s?(?:rx|prescribe|prescription)\b/, /\btransmit\b/, /\bpost\s+charges?\b/, /\bfile\s+claims?\b/, /\bsubmit\s+claims?\b/, /\bbill\s+(?:now|patient|insurance)\b/, /\bclose\s+encounter\b/, /\bdelete\s+(?:chart|patient|encounter)\b/, /\bcheck\s*-?\s*(?:in|out)\b/, /\bdischarge\b/, /\bvoid\b/];
+    var WS_FORBIDDEN_ATTRS = ['signoff','sign-off','sign_off','signandsave','sign-and-save','sign_and_save','signsave','signencounter','sign-encounter','sign_encounter','placeorder','place-order','place_order','submitorder','submit-order','submit_order','sendorder','send-order','send_order','approveorder','approve-order','prescribe','e-rx','erx-send','sendrx','send-rx','transmitrx','transmit-rx','sendtopharmacy','send-to-pharmacy','finalizenote','finalize-note','finalize_note','postcharge','post-charge','post_charge','submitclaim','submit-claim','fileclaim','file-claim','closeencounter','close-encounter','close_encounter','file_claim','checkin','check-in','check_in','checkout','check-out','check_out','discharge','deleteencounter','delete-encounter','delete_encounter','voidencounter','void-encounter','void_encounter','mls-forbidden'];
     function wsForbiddenControl(el) {
       if (!el || el.nodeType !== 1) return false;
       var wsLabels = [];
@@ -264,15 +264,12 @@ function mlsExactIdentityPair(expected, observed) {
       for (var wsK = 0; wsK < WS_FORBIDDEN_ATTRS.length; wsK++) if (wsHay.indexOf(WS_FORBIDDEN_ATTRS[wsK]) >= 0) return true;
       return false;
     }
-    /* wsg-2.0.0 (owner directive 2026-08-12, released 2026-08-17): the policy
-       refusal that used to sit here ("preview-only ... perform the final step
-       yourself in athenaOne") is LIFTED. sign_encounter, stage_billing and
-       place_order execute through the SAME supervised path as write_note and
-       save_draft: exact identity + encounter lock, one-use token, fresh trusted
-       click, verified prior note write before sign, one action per confirm,
-       no automatic chaining. clickOnce keeps refusing every OTHER final or
-       irrevocable control - only the exact 'Sign and Save' control may be
-       clicked, and only by sign_encounter. */
+    /* draftonly-1.1.0 (3.0.125): the action map above is CLOSED to write_note
+       and save_draft. sign_encounter, stage_billing and place_order are refused
+       here, in the worker request handler, in write_safety_guard.js
+       and in content.js; no branch below can reach a Sign, order or billing
+       control, and clickOnce refuses every final or irrevocable control without
+       exception. The wsg-2.0.0 note that once claimed otherwise was wrong. */
     /* MLS_WRITE_SAFETY_DRIVER_GUARD_END */
 
     function text(v) { return String(v == null ? '' : v).replace(/\s+/g, ' ').trim(); }
@@ -2675,14 +2672,14 @@ function mlsExactIdentityPair(expected, observed) {
          English and names the one step that clears it. */
       function nativeReadError(reason, key) {
         var label = nativeReadLabel(key);
-        if (reason === 'section-persistence-frame-changed') return 'The Athena encounter reloaded while MLS was reading the saved note back. Nothing was pressed. Let it finish loading, then press Confirm again.';
-        if (reason === 'section-persistence-readback-missing') return 'MLS could not open the ' + label + ' section to read it back. Nothing was pressed. Open that section in the encounter, then press Confirm again.';
-        if (reason === 'section-persistence-readback-ambiguous') return 'MLS found more than one ' + label + ' section and did not guess. Nothing was pressed.';
-        if (reason === 'section-persistence-readback-mismatch') return 'The saved ' + label + ' text in Athena does not match the reviewed text. Nothing was pressed. Inspect that section before retrying.';
-        if (reason === 'note-editor-unreadable') return 'MLS could not read the ' + label + ' editor. Nothing was pressed. Let the encounter finish loading, then press Confirm again.';
-        if (reason === 'context-mismatch') return 'The encounter open in athenaOne changed while MLS was reading the saved note back. Nothing was pressed. Re-open the encounter, then press Confirm again.';
-        if (reason === 'forbidden-control') return 'The only control MLS could use to open the ' + label + ' section is a Sign, billing, order or close control. MLS will never click one. Nothing was pressed.';
-        return 'MLS did not verify the saved note in Athena. Nothing was pressed.';
+        if (reason === 'section-persistence-frame-changed') return 'The Athena encounter reloaded while MLS was reading the saved note back. MLS only opened that section tab to read it; no Save or Sign was pressed. Let it finish loading, then press Confirm again.';
+        if (reason === 'section-persistence-readback-missing') return 'MLS could not open the ' + label + ' section to read it back. MLS only opened that section tab to read it; no Save or Sign was pressed. Open that section in the encounter, then press Confirm again.';
+        if (reason === 'section-persistence-readback-ambiguous') return 'MLS found more than one ' + label + ' section and did not guess. MLS only opened that section tab to read it; no Save or Sign was pressed.';
+        if (reason === 'section-persistence-readback-mismatch') return 'The saved ' + label + ' text in Athena does not match the reviewed text. MLS only opened that section tab to read it; no Save or Sign was pressed. Inspect that section before retrying.';
+        if (reason === 'note-editor-unreadable') return 'MLS could not read the ' + label + ' editor. MLS only opened that section tab to read it; no Save or Sign was pressed. Let the encounter finish loading, then press Confirm again.';
+        if (reason === 'context-mismatch') return 'The encounter open in athenaOne changed while MLS was reading the saved note back. MLS only opened that section tab to read it; no Save or Sign was pressed. Re-open the encounter, then press Confirm again.';
+        if (reason === 'forbidden-control') return 'The only control MLS could use to open the ' + label + ' section is a Sign, billing, order or close control. MLS will never click one. MLS only opened that section tab to read it; no Save or Sign was pressed.';
+        return 'MLS did not verify the saved note in Athena. MLS only opened that section tab to read it; no Save or Sign was pressed.';
       }
       async function nativeReadSection(key, expectedValue) {
         if (!nativeFrameLifetimeMatches()) return { ok: false, reason: 'section-persistence-frame-changed' };
@@ -2796,30 +2793,7 @@ function mlsExactIdentityPair(expected, observed) {
 
     /* ATHENA_ACTION_V2_SIGN_ENCOUNTER_START */
     /* SIGN_ENCOUNTER_START */
-    if (action === 'sign_encounter') {
-      var signStatusEvidenceSnapshot = statusEvidenceSnapshot([noteScope]);
-      mutationAttempted = true;
-      clickOnce(actionControl);
-      await sleep(550);
-      var dialogs = deepQueryAll(noteScope, '[role="dialog"],[role="alertdialog"],.modal,.dialog').filter(function (el) { return visible(el, hit.frame.w); });
-      var actionDialog = null;
-      if (dialogs.length) {
-        var confirms = [];
-        for (var di = 0; di < dialogs.length; di++) confirms = confirms.concat(interactive(dialogs[di], hit.frame.w).filter(exactSign));
-        if (confirms.length !== 1) return { ok: false, attempted: true, verified: false, reason: 'outcome-uncertain', detail: 'exact-sign-confirmation-not-unique', context: context, noAutomaticChaining: 'no-automatic-chaining' };
-        actionDialog = confirms[0].closest('[role="dialog"],[role="alertdialog"],.modal,.dialog');
-        /* The dialog was created by the first click. Snapshot its existing
-           status nodes before the final confirmation so static dialog copy
-           cannot be mistaken for post-sign success evidence. */
-        var dialogStatusSnapshot = statusEvidenceSnapshot([actionDialog]);
-        dialogStatusSnapshot.forEach(function (value, node) { signStatusEvidenceSnapshot.set(node, value); });
-        clickOnce(confirms[0]);
-      }
-      await sleep(1600);
-      var signStatusRoots = actionDialog ? [noteScope, actionDialog] : [noteScope];
-      var signVerified = newScopedStatus(signStatusEvidenceSnapshot, signStatusRoots, /\b(signed and saved|successfully signed|encounter signed|note signed|signed by)\b/);
-      return { ok: signVerified, action: action, attempted: true, verified: signVerified, signed: signVerified, reason: signVerified ? 'exact-sign-control-context-verified' : 'outcome-uncertain', control: 'exact-sign-control', context: context, noAutomaticChaining: 'no-automatic-chaining' };
-    }
+    if (action === 'sign_encounter') return { ok: false, blocked: true, action: action, attempted: false, verified: false, signed: false, reason: 'final-action-blocked', error: 'MLS Assist never signs an encounter. Sign it in athenaOne yourself.' }; /* draftonly-1.1.0 (3.0.125): the sign-and-confirm clicker was deleted */
     /* SIGN_ENCOUNTER_END */
     /* ATHENA_ACTION_V2_SIGN_ENCOUNTER_END */
     return { ok: false, blocked: true, reason: 'unknown-action' };
@@ -3337,7 +3311,7 @@ function mlsAthenaTeachWatcherFn(config) {
   function validPersistedToken(id, rec) {
     if (!rec || rec.schema !== TOKEN_SESSION_SCHEMA || rec.kind !== 'athena-action-token' || clean(rec.tokenId) !== clean(id)) return false;
     if (!/^(ready|used|executing|settled|uncertain|invalidated|expired)$/.test(clean(rec.state))) return false;
-    if (!/^(write_note|stage_billing|save_draft|sign_encounter|place_order)$/.test(clean(rec.action))) return false;
+    if (!/^(write_note|save_draft)$/.test(clean(rec.action))) return false; /* draftonly-1.1.0 (3.0.125) */
     if (!(Number(rec.senderTabId) > 0) || !(Number(rec.athenaTabId) > 0) || !(Number(rec.issuedAt) > 0) || !(Number(rec.expiresAt) > Number(rec.issuedAt))) return false;
     if (Number(rec.issuedAt) > Date.now() + 10000 || Number(rec.expiresAt) > Number(rec.issuedAt) + TOKEN_TTL_MS + 1000) return false;
     /* Once an execute attempt claims a token, no future worker needs its PHI,
@@ -3658,7 +3632,7 @@ function mlsAthenaTeachWatcherFn(config) {
     catch (e) { return simpleHash(Date.now() + '|' + Math.random()) + simpleHash(Math.random()); }
   }
   function exactAthenaTabs(all) {
-    return (all || []).filter(function (t) { try { return mlsAthTabHost(t) === 'athenanet.athenahealth.com' && !mlsAthIsLoginish(t); } catch (e) { return false; } });
+    return (all || []).filter(function (t) { try { return mlsAthTabHost(t) === 'athenanet.athenahealth.com' && !mlsAthIsLoginish(t) && !(typeof mlsAthTabSleeping === 'function' && mlsAthTabSleeping(t)); } catch (e) { return false; } }); /* sleeptab-1.0.0 (3.0.125) */
   }
   async function pickAthenaWriteCandidates(all) {
     /* v2.9.31 multi-tab support: more than one signed-in Athena tab no longer
@@ -3722,6 +3696,10 @@ function mlsAthenaTeachWatcherFn(config) {
       }
       var origins = keys.map(function (key) { return Number(matched[key][0].frameTimeOrigin); });
       if (!origins.every(function (value) { return value === origins[0]; })) return { ok: false, reason: 'section-persistence-proof-mismatch' };
+      /* 3.0.125: these four proofs are intentionally NOT consumed by a
+         reconcile. The reconcile leg presses nothing (it reads the saved
+         sections back), so re-verifying within the TTL is safe; each
+         execute still needs a fresh one-use action token from a fresh probe. */
       return { ok: true, proofIds: proofIds, frameTimeOrigin: origins[0] };
     });
   }
@@ -4086,6 +4064,7 @@ function mlsAthenaTeachWatcherFn(config) {
 
   chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
     if (!msg || msg.type !== 'mlsAppAthenaActionV2Request') return;
+    var __v2Responded = false; function __v2Respond(r) { if (__v2Responded) return; __v2Responded = true; try { sendResponse(r); } catch (eV2R) {} } /* oneterminal-1.0.0 (3.0.125) */
     (async function () {
       var mode = clean(msg.mode).toLowerCase(), action = clean(msg.action).toLowerCase();
       var ACTIONS = { write_note: 1, save_draft: 1 } /* draftonly-1.0.0: signing, orders and billing stay manual */;
@@ -4110,6 +4089,8 @@ function mlsAthenaTeachWatcherFn(config) {
       var actionToken = '', rec = null;
       if (mode === 'execute') {
         actionToken = clean(msg.actionToken);
+        /* readlock-1.0.0 (3.0.125): the pull completes before any write starts. */
+        if ((Number(self.__mlsReadInFlight) || 0) > 0) return { ok: false, blocked: true, reason: 'read-in-progress', error: 'MLS is still reading a chart in athenaOne. Let the pull finish, then press Confirm again. Nothing was changed.' };
         var tokenClaim = await claimActionToken(actionToken);
         if (!tokenClaim.ok) return { ok: false, blocked: true, reason: tokenClaim.reason, detail: tokenClaim.detail || '' };
         rec = tokenClaim.rec;
@@ -4225,7 +4206,7 @@ function mlsAthenaTeachWatcherFn(config) {
         var __mintOk = false; try { (self.tokDiag||function(){})('mint-call', String(tok || '').length + ':' + action); __mintOk = await storeActionToken(tok, tokenRecord, action === 'place_order' ? { senderTabId: sender.tab.id, previewHash: previewHash } : null); (self.tokDiag||function(){})('mint-result', __mintOk === true ? 'ok' : ('falsy:' + typeof __mintOk)); } catch (eMint) { (self.tokDiag||function(){})('mint-throw', (eMint && eMint.message) || eMint); __mintOk = false; }
         if (!__mintOk) return { ok: false, blocked: true, reason: 'token-state-unavailable', error: 'Chrome could not preserve the exact one-use authorization for review. Re-check Athena before trying again. Nothing was changed.' };
         /* ATHENA_ACTION_V2_PROBE_READ_ONLY_RETURN */
-        return { ok: true, mode: 'probe', action: action, readOnly: true, actionToken: tok, expiresAt: tokenExpiresAt, previewHash: previewHash, rowHash: action === 'place_order' ? rowHash : '', clientOrderId: action === 'place_order' ? checkedOrder.order.clientOrderId : '', context: probe.context, reason: probe.reason || 'context-verified', noAutomaticChaining: 'no-automatic-chaining' };
+        return { ok: true, mode: 'probe', action: action, readOnly: true, mrnConflict: !!(digits(p && p.mrn) && digits(probe.context && probe.context.mrn) && digits(p.mrn) !== digits(probe.context.mrn)), actionToken: tok, expiresAt: tokenExpiresAt, previewHash: previewHash, rowHash: action === 'place_order' ? rowHash : '', clientOrderId: action === 'place_order' ? checkedOrder.order.clientOrderId : '', context: probe.context, reason: probe.reason || 'context-verified', noAutomaticChaining: 'no-automatic-chaining' };
       }
 
       if (!appSender(sender)) return { ok: false, blocked: true, reason: 'token-sender-mismatch' };
@@ -4238,7 +4219,7 @@ function mlsAthenaTeachWatcherFn(config) {
       if (rec.patientHash !== simpleHash(patientKey(p))) return { ok: false, blocked: true, reason: 'patient-mismatch' };
       if (rec.patientId !== clean(p.patientId)) return { ok: false, blocked: true, reason: 'patient-mismatch' };
       /* Cached MRN is not identity authority; patientHash still binds the original request. */
-      if (rec.expectedMrn && rec.expectedMrn !== digits(rec.locked && rec.locked.mrn)) return {ok:false,blocked:true,reason:'patient-mismatch'}; /* captured live probe lock */
+      var __mrnConflictAtExecute = !!(digits(p && p.mrn) && digits(rec.locked && rec.locked.mrn) && digits(p.mrn) !== digits(rec.locked && rec.locked.mrn)); /* mrnreport-1.0.0 (3.0.125): the app's expected MRN versus the live-locked MRN is reported on the receipt; exact name+DOB is the identity and MRN never vetoes it (owner ruling) */
       if (rec.billingPayload !== canonicalBillingPayload || rec.billingHash !== simpleHash(canonicalBillingPayload)) return { ok: false, blocked: true, reason: 'billing-payload-mismatch' };
       if (rec.orderPayload !== canonicalOrderKey || rec.orderHash !== simpleHash(canonicalOrderKey)) return { ok: false, blocked: true, reason: 'order-payload-mismatch' };
       if (rec.notePayload !== canonicalNotePayload || rec.noteHash !== noteHash) return { ok: false, blocked: true, reason: 'note-payload-mismatch' };
@@ -4316,6 +4297,7 @@ function mlsAthenaTeachWatcherFn(config) {
       }
       if (action === 'sign_encounter' && proofRecord && proofRecord.used) executed.noteWriteProofConsumed = true;
       executed.patientId = clean(p.patientId);
+      executed.mrnConflict = __mrnConflictAtExecute; executed.gestureClass = clean(msg.gestureClass) || 'trusted-click'; /* mrnreport-1.0.0 + gestureclass-1.0.0 (3.0.125) */
       if (action === 'place_order') { executed.clientOrderId = checkedOrder.order.clientOrderId; executed.rowHash = rowHash; }
       executed.actionTokenConsumed = true;
       executed.noAutomaticChaining = 'no-automatic-chaining';
@@ -4323,7 +4305,7 @@ function mlsAthenaTeachWatcherFn(config) {
         executed.reason === 'outcome-uncertain' || executed.partialMutation === true ? 'uncertain' : 'settled',
         clean(executed.reason || (executed.ok === true ? 'verified' : 'refused')));
       return executed;
-    })().then(function (r) { sendResponse(r); }).catch(function (e) { sendResponse({ ok: false, reason: 'outcome-uncertain', error: String((e && e.message) || e), noAutomaticChaining: 'no-automatic-chaining' }); });
+    })().then(function (r) { __v2Respond(r); }, function (e) { __v2Respond({ ok: false, reason: 'outcome-uncertain', error: String((e && e.message) || e), noAutomaticChaining: 'no-automatic-chaining' }); });
     return true;
   });
 })();
@@ -9828,7 +9810,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
           : (__legacyExactCount ? 'legacy-header-may-include-capacity' : (__providerCount > 1 && __declaredCount > 0 ? 'multi-provider-column-count-not-total' : 'no-authoritative-declared-total'));
         var __expectedCount = __legacyExactCount ? __candidateCount : Math.max(__candidateCount, __declaredCountAuthoritative ? __declaredCount : 0);
         var __allSlotDay = __legacyExactCount && __parsedCount === 0 && __candidateCount === 0 && Number(__dd.slotRowsRemoved || 0) > 0; /* 3.0.4: block-only day (every rendered row classified as a slot: frozen/blocked/hold/...) - the legacy grid is non-virtualized, so zero candidates with removed slot rows proves a no-appointments day; the verified-empty probe never fires here because the grid is not visually empty. */
-        var __authoritativeEmpty = (__parsedCount === 0 && (__surface.probes || []).some(function (p) { return p && p.verified && p.empty; }) && __dd.emptyStable === true) || __allSlotDay; /* er-1.2: probe-empty must be corroborated by the picked frame's own settled empty proof (diag.emptyStable) - a transitional grid whose tab already flipped but whose rows have not painted refuses instead of minting a day-proven false empty. All-slot days keep their narrow legacy proof. */
+        var __authoritativeEmpty = (__parsedCount === 0 && !!((pick && pick.s && pick.s.schedDate) || '') && (__surface.probes || []).some(function (p) { return p && p.verified && p.empty; }) && __dd.emptyStable === true) || __allSlotDay; /* dayauthority-1.0.0 (3.0.125): no readable date, no proven-empty day */ /* er-1.2: probe-empty must be corroborated by the picked frame's own settled empty proof (diag.emptyStable) - a transitional grid whose tab already flipped but whose rows have not painted refuses instead of minting a day-proven false empty. All-slot days keep their narrow legacy proof. */
         var __viewportCoverage = __dd.viewportCoverage || null;
         var __coverageRequired = __dd.strategy === 'structure-id' || __dd.via === 'structure-id';
         var __coverageComplete = !__coverageRequired || !!(__viewportCoverage && __viewportCoverage.complete === true);
@@ -9944,9 +9926,13 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
           }
         } catch (eSh) {}
         if (!__complete) {
-          var __incompleteCause = !__coverageComplete ? 'coverage-unverified' : (__expectedCount === 0 ? 'no-readable-rows' : (__legacyTextOnlyRows > 0 ? 'text-only-rows' : (__unnamedCount > 0 && __parsedCount >= __expectedCount ? 'unnamed-rows' : 'count-mismatch'))); /* sim-1.0.0: name the condition that ACTUALLY failed the completeness law - the old message printed the two counts even when they passed (26 listed / 27 parsed) and the killer was a text-only or unnamed row, which read as loading weather and hid the pane-scroll-fold defect. */
-          var __incompleteError = __incompleteCause === 'coverage-unverified' ? ('MLS could not finish the full two-dimensional Athena schedule sweep (' + String(__viewportCoverage && __viewportCoverage.reason || 'coverage-unverified').replace(/-/g, ' ') + '). Nothing was imported; keep the full Day schedule open and retry.') : (__incompleteCause === 'no-readable-rows' ? 'Athena did not show any readable appointment rows - the schedule grid may still be loading, or athenaOne is signed out. Open the signed-in Day schedule and retry. Nothing was imported.' : (__incompleteCause === 'text-only-rows' ? ('Athena rendered ' + __parsedCount + ' appointment row' + (__parsedCount === 1 ? '' : 's') + ' but ' + __legacyTextOnlyRows + ' of them ' + (__legacyTextOnlyRows === 1 ? 'exists' : 'exist') + ' only as schedule text with no verified grid row - usually a row scrolled past a schedule pane fold. Scroll the schedule so every appointment is visible, then retry. Nothing was imported.') : (__incompleteCause === 'unnamed-rows' ? ('Athena rendered ' + __parsedCount + ' appointment row' + (__parsedCount === 1 ? '' : 's') + ' but ' + __unnamedCount + ' of them ' + (__unnamedCount === 1 ? 'has' : 'have') + ' no readable patient name yet. Let the grid finish painting, then retry. Nothing was imported.') : ('Athena listed ' + __expectedCount + ' appointment row' + (__expectedCount === 1 ? '' : 's') + ' but only ' + __parsedCount + ' could be verified before the view changed. Keep Athena on this day until the grid finishes loading, then retry. Nothing was imported.'))));
+          var __incompleteCause = !__coverageComplete ? 'coverage-unverified' : (__parsedCount === 0 && !((pick && pick.s && pick.s.schedDate) || '') ? 'schedule-date-unreadable' : (__expectedCount === 0 ? 'no-readable-rows' : (__legacyTextOnlyRows > 0 ? 'text-only-rows' : (__unnamedCount > 0 && __parsedCount >= __expectedCount ? 'unnamed-rows' : 'count-mismatch')))); /* sim-1.0.0: name the condition that ACTUALLY failed the completeness law - the old message printed the two counts even when they passed (26 listed / 27 parsed) and the killer was a text-only or unnamed row, which read as loading weather and hid the pane-scroll-fold defect. */
+          var __incompleteError = __incompleteCause === 'schedule-date-unreadable' ? 'athenaOne did not show a readable date for this day, so MLS cannot prove the day is empty. Open the Day view in athenaOne and let it finish loading, then pull again.' : __incompleteCause === 'coverage-unverified' ? ('MLS could not finish the full two-dimensional Athena schedule sweep (' + String(__viewportCoverage && __viewportCoverage.reason || 'coverage-unverified').replace(/-/g, ' ') + '). Nothing was imported; keep the full Day schedule open and retry.') : (__incompleteCause === 'no-readable-rows' ? 'Athena did not show any readable appointment rows - the schedule grid may still be loading, or athenaOne is signed out. Open the signed-in Day schedule and retry. Nothing was imported.' : (__incompleteCause === 'text-only-rows' ? ('Athena rendered ' + __parsedCount + ' appointment row' + (__parsedCount === 1 ? '' : 's') + ' but ' + __legacyTextOnlyRows + ' of them ' + (__legacyTextOnlyRows === 1 ? 'exists' : 'exist') + ' only as schedule text with no verified grid row - usually a row scrolled past a schedule pane fold. Scroll the schedule so every appointment is visible, then retry. Nothing was imported.') : (__incompleteCause === 'unnamed-rows' ? ('Athena rendered ' + __parsedCount + ' appointment row' + (__parsedCount === 1 ? '' : 's') + ' but ' + __unnamedCount + ' of them ' + (__unnamedCount === 1 ? 'has' : 'have') + ' no readable patient name yet. Let the grid finish painting, then retry. Nothing was imported.') : ('Athena listed ' + __expectedCount + ' appointment row' + (__expectedCount === 1 ? '' : 's') + ' but only ' + __parsedCount + ' could be verified before the view changed. Keep Athena on this day until the grid finishes loading, then retry. Nothing was imported.'))));
           return __schedRespond({ ok: false, reason: 'schedule-incomplete', scheduleVerified: true, receipt: __receipt, sessionProof: __sessionProof, staleRisk: __staleRisk, emr: isRealAthena ? 'athena' : 'other-emr', host: mlsHostOnly(pick.u || tab.url), text: '', url: pick.u || tab.url, title: tab.title, frames: frames.length, appts: mlsAttachDobs(__mlsM.appts, (pick && pick.t) || ''), providers: __mlsM.providers, providerRoster: __providerRoster, providerRosterReceipt: __providerRosterReceipt, providerDiag: __mlsM.providerDiag, schedDate: (pick && pick.s && pick.s.schedDate) || '', schedDateVia: String((pick && pick.s && pick.s.diag && pick.s.diag.schedDateVia) || ''), emptyStable: !!(pick && pick.s && pick.s.diag && pick.s.diag.emptyStable === true), error: __incompleteError, incompleteCause: __incompleteCause, surfaceDiag: { via: (__surface.hits || []).map(function (h) { return h.via; }).filter(Boolean).slice(0, 6), verifiedFrames: (__surface.frameIds || []).length } });
+        }
+        var __expectedDay = /^\d{4}-\d{2}-\d{2}$/.test(String(msg.expectedDate || '')) ? String(msg.expectedDate) : ''; /* dayauthority-1.0.0 (3.0.125): optional caller-declared day */
+        if (__expectedDay && String((pick && pick.s && pick.s.schedDate) || '') !== __expectedDay) {
+          return __schedRespond({ ok: false, reason: 'schedule-day-mismatch', scheduleVerified: true, receipt: __receipt, expectedDate: __expectedDay, schedDate: String((pick && pick.s && pick.s.schedDate) || ''), error: 'athenaOne is showing ' + (String((pick && pick.s && pick.s.schedDate) || '') || 'an unreadable day') + ', not ' + __expectedDay + '. MLS did not import that schedule. Nothing was changed.' });
         }
         __schedRespond({ ok: true, scheduleVerified: true, receipt: __receipt, sessionProof: __sessionProof, staleRisk: __staleRisk, emr: isRealAthena ? 'athena' : 'other-emr', host: mlsHostOnly(pick.u || tab.url), text: ((tab.title ? ('[' + tab.title + ']\n') : '') + (pick.t || '')).slice(0, 22000), url: pick.u || tab.url, title: tab.title, frames: frames.length, appts: mlsAttachDobs(__mlsM.appts, (pick && pick.t) || ''), providers: __mlsM.providers, providerRoster: __providerRoster, providerRosterReceipt: __providerRosterReceipt, providerDiag: __mlsM.providerDiag, schedDate: (pick && pick.s && pick.s.schedDate) || '', schedDateVia: String((pick && pick.s && pick.s.diag && pick.s.diag.schedDateVia) || ''), emptyStable: !!(pick && pick.s && pick.s.diag && pick.s.diag.emptyStable === true), surfaceDiag: { via: (__surface.hits || []).map(function (h) { return h.via; }).filter(Boolean).slice(0, 6), verifiedFrames: (__surface.frameIds || []).length } });
       } catch (e) { if (!__schedResponded) __schedRespond({ ok: false, error: String((e && e.message) || e) }); }
@@ -10095,12 +10081,13 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
     let chartDeadlineAt = chartRequestStartedAt + 105000;
     if (Number.isFinite(chartCallerDeadline) && chartCallerDeadline > 0) chartDeadlineAt = Math.min(chartDeadlineAt, chartCallerDeadline);
     const chartRequestGuard = Object.freeze({ deadline: chartDeadlineAt, token: chartRequestId });
-    try { self.__mlsChartReadBusyUntil = Math.max(Number(self.__mlsChartReadBusyUntil || 0), chartDeadlineAt); } catch (eBzC) {} /* qol-2.3: deadline-bounded read-busy stamp for the focus backstop */
+    try { self.__mlsChartReadBusyUntil = Math.max(Number(self.__mlsChartReadBusyUntil || 0), chartDeadlineAt); } catch (eBzC) {} try { self.__mlsReadInFlight = (Number(self.__mlsReadInFlight) || 0) + 1; } catch (eRif) {} /* readlock-1.0.0 */ /* qol-2.3: deadline-bounded read-busy stamp for the focus backstop */
     let chartResponseSent = false;
     let chartDeadlineTimer = null;
     const chartRespond = (payload) => {
       if (chartResponseSent) return false;
       chartResponseSent = true;
+      try { self.__mlsReadInFlight = Math.max(0, (Number(self.__mlsReadInFlight) || 0) - 1); } catch (eRif2) {} /* readlock-1.0.0 */
       if (chartDeadlineTimer != null) { try { clearTimeout(chartDeadlineTimer); } catch (eClearChartTimer) {} }
       if (payload && payload.ok !== true) {
         /* sx-1.1: the bounded (2.5s) session probe rides EVERY chart-read failure
@@ -10720,15 +10707,29 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
           });
           const pickStrict = (chosenStrict[0] || (rankedStrict.length ? rankedStrict[0].f : null)) || { u: tab.url, t: '' };
           const versionStrict = (chrome.runtime.getManifest && chrome.runtime.getManifest().version) || '';
+          /* exactread-1.0.0 (3.0.125): the ONLY identity gate on an ordinary chart
+             read is the canonical exact first+last+DOB resolver. A request with no
+             usable DOB refuses (identity-hint-incomplete) instead of accepting a
+             name-only banner; an ambiguous banner refuses; the MRN is reported and
+             never vetoes an exact pair (owner ruling). */
+          const exactGlobalPair = want ? mlsExactIdentityPair({name:want,dob:wantDob,mrn:wantMrn}, ident || {}) : { ok: false, reason: 'no-target' };
           const globalNameMatches = !!(want && ident && ident.name && strictNameMatch(ident.name, want));
-          const globalStrongMismatch = !!(globalNameMatches && wantDob && (!ident.dob || !sameDobStrict(ident.dob, wantDob)));
+          const globalStrongMismatch = !!(want && ident && ident.name && !exactGlobalPair.ok);
+          if (want && exactGlobalPair.reason === 'identity-hint-incomplete') {
+            await restoreFocus();
+            return chartRespond({ ok: false, reason: 'identity-hint-incomplete', attempted: false, captured: false, opened: opened, version: versionStrict, chartName: (ident && ident.name) || '', chartDob: (ident && ident.dob) || '', error: 'MLS has no usable date of birth (or full first and last name) for ' + want + ', so it cannot prove which athenaOne chart is theirs. Add the date of birth in MLS, then pull again. Nothing was captured.' });
+          }
+          if (want && exactGlobalPair.reason === 'identity-ambiguous') {
+            await restoreFocus();
+            return chartRespond({ ok: false, reason: 'ambiguous', attempted: false, captured: false, opened: opened, version: versionStrict, chartName: (ident && ident.name) || '', chartDob: (ident && ident.dob) || '', error: 'athenaOne showed more than one patient banner for ' + want + ' and MLS did not guess. Open the right chart in athenaOne, then pull again. Nothing was captured.' });
+          }
           if (want && ident && ident.name && (!globalNameMatches || globalStrongMismatch)) {
             await restoreFocus();
             return chartRespond({ ok: false, reason: 'wrong-chart', attempted: false, captured: false, chartName: ident.name, chartDob: ident.dob || '', expectedMrnDigits: mrnKeyStrict(wantMrn).length, observedMrnDigits: mrnKeyStrict(ident.mrn).length, opened: opened, version: versionStrict, error: 'The open athenaOne chart identity does not match ' + want + '. Nothing was captured for ' + want + '.' });
           }
-          if (want && !opened && !(ident && ident.name)) {
+          if (want && !(ident && ident.name)) {
             await restoreFocus();
-            return chartRespond({ ok: false, reason: 'unverified', opened: false, version: versionStrict, error: 'Could not open or verify ' + want + '\u2019s chart (no patient identity readable on the open page). Open the patient\u2019s chart in athenaOne, then pull again \u2014 nothing was captured.' });
+            return chartRespond({ ok: false, reason: 'unverified', opened: opened, version: versionStrict, error: 'Could not open or verify ' + want + '\u2019s chart (no patient identity readable on the open page). Open the patient\u2019s chart in athenaOne, then pull again \u2014 nothing was captured.' });
           }
           await restoreFocus();
           const exactGlobalIdentity = identityMatchesTarget(ident);
@@ -10802,6 +10803,13 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
              the row had neither MRN nor DOB, so this capture is a suggestion and
              never an automatic merge. */
           const __mlsIdentityFill = { mrnMatched: !!(wantMrn && ident && ident.mrn && mrnKeyStrict(ident.mrn) === mrnKeyStrict(wantMrn)), dobRead: !!(ident && ident.dob), dobSource: (ident && ident.dob) ? 'chart' : '', dobFillable: !!(!wantDob && ident && ident.dob), identityMode: (!wantMrn && !wantDob) ? 'identity-name-only' : 'identity-verified' };
+          /* exactread-1.0.0 (3.0.125): a read that captured no chart text is a
+             refusal with a sentence, never ok:true with an empty text field.
+             ("Pulled successfully" with nothing captured was the owner's
+             "the pull cheats" report.) */
+          if (!chosenStrict.length || !String(chartTextStrict || '').trim()) {
+            return chartRespond({ ok: false, reason: 'chart-frames-unbound', attempted: false, captured: false, opened: opened, version: versionStrict, receipt: chartReceiptStrict, refusalDiag: { briefing: briefingDiag, identityFill: __mlsIdentityFill }, chartName: (ident && ident.name) || '', chartDob: (ident && ident.dob) || '', error: 'The chart' + (want ? ' for ' + want : '') + ' opened' + (want ? ' and the patient matched' : '') + ', but no chart section could be tied to this patient, so nothing was captured. Open the chart once in athenaOne and let it finish loading, then pull again.' });
+          }
           return chartRespond({ ok: true, text: chartTextStrict, receipt: chartReceiptStrict, url: pickStrict.u || tab.url, title: tab.title, opened: opened, frames: eligibleFrames.length, stageMs: { total: Date.now() - chartRequestStartedAt, identity: __identDoneAt - T0, text: Date.now() - __identDoneAt, polls: polls }, chartName: (ident && ident.name) || '', chartDob: (ident && ident.dob) || '', chartMrn: (ident && ident.mrn) || '', identity: __mlsIdentityFill, version: versionStrict, via: (ident && ident.via) || '', briefingText: briefingShip, briefingDiag: briefingDiag, briefingNav: navClicked || '', identDiag: identDiag, textDiag: textDiagStrict, expected: expectName ? 1 : 0 });
         }
       } catch (e) { chartRespond({ ok: false, error: String((e && e.message) || e) }); }
@@ -10905,7 +10913,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
            adapters never use this route. A model/prompt may navigate and fill
            ordinary text, but it can never finalize clinical/financial actions
            or type into structured order/code destinations through this API. */
-        const _finalAction = /\b(save|sign|submit|approve|post|transmit|authorize|finali[sz]e|place\s+(?:the\s+)?order|send\s+(?:the\s+)?(?:rx|prescription)|e-?prescribe|file\s+(?:the\s+)?claim|check\s*-?\s*out|delete|remove|void)\b/i;
+        const _finalAction = /\b(save|sign|submit|approve|post|transmit|authorize|finali[sz]e|place\s+(?:the\s+)?order|send\s+(?:the\s+)?(?:rx|prescription)|e-?prescribe|file\s+(?:the\s+)?claim|check\s*-?\s*(?:in|out)|close\s+encounter|discharge|unlock|reopen|delete|remove|void)\b/i;
         const _structuredTarget = /\b(order|prescri(?:ption|be)?|\brx\b|medication\s+order|pharmacy|diagnos(?:is|es|tic)|\bicd(?:-?10)?\b|\bcpt\b|billing|charge|superbill|claim|referral|imaging\s+order|lab(?:oratory)?\s+order)\b/i;
         const _outerHay = String(action.target || '') + ' ' + String(action.text || '');
         if (/^(click|confirm|select)$/i.test(String(action.type || '')) && _finalAction.test(_outerHay)) {
@@ -10969,7 +10977,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
             function labelOf(e) {
               return ((e.innerText || e.value || (e.getAttribute && (e.getAttribute('aria-label') || e.getAttribute('title') || e.getAttribute('placeholder') || e.getAttribute('name') || e.id)) || '') + '').toLowerCase().replace(/\s+/g, ' ').trim();
             }
-            var FINAL_ACTION = /\b(save|sign|submit|approve|post|transmit|authorize|finali[sz]e|place\s+(?:the\s+)?order|send\s+(?:the\s+)?(?:rx|prescription)|e-?prescribe|file\s+(?:the\s+)?claim|check\s*-?\s*out|delete|remove|void)\b/i;
+            var FINAL_ACTION = /\b(save|sign|submit|approve|post|transmit|authorize|finali[sz]e|place\s+(?:the\s+)?order|send\s+(?:the\s+)?(?:rx|prescription)|e-?prescribe|file\s+(?:the\s+)?claim|check\s*-?\s*(?:in|out)|close\s+encounter|discharge|unlock|reopen|delete|remove|void)\b/i;
             var STRUCTURED_TARGET = /\b(order|prescri(?:ption|be)?|\brx\b|medication\s+order|pharmacy|diagnos(?:is|es|tic)|\bicd(?:-?10)?\b|\bcpt\b|billing|charge|superbill|claim|referral|imaging\s+order|lab(?:oratory)?\s+order)\b/i;
             // Rebuild the SAME ordered inventory the agent saw, so a "#index" target
             // maps to the exact element. Must match mlsAssistElements above.
@@ -13339,12 +13347,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     };
     try { return Object.freeze(out); } catch (e) { return out; }
   }
-  /* wa-3072: one walk-scoped alias record, reset when the AllVisits mutex is
-     taken. Armed by ANY verified frame in the walk; consulted only when the
-     caller's frozen anchors (DOB+MRN) equal the arming walk's. Lets a later
-     frame that shows the LEGAL name (Thoma) pass for a nickname record (Tom)
-     on exact DOB + exact surname, inside an already-verified chart walk. */
-  var __mlsWalkAliasRec = null;
   function visitIdentityGate(frozen, live) {
 function mlsExactNameKey(value) {
   var raw = String(value || '').trim().toLowerCase();
@@ -14346,7 +14348,7 @@ function mlsExactIdentityPair(expected, observed) {
         }
         if (acceptedMinimal) minimalBodies++;
         visits.push(visit);
-        emit(appTabId, frozenRequestId, 'Read full encounter ' + (i + 1) + ' of ' + total + '…', i + 1, total);
+        emit(appTabId, frozenRequestId, 'Encounter ' + (i + 1) + ' of ' + total + ' checked; ' + visits.length + ' full note' + (visits.length === 1 ? '' : 's') + ' read so far.', i + 1, total);
       }
 
       /* Refuse a batch if the chart changed while encounter rows were open. */
@@ -14612,7 +14614,6 @@ function mlsExactIdentityPair(expected, observed) {
     }
     var startup = { pending: true, requestId: transportRequestId };
     activeAllVisitsPromise = startup;
-    __mlsWalkAliasRec = null; /* wa-3072: fresh walk, fresh alias */
     try {
       loadVisitsCfgBound(1500).then(function (cfg) {
         if (activeAllVisitsPromise !== startup) return;
@@ -14634,7 +14635,7 @@ function mlsExactIdentityPair(expected, observed) {
           }
           /* fg-1.0: front-for-read is bounded to THIS read and always undone in finish(). */
           var __fgState = null, __fgDidFront = false;
-          try { self.__mlsChartReadBusyUntil = Math.max(Number(self.__mlsChartReadBusyUntil || 0), Number(msg.deadlineAt || (Date.now() + 195000))); } catch (eBzV) {} /* qol-2.3 */
+          try { self.__mlsChartReadBusyUntil = Math.max(Number(self.__mlsChartReadBusyUntil || 0), Number(msg.deadlineAt || (Date.now() + 195000))); } catch (eBzV) {} /* qol-2.3 */ try { self.__mlsReadInFlight = (Number(self.__mlsReadInFlight) || 0) + 1; } catch (eRif3) {} /* readlock-1.0.0 */
           var thisRead;
           if (msg.foregroundOk === true) {
             thisRead = __mlsFrontAthenaForRead(appTabId).then(function (fg) {
@@ -14667,6 +14668,7 @@ function mlsExactIdentityPair(expected, observed) {
           function finish(value) {
             try { clearTimeout(__wdogTimer); } catch (eWc) {}
             if (__wdogFinished) return; __wdogFinished = true;
+            try { self.__mlsReadInFlight = Math.max(0, (Number(self.__mlsReadInFlight) || 0) - 1); } catch (eRif4) {} /* readlock-1.0.0 */
             /* Clear single-flight ownership before responding. Cleanup is
                registered immediately after sendResponse returns and is never
                awaited by this completed read. */
@@ -15041,8 +15043,13 @@ function mlsExactIdentityPair(expected, observed) {
           /* v1.66: when BOTH names are known, require BOTH to match (score >= 7) - a
              last-name-only hit (+4) could be the PROVIDER's label ("Schaeffer" x17 on
              the live dashboard) and clicking it navigates nowhere useful. */
-          var best = null, bestSc = (lname && fname) ? 6 : 3;
-          for (var i = 0; i < nodes.length; i++) { var tx = rowText(nodes[i]).toLowerCase(); var sc = scoreRow(tx, nodes[i]); if (sc > bestSc) { bestSc = sc; best = nodes[i]; } }
+          /* exactopen-1.0.0 (3.0.125): a surname-only request never clicks a
+             row, and a tie at the top score between two different rows is
+             ambiguity, not a pick. */
+          if (!fname) return { el: null, sc: 0, scanned: nodes.length, reason: 'first-name-required' };
+          var best = null, bestSc = 6, ties = 0;
+          for (var i = 0; i < nodes.length; i++) { var tx = rowText(nodes[i]).toLowerCase(); var sc = scoreRow(tx, nodes[i]); if (sc > bestSc) { bestSc = sc; best = nodes[i]; ties = 1; } else if (best && sc === bestSc) { try { if (!best.contains(nodes[i]) && !nodes[i].contains(best)) ties++; } catch (eTie) { ties++; } } }
+          if (ties > 1) return { el: null, sc: bestSc, scanned: nodes.length, ambiguous: true, nameAmbiguous: true, matches: ties };
           return { el: best, sc: bestSc, scanned: nodes.length };
         }
         // v1.62: athenaOne v26.3 renders schedule rows as plain <div>s wired to React
@@ -15207,7 +15214,7 @@ function mlsExactIdentityPair(expected, observed) {
         // fast path: exact id only in bootstrap mode; ordinary opens retain the
         // proven name scan as a compatibility fallback.
         var hit = apptIdRow() || (requireAppointmentId === true ? { el: null, sc: 0, scanned: 0 } : scanOnce());
-        if (hit.ambiguous) return { phase: 'open', opened: false, candidates: hit.matches || 2, reason: 'appointment-id-ambiguous', diag: { frame: location.hostname, scanned: hit.scanned, topScore: hit.sc, apptIdBound: false, apptIdMatches: hit.matches || 2 } };
+        if (hit.ambiguous) return { phase: 'open', opened: false, candidates: hit.matches || 2, reason: hit.nameAmbiguous ? 'ambiguous' : 'appointment-id-ambiguous', diag: { frame: location.hostname, scanned: hit.scanned, topScore: hit.sc, apptIdBound: false, apptIdMatches: hit.matches || 2 } };
         if (hit.el) return await clickRebound(hit);
         // v1.61: SCROLL the virtualized schedule + re-scan. athenaOne renders only the
         // rows in the viewport, so a below-the-fold patient (e.g. Ruth Gehrman) was never
@@ -15931,6 +15938,8 @@ function mlsExactIdentityPair(expected, observed) {
           rawSendResponse(Object.assign({}, payload || {}, { requestId: openGuard.token, deadlineAt: openGuard.deadline }));
         };
         var findGuard = Object.freeze({ value: frozenMrn, deadline: openGuard.deadline, token: openGuard.token });
+        /* openterminal-1.0.0 (3.0.125): one terminal answer per open request, even if an await never settles. */
+        try { setTimeout(function () { if (!responseSent) sendResponse({ ok: false, opened: false, reason: 'open-deadline-exceeded', requestToken: openGuard.token, error: 'The Athena patient open reached its one absolute deadline. No retry or fallback was attempted.' }); }, Math.max(0, openGuard.deadline - Date.now()) + 250); } catch (eOpenTimer) {}
         function openExpired() { return Date.now() >= openGuard.deadline; }
         function failOpenDeadline(stage) {
           sendResponse({ ok: false, opened: false, reason: 'open-deadline-exceeded', requestToken: openGuard.token, error: 'The Athena patient open reached its one absolute deadline during ' + (stage || 'navigation') + '. No retry or fallback was dispatched after the timeout.' });
@@ -16405,27 +16414,10 @@ async function mlsAthenaSignSave(mode) {
 
   if (mode === 'probe') return { ok: true, mode: 'probe', ready: !!controls.length, observed: observed };
 
-  // ----- SIGN (clicks; user-initiated; never invoked autonomously) -----
-  if (alreadySigned) return { ok: true, signed: true, reason: 'already-signed', observed: observed };
-  if (!controls.length) return { ok: false, signed: false, reason: 'no-control', msg: 'Could not find a Sign & Save control on this Athena screen.', observed: observed };
-
-  clickEl(controls[0].el);
-  await sleep(700);
-  // a confirm dialog may appear -> click the AFFIRMATIVE sign/confirm button (not cancel)
-  var dlg = [].slice.call(document.querySelectorAll('[role=dialog],[role=alertdialog],.modal,.dialog,[class*=modal],[class*=dialog]')).filter(vis);
-  if (dlg.length) {
-    var btns = [];
-    dlg.forEach(function (d) { [].slice.call(d.querySelectorAll('button,[role=button],input[type=submit]')).filter(vis).forEach(function (b) { btns.push(b); }); });
-    var pick = null;
-    for (var i = 0; i < btns.length; i++) { var bt = txt(btns[i]); if (!bt || BAD_RE.test(bt)) continue; if (SIGN_RE.test(bt) || /\b(?:confirm|ok|yes|continue|accept)\b/i.test(bt)) { pick = btns[i]; if (SIGN_RE.test(bt)) break; } }
-    if (pick) { clickEl(pick); await sleep(800); }
-  }
-  // verify - REQUIRE a positive signed indicator. Control disappearing alone is NOT proof.
-  for (var w = 0; w < 10; w++) {
-    if (signedIndicator()) return { ok: true, signed: true, reason: 'confirmed', observed: observed };
-    await sleep(500);
-  }
-  return { ok: true, signed: false, reason: 'unconfirmed', msg: 'Clicked Sign & Save but could not confirm Athena finished signing - check the chart in Athena before relying on it.', observed: observed };
+  /* draftonly-1.1.0 (3.0.125): the sign half of this driver was deleted.
+     This function is probe-only. The only executable actions in MLS Assist
+     are write_note and save_draft; Sign stays the doctor's own click. */
+  return { ok: false, blocked: true, signed: false, reason: 'sign-route-disabled', msg: 'MLS Assist never signs. Sign the encounter in athenaOne yourself.', observed: observed };
 }
 
 /* ===== v1.38: MLS Seamless Pop-up overlay router (appended) ===== */
@@ -16654,7 +16646,7 @@ async function mlsAthenaSignSave(mode) {
     if (!driver || typeof chrome.scripting === 'undefined') return Promise.resolve({ error: 'sign-unavailable', message: 'Sign path unavailable - reload the extension.' });
     return overlayFindEmrTab().then(function (tab) {
       if (!tab) return { error: 'no-tab', message: 'No signed-in athenaOne tab is open.' };
-      var mode = (opts.probe ? 'probe' : 'sign');
+      var mode = 'probe'; /* draftonly-1.1.0 (3.0.125): probe-only; the sign half no longer exists */
       return chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, func: driver, args: [mode] })
         .then(function (res) {
           var rs = (res || []).map(function (x) { return x && x.result; }).filter(Boolean);
@@ -17966,852 +17958,11 @@ function mlsExactIdentityPair(expected, observed) {
 
 
 
-/* =========================================================================
- * MLS Assist v2.05 - UNIFIED WRITE DRIVER (mlsUnifiedWriteDriverFn) +
- * mlsAppWriteV2Request handler.
- *
- * WHY: the legacy write path (mlsFieldScanner/mlsNotePaster) runs as PER-FRAME
- * injections with light-DOM attribute selectors - on the current chart History
- * layout the visible note editor is a shadow-DOM contenteditable (and
- * [contenteditable=""]/["true"] also misses "plaintext-only"), so the scan
- * honestly found nothing and nothing was ever written. This driver uses the
- * visits reader's proven architecture instead: ONE top-frame world:'MAIN'
- * injection that walks frames AND shadow roots itself. It is fully generic -
- * no patient, provider, practice or department is hardcoded anywhere; the
- * identity gate reads the live banner, the section map is regex-by-meaning.
- *
- * HARD SAFETY (enforced at the LOWEST level, not just the caller):
- *  - Section keys orders/rx/prescriptions/billing/charges/referrals/pt/imaging
- *    are FORCED to target-only inside the driver: the best matching field is
- *    located and REPORTED (label/heading/frame) but never focused, never
- *    written, never submitted - regardless of what any caller passes.
- *  - The driver never dispatches events on anything but the chosen note field
- *    itself. No button is ever clicked except the read-only left-rail History
- *    nav item and a section's NOTE toggle (both navigation affordances,
- *    guarded by the same BAD-blocklist as the visits reader).
- *  - Identity gate runs IN here on the live DOM before any interaction:
- *    requested name (+DOB +athenaId when given) must match the banner chip or
- *    the driver refuses with the exact reason. Unsigned content only - the
- *    clinician reviews and signs in athenaOne.
- * ========================================================================= */
-async function mlsUnifiedWriteDriverFn(name, dob, athenaId, sections) {
-  try {
-    var T0 = Date.now();
-    function sleep(ms) { var __hsAt = Date.now() + Math.max(0, Number(ms || 0)); return new Promise(function (r) { /* mls-hs-1.0.0: hidden tab => timers throttled to 1/s then 1/min; yield through a MessageChannel (not a timer) until the wall clock passes. */ if (typeof document === 'undefined' || !document.hidden) { setTimeout(r, Math.max(0, __hsAt - Date.now())); return; } var __ch = null; try { __ch = new MessageChannel(); } catch (e) { __ch = null; } if (!__ch) { setTimeout(r, Math.max(0, __hsAt - Date.now())); return; } __ch.port1.onmessage = function () { if (Date.now() >= __hsAt) { try { __ch.port1.onmessage = null; __ch.port1.close(); __ch.port2.close(); } catch (e2) {} r(); return; } if (!document.hidden) { try { __ch.port1.onmessage = null; __ch.port1.close(); __ch.port2.close(); } catch (e3) {} setTimeout(r, Math.max(0, __hsAt - Date.now())); return; } try { __ch.port2.postMessage(0); } catch (e4) { setTimeout(r, Math.max(0, __hsAt - Date.now())); } }; __ch.port2.postMessage(0); }); }
-    if (!String(name || '').trim()) return { ok: false, reason: 'no-patient', error: 'mlsUnifiedWriteDriverFn requires the patient name - refusing an un-gated write.' };
-    if (!sections || !sections.length) return { ok: false, reason: 'no-sections', error: 'No sections supplied.' };
-    /* Versioned destination contract. Aliases are explicit; an unknown or
-       ambiguous key NEVER falls back to a generic note field. Structured and
-       order-chain destinations are target/preview-only until dedicated exact
-       adapters are independently proven. */
-    var ROUTE_CONTRACT_VERSION = 'athena-routes-1';
-    var ROUTE_ALIASES = {
-      note: 'encounter_note', encounter_note: 'encounter_note',
-      hpi: 'hpi', ros: 'ros',
-      exam: 'physical_exam', physical_exam: 'physical_exam',
-      assessment: 'assessment_narrative', assessment_narrative: 'assessment_narrative',
-      plan: 'plan', followup: 'follow_up', follow_up: 'follow_up',
-      procedure: 'procedure_note', procedure_note: 'procedure_note',
-      past_surgical_history: 'past_surgical_history',
-      diagnoses: 'diagnoses_icd10', diagnosis: 'diagnoses_icd10', dx: 'diagnoses_icd10', icd: 'diagnoses_icd10', diagnoses_icd10: 'diagnoses_icd10',
-      rx: 'medications_rx', prescriptions: 'medications_rx', medications_rx: 'medications_rx',
-      orders: 'orders_preview', order: 'orders_preview', orders_preview: 'orders_preview',
-      lab_order: 'lab_order', imaging: 'imaging_order', imaging_order: 'imaging_order',
-      referrals: 'referral_order', referral: 'referral_order', referral_order: 'referral_order',
-      pt: 'pt_order', pt_order: 'pt_order',
-      billing: 'billing_preview', charges: 'billing_preview', billing_preview: 'billing_preview',
-      billing_em: 'billing_em', billing_cpt: 'billing_cpt'
-    };
-    var ROUTE_POLICY = {
-      encounter_note: { kind: 'narrative', draft: true },
-      hpi: { kind: 'narrative', draft: true },
-      ros: { kind: 'narrative', draft: true },
-      physical_exam: { kind: 'narrative', draft: true },
-      assessment_narrative: { kind: 'narrative', draft: true },
-      plan: { kind: 'narrative', draft: true },
-      follow_up: { kind: 'narrative', draft: true },
-      procedure_note: { kind: 'template-narrative', draft: false },
-      past_surgical_history: { kind: 'history-narrative', draft: false },
-      diagnoses_icd10: { kind: 'structured-code', draft: false },
-      medications_rx: { kind: 'order-chain', draft: false },
-      orders_preview: { kind: 'order-chain', draft: false },
-      lab_order: { kind: 'order-chain', draft: false },
-      imaging_order: { kind: 'order-chain', draft: false },
-      referral_order: { kind: 'order-chain', draft: false },
-      pt_order: { kind: 'order-chain', draft: false },
-      billing_preview: { kind: 'structured-billing', draft: false },
-      billing_em: { kind: 'structured-billing', draft: false },
-      billing_cpt: { kind: 'structured-billing', draft: false }
-    };
-    function canonicalRouteKey(k) {
-      k = String(k || '').toLowerCase().replace(/[\s-]+/g, '_').trim();
-      return ROUTE_ALIASES[k] || '';
-    }
-    /* ---- normalizers (identical to the proven visits driver) -------------- */
-    function nrmName(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim(); }
-    function nameMatch(a, b) {
-      var ta = nrmName(a).split(' ').filter(function (x) { return x.length > 1; });
-      var tb = nrmName(b).split(' ').filter(function (x) { return x.length > 1; });
-      var o = ta.filter(function (x) { return tb.indexOf(x) >= 0; }).length;
-      return o >= 2 || (o >= 1 && Math.min(ta.length, tb.length) === 1);
-    }
-    function nrmDob(s) {
-      /* isodob-1.1.0 (3.0.117): anchored ISO branch first. The M/D/Y regex
-         below matches INSIDE an ISO year, so 1962-03-04, 1942-03-04 and
-         1902-03-04 all returned '2/3/2004' and the WRITE-LANE wrong-chart
-         verdict compared different people equal (measured 2026-09-11). */
-      var iso = /(^|[^0-9])(\d{4})-([01]\d)-([0-3]\d)(?![0-9])/.exec(String(s || ''));
-      if (iso) { var isoMo = Number(iso[3]), isoDy = Number(iso[4]); if (isoMo < 1 || isoMo > 12 || isoDy < 1 || isoDy > 31) return ''; return isoMo + '/' + isoDy + '/' + iso[2]; }
-      var m = /([01]?\d)[\/\-\.]([0-3]?\d)[\/\-\.](\d{2,4})/.exec(String(s || ''));
-      if (!m) return '';
-      var pivot = (new Date().getFullYear() % 100) + 1;
-      var y = m[3].length === 2 ? ((Number(m[3]) > pivot ? '19' : '20') + m[3]) : m[3];
-      var mo = Number(m[1]), dy = Number(m[2]);
-      if (mo < 1 || mo > 12 || dy < 1 || dy > 31) return '';
-      return mo + '/' + dy + '/' + y;
-    }
-    function nrmText(s) { return String(s || '').replace(/[\u200B-\u200D\u2060\uFEFF]/g, '').replace(/\s+/g, ' ').trim().toLowerCase(); }
-    /* ---- frame walk (same SKIP/JUNK as the visits driver) ------------------ */
-    var SKIP = /globalnav|statusbar|stm\.esp|schedulenavclose|coordinator\/enterprise|blank\.html|findpatient\.esp/i;
-    var JUNK = /letter|athenatext|communicat|\bfax|printer|documentviewer|clinicaldocument|inbox|messag/i;
-    var best = null, allFr = [];
-    (function walk(w, depth) {
-      if (depth > 6) return;
-      for (var i = 0; i < w.frames.length; i++) {
-        var f = w.frames[i];
-        try {
-          void f.document;
-          allFr.push(f);
-          var p = String(f.location.pathname || '');
-          var el = f.frameElement; var r = el ? el.getBoundingClientRect() : null;
-          var area = r ? (r.width * r.height) : 0;
-          if (!SKIP.test(p) && area > 150000) {
-            if (!best || depth > best.depth || (depth === best.depth && area > best.area)) best = { w: f, depth: depth, area: area };
-          }
-          walk(f, depth + 1);
-        } catch (e) {}
-      }
-    })(window, 0);
-    var W = (best && best.w) || window;
-    /* ---- shadow-aware line collector + chip identity (proven verbatim) ---- */
-    function docLines(doc, cap) {
-      var BLOCK = /^(div|p|li|tr|td|th|section|header|footer|h[1-6]|ul|ol|table|article|aside|nav|form|fieldset|dl|dt|dd|pre|address|hr|br)$/;
-      var out = { items: [], n: 0 };
-      function coll(root, depth) {
-        if (depth > 25 || out.n > cap) return;
-        var kids = root.childNodes || [];
-        for (var k = 0; k < kids.length; k++) {
-          if (out.n > cap) return;
-          var n = kids[k];
-          if (n.nodeType === 3) { var s = String(n.nodeValue || '').replace(/\s+/g, ' ').trim(); if (s) { out.items.push({ t: s }); out.n++; } }
-          else if (n.nodeType === 1) {
-            var tag = (n.tagName || '').toLowerCase();
-            if (tag === 'script' || tag === 'style') continue;
-            var isB = BLOCK.test(tag);
-            if (isB) { out.items.push({ nl: 1 }); out.n++; }
-            try {
-              if (tag === 'slot' && n.assignedNodes) {
-                var an = n.assignedNodes({ flatten: true });
-                for (var a = 0; a < an.length; a++) {
-                  if (an[a].nodeType === 3) { var s2 = String(an[a].nodeValue || '').replace(/\s+/g, ' ').trim(); if (s2) { out.items.push({ t: s2 }); out.n++; } }
-                  else if (an[a].nodeType === 1) coll(an[a], depth + 1);
-                }
-              } else if (n.shadowRoot) coll(n.shadowRoot, depth + 1);
-              else coll(n, depth + 1);
-            } catch (e) {}
-            if (isB) { out.items.push({ nl: 1 }); out.n++; }
-          }
-        }
-      }
-      try { coll(doc.body || doc, 0); } catch (e) {}
-      var lines = [], cur = [];
-      for (var x = 0; x < out.items.length; x++) {
-        if (out.items[x].nl) { if (cur.length) { lines.push(cur.join(' ')); cur = []; } }
-        else cur.push(out.items[x].t);
-      }
-      if (cur.length) lines.push(cur.join(' '));
-      return lines;
-    }
-    function identFrom(lines) {
-      var AGE_CHIP = /\b(\d{1,3})\s*(?:yo|y\/o|yrs?\.?|years?\s*old)\b/i;
-      var BARE_DATE = /\b([01]?\d)[\/\-\.]([0-3]?\d)[\/\-\.](\d{4})\b/;
-      var MRN_HASH = /#\s?(\d{4,})/;
-      var STOP1 = /^(please|the|new|find|create|search|no|today|welcome|inbox|schedule|calendar|department|provider|patient|results|appointment|encounter|billing|orders|messages|close|camera|panel|visits|history)$/i;
-      var PROVCRED = /^(MD|DO|PA|PAC|NP|CRNA|APRN|DPM|DDS|DMD|RN|CRNP|FNP|DNP|PHD|MBBS|OD|MSN|LPN|CNM|DC|DPT|DR|PHYS|PT)$/i;
-      function okName(cand) {
-        if (!cand || cand.length < 4 || cand.length > 60) return '';
-        if (!/^([A-Z][A-Za-z'\-\.]*(?:\s+[A-Z][A-Za-z'\-\.]*){1,3})$/.test(cand)) return '';
-        var toks = cand.replace(/,/g, ' ').split(/\s+/);
-        for (var q = 0; q < toks.length; q++) { if (STOP1.test(toks[q])) return ''; }
-        if (PROVCRED.test(toks[toks.length - 1].replace(/[.\-]/g, ''))) return '';
-        if (/^DR\.?$/i.test(toks[0])) return '';
-        return cand;
-      }
-      var out = [];
-      for (var i = 0; i < lines.length && out.length < 8; i++) {
-        if (!AGE_CHIP.test(lines[i]) || !BARE_DATE.test(lines[i])) continue;
-        var bd = BARE_DATE.exec(lines[i]);
-        var mh = MRN_HASH.exec(lines[i]);
-        var dobS = ('0' + bd[1]).slice(-2) + '/' + ('0' + bd[2]).slice(-2) + '/' + bd[3];
-        var mrnS = (mh && mh[1]) || '';
-        for (var kk = 1; kk <= 3; kk++) {
-          if (i - kk < 0) break;
-          var joined = lines.slice(i - kk, i).join(' ').replace(/[()]/g, ' ').replace(/\s+/g, ' ').trim();
-          var parts = joined.split(/legal\s*:/i).map(function (s) { return s.replace(/\s+/g, ' ').trim(); }).filter(Boolean);
-          for (var pp = 0; pp < parts.length; pp++) {
-            var nm = okName(parts[pp]);
-            if (nm && !out.some(function (o) { return o.name === nm; })) out.push({ name: nm, dob: dobS, mrn: mrnS });
-          }
-        }
-      }
-      return out;
-    }
-    var scanWs = [];
-    if (best && best.w) scanWs.push(best.w);
-    for (var fi = 0; fi < allFr.length && scanWs.length < 9; fi++) {
-      try {
-        var pth = String(allFr[fi].location.pathname || '');
-        if (allFr[fi] !== W && !SKIP.test(pth) && !JUNK.test(pth)) scanWs.push(allFr[fi]);
-      } catch (eS) {}
-    }
-    scanWs.push(window);
-    var ident = null, identWin = null, lastSeen = null, nameOnlyHit = null, nameOnlyWin = null;
-    var identDeadline = Date.now() + 15000;
-    var wantDobPre = nrmDob(dob);
-    while (!ident && Date.now() < identDeadline) {
-      for (var si = 0; si < scanWs.length && !ident; si++) {
-        var candList = [];
-        try { candList = identFrom(docLines(scanWs[si].document, 8000)) || []; } catch (eI) {}
-        for (var ci = 0; ci < candList.length; ci++) {
-          if (candList[ci] && candList[ci].name) {
-            if (!lastSeen) lastSeen = candList[ci];
-            if (nameMatch(candList[ci].name, String(name || ''))) {
-              if (!wantDobPre) { ident = candList[ci]; identWin = scanWs[si]; break; }
-              if (nrmDob(candList[ci].dob) === wantDobPre) { ident = candList[ci]; identWin = scanWs[si]; break; }
-              if (!nameOnlyHit) { nameOnlyHit = candList[ci]; nameOnlyWin = scanWs[si]; }
-            }
-          }
-        }
-      }
-      if (!ident) await sleep(800);
-    }
-    if (!ident && nameOnlyHit) { ident = nameOnlyHit; identWin = nameOnlyWin; }
-    if (!ident || !ident.name) {
-      if (lastSeen && lastSeen.name) return { ok: false, reason: 'wrong-chart', chartName: lastSeen.name, chartDob: lastSeen.dob || '', chartMrn: lastSeen.mrn || '', error: 'The open athenaOne chart is ' + lastSeen.name + ', not ' + name + '. Nothing was written.' };
-      return { ok: false, reason: 'unverified', error: 'No readable patient identity on the open athenaOne chart - refusing to write. Nothing was touched.' };
-    }
-    var wantDob = nrmDob(dob);
-    if (wantDob) {
-      var haveDob = nrmDob(ident.dob);
-      if (!haveDob) return { ok: false, reason: 'unverified-dob', chartName: ident.name, chartMrn: ident.mrn || '', error: 'A DOB was requested but the open chart shows no readable DOB - refusing to write.' };
-      if (haveDob !== wantDob) return { ok: false, reason: 'wrong-dob', chartName: ident.name, chartDob: ident.dob || '', chartMrn: ident.mrn || '', error: 'The open chart DOB (' + ident.dob + ') does not match the requested DOB (' + dob + '). Nothing was written.' };
-    }
-    var wantId = String(athenaId || '').replace(/\D/g, '');
-    if (wantId && !String(ident.mrn || '').replace(/\D/g, '')) return { ok: false, reason: 'unverified-id', chartName: ident.name, chartDob: ident.dob || '', error: 'A patient ID was requested but no readable patient ID is shown on the open chart - refusing to write.' };
-    if (wantId && String(ident.mrn).replace(/\D/g, '') !== wantId) return { ok: false, reason: 'wrong-id', chartName: ident.name, chartDob: ident.dob || '', chartMrn: ident.mrn || '', error: 'The open chart patient ID #' + ident.mrn + ' does not match the requested #' + wantId + '. Nothing was written.' };
-    /* ---- v2.9.2 WRITE-TARGET SAFETY (owner: never write to the wrong place) -
-       The identity gate above can legitimately match a patient whose chart is
-       loaded in a BACKGROUND frame (e.g. the app opener pre-loaded it) while a
-       generic field picker would choose a VISIBLE editable that sits in a
-       DIFFERENT frame (a dashboard note box). That is "right patient verified,
-       WRONG place." So before ANY write we require the chosen field to be
-       either (a) inside the exact frame where we confirmed this patient, or
-       (b) inside a frame chain that independently shows this same patient. If
-       neither holds we REFUSE that field instead of writing to it. Read-only. */
-    function frameChainOf(el) {
-      var wins = [], w = null;
-      try { w = (el.ownerDocument && el.ownerDocument.defaultView) || W; } catch (e) { w = W; }
-      var g = 0;
-      while (w && g++ < 6) {
-        wins.push(w);
-        var pw = null; try { pw = (w.parent && w.parent !== w) ? w.parent : null; } catch (e2) { pw = null; }
-        w = pw;
-      }
-      return wins;
-    }
-    function targetChartMatches(el) {
-      try {
-        var wins = frameChainOf(el);
-        if (identWin) { for (var q = 0; q < wins.length; q++) { if (wins[q] === identWin) return true; } }
-        for (var i = 0; i < wins.length; i++) {
-          var doc; try { doc = wins[i].document; } catch (e) { continue; }
-          var cands = []; try { cands = identFrom(docLines(doc, 8000)) || []; } catch (e2) { cands = []; }
-          for (var j = 0; j < cands.length; j++) {
-            var c = cands[j];
-            if (!c || !c.name) continue;
-            if (!nameMatch(c.name, String(name || ''))) continue;
-            if (wantDob && nrmDob(c.dob) !== wantDob) continue;
-            if (wantId && String(c.mrn || '').replace(/\D/g, '') !== wantId) continue;
-            return true;
-          }
-        }
-      } catch (e) {}
-      return false;
-    }
-    /* ---- deep editable collector: frames + shadow roots ------------------- */
-    var BADF = /search|find|lookup|filter|chat|messag|comment|reason for|\baddress\b|e-?mail|phone|\bnpi\b|\bmrn\b|patient.?id|claim|login|password|user.?name|\bzip\b|\bcity\b|\bstate\b/i;
-    function deepActive(doc) { var a = null; try { a = doc.activeElement; while (a && a.shadowRoot && a.shadowRoot.activeElement) a = a.shadowRoot.activeElement; } catch (e) {} return a; }
-    function hostChainText(el, hops) {
-      var out = [], n = el, h = 0;
-      while (n && h < (hops || 7)) {
-        try {
-          var al = n.getAttribute && (n.getAttribute('aria-label') || n.getAttribute('title') || n.getAttribute('data-section') || n.getAttribute('data-sectionname'));
-          if (al && al.length <= 80) out.push(al);
-          if (n.querySelector) {
-            var hd = n.querySelector('h1,h2,h3,h4,h5,h6,legend,[role="heading"]');
-            if (hd) { var ht = String(hd.textContent || '').replace(/\s+/g, ' ').trim(); if (ht && ht.length <= 80) out.push(ht); }
-          }
-        } catch (e) {}
-        var up = null;
-        try { up = n.parentElement || (n.getRootNode && n.getRootNode().host) || null; } catch (e2) { up = null; }
-        n = up; h++;
-      }
-      return out.join(' ');
-    }
-    function labelOf(el) {
-      try {
-        var l = (el.getAttribute && (el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.getAttribute('title') || el.getAttribute('name'))) || '';
-        return String(l).replace(/\s+/g, ' ').trim().slice(0, 60);
-      } catch (e) { return ''; }
-    }
-    function visEl(el, win) {
-      try {
-        if (el.disabled || el.readOnly) return false;
-        var s = (win || window).getComputedStyle(el);
-        if (s.display === 'none' || s.visibility === 'hidden' || parseFloat(s.opacity || '1') < 0.05) return false;
-        var r = el.getBoundingClientRect();
-        return r.width > 90 && r.height > 14;
-      } catch (e) { return false; }
-    }
-    function collectEditables() {
-      var cands = [];
-      function walkRoot(root, win, act, budget) {
-        var els; try { els = root.querySelectorAll('*'); } catch (e) { return budget; }
-        for (var i = 0; i < els.length; i++) {
-          if (--budget < 0) return budget;
-          var el = els[i];
-          try { if (el.shadowRoot) budget = walkRoot(el.shadowRoot, win, act, budget); } catch (eS) {}
-          var tag = (el.tagName || '').toUpperCase();
-          var isTA = tag === 'TEXTAREA';
-          var isIN = tag === 'INPUT' && /^(text|search|)$/.test(String(el.getAttribute('type') || '').toLowerCase());
-          var isCE = el.isContentEditable === true && el.getAttribute && el.getAttribute('contenteditable') != null;
-          if (!isTA && !isIN && !isCE) continue;
-          if (!visEl(el, win)) continue;
-          var r = el.getBoundingClientRect();
-          var hay = (labelOf(el) + ' ' + hostChainText(el)).toLowerCase();
-          cands.push({ el: el, win: win, tag: tag, ce: isCE, area: Math.min(r.width * r.height, 400000), hay: hay, label: labelOf(el) || '', focused: el === act });
-        }
-        return budget;
-      }
-      var wins = [window];
-      for (var fi2 = 0; fi2 < allFr.length; fi2++) {
-        try { var p2 = String(allFr[fi2].location.pathname || ''); if (!SKIP.test(p2) && !JUNK.test(p2)) wins.push(allFr[fi2]); } catch (e) {}
-      }
-      for (var wi = 0; wi < wins.length && wi < 10; wi++) {
-        try { walkRoot(wins[wi].document, wins[wi], deepActive(wins[wi].document), 14000); } catch (e) {}
-      }
-      return cands;
-    }
-    /* ---- section map (generic, by meaning - nothing account-specific) ----- */
-    var DEFS = {
-      encounter_note: /encounter\s+note|progress\s+note|clinical\s+note|narrative|free.?text|documentation/i,
-      hpi: /\bhpi\b|history of present|present illness|subjective|chief complaint|interval history/i,
-      ros: /review of systems|\bros\b/i,
-      physical_exam: /physical exam|\bexam\b|objective|findings/i,
-      assessment_narrative: /assessment\s*(?:narrative|note|text)?|impression|a&p|a\/p/i,
-      plan: /\bplan\b|recommendation|decision\s*making/i,
-      follow_up: /follow.?up|return to clinic|\brtc\b|next visit/i,
-      procedure_note: /procedure\s*(?:documentation|note)|operative\s+note/i,
-      past_surgical_history: /surgical\s*(?:&|and)?\s*procedure\s*history|past\s+surgical\s+history/i,
-      diagnoses_icd10: /add assessment|diagnos(?:is|es)|\bicd(?:-?10)?\b|problem\s+list/i,
-      medications_rx: /prescri|\brx\b|\bsig\b|pharmacy|dispense|refill|medication order/i,
-      orders_preview: /\borders?\b|add\s+order/i,
-      lab_order: /lab(?:oratory)?\s+order|order\s+lab/i,
-      imaging_order: /imaging\s+order|radiology\s+order|order\s+imaging/i,
-      referral_order: /referral\s+order|order\s+referral/i,
-      pt_order: /physical\s+therapy\s+order|\bpt\s+order/i,
-      billing_preview: /billing|charge|superbill|e&m|e\/m|claim|\bcpt\b/i,
-      billing_em: /e&m|e\/m|evaluation\s+and\s+management/i,
-      billing_cpt: /add\s+charge|\bcpt\b|procedure\s+code|hcpcs/i
-    };
-    function bestFieldFor(key) {
-      var re = DEFS[key];
-      if (!re) return null;
-      var cands = collectEditables();
-      var top = null, topScore = -1e12;
-      for (var i = 0; i < cands.length; i++) {
-        var c = cands[i];
-        if (!re.test(c.hay)) continue;
-        var sc = c.area / 1000;
-        sc += 2000;
-        if (BADF.test(c.hay)) sc -= 1800;
-        if (c.tag === 'TEXTAREA') sc += 120;
-        if (c.ce) sc += 100;
-        if (c.focused) sc += 40;
-        c.score = sc;
-        if (sc > topScore) { topScore = sc; top = c; }
-      }
-      if (!top) return null;
-      return top;
-    }
-    /* ---- History-pane navigation + NOTE-editor opener (read-only nav) ----- */
-    var BADNAV = /save|sign|order|delete|discard|remove|void|submit|bill|charge|check\s*-?\s*(in|out)|prescri|refill|dispense|cancel|log\s*out/i;
-    function realClick(el, win) {
-      try { el.scrollIntoView({ block: 'center' }); } catch (e1) {}
-      try {
-        var w2 = win || (el.ownerDocument && el.ownerDocument.defaultView) || W;
-        var r = el.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2;
-        var o = { bubbles: true, cancelable: true, view: w2, clientX: x, clientY: y };
-        ['pointerover', 'mouseover', 'pointerdown', 'mousedown', 'pointerup', 'mouseup'].forEach(function (tp) {
-          try { el.dispatchEvent(new w2[tp.indexOf('pointer') === 0 ? 'PointerEvent' : 'MouseEvent'](tp, o)); } catch (e2) {}
-        });
-      } catch (e3) {}
-      try { el.click(); } catch (e4) {}
-    }
-    function frameText() { var t = ''; try { t = String((W.document.body && W.document.body.innerText) || ''); } catch (e) {} return t; }
-    var HIST_HEAD = /surgical\s*&?\s*procedure\s*history/i;
-    /* v2.07: the clientsummary CARD carries the same heading TEXT as the real
-       History drawer, so innerText alone is a lie (the v2.05/06 runs "saw" the
-       pane without ever opening it). The real signal is an ON-SCREEN heading
-       ELEMENT (x > -50; the collapsed drawer's copies measure x ~ -420). Also:
-       the rail click can open athena's top-nav Calendar menu instead (proven
-       collision) - detect + Escape it before every step. */
-    async function dismissNavMenu() {
-      try {
-        var els = W.document.querySelectorAll('a,li,span,div');
-        for (var i = 0; i < els.length; i++) {
-          var own = String(els[i].textContent || '').replace(/\s+/g, ' ').trim();
-          if (own === 'View Calendar' || own === 'Staff Directory') {
-            var r = els[i].getBoundingClientRect();
-            if (r.width > 2 && r.x >= 0) {
-              try { W.document.dispatchEvent(new W.KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true })); } catch (e1) {}
-              try { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true })); } catch (e2) {}
-              await sleep(350);
-              return true;
-            }
-          }
-        }
-      } catch (e) {}
-      return false;
-    }
-    function onScreenHeading(headingRe) {
-      var els; try { els = W.document.querySelectorAll('div,section,li,h1,h2,h3,h4,span'); } catch (e) { return null; }
-      for (var i = 0; i < els.length; i++) {
-        var own = String(els[i].textContent || '').replace(/\s+/g, ' ').trim();
-        if (own && own.length < 60 && headingRe.test(own)) {
-          try { var r = els[i].getBoundingClientRect(); if (r.width > 10 && r.x > -50) return els[i]; } catch (e2) {}
-        }
-      }
-      return null;
-    }
-    var histDiag = { clicks: 0, frames: [] };
-    function drawerEl() {
-      /* v2.09 STRUCTURAL drawer detection (live-proven on the real chart): the
-         History drawer is div[data-chart-section-id="history"], and its
-         x-position IS the toggle state - x ~ 54 open, x ~ -420 collapsed.
-         Heading-TEXT checks lie twice over (the read-only briefing card and the
-         clientsummary card both render the heading + saved note text), and the
-         rail LI is a TOGGLE, so a text-based "is it open" check made earlier
-         builds flap the drawer open/closed. */
-      var dv; try { dv = W.document.querySelectorAll('div[data-chart-section-id="history"]'); } catch (e) { dv = []; }
-      for (var i = 0; i < dv.length; i++) {
-        try { var r = dv[i].getBoundingClientRect(); if (r.width > 200 && r.x > -50) return dv[i]; } catch (e2) {}
-      }
-      return null;
-    }
-    function paneLive() { return !!drawerEl(); }
-    async function openHistoryPane() {
-      await dismissNavMenu();
-      if (paneLive()) return true;
-      var deadline = Date.now() + 16000;
-      while (Date.now() < deadline) {
-        var clicked = false;
-        /* v2.09: the chart rail may live in a DIFFERENT frame than the one the
-           size heuristic picked (live: a briefing frame won the pick while the
-           chart frame owned the rail). Search every candidate frame and ADOPT
-           the frame that has the clickable rail item. */
-        for (var wi2 = 0; wi2 < scanWs.length && !clicked; wi2++) {
-          try {
-            var lis = scanWs[wi2].document.querySelectorAll('li.chart-tabs__list-item[data-chart-section-id="history"],[data-chart-section-id="history"]');
-            for (var qi = 0; qi < lis.length; qi++) {
-              var li = lis[qi];
-              try { var rr = li.getBoundingClientRect(); if (rr.width < 2) continue; } catch (eR) { continue; }
-              var lbl = String((li.getAttribute && (li.getAttribute('aria-label') || li.getAttribute('data-icon-caption'))) || li.textContent || '').replace(/\s+/g, ' ').trim();
-              if (BADNAV.test(lbl)) continue;
-              W = scanWs[wi2];
-              histDiag.clicks++;
-              try { histDiag.frames.push(String(W.location.pathname || '').slice(-18)); } catch (eHd) {}
-              realClick(li, W); clicked = true; break;
-            }
-          } catch (eA) {}
-        }
-        if (clicked) {
-          var pd = Date.now() + 6000;
-          while (Date.now() < pd) {
-            await sleep(500);
-            await dismissNavMenu(); /* the click may have opened the Calendar menu instead */
-            if (paneLive()) { await sleep(900); return true; } /* v2.09: let the slide-in settle + handlers attach */
-          }
-        }
-        await sleep(700);
-      }
-      return paneLive();
-    }
-    async function openNoteEditor(headingRe) {
-      /* v2.09: everything is SCOPED TO THE OPEN DRAWER CONTAINER (live-proven
-         layout): the drawer stacks sections (Family / Social / Surgical &
-         Procedure / Implant / Past Medical), each with its own heading. When a
-         section is EMPTY its affordance is a small NOTE chip (~37px SPAN);
-         when a note EXISTS the chip is replaced by the saved-note ROW - the
-         clinician edits by clicking the note text itself. The "Add procedure"
-         search box lives OUTSIDE the drawer and must never be picked. */
-      await dismissNavMenu();
-      var dr = drawerEl();
-      if (!dr) return { ok: false, error: 'history-drawer-not-open' };
-      function headingEl() {
-        var els; try { els = dr.querySelectorAll('div,section,li,h1,h2,h3,h4,span'); } catch (e) { return null; }
-        for (var i = 0; i < els.length; i++) {
-          var own = String(els[i].textContent || '').replace(/\s+/g, ' ').trim();
-          if (own && own.length < 60 && headingRe.test(own)) {
-            try { var r = els[i].getBoundingClientRect(); if (r.width > 10) return els[i]; } catch (e2) {}
-          }
-        }
-        return null;
-      }
-      function inDrawer(el) {
-        /* shadow-aware containment: contains() is false across shadow
-           boundaries, so climb parentElement -> shadow host instead */
-        var n = el, h = 0;
-        while (n && h < 40) { if (n === dr) return true; n = n.parentElement || (n.getRootNode && n.getRootNode().host) || null; h++; }
-        return false;
-      }
-      function drawerEditors() {
-        /* SHADOW-PIERCING collector scoped to the drawer - the note editor is
-           a shadow-DOM contenteditable (live-proven: the successful write's
-           method was ce-insert), invisible to plain querySelectorAll. */
-        var out = [];
-        function walkR(root, budget) {
-          var els; try { els = root.querySelectorAll('*'); } catch (e) { return budget; }
-          for (var i = 0; i < els.length; i++) {
-            if (--budget < 0) return budget;
-            var el2 = els[i];
-            try { if (el2.shadowRoot) budget = walkR(el2.shadowRoot, budget); } catch (eS) {}
-            var tag = (el2.tagName || '').toUpperCase();
-            var okKind = tag === 'TEXTAREA' ||
-              (tag === 'INPUT' && /^(text|search|)$/.test(String(el2.getAttribute('type') || '').toLowerCase())) ||
-              (el2.isContentEditable === true);
-            if (okKind && visEl(el2, W)) out.push(el2);
-          }
-          return budget;
-        }
-        walkR(dr, 12000);
-        return out;
-      }
-      function nearestBelow(list, refY) {
-        /* a section's editor sits BELOW its heading; anything above belongs to
-           the previous section. 0..420px window inside the drawer. */
-        var top = null, d0 = 1e9;
-        for (var i = 0; i < list.length; i++) {
-          try { var y = list[i].getBoundingClientRect().y; var d = y - refY; if (d >= -10 && d < d0) { d0 = d; top = list[i]; } } catch (e) {}
-        }
-        return (d0 <= 420) ? top : null;
-      }
-      var head = headingEl();
-      if (!head) return { ok: false, error: 'section-heading-not-in-drawer' };
-      try { head.scrollIntoView({ block: 'center' }); } catch (eSc) {}
-      await sleep(250);
-      var headY = 0; try { headY = head.getBoundingClientRect().y; } catch (e) {}
-      var preAll = drawerEditors();
-      var near0 = nearestBelow(preAll, headY);
-      if (near0) return { ok: true, el: near0, head: head }; /* this section's editor already open */
-      /* affordance ladder, all inside the drawer and below THIS heading:
-         (1) the small NOTE chip (empty section);
-         (2) the saved-note row (filled section) - a modest text block that is
-             not chrome ("None recorded" / "Add ..." / "Last modified ...").
-         BADNAV filters both; nothing here can be a Save/Sign/order control. */
-      function findAffordance() {
-        /* STRUCTURAL FIRST (live-inspected): athena's note UI is the
-           "universal-text-area" (UTA) component - the note affordance is
-           .uta-note-label-add-note.clickable (empty section) and the saved
-           note's span.uta-note-label-note-text (filled section; clicking it
-           bubbles to the clickable label and opens the editor - manually
-           proven). Class names are the component's own stable API; the text
-           heuristics below stay as a generic-EMR fallback. */
-        try {
-          var uta = dr.querySelectorAll('span.uta-note-label-note-text, .uta-note-label-add-note.clickable, .uta-note-label .clickable');
-          var bestU = null, bDU = 1e9;
-          for (var ui = 0; ui < uta.length; ui++) {
-            var ru; try { ru = uta[ui].getBoundingClientRect(); } catch (eU) { continue; }
-            if (ru.width < 2) continue;
-            var ddu = ru.y - headY;
-            if (ddu < 4 || ddu > 420) continue;
-            if (ddu < bDU) { bDU = ddu; bestU = uta[ui]; }
-          }
-          if (bestU) return bestU;
-        } catch (eUta) {}
-        var toggles; try { toggles = dr.querySelectorAll('a,button,span,div,label'); } catch (e) { toggles = []; }
-        var tg = null, tgD = 1e9, tgA = 1e12, kind = '';
-        for (var ti = 0; ti < toggles.length; ti++) {
-          var tt = String(toggles[ti].textContent || '').replace(/\s+/g, ' ').trim();
-          if (!tt || BADNAV.test(tt)) continue;
-          var ty; try { ty = toggles[ti].getBoundingClientRect(); } catch (e) { continue; }
-          if (ty.width < 2) continue;
-          var dd = ty.y - headY;
-          if (dd < 4 || dd > 420) continue;
-          if (/^NOTE$/i.test(tt) && ty.width <= 120) {
-            if (kind !== 'chip' || dd < tgD) { tg = toggles[ti]; tgD = dd; kind = 'chip'; }
-            continue;
-          }
-          if (kind === 'chip') continue; /* the chip always wins when present */
-          if (tt.length >= 12 && ty.width >= 120 && ty.width <= 460 && ty.height <= 130 &&
-              !/^(none recorded|add\b|show|hide|last modified|first-degree|patient does not)/i.test(tt)) {
-            /* overlapping row candidates: the OUTER wrapper DIVs have no click
-               handler (live-proven: clicking a 385px wrapper did nothing, the
-               inner 350px SPAN opened the editor). Prefer the SMALLEST-AREA
-               match; <= keeps the deepest on ties (document order = outer first). */
-            var aa = ty.width * ty.height;
-            if (kind !== 'row' || aa <= tgA) { tg = toggles[ti]; tgD = dd; tgA = aa; kind = 'row'; }
-          }
-        }
-        return tg;
-      }
-      /* v2.09: up to 3 click attempts - a click during the drawer's slide-in /
-         before handlers attach is silently ignored (live: same click worked on
-         a settled drawer and did nothing right after opening). */
-      var sawAffordance = false;
-      for (var att = 0; att < 3; att++) {
-        var tg2 = findAffordance();
-        if (!tg2) { if (att === 0) break; await sleep(900); continue; }
-        sawAffordance = true;
-        var pre = drawerEditors();
-        realClick(tg2, W);
-        var dl = Date.now() + 4200;
-        while (Date.now() < dl) {
-          await sleep(400);
-          var post = drawerEditors();
-          var fresh = [];
-          for (var pi = 0; pi < post.length; pi++) { if (pre.indexOf(post[pi]) < 0) fresh.push(post[pi]); }
-          var pick = nearestBelow(fresh.length ? fresh : post, headY);
-          if (pick) return { ok: true, el: pick, head: head };
-          var da = deepActive(W.document);
-          if (da && (da.tagName === 'TEXTAREA' || da.isContentEditable) && visEl(da, W) && inDrawer(da)) return { ok: true, el: da, head: head };
-        }
-        try { headY = head.getBoundingClientRect().y; } catch (eH2) {}
-      }
-      return { ok: false, error: sawAffordance ? 'editor-did-not-appear' : 'note-affordance-not-found' };
-    }
-    /* ---- field writer (notes only; never invoked for order-class) --------- */
-    async function writeField(el, txt, head, mergePolicy, replaceConfirmed) {
-      var CE = !!el.isContentEditable;
-      function rd() { return CE ? String(el.innerText || el.textContent || '') : String(el.value || ''); }
-      function norm(s) { return nrmText(s); }
-      function setNative(v) {
-        if (CE) { try { el.textContent = v; } catch (e) {} return; }
-        var pr = (el.tagName === 'TEXTAREA') ? W.HTMLTextAreaElement.prototype : W.HTMLInputElement.prototype;
-        var d = null; try { d = Object.getOwnPropertyDescriptor(pr, 'value'); } catch (e) {}
-        if (d && d.set) d.set.call(el, v); else el.value = v;
-      }
-      function fire(type, data) { try { el.dispatchEvent(new W.InputEvent('input', { bubbles: true, inputType: type || 'insertText', data: data })); } catch (e) { try { el.dispatchEvent(new W.Event('input', { bubbles: true })); } catch (e2) {} } }
-      txt = String(txt == null ? '' : txt);
-      if (!norm(txt)) return { written: false, verified: false, draftEntered: false, draftVerified: false, persisted: false, serverVerified: false, error: 'empty-write-disabled', method: 'none', into: rd().length };
-      var before = rd();
-      mergePolicy = String(mergePolicy || 'append').toLowerCase();
-      if (mergePolicy !== 'append' && mergePolicy !== 'replace') mergePolicy = 'append';
-      if (mergePolicy === 'replace' && norm(before) && replaceConfirmed !== true) return { written: false, verified: false, draftEntered: false, draftVerified: false, persisted: false, serverVerified: false, error: 'replace-needs-explicit-confirmation', method: 'none', into: before.length };
-      if (norm(before).indexOf(norm(txt)) >= 0) return { written: false, verified: true, draftEntered: false, draftVerified: true, alreadyPresent: true, persisted: false, serverVerified: false, method: 'already-present', into: before.length };
-      var next = (mergePolicy === 'replace' || !norm(before)) ? txt : (before.replace(/\s+$/, '') + '\n\n' + txt);
-      try { el.scrollIntoView({ block: 'center' }); } catch (e) {}
-      realClick(el, W);
-      try { el.focus(); } catch (e) {}
-      await sleep(50);
-      if (CE) {
-        try { var rg = W.document.createRange(); rg.selectNodeContents(el); var se = W.getSelection(); se.removeAllRanges(); se.addRange(rg); } catch (e) {}
-        var okc = false;
-        try { okc = W.document.execCommand('insertText', false, next); } catch (e) { okc = false; }
-        if (!okc) setNative(next);
-      } else {
-        try { if (el.setSelectionRange) el.setSelectionRange(0, (el.value || '').length); } catch (e) {}
-        setNative(next);
-      }
-      fire('insertText', next);
-      try { el.dispatchEvent(new W.Event('change', { bubbles: true })); } catch (e) {}
-      await sleep(120);
-      var cur = rd();
-      var probe = norm(txt).slice(0, Math.min(norm(txt).length, 40));
-      var landed = !!probe && norm(cur).indexOf(probe) >= 0;
-      /* A same-editor readback proves only that the draft entered the client
-         DOM. It is NOT evidence of an Athena server save. The field stays open
-         for clinician review; only a future independent commit + cold readback
-         may set serverVerified/persisted. */
-      return { written: landed, verified: landed, draftEntered: landed, draftVerified: landed, commitObserved: false, persisted: false, serverVerified: false, into: cur.length, method: CE ? 'ce-insert' : 'native', mergePolicy: mergePolicy };
-    }
-    /* ---- run the sections -------------------------------------------------- */
-    var results = [], forcedHeld = [];
-    for (var s = 0; s < sections.length; s++) {
-      var sec = sections[s] || {};
-      var requestedKey = String(sec.key || '');
-      var key = canonicalRouteKey(requestedKey);
-      var policy = key && ROUTE_POLICY[key];
-      var requestedExecute = !!sec.execute;
-      var wantExecute = !!(requestedExecute && policy && policy.draft === true);
-      if (requestedExecute && (!policy || policy.draft !== true)) forcedHeld.push(requestedKey || '(missing)');
-      var entry = { key: key || requestedKey || '(missing)', requestedKey: requestedKey, routeKind: (policy && policy.kind) || '', execute: wantExecute, found: false, written: false, verified: false, draftEntered: false, draftVerified: false, persisted: false, serverVerified: false, fieldLabel: '', fieldHeading: '', fieldTag: '', method: '', error: '' };
-      if (!key || !policy || !DEFS[key]) {
-        entry.error = 'unknown-section-key';
-        entry.blocked = true;
-        results.push(entry);
-        continue;
-      }
-      try {
-        if (sec.verify) {
-          /* v2.09 READ-ONLY VERIFY: open the section's note editor and report
-             its CURRENT text without writing anything - the honest "verify it
-             landed" leg of write->verify->delete. Never modifies content. */
-          entry.execute = false; entry.verifyRead = true;
-          var elv = null, hVer = null;
-          if (key === 'past_surgical_history') {
-            var okPv = await openHistoryPane();
-            if (okPv) {
-              hVer = onScreenHeading(HIST_HEAD);
-              var opv = await openNoteEditor(HIST_HEAD);
-              if (opv.ok) { elv = opv.el; hVer = opv.head || hVer; } else entry.error = opv.error;
-            } else entry.error = 'history-pane-not-reachable';
-          } else entry.error = 'verify-supported-for-past-surgical-history-only';
-          /* read-only diagnostics: what the driver actually sees around the
-             heading (frame tail, rendered section text, chip/editor census) -
-             lets a caller distinguish "summary card" from the real drawer. */
-          try {
-            entry.histDiag = histDiag;
-            entry.paneTail = String(W.location.pathname || '').slice(-30);
-            /* per-frame rail census: which frames exist and which own the rail */
-            entry.railScan = [];
-            for (var rf = 0; rf < allFr.length && entry.railScan.length < 14; rf++) {
-              try {
-                var rTail = String(allFr[rf].location.pathname || '').slice(-24);
-                var rl = allFr[rf].document.querySelectorAll('[data-chart-section-id="history"]');
-                var vis = 0;
-                for (var rv2 = 0; rv2 < rl.length; rv2++) { try { if (rl[rv2].getBoundingClientRect().width >= 2) vis++; } catch (eV2) {} }
-                entry.railScan.push(rTail + ':' + rl.length + '/' + vis);
-              } catch (eRf) { entry.railScan.push('x'); }
-            }
-            try {
-              var rl0 = window.document.querySelectorAll('[data-chart-section-id="history"]');
-              entry.railTop = rl0.length;
-            } catch (eT) {}
-            if (hVer) {
-              var hpv = hVer.parentElement || hVer;
-              entry.sectionText = String(hpv.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 260);
-              var hy = 0; try { hy = hVer.getBoundingClientRect().y; } catch (eY) {}
-              var cens = { chips: 0, chipW: [], editors: 0 };
-              var tgv; try { tgv = W.document.querySelectorAll('a,button,span,div,label'); } catch (eQ) { tgv = []; }
-              for (var tv = 0; tv < tgv.length; tv++) {
-                var ttv = String(tgv[tv].textContent || '').replace(/\s+/g, ' ').trim();
-                if (!/^NOTE$/i.test(ttv)) continue;
-                try { var rv = tgv[tv].getBoundingClientRect(); if (rv.width >= 2) { var dv = rv.y - hy; if (dv >= -10 && dv <= 320) { cens.chips++; if (cens.chipW.length < 6) cens.chipW.push(Math.round(rv.width)); } } } catch (eB) {}
-              }
-              var edv; try { edv = W.document.querySelectorAll('textarea,[contenteditable],input[type="text"],input:not([type])'); } catch (eE) { edv = []; }
-              for (var ev2 = 0; ev2 < edv.length; ev2++) {
-                if (!visEl(edv[ev2], W)) continue;
-                try { var ry2 = edv[ev2].getBoundingClientRect().y - hy; if (ry2 >= -10 && ry2 <= 320) cens.editors++; } catch (eC2) {}
-              }
-              entry.census = cens;
-              /* Read-only, bounded control census near Surgical & Procedure
-                 History. Used to distinguish the note editor from Athena's
-                 saved-note controls without clicking anything. */
-              try {
-                entry.controlScan = [];
-                var cv = W.document.querySelectorAll('button,a,[role="button"],input[type="button"],input[type="submit"]');
-                for (var ci = 0; ci < cv.length && entry.controlScan.length < 24; ci++) {
-                  if (!visEl(cv[ci], W)) continue;
-                  var cr = cv[ci].getBoundingClientRect(), dy = cr.y - hy;
-                  if (dy < -30 || dy > 520) continue;
-                  entry.controlScan.push({
-                    tag: String(cv[ci].tagName || '').toLowerCase(),
-                    text: String(cv[ci].textContent || '').replace(/\s+/g, ' ').trim().slice(0, 90),
-                    aria: String(cv[ci].getAttribute && cv[ci].getAttribute('aria-label') || '').slice(0, 90),
-                    title: String(cv[ci].getAttribute && cv[ci].getAttribute('title') || '').slice(0, 90),
-                    cls: String(cv[ci].className || '').replace(/\s+/g, ' ').trim().slice(0, 120),
-                    dy: Math.round(dy)
-                  });
-                }
-              } catch (eCtl) {}
-              try {
-                entry.sectionControlScan = [];
-                var sv = hpv.querySelectorAll('button,a,[role="button"],[onclick],[aria-label],[title],[data-testid]');
-                for (var si2 = 0; si2 < sv.length && entry.sectionControlScan.length < 32; si2++) {
-                  entry.sectionControlScan.push({
-                    tag: String(sv[si2].tagName || '').toLowerCase(),
-                    text: String(sv[si2].textContent || '').replace(/\s+/g, ' ').trim().slice(0, 90),
-                    aria: String(sv[si2].getAttribute && sv[si2].getAttribute('aria-label') || '').slice(0, 90),
-                    title: String(sv[si2].getAttribute && sv[si2].getAttribute('title') || '').slice(0, 90),
-                    testid: String(sv[si2].getAttribute && sv[si2].getAttribute('data-testid') || '').slice(0, 90),
-                    cls: String(sv[si2].className || '').replace(/\s+/g, ' ').trim().slice(0, 120),
-                    visible: !!visEl(sv[si2], W)
-                  });
-                }
-              } catch (eSectCtl) {}
-            }
-          } catch (eDg) {}
-          if (elv) {
-            entry.found = true;
-            var txtv = elv.isContentEditable ? String(elv.innerText || elv.textContent || '') : String(elv.value || '');
-            entry.textCodes = txtv.slice(0, 8).split('').map(function (ch) { return ch.charCodeAt(0); });
-            var semv = txtv.replace(/[\u200B-\u200D\u2060\uFEFF]/g, '');
-            entry.textHead = semv.replace(/\s+/g, ' ').trim().slice(0, 220);
-            entry.textLen = semv.replace(/\s+/g, ' ').trim().length;
-            /* leave the untouched editor the way a human closes it: blur only */
-            try { elv.blur(); } catch (eBv) {}
-            if (hVer) { try { realClick(hVer, W); } catch (eCv) {} }
-          }
-          results.push(entry);
-          continue;
-        }
-        if (!wantExecute) {
-          var t = bestFieldFor(key);
-          if (t) { entry.found = true; entry.fieldTag = t.tag + (t.ce ? '/contenteditable' : ''); entry.fieldLabel = t.label; entry.fieldHeading = t.hay.slice(0, 90); }
-          else entry.error = 'no-matching-field-on-screen';
-        } else {
-          var el = null, opHead = null;
-          if (key === 'past_surgical_history') {
-            var okPane = await openHistoryPane();
-            if (okPane) {
-              var op = await openNoteEditor(HIST_HEAD);
-              if (op.ok) { el = op.el; opHead = op.head || null; } else entry.error = op.error;
-            } else entry.error = 'history-pane-not-reachable';
-          }
-          if (!el) {
-            var b2 = bestFieldFor(key);
-            if (b2 && DEFS[key].test(b2.hay)) el = b2.el;
-          }
-          if (!el) { if (!entry.error) entry.error = 'no-matching-field-on-screen'; }
-          else if (!targetChartMatches(el)) {
-            /* the field we located is NOT on this patient's open chart - refuse
-               rather than write to the wrong place (e.g. a dashboard note box). */
-            entry.found = true; entry.written = false; entry.verified = false;
-            entry.error = 'target-not-on-open-chart';
-          }
-          else {
-            entry.found = true;
-            var wr = await writeField(el, String(sec.text == null ? '' : sec.text), opHead, sec.mergePolicy, sec.replaceConfirmed === true);
-            entry.written = wr.written; entry.verified = wr.verified; entry.method = wr.method;
-            entry.draftEntered = !!wr.draftEntered;
-            entry.draftVerified = !!wr.draftVerified;
-            entry.commitObserved = !!wr.commitObserved;
-            entry.serverVerified = !!wr.serverVerified;
-            entry.persisted = !!wr.persisted;
-            entry.into = wr.into;
-            if (wr.alreadyPresent) entry.alreadyPresent = true;
-            if (wr.mergePolicy) entry.mergePolicy = wr.mergePolicy;
-            if (wr.error) entry.error = wr.error;
-            if (wr.afterCodes) entry.afterCodes = wr.afterCodes;
-          }
-        }
-      } catch (eSec) { entry.error = String((eSec && eSec.message) || eSec).slice(0, 140); }
-      results.push(entry);
-    }
-    return { ok: true, routeContractVersion: ROUTE_CONTRACT_VERSION, chartName: ident.name, chartDob: ident.dob || '', chartMrn: ident.mrn || '', forcedHeld: forcedHeld, results: results, ms: Date.now() - T0 };
-  } catch (e) { return { ok: false, reason: 'driver-error', error: String((e && e.message) || e).slice(0, 200) }; }
-}
+/* draftonly-1.1.0 (3.0.125): the v2.05 unified write driver
+   (mlsUnifiedWriteDriverFn) was deleted. It carried a token-overlap name
+   comparator and a name-only acceptance when no DOB was supplied, behind a
+   refusal that had already closed its only caller. The supervised ActionV2
+   driver is the only writer. */
 
 /* v2.05 handler: single-flight, verified tab pick, freeze-guard, foreground-
  * for-write (hidden tabs neither hydrate nor commit edits reliably), 90s cap. */
@@ -18829,71 +17980,6 @@ async function mlsUnifiedWriteDriverFn(name, dob, athenaId, sections) {
          fail-closed result; never enter its legacy tab-pick or mutation code. */
       sendResponse({ ok: false, blocked: true, reason: 'unified-confirmation-required', version: V, error: 'The legacy direct writer is disabled. Refresh MLS and use the unified Athena review.' });
       return;
-      var trustedSender = false;
-      try { var senderUrl = new URL(sender && sender.tab && sender.tab.url || ''); trustedSender = senderUrl.protocol === 'https:' && /(^|\.)mlsscribe\.com$/i.test(senderUrl.hostname); } catch (eSender) {}
-      if (!trustedSender || msg.userGesture !== true || !String(msg.gestureProof || '').trim()) { sendResponse({ ok: false, blocked: true, reason: 'fresh-trusted-click-required', version: V, error: 'Click Write selected drafts yourself, then try again.' }); return; }
-      if (busy) { sendResponse({ ok: false, reason: 'busy', version: V, error: 'A write is already running - one at a time.' }); return; }
-      busy = 1;
-      var usedWriteTarget = false;
-      try {
-        var secs = Array.isArray(msg.sections) ? msg.sections : [];
-        if (!String(msg.patient || '').trim() || !secs.length) { sendResponse({ ok: false, reason: 'bad-args', version: V, error: 'patient and sections are required.' }); return; }
-        var KNOWN_WRITE_KEYS = { note:1, encounter_note:1, hpi:1, ros:1, exam:1, physical_exam:1, assessment:1, assessment_narrative:1, plan:1, followup:1, follow_up:1, procedure:1, procedure_note:1, past_surgical_history:1, diagnoses:1, diagnosis:1, dx:1, icd:1, diagnoses_icd10:1, rx:1, prescriptions:1, medications_rx:1, orders:1, order:1, orders_preview:1, lab_order:1, imaging:1, imaging_order:1, referrals:1, referral:1, referral_order:1, pt:1, pt_order:1, billing:1, charges:1, billing_preview:1, billing_em:1, billing_cpt:1 };
-        var EXECUTABLE_NARRATIVE = { note:1, encounter_note:1, hpi:1, ros:1, exam:1, physical_exam:1, assessment:1, assessment_narrative:1, plan:1, followup:1, follow_up:1 };
-        var unknown = [];
-        var hasNarrativeExecute = false;
-        for (var vsi = 0; vsi < secs.length; vsi++) {
-          var vk = String((secs[vsi] && secs[vsi].key) || '').toLowerCase().replace(/[\s-]+/g, '_').trim();
-          if (!KNOWN_WRITE_KEYS[vk]) unknown.push(vk || '(missing)');
-          if (secs[vsi] && secs[vsi].execute === true && EXECUTABLE_NARRATIVE[vk]) hasNarrativeExecute = true;
-        }
-        if (unknown.length) { sendResponse({ ok: false, reason: 'unknown-section-key', version: V, unknownKeys: unknown, error: 'Unknown Athena destination key(s): ' + unknown.join(', ') + '. Nothing was touched.' }); return; }
-        var all = await chrome.tabs.query({});
-        var candidates = all.filter(function (t) { try { return mlsAthTabHost(t) === 'athenanet.athenahealth.com' && !mlsAthIsLoginish(t); } catch (e) { return false; } });
-        if (candidates.length > 1) { sendResponse({ ok: false, reason: 'ambiguous-athena-tabs', version: V, error: 'More than one signed-in Athena tab is open. Leave exactly one Athena tab open, then retry. Nothing was touched.' }); return; }
-        var tab = null, wt = null;
-        var senderTabId = sender && sender.tab && sender.tab.id;
-        function nKey(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim(); }
-        function dKey(s) { var m = /([01]?\d)[\/\-.]([0-3]?\d)[\/\-.](\d{2,4})/.exec(String(s || '')); if (!m) return ''; var y = m[3]; if (y.length === 2) y = (Number(y) > ((new Date().getFullYear() % 100) + 1) ? '19' : '20') + y; return Number(m[1]) + '/' + Number(m[2]) + '/' + y; }
-        try { wt = self.__mlsWriteTarget || null; } catch (eWt) {}
-        try {
-          var wtFresh = wt && wt.tabId != null && (Date.now() - Number(wt.at || 0)) < 10 * 60 * 1000;
-          var wtApp = wtFresh && (wt.appTabId == null || senderTabId == null || Number(wt.appTabId) === Number(senderTabId));
-          var wtName = wtFresh && nKey(wt.name) === nKey(msg.patient);
-          var wtDob = wtFresh && (!dKey(wt.dob) || !dKey(msg.dob) || dKey(wt.dob) === dKey(msg.dob));
-          if (wtFresh && wtApp && wtName && wtDob) {
-            var exact = await chrome.tabs.get(wt.tabId);
-            if (exact && candidates.length === 1 && Number(candidates[0].id) === Number(exact.id) && mlsAthTabHost(exact) === 'athenanet.athenahealth.com' && !mlsAthIsLoginish(exact)) { tab = exact; usedWriteTarget = true; }
-          }
-        } catch (eExactWrite) { tab = null; }
-        if (!tab) {
-          tab = candidates.length === 1 ? candidates[0] : null;
-        }
-        if (!tab) { sendResponse({ ok: false, reason: 'no-athena-tab', version: V, error: 'Open your signed-in athenaOne in another tab, then try again.' }); return; }
-        /* v2.9.5: writes keep the proven foreground-for-write path — leave quiet-pull
-           mode first so the tab.active check below sees the restored layout. */
-        if (hasNarrativeExecute) try { if (self.__mlsQp && self.__mlsQp.active) { await self.__mlsQpRelease('write'); tab = await chrome.tabs.get(tab.id); } } catch (eQ) {}
-        if (hasNarrativeExecute) try {
-          if (!tab.active) {
-            await chrome.tabs.update(tab.id, { active: true });
-            if (tab.windowId != null) await chrome.windows.update(tab.windowId, { focused: true });
-            try { self.__mlsFgNote && self.__mlsFgNote(sender && sender.tab && sender.tab.id, tab.id, tab.windowId); } catch (eN) {}
-          }
-        } catch (eF) {}
-        var fx = await mlsExecTO({ target: { tabId: tab.id }, world: 'MAIN', args: [String(msg.patient || ''), String(msg.dob || ''), String(msg.athenaId || ''), secs], func: mlsUnifiedWriteDriverFn }, 90000);
-        if (fx.timeout) {
-          sendResponse({ ok: false, reason: 'write-timeout', version: V, error: 'athenaOne did not finish within 90s. The tab was not reloaded or retried because the outcome may be uncertain; inspect it manually before trying again.' });
-          return;
-        }
-        if (fx.err) { sendResponse({ ok: false, reason: 'inject-failed', version: V, error: 'Could not inject the write driver: ' + fx.err }); return; }
-        var r = fx && fx.r && fx.r[0] && fx.r[0].result;
-        if (!r) { sendResponse({ ok: false, reason: 'no-result', version: V, error: 'The write driver returned nothing (frame navigated mid-write?).' }); return; }
-        try { __mlsReadsSinceReload++; } catch (eC) {}
-        r.version = V;
-        sendResponse(r);
-      } catch (e) {
-        sendResponse({ ok: false, reason: 'error', version: V, error: String((e && e.message) || e) });
-      } finally { if (usedWriteTarget) { try { self.__mlsWriteTarget = null; } catch (eClear) {} } busy = 0; }
     })();
     return true;
   });

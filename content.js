@@ -63,10 +63,8 @@
     if (_mlsExtraOrigins.indexOf(o) >= 0) return true;
     return false;
   }
-  /* A trusted origin is necessary but not sufficient for Sign & Save. Arm one
-     short-lived, one-use authorization only from a real click on the clearly
-     labelled MLS sign button. Programmatic .click() events are not trusted. */
-  var _mlsSignGestureUntil = 0;
+  /* draftonly-1.1.0 (3.0.125): there is no Sign gesture. MLS Assist never signs;
+     mlsAppSignAndSave answers only a read-only probe. */
   /* macwake-1.2: only a trusted click on the rendered exact recovery button
      can arm the one-use worker token. A page script can post the same verb and
      forge boolean flags, but it cannot manufacture Event.isTrusted. */
@@ -102,10 +100,7 @@
     if (!/^(write_note|save_draft)$/.test(action)) return false; // draftonly-1.0.0
     label = String(label || '').replace(/\s+/g, ' ').trim();
     if (action === 'write_note') return /\bconfirm\s+write\s+reviewed\s+note\b/i.test(label);
-    if (action === 'stage_billing') return /\bconfirm\s+stage\s+billing(?:\s+codes?)?(?:\s+in\s+athena)?\b/i.test(label); /* wsg-2.0.0: the app confirm aria reads Confirm stage billing in Athena - accept both the codes and in-Athena forms (no quotes here: test block scanners treat quotes as strings) */
     if (action === 'save_draft') return /\b(?:confirm\s+save\s+draft(?:\s+in\s+athena)?|verify\s+saved\s+unsigned\s+note\s+in\s+athena)\b/i.test(label);
-    if (action === 'sign_encounter') return /\bconfirm\s+sign\s*(?:&|and)\s*save(?:\s+in\s+athena)?\b/i.test(label);
-    if (action === 'place_order') return /\bconfirm\s*(?:&|and)?\s*place\s+(?:one\s+)?(?:reviewed\s+)?order\b/i.test(label);
     return false;
   }
   try {
@@ -116,7 +111,6 @@
           var t = ev.target && ev.target.closest ? ev.target.closest('button,a,[role="button"],input[type="button"],input[type="submit"]') : null;
           if (!t) return;
           var label = String((t.textContent || t.value || '') + ' ' + (t.getAttribute('aria-label') || '') + ' ' + (t.getAttribute('title') || '')).replace(/\s+/g, ' ').trim();
-          if (/\bsign\s*(?:&|and)\s*save\b/i.test(label)) _mlsSignGestureUntil = Date.now() + 180000;
           var actionEl = ev.target && ev.target.closest ? ev.target.closest('[data-mls-athena-action]') : null;
           var action = actionEl ? String(actionEl.getAttribute('data-mls-athena-action') || '').toLowerCase().trim() : '';
           var actionable = actionEl === t && !t.disabled && t.getAttribute('aria-disabled') !== 'true';
@@ -132,7 +126,8 @@
               serial: _mlsGestureSerial(),
               previewHash: String(actionEl.getAttribute('data-mls-preview-hash') || '').slice(0, 160),
               rowHash: String(actionEl.getAttribute('data-mls-row-hash') || '').slice(0, 160),
-              clientOrderId: String(actionEl.getAttribute('data-mls-client-order-id') || '').slice(0, 160)
+              clientOrderId: String(actionEl.getAttribute('data-mls-client-order-id') || '').slice(0, 160),
+              gestureClass: 'trusted-click' /* gestureclass-1.0.0 (3.0.125) */
             };
             /* batcharm-1.0.0 (3.0.108, owner 2026-09-01: nothing blocked or not attempted once its run):
                the same trusted click may authorize an ORDERED LIST of note sections. Only for the two
@@ -167,6 +162,7 @@
     if (data.source !== 'mls-app') return;
     if (data.type !== 'mlsAppAthenaRemoteArmV1') return;
     if (!mlsTrustedOrigin(event.origin)) return; /* ra-origin-1.0.0 (3.0.103): the same trusted-origin gate every other bridge verb passes */
+    if (mlsLoopbackOrigin(event.origin)) return; /* ra-origin-1.1.0 (3.0.125): loopback is synthetic-only and can never arm a write */
 
     var requestId = String(data.requestId || '');
     var action = String(data.action || '');
@@ -205,6 +201,7 @@
       previewHash: previewHash.slice(0, 160),
       rowHash: '',
       clientOrderId: '',
+      gestureClass: 'remote-relay', /* gestureclass-1.0.0 (3.0.125): the worker records which confirmation class authorized the write */
       remote: {
         relayJobId: relayJobId.slice(0, 80),
         originDeviceId: originDeviceId.slice(0, 80)
@@ -220,6 +217,24 @@
      identical second call succeeds - so buttons randomly failed once.
      READ-class verbs only: a write/action verb must never auto-retry, a
      dead-worker double-send there risks double execution. */
+  /* navretry-1.0.0 (3.0.125): navigation verbs (open a chart, go to a date, go home)
+     are actions. They re-send only when Chrome says the worker never received the
+     message; a worker that died mid-action answers nothing and is NOT re-sent. */
+  function mlsRelayNav(req, cb) {
+    var done = false;
+    function finish(resp) { if (done) return; done = true; try { cb(resp); } catch (e) {} }
+    function once(last) {
+      try {
+        chrome.runtime.sendMessage(req, function (resp) {
+          var le = chrome.runtime.lastError;
+          var neverReceived = !!(le && /receiving end does not exist|could not establish connection/i.test(String(le.message || '')));
+          if (neverReceived && !last) { setTimeout(function () { once(true); }, 300); return; }
+          finish(resp);
+        });
+      } catch (e) { if (!last) { setTimeout(function () { once(true); }, 300); } else { finish(null); } }
+    }
+    once(false);
+  }
   function mlsRelayRetry(req, cb) {
     var done = false;
     function finish(resp) { if (done) return; done = true; try { cb(resp); } catch (e) {} }
@@ -339,7 +354,7 @@
         scheduleTimer = setTimeout(function () {
           finishSchedule({ ok: false, reason: 'schedule-relay-deadline-exceeded', error: 'The schedule read did not finish before its immutable request deadline.' });
         }, Math.max(0, scheduleGuard.deadlineAt - Date.now()));
-        mlsRelayRetry({ type: 'mlsAppScheduleRequest', id: scheduleGuard.requestId, requestId: scheduleGuard.requestId, deadlineAt: scheduleGuard.deadlineAt }, function (resp) {
+        mlsRelayRetry({ type: 'mlsAppScheduleRequest', id: scheduleGuard.requestId, requestId: scheduleGuard.requestId, deadlineAt: scheduleGuard.deadlineAt, expectedDate: (/^\d{4}-\d{2}-\d{2}$/.test(mlsStr(d.expectedDate || d.date, 10)) ? mlsStr(d.expectedDate || d.date, 10) : '') }, function (resp) {
           var runtimeErr = chrome.runtime.lastError;
           if (Date.now() >= scheduleGuard.deadlineAt) {
             finishSchedule({ ok: false, reason: 'schedule-relay-deadline-exceeded', error: 'The schedule read returned after its immutable request deadline.' });
@@ -369,7 +384,7 @@
         gotoTimer = setTimeout(function () {
           finishGoto({ ok: false, supported: true, reason: 'goto-date-relay-deadline-exceeded', error: 'Date navigation did not finish before its immutable request deadline.' });
         }, Math.max(0, gotoGuard.deadlineAt - Date.now()));
-        mlsRelayRetry({ type: 'mlsAppGotoDateRequest', date: mlsStr(d.date, 10), probe: !!d.probe, id: gotoGuard.requestId, requestId: gotoGuard.requestId, deadlineAt: gotoGuard.deadlineAt }, function (resp) {
+        mlsRelayNav({ type: 'mlsAppGotoDateRequest', date: mlsStr(d.date, 10), probe: !!d.probe, id: gotoGuard.requestId, requestId: gotoGuard.requestId, deadlineAt: gotoGuard.deadlineAt }, function (resp) {
           var runtimeErr = chrome.runtime.lastError;
           if (Date.now() >= gotoGuard.deadlineAt) {
             finishGoto({ ok: false, supported: true, reason: 'goto-date-relay-deadline-exceeded', error: 'Date navigation returned after its immutable request deadline.' });
@@ -384,7 +399,7 @@
     // between patients (each patient's schedule row must be on screen to open the chart).
     if (d.type === 'mlsAppGoHome') {
       try {
-        mlsRelayRetry({ type: 'mlsAppGoHomeRequest' }, function (resp) {
+        mlsRelayNav({ type: 'mlsAppGoHomeRequest' }, function (resp) {
           reply({ source: 'mls-ext', type: 'mlsAppGoHomeResult', resp: resp || { error: 'no response' } });
         });
       } catch (err) { reply({ source: 'mls-ext', type: 'mlsAppGoHomeResult', resp: { error: 'extension error' } }); }
@@ -528,7 +543,7 @@
            findpatient Chart opener before the reader settles the exact chart.
            A generic visible-name click lands on Athena's exam-prep surface. */
         if (chartPatient) {
-          mlsRelayRetry({ type: 'mlsAppSearchOpenRequest', name: chartPatient, dob: chartDob, mrn: chartMrn, appointmentId: chartAppointmentId, bootstrapIdentity: chartBootstrapIdentity, scheduleDate: chartScheduleDate, requestId: chartRequestId, deadlineAt: chartDeadlineAt }, function (opened) {
+          mlsRelayNav({ type: 'mlsAppSearchOpenRequest', name: chartPatient, dob: chartDob, mrn: chartMrn, appointmentId: chartAppointmentId, bootstrapIdentity: chartBootstrapIdentity, scheduleDate: chartScheduleDate, requestId: chartRequestId, deadlineAt: chartDeadlineAt }, function (opened) {
             var openErr = chrome.runtime.lastError;
             if (openErr || !opened || !opened.opened) {
               /* lpf-1.0.0: keep the worker's PHI-free refusal evidence across
@@ -654,7 +669,7 @@
                that state; recover ONCE through the already-proven, DOB-gated
                patient opener, then repeat the identity-gated read. */
             if (canOpen && visitPatient && /^(wrong-chart|unverified|unverified-patient)$/.test(String(resp.reason || ''))) {
-              mlsRelayRetry({ type: 'mlsAppSearchOpenRequest', name: visitPatient, dob: visitDob, mrn: visitAthenaId }, function (opened) {
+              mlsRelayNav({ type: 'mlsAppSearchOpenRequest', name: visitPatient, dob: visitDob, mrn: visitAthenaId }, function (opened) {
                 var openErr = chrome.runtime.lastError;
                 if (openErr || !opened || !opened.opened) {
                   finishVisits({ ok: false, reason: (opened && (opened.findReason || opened.reason)) || 'open-failed', error: (openErr && openErr.message) || (opened && opened.error) || 'Could not safely open the requested patient before reading history.' });
@@ -737,11 +752,6 @@
         } });
         return;
       }
-      if (!readOnlySignProbe && Date.now() > _mlsSignGestureUntil) {
-        reply({ source: 'mls-ext', type: 'mlsAppSignAndSaveResult', resp: { blocked: true, signed: false, error: 'fresh-user-gesture-required', message: 'Click the Sign & Save button yourself, then confirm again.' } });
-        return;
-      }
-      if (!readOnlySignProbe) _mlsSignGestureUntil = 0; /* one click authorizes one sign request */
       try {
         chrome.runtime.sendMessage({
           type: 'MLS_OVL_SIGNSAVE',
@@ -866,7 +876,7 @@
         reply({ source: 'mls-ext', type: 'mlsAppAthenaActionV2Result', requestId: mlsStr(d.requestId, 100), resp: { ok: false, blocked: true, reason: 'order-row-mismatch', error: 'The immutable order-row binding exceeds the exact transport limit.' } });
         return;
       }
-      var gestureProof = '';
+      var gestureProof = '', gestureClass = '';
       if (mutating) {
         var arm = _mlsAthenaActionGesture || {};
         var armHashOk = !!arm.previewHash && !!previewHash && arm.previewHash === previewHash;
@@ -879,7 +889,7 @@
           reply({ source: 'mls-ext', type: 'mlsAppAthenaActionV2Result', requestId: mlsStr(d.requestId, 100), resp: { ok: false, blocked: true, reason: 'fresh-trusted-click-required', error: 'Click the matching Athena action button again before continuing.' } });
           return;
         }
-        gestureProof = armBatch ? (arm.serial + ':' + armBatch.idx) : arm.serial;
+        gestureProof = armBatch ? (arm.serial + ':' + armBatch.idx) : arm.serial; gestureClass = String(arm.gestureClass || 'trusted-click');
         if (armBatch) {
           /* batcharm-1.0.0: one item consumed; the list clears itself when spent */
           armBatch.idx += 1;
@@ -973,6 +983,7 @@
           taughtDestination: safeTaughtDestination(d.taughtDestination || (d.payload && d.payload.taughtDestination)),
           userGesture: mutating,
           gestureProof: gestureProof,
+          gestureClass: gestureClass,
           gestureRowHash: mutating && athAction === 'place_order' ? orderRowHash : '',
           gestureClientOrderId: mutating && athAction === 'place_order' ? orderClientOrderId : ''
         }, function (resp) {

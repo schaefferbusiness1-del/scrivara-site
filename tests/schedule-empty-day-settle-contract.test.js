@@ -217,13 +217,18 @@ function ok(name) { n++; console.log('ok ' + n + ' - ' + name); }
   {
     const eqStart = background.indexOf('var __authoritativeEmpty = ');
     const eqEnd = background.indexOf('|| __allSlotDay;', eqStart) + '|| __allSlotDay;'.length;
-    const eq = new Function('__parsedCount', '__surface', '__dd', '__allSlotDay',
+    /* dayauthority-1.0.0 (3.0.125): the equation also needs a readable schedule date (pick.s.schedDate). */
+    const eqFn = new Function('__parsedCount', '__surface', '__dd', '__allSlotDay', 'pick',
       background.slice(eqStart, eqEnd) + '\nreturn __authoritativeEmpty;');
+    const dated = { s: { schedDate: '2026-09-14' } };
+    const eq = (a, b, c, d) => eqFn(a, b, c, d, dated);
     const probeEmpty = { probes: [{ verified: true, empty: true }] };
     assert.strictEqual(eq(0, probeEmpty, {}, false), false, 'probe-empty alone must not be authoritative');
     assert.strictEqual(eq(0, probeEmpty, { emptyStable: true }, false), true, 'probe-empty + settled frame proof is authoritative');
     assert.strictEqual(eq(0, probeEmpty, { emptyStable: false }, false), false, 'an unsettled frame refuses');
     assert.strictEqual(eq(0, { probes: [] }, { emptyStable: true }, true), true, 'the narrow all-slot-day proof is preserved');
+    assert.strictEqual(eqFn(0, probeEmpty, { emptyStable: true }, false, { s: { schedDate: '' } }), false, 'no readable schedule date -> never authoritative');
+    assert.strictEqual(eqFn(0, probeEmpty, { emptyStable: true }, false, null), false, 'no schedule pick -> never authoritative');
     ok('handler gate: authoritative-empty requires the settled frame proof');
   }
 

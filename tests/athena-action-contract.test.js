@@ -378,9 +378,10 @@ assert(/saved\s*:\s*saveVerified|saved\s*:\s*true/.test(save), 'verified save mu
 assert(!/Sign\s*(?:&|and)\s*Save/i.test(save), 'Save draft must never fall through to Sign & Save');
 
 const sign = between(driver, '/* SIGN_ENCOUNTER_START */', '/* SIGN_ENCOUNTER_END */');
-assert(/exact-sign-control-context-verified/.test(sign));
-assert(/signed\s*:\s*signVerified|signed\s*:\s*true/.test(sign), 'verified sign must explicitly report signed:true');
-assert(/exactSign/.test(sign), 'sign confirmations must reuse the exact Sign & Save matcher');
+/* draftonly-1.1.0 (3.0.125): the sign-and-confirm clicker was deleted; the block is an explicit refusal. */
+assert(/reason: 'final-action-blocked'/.test(sign), 'sign_encounter must be an explicit refusal');
+assert(/signed\s*:\s*false/.test(sign), 'the refusal must report signed:false');
+assert(!/exact-sign-control-context-verified|clickOnce\(|signVerified|newScopedStatus/.test(sign), 'no sign clicker or sign verifier may remain');
 assert(!/\b(?:OK|Yes)\b/.test(sign), 'sign must not authorize generic confirmation buttons');
 
 /* One request performs exactly one action. Save and billing never chain into
@@ -396,8 +397,8 @@ for (const required of ['final-action-blocked', 'structured-route-blocked', 'Sav
   assert(genericExec.includes(required), `generic executor missing low-level guard: ${required}`);
 }
 
-const genericWriteDriver = between(background, 'async function mlsUnifiedWriteDriverFn', '/* v2.05 handler:');
-assert(/forcedHeld/.test(genericWriteDriver), 'generic write route must keep structured routes held');
-assert(!/sign_encounter|save_draft|stage_billing/.test(genericWriteDriver), 'generic note writer must not gain final-action capabilities');
+/* draftonly-1.1.0 (3.0.125): the generic (v2.05 unified) writer was deleted outright. */
+assert(!background.includes('async function mlsUnifiedWriteDriverFn('), 'the generic write driver must stay deleted');
+assert(background.split('mlsUnifiedWriteDriverFn').length === 2, 'only the tombstone comment may name the deleted generic writer');
 
 console.log('PASS Athena action contract: note and draft-save trusted-click positive controls, final-action refusals, no cross-arming, exact identity/context/token gates, and dormant generic-writer defenses preserved');

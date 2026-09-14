@@ -206,6 +206,7 @@ function bridgeTests() {
       setTimeout() { return 1; }, clearTimeout() {},
       mlsStr: (v, n) => String(v || '').slice(0, n),
       mlsRelayRetry(req, cb) { cb(opened); },
+      mlsRelayNav(req, cb) { cb(opened); }, /* navretry-1.0.0 (3.0.125): chart opens relay through the navigation-safe helper */
       reply(r) { results.push(r.resp); },
       chrome: { runtime: { lastError: null, sendMessage(msg, cb) { sent.push(msg); cb({ ok: true, text: 'Synthetic chart facts', chartName: 'Jane Sample', chartDob: '01/02/1970', chartMrn: '70001' }); } } }
     };

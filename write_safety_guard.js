@@ -107,7 +107,10 @@ function mlsExactIdentityPair(expected, observed) {
     '\\bsubmit\\s+claims?\\b',
     '\\bbill\\s+(?:now|patient|insurance)\\b',
     '\\bclose\\s+encounter\\b',
-    '\\bdelete\\s+(?:chart|patient|encounter)\\b'
+    '\\bdelete\\s+(?:chart|patient|encounter)\\b',
+    '\\bcheck\\s*-?\\s*(?:in|out)\\b',
+    '\\bdischarge\\b',
+    '\\bvoid\\b'
   ];
   var FORBIDDEN_LABEL_PATTERNS = FORBIDDEN_LABEL_SOURCES.map(function (s) { return new RegExp(s); });
 
@@ -128,7 +131,9 @@ function mlsExactIdentityPair(expected, observed) {
     'finalizenote', 'finalize-note', 'finalize_note',
     'postcharge', 'post-charge', 'post_charge',
     'submitclaim', 'submit-claim', 'fileclaim', 'file-claim',
-    'closeencounter', 'close-encounter',
+    'closeencounter', 'close-encounter', 'close_encounter', 'file_claim',
+    'checkin', 'check-in', 'check_in', 'checkout', 'check-out', 'check_out', 'discharge',
+    'deleteencounter', 'delete-encounter', 'delete_encounter', 'voidencounter', 'void-encounter', 'void_encounter',
     'mls-forbidden' /* explicit test hook: data-mls-forbidden */
   ];
 

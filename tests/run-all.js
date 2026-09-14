@@ -1436,6 +1436,7 @@ const tests = [
   'ax-encounter-binding-runtime.test.js',
   'exact-name-dob-identity-runtime.test.js',
   'identity-recovery-30124-runtime.test.js',
+  'exactread-30125-runtime.test.js',
   'visit-reader-minimal-deadline-contract.test.js',
   'visit-request-correlation-runtime.test.js',
   'cohort-request-correlation-runtime.test.js',

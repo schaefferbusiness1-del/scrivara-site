@@ -65,10 +65,10 @@ function makeHarness(block, opts) {
   const mlsRelayRetry = (msg, cb) => { if (opts.relayThrows) throw new Error('synthetic sync relay failure'); relay.push({ msg, cb }); };
   const mlsStr = (s, n) => String(s == null ? '' : s).slice(0, n);
   const reply = payload => { replies.push(payload); };
-  const run = new Function('d', 'reply', 'mlsStr', 'mlsRelayRetry', 'chrome', 'setTimeout', 'clearTimeout', 'Date', 'Object', 'Number', 'Array', 'isFinite', 'Math', block);
+  const run = new Function('d', 'reply', 'mlsStr', 'mlsRelayRetry', 'mlsRelayNav', 'chrome', 'setTimeout', 'clearTimeout', 'Date', 'Object', 'Number', 'Array', 'isFinite', 'Math', block);
   return {
     replies, timers, sent, relay, chrome,
-    dispatch: d => run(d, reply, mlsStr, mlsRelayRetry, chrome, fakeSetTimeout, fakeClearTimeout, Date, Object, Number, Array, isFinite, Math),
+    dispatch: d => run(d, reply, mlsStr, mlsRelayRetry, mlsRelayRetry, chrome, fakeSetTimeout, fakeClearTimeout, Date, Object, Number, Array, isFinite, Math),
     fireAllTimers: () => { for (const [id, t] of Array.from(timers.live.entries())) { timers.live.delete(id); t.fn(); } },
     liveTimerCount: () => timers.live.size
   };

@@ -35,7 +35,8 @@ const eq = (a, b, m) => { assert.strictEqual(a, b, m); checks++; };
 /* 1. counts */
 const count = (s, needle) => s.split(needle).length - 1;
 /* 3.0.117: 41 -> 42. searchverify-1.0.0 added __svSleep, the hidden-tab-safe settle the global-search fill waits on between typing and reading the field back; it is a compliant tenth helper, so the ceiling moves with it. */
-eq(count(bg, 'mls-hs-1.0.0'), 42, 'background.js must carry exactly 42 mls-hs-1.0.0 sleeps (10 helpers + 32 inline)');
+/* 3.0.125: 42 -> 41. draftonly-1.1.0 deleted mlsUnifiedWriteDriverFn, which carried one compliant helper. */
+eq(count(bg, 'mls-hs-1.0.0'), 41, 'background.js must carry exactly 41 mls-hs-1.0.0 sleeps (9 helpers + 32 inline)');
 eq(count(cs, 'mls-hs-1.0.0'), 13, 'content.js must carry exactly 13 mls-hs-1.0.0 sleeps (2 helpers + 11 inline)');
 
 /* 2. no bare page-side wait remains inside the injected drivers */
@@ -52,7 +53,7 @@ const BARE = [
   /new Promise\(\(\s*[A-Za-z_$][\w$]*\s*\)\s*=>\s*setTimeout\(/,
   /new Promise\(\s*[A-Za-z_$][\w$]*\s*=>\s*setTimeout\(/
 ];
-for (const name of ['async function mlsFindPatientOpenDriverFn(', 'async function mlsReadVisitsPaneDriverFn(', 'async function mlsUnifiedWriteDriverFn(', 'async function mlsAthenaGotoDate(', 'async function mlsRobustType(', 'async function mlsAthenaSignSave(']) {
+for (const name of ['async function mlsFindPatientOpenDriverFn(', 'async function mlsReadVisitsPaneDriverFn(', 'async function mlsAthenaGotoDate(', 'async function mlsRobustType(', 'async function mlsAthenaSignSave(']) {
   const body = fnBody(bg, name);
   for (const re of BARE) ok(!re.test(body), name + ' still holds a bare page-side setTimeout wait: ' + re);
 }

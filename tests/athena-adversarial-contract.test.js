@@ -111,10 +111,11 @@ finding('top note placement uses the exact-encounter AthenaActionV2 lane', funct
      large service worker, so its marker is not a valid end delimiter here.
      The advanced handler is short; a bounded forward slice covers its complete
      tab-selection preamble without accidentally wrapping to source.length-1. */
-  const advanced = background.slice(advancedStart, advancedStart + 12000);
-  const candidateCount = advanced.indexOf('candidates.length > 1');
-  const cachedTarget = advanced.indexOf('__mlsWriteTarget');
-  assert(candidateCount >= 0 && cachedTarget >= 0 && candidateCount < cachedTarget, 'advanced mlsAppWriteV2 must reject multiple Athena tabs before consulting __mlsWriteTarget');
+  /* draftonly-1.1.0 (3.0.125): the legacy orchestration after the refusal was deleted; the
+     handler answers unified-confirmation-required and nothing else. */
+  const advanced = background.slice(advancedStart, background.indexOf('})();', advancedStart));
+  assert(/unified-confirmation-required/.test(advanced), 'advanced mlsAppWriteV2 must answer the explicit refusal');
+  assert(advanced.indexOf('candidates.length > 1') < 0 && advanced.indexOf('__mlsWriteTarget') < 0 && advanced.indexOf('chrome.tabs.query') < 0, 'no tab pick or cached write target may remain in the deprecated handler');
 });
 
 finding('patient identity comes from one explicit chart header and returns observed values', function () {
@@ -145,7 +146,9 @@ finding('Save and dormant Sign defenses are scoped to one exact encounter-note c
 
   const save = between(driver, '/* SAVE_DRAFT_START */', '/* SAVE_DRAFT_END */');
   const sign = between(driver, '/* SIGN_ENCOUNTER_START */', '/* SIGN_ENCOUNTER_END */');
-  for (const [label, block] of [['Save', save], ['Sign', sign]]) {
+  /* draftonly-1.1.0 (3.0.125): the Sign block is an explicit refusal with no clicker. */
+  assert(/reason: 'final-action-blocked'/.test(sign) && !/clickOnce\(|newScopedStatus|signVerified/.test(sign), 'Sign must be a refusal without any clicker or verifier');
+  for (const [label, block] of [['Save', save]]) {
     assert(/noteScope|noteContainer|encounterNote|actionTarget|noteTarget/.test(block), `${label} must operate through the verified note container`);
     assert(!/interactive\(hit\.frame\.doc/.test(block), `${label} must not search every control in the Athena frame`);
     assert(!/hit\.frame\.doc\.querySelectorAll/.test(block), `${label} dialogs/status must not be read from the whole frame`);
@@ -184,7 +187,9 @@ finding('Save success and dormant Sign verification require new scoped evidence'
 
   const save = between(driver, '/* SAVE_DRAFT_START */', '/* SAVE_DRAFT_END */');
   const sign = between(driver, '/* SIGN_ENCOUNTER_START */', '/* SIGN_ENCOUNTER_END */');
-  for (const [label, block] of [['Save', save], ['Sign', sign]]) {
+  /* draftonly-1.1.0 (3.0.125): the Sign block is an explicit refusal with no clicker. */
+  assert(/reason: 'final-action-blocked'/.test(sign) && !/clickOnce\(|newScopedStatus|signVerified/.test(sign), 'Sign must be a refusal without any clicker or verifier');
+  for (const [label, block] of [['Save', save]]) {
     assert(/status(?:Evidence|Snapshot)|newScopedStatus|scopedSuccess/.test(block), `${label} must use the scoped new-evidence verifier`);
     assert(/noteScope|noteContainer|encounterNote|actionTarget|noteTarget/.test(block), `${label} success evidence must remain inside the note container`);
     assert(/verified\s*:/.test(block), `${label} must return explicit verified evidence`);
@@ -285,7 +290,7 @@ finding('second-pass authorization and honest-outcome gaps stay closed', functio
   const advancedHandler = background.slice(advancedHandlerAt, advancedHandlerAt + 5000);
   const disabledAt = advancedHandler.indexOf('unified-confirmation-required');
   const legacyTabPickAt = advancedHandler.indexOf('chrome.tabs.query');
-  assert(disabledAt >= 0 && legacyTabPickAt > disabledAt, 'background must reject the deprecated direct writer before any Athena tab selection');
+  assert(disabledAt >= 0 && (legacyTabPickAt < 0 || legacyTabPickAt > disabledAt), 'background must reject the deprecated direct writer before any Athena tab selection');
 
   const pasteAt = background.indexOf("msg.type === 'mlsAppPasteRequest'");
   const pasteHandler = background.slice(pasteAt, pasteAt + 1800);
