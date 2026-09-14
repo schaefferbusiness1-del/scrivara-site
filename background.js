@@ -10758,7 +10758,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
             await restoreFocus();
             return chartRespond({ ok: false, reason: 'ambiguous', attempted: false, captured: false, opened: opened, version: versionStrict, chartName: (ident && ident.name) || '', chartDob: (ident && ident.dob) || '', error: 'athenaOne showed more than one patient banner for ' + want + ' and MLS did not guess. Open the right chart in athenaOne, then pull again. Nothing was captured.' });
           }
-          if (want && ident && ident.name && (!globalNameMatches || globalStrongMismatch)) {
+          if (want && ident && ident.name && !exactGlobalPair.ok) { /* bannernames-1.2.0 (3.0.129): the exact-pair verdict (over every printed name) is the only wrong-chart test */
             await restoreFocus();
             return chartRespond({ ok: false, reason: 'wrong-chart', attempted: false, captured: false, chartName: ident.name, chartDob: ident.dob || '', bannerNamesPrinted: 1 + ((ident && Array.isArray(ident.altNames)) ? ident.altNames.length : 0), identVia: (ident && ident.via) || '', pairReason: exactGlobalPair.reason || '', expectedMrnDigits: mrnKeyStrict(wantMrn).length, observedMrnDigits: mrnKeyStrict(ident.mrn).length, opened: opened, version: versionStrict, error: 'The open athenaOne chart identity does not match ' + want + '. Nothing was captured for ' + want + '.' });
           }

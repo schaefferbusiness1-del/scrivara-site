@@ -82,4 +82,7 @@ ok(bg.includes("var r = { name: name, dob: dob, mrn: mrn, altNames: altNamesS,")
 }
 /* 7. the wrong-chart refusal carries PHI-free reader evidence */
 ok(bg.includes("bannerNamesPrinted: 1 + ((ident && Array.isArray(ident.altNames)) ? ident.altNames.length : 0), identVia: (ident && ident.via) || '', pairReason: exactGlobalPair.reason || '',"), 'wrong-chart refusal reports printed-name count, reader and pair reason');
+/* 8. bannernames-1.2.0 (3.0.129): the wrong-chart refusal depends only on the exact-pair verdict */
+ok(bg.includes("if (want && ident && ident.name && !exactGlobalPair.ok) {"), 'wrong-chart fires only when the exact pair (over every printed name) fails');
+ok(!bg.includes("if (want && ident && ident.name && (!globalNameMatches || globalStrongMismatch)) {"), 'the primary-name-only condition is gone');
 console.log('PASS bannernames-30127-runtime: ' + checks + ' checks');
