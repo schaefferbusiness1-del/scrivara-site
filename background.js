@@ -16006,6 +16006,14 @@ function mlsExactIdentityPair(expected, observed) {
         async function restoreExactSchedule(stage) {
           if (!frozenScheduleDate) { sendResponse({ ok: false, opened: false, reason: 'schedule-date-missing-after-recovery', error: 'The exact requested schedule date was missing. Nothing was opened.' }); return false; }
           scheduleRegrounds++;
+          /* restorehome-1.0.0 (3.0.133): after a Find Patient leg the work frame is the Find page and
+             no frame carries the week strip (measured: eight goto-date answers found:false). Go Home
+             first - athena's own logo, read-only - settle, then navigate the requested date. */
+          try {
+            var homeX = await execOpen({ target: { tabId: tab.id, allFrames: true }, args: [openGuard], func: mlsGoHomeDriverFn }, 9000);
+            if (homeX && homeX.timeout) { failOpenDeadline(stage || 'exact schedule restoration'); return false; }
+            if (!(await waitOpen(2500))) { failOpenDeadline(stage || 'exact schedule restoration'); return false; }
+          } catch (eRestoreHome) {}
           var regroundX = await execOpen({ target: { tabId: tab.id, allFrames: true }, args: [frozenScheduleDate, false, openGuard], func: mlsAthenaGotoDate }, 40000);
           if (regroundX.timeout) { failOpenDeadline(stage || 'exact schedule restoration'); return false; }
           var verifiedDates = (regroundX.r || []).map(function (entry) { return entry && entry.result; }).filter(function (value) { return value && value.done === true && value.dateUnverified !== true && /^\d{4}-\d{2}-\d{2}$/.test(String(value.schedDate || '')); });

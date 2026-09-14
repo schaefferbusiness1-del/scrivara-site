@@ -61,4 +61,17 @@ eq(bg.split('contfix-1.1.0').length - 1, 3, 'three contfix-1.1.0 sites');
   const j = bg.indexOf("      if (pre && pre.interstitial) return { ok: false, reason: 'interstitial-weather',");
   ok(i > 0 && j > i && j - i < 700, 'refresh handler presses Continue and re-probes before refusing as weather');
 }
+/* 3. restorehome-1.0.0 (3.0.133): the exact-schedule restore goes Home before navigating the date */
+{
+  const s = bg.indexOf('async function restoreExactSchedule(stage) {');
+  const e = bg.indexOf('async function waitOpen(ms) {', s);
+  ok(s > 0 && e > s, 'restoreExactSchedule present');
+  const body = bg.slice(s, e);
+  const home = body.indexOf("func: mlsGoHomeDriverFn }, 9000)");
+  const goto = body.indexOf("func: mlsAthenaGotoDate }, 40000)");
+  ok(home > 0 && goto > home, 'Home (athena logo) runs before the date navigation');
+  ok(body.includes("args: [openGuard], func: mlsGoHomeDriverFn"), 'Home runs under the same request guard');
+  ok(body.includes("if (!(await waitOpen(2500))) { failOpenDeadline(stage || 'exact schedule restoration'); return false; }"), 'the settle respects the absolute open deadline');
+  ok(!/reload|mlsRecoverAthenaTab/.test(body), 'the restore never reloads the tab');
+}
 console.log('PASS contfix-30126-runtime: ' + checks + ' checks');
