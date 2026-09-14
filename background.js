@@ -4910,7 +4910,7 @@ function mlsReadChartIdentity() {
     if (!/[A-Za-z]{2}/.test(cand)) return '';
     return cand;
   }
-  var name = '', dob = '', mrn = '', via = '';
+  var name = '', dob = '', mrn = '', via = '', altNames = []; /* bannernames-1.0.0 */
   function dstr(m) { return ('0' + m[1]).slice(-2) + '/' + ('0' + m[2]).slice(-2) + '/' + m[3]; }
   /* ---- pass 1: the chart banner (name on/above the "age sex | date | #id" line) ---- */
   for (var i = 0; i < lines.length && !name; i++) {
@@ -4935,7 +4935,9 @@ function mlsReadChartIdentity() {
     if (!name) {
       for (var lb = 1; lb <= 3 && i - lb >= 0 && !name; lb++) {
         var PL = lines[i - lb];
-        name = looksName(PL);
+        /* bannernames-1.0.0 (3.0.127): a name line that also carries "Legal: ..." keeps its
+           used name before the colon; the legal name is collected below. */
+        name = looksName(String(PL).split(/legal\s*:/i)[0].replace(/[()]/g, ' ').replace(/\s+/g, ' ').trim());
         if (name) break;
         var chippy = PL.length <= 8 || /^[A-Z]{2,4}$/.test(PL) || !/[A-Za-z]/.test(PL);
         if (!chippy) break;
@@ -4943,6 +4945,23 @@ function mlsReadChartIdentity() {
     }
     if (!name) continue;
     via = 'banner';
+    /* bannernames-1.0.0 (3.0.127): the banner prints the patient's used name and, when
+       they differ, the legal name ("Legal: ..."). Collect the legal name as an
+       alternative so the exact first+last+DOB rule can match either name athena
+       itself prints for this chart. Nothing is guessed. */
+    try {
+      for (var lg = Math.max(0, i - 3); lg <= Math.min(lines.length - 1, i + 1); lg++) {
+        var lgm = /legal\s*:\s*(.*)$/i.exec(lines[lg]);
+        if (!lgm) continue;
+        var lgc = lgm[1].replace(/[()]/g, ' ').replace(/\s+/g, ' ').trim();
+        if (!lgc && lg + 1 < lines.length) lgc = String(lines[lg + 1]).replace(/[()]/g, ' ').replace(/\s+/g, ' ').trim();
+        var lgn = looksName(lgc.split(/[\u00b7|]/)[0].replace(/\s+$/, ''));
+        if (lgn && lgn !== name && altNames.indexOf(lgn) < 0) altNames.push(lgn);
+        var lgUsed = lgm.index > 0 ? lines[lg].slice(0, lgm.index) : String(lines[lg - 1] || '');
+        var lgu = looksName(lgUsed.replace(/[()]/g, ' ').replace(/\s+/g, ' ').trim());
+        if (lgu && lgu !== name && altNames.indexOf(lgu) < 0) altNames.push(lgu);
+      }
+    } catch (eLegal) {}
     var bd = BARE_DATE.exec(L); if (bd) dob = dstr(bd);
     var mh = MRN_HASH.exec(L); if (mh) mrn = mh[1];
     if ((!dob || !mrn) && i + 1 < lines.length) {
@@ -5004,7 +5023,7 @@ function mlsReadChartIdentity() {
      patient NAME from the same frame - a name-less frame's labeled date (the
      live '6-23-1942' garbage) must yield a fully blank identity. */
   if (!name) { dob = ''; mrn = ''; }
-  return { name: name, dob: dob, mrn: mrn, score: score, via: via, w: bodyW, h: bodyH, url: String(typeof href !== 'undefined' ? (href || '') : '') };
+  return { name: name, dob: dob, mrn: mrn, altNames: altNames, score: score, via: via, w: bodyW, h: bodyH, url: String(typeof href !== 'undefined' ? (href || '') : '') };
 }
 
 /* ---- schedule demographic normalization (worker-scope, pure, testable) ----
@@ -5309,6 +5328,7 @@ function mlsReadChartIdentityShadow() {
       var first = labelVal(lines, /^first name used$/i) || labelVal(lines, /^legal first name$/i);
       var middle = labelVal(lines, /^middle name$/i);
       var last = labelVal(lines, /^legal last name$/i);
+      var legalFirstS = labelVal(lines, /^legal first name$/i), altNamesS = []; /* bannernames-1.0.0 */
       var dobA = labelVal(lines, /^date of birth$/i);
       var pidA = (labelVal(lines, /^patient id$/i).match(/#?\s?(\d{4,})/) || [])[1] || '';
       var isVal = function (s) { return s && s.length <= 40 && /^[A-Z]/.test(s) && !/name|birth|patient|gender|age|detail/i.test(s); };
@@ -5317,6 +5337,8 @@ function mlsReadChartIdentityShadow() {
         var okA = okName(comp.replace(/\s+/g, ' ').trim());
         var dm = BARE_DATE.exec(dobA || '');
         if (okA && dm) { name = okA; dob = dstr(dm); mrn = pidA; via = 'shadow-labels'; }
+        /* bannernames-1.0.0 (3.0.127): the legal first name is a second name athena prints for this chart. */
+        if (name && isVal(legalFirstS) && isVal(last) && legalFirstS !== first) { var altS = okName((legalFirstS + ' ' + last).replace(/\s+/g, ' ').trim()); if (altS && altS !== name && altNamesS.indexOf(altS) < 0) altNamesS.push(altS); }
       }
       /* strategy B: chip line + join of the lines rendered above it */
       if (!name) {
@@ -5344,7 +5366,7 @@ function mlsReadChartIdentityShadow() {
       var bodyW = 0, bodyH = 0;
       try { var brc = document.body.getBoundingClientRect(); bodyW = Math.round(brc.width); bodyH = Math.round(brc.height); } catch (e) {}
       if (bodyW < 60 || bodyH < 60) score -= 6;
-      var r = { name: name, dob: dob, mrn: mrn, score: score, via: via, w: bodyW, h: bodyH, url: String(typeof href !== 'undefined' ? (href || '') : '') };
+      var r = { name: name, dob: dob, mrn: mrn, altNames: altNamesS, score: score, via: via, w: bodyW, h: bodyH, url: String(typeof href !== 'undefined' ? (href || '') : '') };
       allR.push(r);
       if (!bestR || (via === 'shadow-labels' && bestR.via !== 'shadow-labels') || (r.score > bestR.score && !(bestR.via === 'shadow-labels' && via !== 'shadow-labels'))) bestR = r;
     }
@@ -10648,8 +10670,17 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
             return new RegExp('(?:\\b0?' + p.m + sep + '0?' + p.d + sep + p.y + '\\b|\\b' + p.y + sep + '0?' + p.m + sep + '0?' + p.d + '\\b)').test(String(txt || ''));
           };
           const textHasMrnStrict = (txt, expectedMrn) => { const k = mrnKeyStrict(expectedMrn); return !!(k && new RegExp('(?:^|\\D)' + k + '(?:\\D|$)').test(String(txt || ''))); };
+          /* bannernames-1.0.0 START */
+          const exactPairAny = (expected, who) => {
+            const base = mlsExactIdentityPair(expected, who || {});
+            if (base.ok) return base;
+            const alts = (who && Array.isArray(who.altNames)) ? who.altNames : [];
+            for (let ai = 0; ai < alts.length; ai++) { const alt = mlsExactIdentityPair(expected, Object.assign({}, who, { name: alts[ai] })); if (alt.ok) return Object.assign({}, alt, { viaAltName: true }); }
+            return base;
+          };
+          /* bannernames-1.0.0 END */
           const identityMatchesTarget = (who) => {
-            return mlsExactIdentityPair({name:want,dob:wantDob,mrn:wantMrn},who).ok;
+            return exactPairAny({name:want,dob:wantDob,mrn:wantMrn},who).ok;
           };
           const textHasPairStrict = (txt) => String(txt || '').split(/\r?\n/).some((line) => {
             const match = /^\s*(?:patient\s*[:#-]?\s*)?(.{2,100}?)\s+(?:DOB\s*[:#-]?\s*)?(\d{1,4}[/.\-]\d{1,2}[/.\-]\d{1,4})(?:\s|$)/i.exec(line);
@@ -10712,7 +10743,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
              usable DOB refuses (identity-hint-incomplete) instead of accepting a
              name-only banner; an ambiguous banner refuses; the MRN is reported and
              never vetoes an exact pair (owner ruling). */
-          const exactGlobalPair = want ? mlsExactIdentityPair({name:want,dob:wantDob,mrn:wantMrn}, ident || {}) : { ok: false, reason: 'no-target' };
+          const exactGlobalPair = want ? exactPairAny({name:want,dob:wantDob,mrn:wantMrn}, ident || {}) : { ok: false, reason: 'no-target' };
           const globalNameMatches = !!(want && ident && ident.name && strictNameMatch(ident.name, want));
           const globalStrongMismatch = !!(want && ident && ident.name && !exactGlobalPair.ok);
           if (want && exactGlobalPair.reason === 'identity-hint-incomplete') {

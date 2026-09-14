@@ -1438,6 +1438,7 @@ const tests = [
   'identity-recovery-30124-runtime.test.js',
   'exactread-30125-runtime.test.js',
   'contfix-30126-runtime.test.js',
+  'bannernames-30127-runtime.test.js',
   'visit-reader-minimal-deadline-contract.test.js',
   'visit-request-correlation-runtime.test.js',
   'cohort-request-correlation-runtime.test.js',

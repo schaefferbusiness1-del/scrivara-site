@@ -15,7 +15,9 @@ const eq = (a, b, m) => { assert.strictEqual(a, b, m); checks++; };
 const count = (s, needle) => s.split(needle).length - 1;
 
 /* 1. exactread-1.0.0: the chart read's identity gate is the canonical resolver and it refuses instead of accepting name-only */
-ok(bg.includes("const exactGlobalPair = want ? mlsExactIdentityPair({name:want,dob:wantDob,mrn:wantMrn}, ident || {}) : { ok: false, reason: 'no-target' };"), 'chart read computes the exact pair');
+/* 3.0.127 (bannernames-1.0.0): the gate goes through exactPairAny, which is mlsExactIdentityPair over the primary name and every name the banner itself prints. */
+ok(bg.includes("const exactGlobalPair = want ? exactPairAny({name:want,dob:wantDob,mrn:wantMrn}, ident || {}) : { ok: false, reason: 'no-target' };"), 'chart read computes the exact pair (over the printed names)');
+ok(bg.includes("const base = mlsExactIdentityPair(expected, who || {});"), 'exactPairAny is built on the canonical resolver');
 ok(bg.includes("if (want && exactGlobalPair.reason === 'identity-hint-incomplete') {"), 'no DOB -> identity-hint-incomplete refusal');
 ok(bg.includes("if (want && exactGlobalPair.reason === 'identity-ambiguous') {"), 'ambiguous banner -> refusal');
 ok(bg.includes("const globalStrongMismatch = !!(want && ident && ident.name && !exactGlobalPair.ok);"), 'wrong-chart fires on any exact-pair failure');

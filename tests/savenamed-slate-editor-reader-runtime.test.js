@@ -8,8 +8,8 @@ const path = require('path');
 const root = path.resolve(__dirname, '..');
 const background = fs.readFileSync(path.join(root, 'background.js'), 'utf8');
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
-// 3.0.126: contfix-1.1.0 (Continue on the exact retry page) on top of 3.0.125; native persistence remains verified.
-assert.strictEqual(manifest.version, '3.0.126', 'regression must exercise the 3.0.126 candidate');
+// 3.0.127: bannernames-1.0.0 (either name athena prints on the banner) on top of 3.0.126; native persistence remains verified.
+assert.strictEqual(manifest.version, '3.0.127', 'regression must exercise the 3.0.127 candidate');
 const coreSha = (manifest.version_name.match(/core-sha256:([0-9a-f]{64})/) || [])[1];
 assert(coreSha, 'candidate manifest is missing its core hash');
 const computedCoreSha = execFileSync(process.execPath, [path.join(root, 'scripts', 'extension-core-digest.js')], { encoding: 'utf8' }).trim();
