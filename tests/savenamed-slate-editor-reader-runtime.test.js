@@ -8,8 +8,8 @@ const path = require('path');
 const root = path.resolve(__dirname, '..');
 const background = fs.readFileSync(path.join(root, 'background.js'), 'utf8');
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
-// 3.0.133: restorehome-1.0.0 (the exact-schedule restore goes Home before navigating the date); native persistence remains verified.
-assert.strictEqual(manifest.version, '3.0.133', 'regression must exercise the 3.0.133 candidate');
+// 3.0.134: restorehome-1.1.0 (the restore retries the date navigation while the week strip has no day tabs yet); native persistence remains verified.
+assert.strictEqual(manifest.version, '3.0.134', 'regression must exercise the 3.0.134 candidate');
 const coreSha = (manifest.version_name.match(/core-sha256:([0-9a-f]{64})/) || [])[1];
 assert(coreSha, 'candidate manifest is missing its core hash');
 const computedCoreSha = execFileSync(process.execPath, [path.join(root, 'scripts', 'extension-core-digest.js')], { encoding: 'utf8' }).trim();

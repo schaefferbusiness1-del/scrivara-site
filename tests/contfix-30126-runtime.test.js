@@ -73,5 +73,10 @@ eq(bg.split('contfix-1.1.0').length - 1, 3, 'three contfix-1.1.0 sites');
   ok(body.includes("args: [openGuard], func: mlsGoHomeDriverFn"), 'Home runs under the same request guard');
   ok(body.includes("if (!(await waitOpen(2500))) { failOpenDeadline(stage || 'exact schedule restoration'); return false; }"), 'the settle respects the absolute open deadline');
   ok(!/reload|mlsRecoverAthenaTab/.test(body), 'the restore never reloads the tab');
+  /* restorehome-1.1.0 (3.0.134): the date navigation retries while the strip has no day tabs yet */
+  ok(body.includes("for (var rgTry = 0; rgTry < 4; rgTry++) {"), 'bounded retry ladder');
+  ok(body.includes("value.reason === 'weekstrip-empty'"), 'retries only on the empty-strip answer');
+  ok(body.includes("if (!(await waitOpen(3000))) { failOpenDeadline(stage || 'exact schedule restoration'); return false; }"), 'each retry settle respects the absolute open deadline');
+  ok(body.indexOf('for (var rgTry') < body.indexOf("if (regroundX.timeout) { failOpenDeadline("), 'the loop precedes the terminal timeout check');
 }
 console.log('PASS contfix-30126-runtime: ' + checks + ' checks');

@@ -16014,7 +16014,19 @@ function mlsExactIdentityPair(expected, observed) {
             if (homeX && homeX.timeout) { failOpenDeadline(stage || 'exact schedule restoration'); return false; }
             if (!(await waitOpen(2500))) { failOpenDeadline(stage || 'exact schedule restoration'); return false; }
           } catch (eRestoreHome) {}
-          var regroundX = await execOpen({ target: { tabId: tab.id, allFrames: true }, args: [frozenScheduleDate, false, openGuard], func: mlsAthenaGotoDate }, 40000);
+          /* restorehome-1.1.0 (3.0.134): right after Home the week strip can be present with no day
+             tabs painted yet (measured); retry the date navigation a few times while that is the
+             only answer, three seconds apart, under the absolute open deadline. */
+          var regroundX = null;
+          for (var rgTry = 0; rgTry < 4; rgTry++) {
+            regroundX = await execOpen({ target: { tabId: tab.id, allFrames: true }, args: [frozenScheduleDate, false, openGuard], func: mlsAthenaGotoDate }, 40000);
+            if (regroundX.timeout) break;
+            var rgResults = (regroundX.r || []).map(function (entry) { return entry && entry.result; }).filter(Boolean);
+            var rgVerified = rgResults.some(function (value) { return value.done === true && value.dateUnverified !== true; });
+            var rgEmptyStripOnly = !rgVerified && rgResults.some(function (value) { return value.reason === 'weekstrip-empty'; }) && rgResults.every(function (value) { return value.reason === 'weekstrip-empty' || value.found === false; });
+            if (rgVerified || !rgEmptyStripOnly || rgTry === 3) break;
+            if (!(await waitOpen(3000))) { failOpenDeadline(stage || 'exact schedule restoration'); return false; }
+          }
           if (regroundX.timeout) { failOpenDeadline(stage || 'exact schedule restoration'); return false; }
           var verifiedDates = (regroundX.r || []).map(function (entry) { return entry && entry.result; }).filter(function (value) { return value && value.done === true && value.dateUnverified !== true && /^\d{4}-\d{2}-\d{2}$/.test(String(value.schedDate || '')); });
           var regroundOk = verifiedDates.length > 0 && verifiedDates.every(function (value) { return String(value.schedDate) === frozenScheduleDate; });
