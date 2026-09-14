@@ -571,6 +571,9 @@
               safeDiag.scheduleDateVerified = openedDiag.scheduleDateVerified === true;
               safeDiag.exactScheduleFallback = openedDiag.exactScheduleFallback === true;
               safeDiag.rowMrnMatched = openedDiag.rowMrnMatched === true;
+              /* restorediag-1.1.0 (3.0.132): closed per-frame evidence for the schedule-date restore refusal (no row, DOB, MRN or name; digits masked). */
+              safeDiag.stage = mlsStr(openedDiag.stage, 40).replace(/[^a-z0-9 -]/gi, '');
+              if (Array.isArray(openedDiag.regroundFrames)) safeDiag.regroundFrames = openedDiag.regroundFrames.slice(0, 8).map(function (f) { f = (f && typeof f === 'object') ? f : {}; return { done: f.done === true, unverified: f.unverified === true, dateMatch: f.dateMatch === true, steps: Math.max(0, Math.min(99, Number(f.steps) || 0)), head: mlsStr(f.head, 70).replace(/\d/g, 'D') }; });
               finishChart({
                 ok: false,
                 opened: false,

@@ -93,4 +93,12 @@ ok(!bg.includes("if (want && ident && ident.name && (!globalNameMatches || globa
   eq(any({ name: 'Catherine A Example', dob: '1956-01-02' }, who).matchedName, 'Catherine A EXAMPLE', 'the matched printed name is returned');
   ok(bg.includes("chartName: (exactGlobalPair.viaAltName === true && exactGlobalPair.matchedName) ? exactGlobalPair.matchedName : ((ident && ident.name) || ''), chartNamePrinted: (ident && ident.name) || '', chartNameViaLegal: exactGlobalPair.viaAltName === true,"), 'ok response reports the matched printed name, keeps the primary, flags the legal match');
 }
+/* 10. restorediag (3.0.130 + 3.0.132): the schedule-date restore refusal carries closed per-frame evidence end to end */
+{
+  const cs = fs.readFileSync(path.join(root, 'content.js'), 'latin1');
+  ok(bg.includes("regroundFrames: (regroundX.r || []).map(function (entry) { return entry && entry.result; }).filter(Boolean).slice(0, 8).map(function (v) { return { done: v.done === true, unverified: v.dateUnverified === true, dateMatch: String(v.schedDate || '') === frozenScheduleDate,"), 'worker refusal lists per-frame goto-date evidence');
+  ok(cs.includes("safeDiag.stage = mlsStr(openedDiag.stage, 40).replace(/[^a-z0-9 -]/gi, '');"), 'bridge forwards the closed stage code');
+  ok(cs.includes("if (Array.isArray(openedDiag.regroundFrames)) safeDiag.regroundFrames = openedDiag.regroundFrames.slice(0, 8).map(function (f) {"), 'bridge forwards the per-frame evidence through a closed shape');
+  ok(cs.includes("head: mlsStr(f.head, 70).replace(/\\d/g, 'D')"), 'every digit in the driver head is masked');
+}
 console.log('PASS bannernames-30127-runtime: ' + checks + ' checks');
