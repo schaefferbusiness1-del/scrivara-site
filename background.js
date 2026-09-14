@@ -16010,7 +16010,7 @@ function mlsExactIdentityPair(expected, observed) {
           if (regroundX.timeout) { failOpenDeadline(stage || 'exact schedule restoration'); return false; }
           var verifiedDates = (regroundX.r || []).map(function (entry) { return entry && entry.result; }).filter(function (value) { return value && value.done === true && value.dateUnverified !== true && /^\d{4}-\d{2}-\d{2}$/.test(String(value.schedDate || '')); });
           var regroundOk = verifiedDates.length > 0 && verifiedDates.every(function (value) { return String(value.schedDate) === frozenScheduleDate; });
-          if (!regroundOk) { sendResponse({ ok: false, opened: false, reason: 'schedule-date-restore-failed', error: 'The exact requested date could not be verified. No appointment was opened.', diag: { route: 'schedule', scheduleRegrounds: scheduleRegrounds, scheduleDateVerified: false } }); return false; }
+          if (!regroundOk) { sendResponse({ ok: false, opened: false, reason: 'schedule-date-restore-failed', error: 'The exact requested date could not be verified. No appointment was opened.', diag: { route: 'schedule', scheduleRegrounds: scheduleRegrounds, scheduleDateVerified: false, stage: String(stage || '').slice(0, 40), regroundFrames: (regroundX.r || []).map(function (entry) { return entry && entry.result; }).filter(Boolean).slice(0, 8).map(function (v) { return { done: v.done === true, unverified: v.dateUnverified === true, dateMatch: String(v.schedDate || '') === frozenScheduleDate, steps: Number(v.steps || 0), head: String(v.error || v.dateUnverifiedReason || '').replace(/\d{4}-\d{2}-\d{2}/g, 'D').slice(0, 70) }; }) } }); return false; } /* restorediag-1.0.0 (3.0.130) */
           return true;
         }
         async function waitOpen(ms) {
