@@ -10679,7 +10679,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
             const base = mlsExactIdentityPair(expected, who || {});
             if (base.ok) return base;
             const alts = (who && Array.isArray(who.altNames)) ? who.altNames : [];
-            for (let ai = 0; ai < alts.length; ai++) { const alt = mlsExactIdentityPair(expected, Object.assign({}, who, { name: alts[ai] })); if (alt.ok) return Object.assign({}, alt, { viaAltName: true }); }
+            for (let ai = 0; ai < alts.length; ai++) { const alt = mlsExactIdentityPair(expected, Object.assign({}, who, { name: alts[ai] })); if (alt.ok) return Object.assign({}, alt, { viaAltName: true, matchedName: alts[ai] }); }
             return base;
           };
           /* bannernames-1.0.0 END */
@@ -10845,7 +10845,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
           if (!chosenStrict.length || !String(chartTextStrict || '').trim()) {
             return chartRespond({ ok: false, reason: 'chart-frames-unbound', attempted: false, captured: false, opened: opened, version: versionStrict, receipt: chartReceiptStrict, refusalDiag: { briefing: briefingDiag, identityFill: __mlsIdentityFill }, chartName: (ident && ident.name) || '', chartDob: (ident && ident.dob) || '', error: 'The chart' + (want ? ' for ' + want : '') + ' opened' + (want ? ' and the patient matched' : '') + ', but no chart section could be tied to this patient, so nothing was captured. Open the chart once in athenaOne and let it finish loading, then pull again.' });
           }
-          return chartRespond({ ok: true, text: chartTextStrict, receipt: chartReceiptStrict, url: pickStrict.u || tab.url, title: tab.title, opened: opened, frames: eligibleFrames.length, stageMs: { total: Date.now() - chartRequestStartedAt, identity: __identDoneAt - T0, text: Date.now() - __identDoneAt, polls: polls }, chartName: (ident && ident.name) || '', chartDob: (ident && ident.dob) || '', chartMrn: (ident && ident.mrn) || '', identity: __mlsIdentityFill, version: versionStrict, via: (ident && ident.via) || '', briefingText: briefingShip, briefingDiag: briefingDiag, briefingNav: navClicked || '', identDiag: identDiag, textDiag: textDiagStrict, expected: expectName ? 1 : 0 });
+          return chartRespond({ ok: true, text: chartTextStrict, receipt: chartReceiptStrict, url: pickStrict.u || tab.url, title: tab.title, opened: opened, frames: eligibleFrames.length, stageMs: { total: Date.now() - chartRequestStartedAt, identity: __identDoneAt - T0, text: Date.now() - __identDoneAt, polls: polls }, chartName: (exactGlobalPair.viaAltName === true && exactGlobalPair.matchedName) ? exactGlobalPair.matchedName : ((ident && ident.name) || ''), chartNamePrinted: (ident && ident.name) || '', chartNameViaLegal: exactGlobalPair.viaAltName === true, chartDob: (ident && ident.dob) || '', chartMrn: (ident && ident.mrn) || '', identity: __mlsIdentityFill, version: versionStrict, via: (ident && ident.via) || '', briefingText: briefingShip, briefingDiag: briefingDiag, briefingNav: navClicked || '', identDiag: identDiag, textDiag: textDiagStrict, expected: expectName ? 1 : 0 });
         }
       } catch (e) { chartRespond({ ok: false, error: String((e && e.message) || e) }); }
     })();

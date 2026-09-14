@@ -85,4 +85,12 @@ ok(bg.includes("bannerNamesPrinted: 1 + ((ident && Array.isArray(ident.altNames)
 /* 8. bannernames-1.2.0 (3.0.129): the wrong-chart refusal depends only on the exact-pair verdict */
 ok(bg.includes("if (want && ident && ident.name && !exactGlobalPair.ok) {"), 'wrong-chart fires only when the exact pair (over every printed name) fails');
 ok(!bg.includes("if (want && ident && ident.name && (!globalNameMatches || globalStrongMismatch)) {"), 'the primary-name-only condition is gone');
+/* 9. bannernames-1.3.0 (3.0.131): an alt-name match reports the matched printed name as chartName */
+{
+  const s = bg.indexOf('/* bannernames-1.0.0 START */'), e = bg.indexOf('/* bannernames-1.0.0 END */');
+  const any = new Function('mlsExactIdentityPair', bg.slice(s, e) + '\nreturn exactPairAny;')(helpers.mlsExactIdentityPair);
+  const who = { name: 'Cathy EXAMPLE', dob: '01/02/1956', altNames: ['Catherine A EXAMPLE'] };
+  eq(any({ name: 'Catherine A Example', dob: '1956-01-02' }, who).matchedName, 'Catherine A EXAMPLE', 'the matched printed name is returned');
+  ok(bg.includes("chartName: (exactGlobalPair.viaAltName === true && exactGlobalPair.matchedName) ? exactGlobalPair.matchedName : ((ident && ident.name) || ''), chartNamePrinted: (ident && ident.name) || '', chartNameViaLegal: exactGlobalPair.viaAltName === true,"), 'ok response reports the matched printed name, keeps the primary, flags the legal match');
+}
 console.log('PASS bannernames-30127-runtime: ' + checks + ' checks');
