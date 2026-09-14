@@ -5350,7 +5350,11 @@ function mlsReadChartIdentityShadow() {
           var nameB = '';
           for (var kk = 3; kk >= 1 && !nameB; kk--) {
             if (i3 - kk < 0) continue;
-            nameB = okName(lines.slice(i3 - kk, i3).join(' ').replace(/\s+/g, ' ').trim());
+            var joinedB = lines.slice(i3 - kk, i3).join(' ').replace(/[()]/g, ' ').replace(/\s+/g, ' ').trim();
+            /* bannernames-1.1.0 (3.0.128): split "X Legal: Y" into both printed names; the first
+               valid one is the primary, the others ride as altNames for the exact-pair gate. */
+            var partsB = joinedB.split(/legal\s*:/i).map(function (s) { return s.replace(/\s+/g, ' ').trim(); }).filter(Boolean);
+            for (var pb = 0; pb < partsB.length; pb++) { var candB = okName(partsB[pb]); if (!candB) continue; if (!nameB) nameB = candB; else if (candB !== nameB && altNamesS.indexOf(candB) < 0) altNamesS.push(candB); }
           }
           if (nameB) { name = nameB; dob = dobB; mrn = (mh && mh[1]) || ''; via = 'shadow-banner'; break; }
         }
@@ -10756,7 +10760,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
           }
           if (want && ident && ident.name && (!globalNameMatches || globalStrongMismatch)) {
             await restoreFocus();
-            return chartRespond({ ok: false, reason: 'wrong-chart', attempted: false, captured: false, chartName: ident.name, chartDob: ident.dob || '', expectedMrnDigits: mrnKeyStrict(wantMrn).length, observedMrnDigits: mrnKeyStrict(ident.mrn).length, opened: opened, version: versionStrict, error: 'The open athenaOne chart identity does not match ' + want + '. Nothing was captured for ' + want + '.' });
+            return chartRespond({ ok: false, reason: 'wrong-chart', attempted: false, captured: false, chartName: ident.name, chartDob: ident.dob || '', bannerNamesPrinted: 1 + ((ident && Array.isArray(ident.altNames)) ? ident.altNames.length : 0), identVia: (ident && ident.via) || '', pairReason: exactGlobalPair.reason || '', expectedMrnDigits: mrnKeyStrict(wantMrn).length, observedMrnDigits: mrnKeyStrict(ident.mrn).length, opened: opened, version: versionStrict, error: 'The open athenaOne chart identity does not match ' + want + '. Nothing was captured for ' + want + '.' });
           }
           if (want && !(ident && ident.name)) {
             await restoreFocus();

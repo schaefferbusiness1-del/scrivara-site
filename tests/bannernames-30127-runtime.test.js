@@ -63,4 +63,23 @@ ok(bg.includes("const exactGlobalPair = want ? exactPairAny({name:want,dob:wantD
 ok(bg.includes("return exactPairAny({name:want,dob:wantDob,mrn:wantMrn},who).ok;"), 'frame binding uses exactPairAny');
 ok(bg.includes("var legalFirstS = labelVal(lines, /^legal first name$/i), altNamesS = [];"), 'shadow reader collects the legal first name');
 ok(bg.includes("var r = { name: name, dob: dob, mrn: mrn, altNames: altNamesS,"), 'shadow reader returns altNames');
+/* 6. bannernames-1.1.0 (3.0.128): the shadow reader's strategy B splits "Used Legal: Legal" into both printed names */
+{
+  const s = bg.indexOf("            var joinedB = lines.slice(i3 - kk, i3)");
+  const eMark = "else if (candB !== nameB && altNamesS.indexOf(candB) < 0) altNamesS.push(candB); }";
+  const e = bg.indexOf(eMark, s);
+  ok(s > 0 && e > s, 'strategy B split present');
+  const body = bg.slice(s, e + eMark.length);
+  const fn = new Function('lines', 'i3', 'kk', 'okName', 'altNamesS', 'var nameB = "";' + body + '\nreturn nameB;');
+  const okName = (c) => /^[A-Z][A-Za-z'\-\.]*(?:\s+[A-Z][A-Za-z'\-\.]*){1,3}$/.test(c) ? c : '';
+  const alts = [];
+  eq(fn(['Bob EXAMPLE Legal: Robert EXAMPLE', '61yo M | 03-04-1965 | #7777777'], 1, 1, okName, alts), 'Bob EXAMPLE', 'used name is the primary');
+  assert.deepStrictEqual(alts, ['Robert EXAMPLE'], 'legal name rides as the alternative'); checks++;
+  const alts2 = [];
+  eq(fn(['Legal: Robert EXAMPLE', '61yo M | 03-04-1965 | #7777777'], 1, 1, okName, alts2), 'Robert EXAMPLE', 'a legal-only line still names the patient');
+  eq(alts2.length, 0, 'no duplicate alternative');
+  ok(!bg.includes("            nameB = okName(lines.slice(i3 - kk, i3).join(' ').replace(/\\s+/g, ' ').trim());"), 'the colon-blind join is gone');
+}
+/* 7. the wrong-chart refusal carries PHI-free reader evidence */
+ok(bg.includes("bannerNamesPrinted: 1 + ((ident && Array.isArray(ident.altNames)) ? ident.altNames.length : 0), identVia: (ident && ident.via) || '', pairReason: exactGlobalPair.reason || '',"), 'wrong-chart refusal reports printed-name count, reader and pair reason');
 console.log('PASS bannernames-30127-runtime: ' + checks + ' checks');
