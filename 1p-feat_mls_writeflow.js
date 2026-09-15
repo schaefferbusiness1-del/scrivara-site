@@ -6594,8 +6594,44 @@
     }, WFBIND_POLL_MS);
     return timer;
   }
-  function wfbindRun(state, day, btn) {
+  /* calfresh-1.0.0 (2026-09-15). MEASURED LIVE by the extension lane on the
+     dummy patient: the sheet's "Match to <day>" could not bind a freshly
+     booked appointment because the in-page store (_calAppts, seeded from the
+     calApptsCacheV2 snapshot) stayed stale while /api/appointments?date=<day>
+     already returned the row; replacing _calAppts from the backend made
+     _athenaCurrentApptStamp resolve at once. So the press refreshes that one
+     day from the backend first - bounded to 4 s, merged (never truncating the
+     month), and on any failure it falls through to exactly the old path. */
+  function wfbindRefreshDay(day) {
+    return new Promise(function (resolve) {
+      var done = false;
+      function finish(v) { if (!done) { done = true; resolve(v); } }
+      try {
+        if (typeof window.bkBase !== 'function' || typeof window.bkToken !== 'function' || !window.bkToken()) return finish(false);
+        var ctrl = (typeof AbortController === 'function') ? new AbortController() : null;
+        setTimeout(function () { try { if (ctrl && !done) ctrl.abort(); } catch (e) {} finish(false); }, 4000);
+        fetch(window.bkBase() + '/api/appointments?date=' + encodeURIComponent(day), { headers: { Authorization: 'Bearer ' + window.bkToken() }, cache: 'no-store', signal: ctrl ? ctrl.signal : undefined })
+          .then(function (r) { return r && r.ok ? r.json() : null; })
+          .then(function (d) {
+            var rows = d && Array.isArray(d.appointments) ? d.appointments : null;
+            if (!rows) return finish(false);
+            var merged = (typeof window._calMergeApptRows === 'function') ? window._calMergeApptRows(rows) : rows;
+            window._calAppts = merged;
+            try { wfdxNote({ verb: 'calfresh', stage: 'bind-cure', ok: true, day: day, rows: rows.length }); } catch (eN) {}
+            finish(true);
+          }).catch(function () { finish(false); });
+      } catch (e) { finish(false); }
+    });
+  }
+  function wfbindRun(state, day, btn, refreshed) {
     if (!state || state.closed || unifiedAthenaState !== state) return false;
+    /* calfresh-1.0.0: refresh the day's rows once, then run the press for real. */
+    if (refreshed !== true) {
+      var dayKey0 = wfdxDayKey(day);
+      if (!dayKey0) return false;
+      wfbindRefreshDay(dayKey0).then(function () { wfbindRun(state, day, btn, true); }, function () { wfbindRun(state, day, btn, true); });
+      return true;
+    }
     if (state.running) { unifiedStatus(state, 'Finish the current Athena check or action before matching this visit. No schedule check started and nothing was sent.', ''); return false; }
     if (state.generating) { unifiedStatus(state, 'The five local draft fields are still generating. Let generation finish before matching this visit. No schedule check started and nothing was sent.', ''); return false; }
     if (state.binding) { unifiedStatus(state, 'This review is already matching its exact Athena appointment. No second schedule check started and nothing was sent.', ''); return false; }

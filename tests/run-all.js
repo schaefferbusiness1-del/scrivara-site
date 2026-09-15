@@ -1672,6 +1672,8 @@ const tests = [
   'opnote-compact-level-names-and-equivalent-ties.test.js',
   'visit-context-carries-prior-notes.test.js',
   'tplnote-template-run-uses-athena-sidecar.test.js',
+  'word97-doc-reader.test.js',
+  'calfresh-match-refreshes-the-day.test.js',
   'write-next-press-proof.js',
   'upnow-banner-state-proof.js',
   'visit-next-one-door-proof.js',
