@@ -34,9 +34,11 @@ eq(keyFn('09/14/2026'), '2026-09-14', 'a printed list date keys to the scoped da
     const html = '<html><body><div id="host"></div><script>(function(){var sr=document.getElementById("host").attachShadow({mode:"open"});sr.innerHTML=' +
       JSON.stringify('<ul class="enc-list"><li><span>Office Visit</span> <a href="/22724/6/ax/encounter/9001234/summary">09/14/2026</a></li><li><a href="/22724/6/ax/encounter/9001235/summary">Procedure</a> <span>08/02/2026</span></li><li><a href="/22724/6/ax/encounter/9001236/summary">Follow up</a></li></ul>') +
       ';})();</script></body></html>';
-    await page.setContent(html);
+    /* served at a briefing-shaped URL so the driver's own location.pathname is the real thing it reads */
+    await page.route('http://athena.test/**', (route) => route.fulfill({ contentType: 'text/html', body: html }));
+    await page.goto('http://athena.test/22724/6/ax/briefing/7833832');
     await page.evaluate('(function () {\n' + driver + '\nwindow.__vd = mlsVisitsDriverFn; })()');
-    const r = await page.evaluate(() => { history.replaceState({}, '', '/22724/6/ax/briefing/7833832'); return window.__vd('axHarvest', {}); });
+    const r = await page.evaluate(() => window.__vd('axHarvest', {}));
     eq(r.ok, true, 'harvest answers'); eq(r.encounters.length, 3, 'three encounters');
     eq(r.encounters[0].listDate, '09/14/2026', 'the anchor\'s own date is carried');
     eq(r.encounters[1].listDate, '08/02/2026', 'a date beside the anchor (its parent row) is carried');
