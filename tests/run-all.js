@@ -1441,6 +1441,7 @@ const tests = [
   'bannernames-30127-runtime.test.js',
   'qpstrip-30135-runtime.test.js',
   'navproof-diag-30136-runtime.test.js',
+  'shadowbanner-30138-runtime.test.js',
   'visit-reader-minimal-deadline-contract.test.js',
   'visit-request-correlation-runtime.test.js',
   'cohort-request-correlation-runtime.test.js',

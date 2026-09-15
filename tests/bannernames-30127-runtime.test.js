@@ -65,7 +65,7 @@ ok(bg.includes("var legalFirstS = labelVal(lines, /^legal first name$/i), altNam
 ok(bg.includes("var r = { name: name, dob: dob, mrn: mrn, altNames: altNamesS,"), 'shadow reader returns altNames');
 /* 6. bannernames-1.1.0 (3.0.128): the shadow reader's strategy B splits "Used Legal: Legal" into both printed names */
 {
-  const s = bg.indexOf("            var joinedB = lines.slice(i3 - kk, i3)");
+  const s = bg.indexOf("            var joinedB = lines.slice(i3 - kk, i3)", bg.indexOf("function mlsReadChartIdentityShadow() {")); /* shadowbanner-1.0.0 (3.0.138): the write probe now carries a copy of this strategy earlier in the file */
   const eMark = "else if (candB !== nameB && altNamesS.indexOf(candB) < 0) altNamesS.push(candB); }";
   const e = bg.indexOf(eMark, s);
   ok(s > 0 && e > s, 'strategy B split present');
