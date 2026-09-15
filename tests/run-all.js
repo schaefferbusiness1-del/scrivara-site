@@ -1446,6 +1446,7 @@ const tests = [
   'findparticle-30151-runtime.test.js',
   'findbydob-30153-runtime.test.js',
   'pollaccept-30155-runtime.test.js',
+  'hoistfix-30156-runtime.test.js',
   'navproof-diag-30136-runtime.test.js',
   'shadowbanner-30138-runtime.test.js',
   'metabind-30139-runtime.test.js',

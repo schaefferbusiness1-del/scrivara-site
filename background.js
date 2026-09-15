@@ -6391,6 +6391,33 @@ async function callBackend(path, body, beforeFetch) {
 function mlsTabTitleAthena(t) {
   return /athena\s*(one|net|collector|clinicals|health)|athenahealth|athenaone|athenanet/i.test((t && t.title) || '') && !/mlsscribe\.com/i.test((t && t.url) || '');
 }
+/* hoistfix-1.0.0 (3.0.156): the worker's ONE top-level copy of the exact identity keys. Every other copy in this file
+   lives inside an injected page driver and is invisible here; the 3.0.123 handler-local copies sat in a bare block and
+   hoisted as undefined above it (Run AF on 3.0.155: 40 of 40 reads "mlsExactDobKey is not a function"). */
+function mlsExactNameKey(value) {
+  var raw = String(value || '').trim().toLowerCase();
+  try { raw = raw.normalize('NFKD').replace(/[\u0300-\u036f]/g, ''); } catch (e) {}
+  raw = raw.replace(/\s*[\u2018\u2019\u02bc'`\u2010-\u2015-]\s*/g, '').replace(/\./g, '').replace(/\bjunior\b/g, 'jr').replace(/\bsenior\b/g, 'sr');
+  var parts = raw.split(',').map(function (part) { return part.trim(); }).filter(Boolean);
+  var suffix = '';
+  if (parts.length > 1 && /^(jr|sr|ii|iii|iv|v)$/.test(parts[parts.length - 1])) suffix = parts.pop();
+  if (parts.length === 2) raw = parts[1] + ' ' + parts[0];
+  else if (parts.length === 1) raw = parts[0];
+  else if (parts.length > 2) return '';
+  raw = raw.replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+  var words = raw.split(' ').filter(Boolean);
+  while (words.length && /^(mr|mrs|ms|miss|dr|prof)$/.test(words[0])) words.shift();
+  while (words.length && /^(jr|sr|ii|iii|iv|v)$/.test(words[words.length-1])) words.pop();
+  return words.length >= 2 ? words[0]+' '+words[words.length-1] : '';
+}
+function mlsExactDobKey(value) {
+  var raw = String(value || '').trim(), m, year, month, day;
+  if ((m = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/.exec(raw))) { year=+m[1]; month=+m[2]; day=+m[3]; }
+  else if ((m = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/.exec(raw))) { year=+m[3]; month=+m[1]; day=+m[2]; }
+  else return '';
+  var date = new Date(Date.UTC(year, month-1, day));
+  return year >= 1850 && date.getUTCFullYear() === year && date.getUTCMonth() === month-1 && date.getUTCDate() === day ? year+'-'+month+'-'+day : '';
+}
 function mlsPickEmrTab(all) {
   return all.find((t) => /athenahealth|athenanet|athenaone|athena\.io|\.px\.athena/i.test(t.url || ''))
       || all.find((t) => mlsTabTitleAthena(t))
@@ -10695,30 +10722,6 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
           const scoreStrict = (txt) => { const s = (txt || '').toLowerCase(); let n = 0; ['problem', 'medication', 'allerg', 'history', 'vital', 'diagnos', 'assessment', 'date of birth', 'dob', 'surg', 'imaging', 'mri', 'immuniz'].forEach((k) => { if (s.indexOf(k) >= 0) n++; }); ['full encounter summary', 'encounter summary', 'performed by', 'reason for visit', 'follow-up', 'assessment & plan'].forEach((k) => { if (s.indexOf(k) >= 0) n += 3; }); if (/inbox|unread messages|message thread/.test(s)) n -= 4; return n; };
           const nrmStrict = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
           const nameTokensStrict = (s) => nrmStrict(s).split(' ').filter((x) => x.length > 1);
-          function mlsExactNameKey(value) {
-            var raw = String(value || '').trim().toLowerCase();
-            try { raw = raw.normalize('NFKD').replace(/[\u0300-\u036f]/g, ''); } catch (e) {}
-            raw = raw.replace(/\s*[\u2018\u2019\u02bc'`\u2010-\u2015-]\s*/g, '').replace(/\./g, '').replace(/\bjunior\b/g, 'jr').replace(/\bsenior\b/g, 'sr');
-            var parts = raw.split(',').map(function (part) { return part.trim(); }).filter(Boolean);
-            var suffix = '';
-            if (parts.length > 1 && /^(jr|sr|ii|iii|iv|v)$/.test(parts[parts.length - 1])) suffix = parts.pop();
-            if (parts.length === 2) raw = parts[1] + ' ' + parts[0];
-            else if (parts.length === 1) raw = parts[0];
-            else if (parts.length > 2) return '';
-            raw = raw.replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
-            var words = raw.split(' ').filter(Boolean);
-            while (words.length && /^(mr|mrs|ms|miss|dr|prof)$/.test(words[0])) words.shift();
-            while (words.length && /^(jr|sr|ii|iii|iv|v)$/.test(words[words.length-1])) words.pop();
-            return words.length >= 2 ? words[0]+' '+words[words.length-1] : '';
-          }
-          function mlsExactDobKey(value) {
-            var raw = String(value || '').trim(), m, year, month, day;
-            if ((m = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/.exec(raw))) { year=+m[1]; month=+m[2]; day=+m[3]; }
-            else if ((m = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/.exec(raw))) { year=+m[3]; month=+m[1]; day=+m[2]; }
-            else return '';
-            var date = new Date(Date.UTC(year, month-1, day));
-            return year >= 1850 && date.getUTCFullYear() === year && date.getUTCMonth() === month-1 && date.getUTCDate() === day ? year+'-'+month+'-'+day : '';
-          }
           function mlsExactIdentityPair(expected, observed) {
             expected = expected || {}; observed = observed || {};
             var name = mlsExactNameKey(expected.name), dob = mlsExactDobKey(expected.dob);
