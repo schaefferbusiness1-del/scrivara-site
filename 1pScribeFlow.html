@@ -56885,6 +56885,7 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
   var api = {
     version: VERSION, installed: true,
     cleared: 0, stashed: 0, restored: 0, blocked: [], lastOwner: '',
+    residueCleared: 0,   /* residue-1.0.0: editors emptied because the switch reset was skipped */
     bootCleared: 0, lastBootReason: '',
     /* how many times a selection was moved onto a merge survivor rather than
        dropped, as a number a suite can read instead of a claim */
@@ -56980,6 +56981,19 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
     var intent = ++restoreIntentSerial, epoch = freshVisitEpoch;
     setTimeout(function () { safe(function () {
       if (intent !== restoreIntentSerial || epoch !== freshVisitEpoch || activeId() !== next) return;
+      /* residue-1.0.0 (walkthrough 2026-09-15, V1): the switch chokepoint's
+         reset can be skipped - the outer wrapper stands down for a switch the
+         lock predicts it will refuse, and a refusal the doctor then overrides
+         lands with the previous patient's text still on screen. Every write is
+         already refused by ownerAllows in that state; this empties the editor
+         too, so the wrong text is never even SHOWN under the new banner. The
+         previous patient loses nothing: stashBeforeSwitch parked their work
+         under their own id and preserveRecovery keeps the session slot. */
+      var owner = editorOwnerId();
+      if (owner && owner !== next && editorState().any) {
+        api.residueCleared++;
+        safe(function () { if (typeof newVisit === 'function') newVisit({ patientSwitchReset: true, preserveRecovery: true }); });
+      }
       restoreFor(next);
     }); }, 0);
   }
