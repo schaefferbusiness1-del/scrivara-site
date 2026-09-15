@@ -36,7 +36,8 @@ const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'u
 // 3.0.159: axidwait-1.0.1 (encounter-page identity/body polls 12 s; weak identity its own class) + schedwait-1.0.0 (the row opener polls the lazy list for 8 s at the bottom)
 // 3.0.160: schedscandiag-1.0.0 (the schedule leg's not-found answer carries PHI-free scan evidence)
 // 3.0.161: schedground-1.0.0 (a schedule-first open grounds the tab on the pull date, softly, before its sweep)
-assert.strictEqual(manifest.version, '3.0.161', 'regression must exercise the 3.0.161 candidate');
+// 3.0.162: gohome-2.0.0 (Home keeps the CSRFPROTECT token: the top frame navigates to the tokened frameset with the dashboard as MAIN)
+assert.strictEqual(manifest.version, '3.0.162', 'regression must exercise the 3.0.162 candidate');
 const coreSha = (manifest.version_name.match(/core-sha256:([0-9a-f]{64})/) || [])[1];
 assert(coreSha, 'candidate manifest is missing its core hash');
 const computedCoreSha = execFileSync(process.execPath, [path.join(root, 'scripts', 'extension-core-digest.js')], { encoding: 'utf8' }).trim();

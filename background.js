@@ -5169,6 +5169,21 @@ function mlsGoHomeDriverFn(requestGuard) {
     var guard = Object.freeze({ token: String(requestGuard && requestGuard.token || ''), deadline: Number(requestGuard && requestGuard.deadline || 0) });
     function actionAllowed() { return !guarded || (!!guard.token && Number.isFinite(guard.deadline) && Date.now() < guard.deadline); }
     if (!actionAllowed()) return { clicked: false, found: false, reason: 'request-deadline-exceeded' };
+    /* gohome-2.0.0 (3.0.162): the logo link drops the CSRFPROTECT token and athena then renders its Continue interstitial
+       with no frames; when the signed-in frameset address carries the token, the TOP frame navigates itself to the same
+       address with MAIN set to the practice dashboard (token kept) and child frames defer to it. */
+    try {
+      var __ghTop = null; try { __ghTop = window.top; } catch (eGhT) { __ghTop = null; }
+      var __ghTopHref = ''; try { __ghTopHref = String(__ghTop && __ghTop.location && __ghTop.location.href || ''); } catch (eGhH) { __ghTopHref = ''; }
+      var __ghM = /^(https:\/\/[^/]+)\/(\d+)\/(\d+)\/globalframeset\.esp\?(?:[^#]*&)?CSRFPROTECT=([0-9a-fA-F]+)/.exec(__ghTopHref);
+      if (__ghM) {
+        if (__ghTop !== window) return { clicked: false, found: true, deferredToTop: true, frame: location.hostname };
+        var __ghUrl = __ghM[1] + '/' + __ghM[2] + '/' + __ghM[3] + '/globalframeset.esp?CSRFPROTECT=' + __ghM[4] + '&MAIN=' + encodeURIComponent(__ghM[1] + '/' + __ghM[2] + '/' + __ghM[3] + '/ax/dashboard');
+        if (!actionAllowed()) return { clicked: false, found: true, reason: 'request-deadline-exceeded', frame: location.hostname };
+        location.href = __ghUrl;
+        return { clicked: true, found: true, via: 'tokened-frameset', frame: location.hostname };
+      }
+    } catch (eGh) {}
     function vis(el) { try { var r = el.getBoundingClientRect(); var s = getComputedStyle(el); return r.width > 1 && r.height > 1 && s.visibility !== 'hidden' && s.display !== 'none'; } catch (e) { return false; } }
     var el = document.querySelector('.menuitemlogo')
           || document.querySelector('[title="athenaOne Home"]')
