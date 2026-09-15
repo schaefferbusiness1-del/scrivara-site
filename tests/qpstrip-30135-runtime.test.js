@@ -41,6 +41,8 @@ function makeChrome(opts) {
     eq(c.focused, false, 'never focused');
     eq(c.tabId, 5, 'the athena tab moves into it');
     eq(c.left + c.width, 2560, 'placed at the right edge of the host display work area');
+    eq(c.width, 1408, 'qpstrip-2.1.0 (3.0.141): a desktop-width viewport, 55% of a 2560 work area');
+    ok(c.width >= 1280 && c.width <= 1500, 'width stays between 1280 and 1500');
     eq(c.top, 40, 'below the top edge');
     ok(c.height >= 600 && c.height <= 1360, 'height bounded to the work area');
     eq(calls.update.length, 0, 'the doctor\'s window is never moved or resized');
@@ -57,7 +59,7 @@ function makeChrome(opts) {
     const { chrome } = makeChrome({ displays: [] });
     const fn = new Function('chrome', src + '\nreturn qpMakeStrip;')(chrome);
     const r = await fn({ id: 5 }, { id: 5, windowId: 11, index: 0, active: false });
-    ok(r && r.bounds.left === 40 && r.bounds.top === 40, 'no display info -> safe default bounds');
+    ok(r && r.bounds.left === 40 && r.bounds.top === 40 && r.bounds.width === 1287, 'no display info -> safe default bounds (2340 * 0.55 = 1287)');
   }
   /* 2. the ensure decision and the release path */
   ok(bg.includes("      var yank = !t2.active && (await mlsReadFocusWouldYank(tab.id));"), 'yank decision computed first');

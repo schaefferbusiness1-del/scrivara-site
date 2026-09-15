@@ -4523,7 +4523,7 @@ function mlsAthenaTeachWatcherFn(config) {
         var d = (displays || []).filter(function (x) { var b = x && x.workArea; return b && cx >= b.left && cx < b.left + b.width && cy >= b.top && cy < b.top + b.height; })[0] || (displays || [])[0];
         wa = d && d.workArea;
       } catch (eDisp) {}
-      var W = 760, H = Math.max(600, Math.round(((wa && wa.height) || 900) * 0.85));
+      var W = Math.max(1280, Math.min(1500, Math.round(((wa && wa.width) || 2340) * 0.55))), H = Math.max(600, Math.round(((wa && wa.height) || 900) * 0.85)); /* qpstrip-2.1.0 (3.0.141): a desktop-width viewport - below it athena's day grid prints a subset of a long section (measured: 8 of 28 rows at 760 px) */
       var left = wa ? (wa.left + wa.width - W) : 40, top = wa ? (wa.top + 40) : 40;
       var orig = { windowId: t2.windowId, index: t2.index };
       var w = await chrome.windows.create({ tabId: tab.id, focused: false, type: 'normal', state: 'normal', left: left, top: top, width: W, height: H });

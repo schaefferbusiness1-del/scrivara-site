@@ -15,7 +15,8 @@ const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'u
 // 3.0.138: shadowbanner-1.0.0 (the write probe reads athena's 2026-09-02 shadow-DOM patient banner with the read path's strategies; exact pair unchanged); native persistence remains verified.
 // 3.0.139: compound3-1.0.0 (a four-word name gets one more honest surname shape in Find; retries counted); native persistence remains verified.
 // 3.0.140: legacysettle-1.0.0 (the classic day grid is read only after its row count holds across two looks; receipt carries the settle facts and a headings-only section census); native persistence remains verified.
-assert.strictEqual(manifest.version, '3.0.140', 'regression must exercise the 3.0.140 candidate');
+// 3.0.141: qpstrip-2.1.0 (the work window is a desktop-width viewport, 1280-1500 px; below that athena prints a subset of a long day-grid section); native persistence remains verified.
+assert.strictEqual(manifest.version, '3.0.141', 'regression must exercise the 3.0.141 candidate');
 const coreSha = (manifest.version_name.match(/core-sha256:([0-9a-f]{64})/) || [])[1];
 assert(coreSha, 'candidate manifest is missing its core hash');
 const computedCoreSha = execFileSync(process.execPath, [path.join(root, 'scripts', 'extension-core-digest.js')], { encoding: 'utf8' }).trim();
