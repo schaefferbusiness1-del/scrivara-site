@@ -16147,8 +16147,8 @@ function mlsExactIdentityPair(expected, observed) {
           if ((x && x.timeout) || openExpired()) return { timeout: true, deadline: true };
           return x || {};
         }
-        async function restoreExactSchedule(stage) {
-          if (!frozenScheduleDate) { sendResponse({ ok: false, opened: false, reason: 'schedule-date-missing-after-recovery', error: 'The exact requested schedule date was missing. Nothing was opened.' }); return false; }
+        async function restoreExactSchedule(stage, soft) { /* schedground-1.0.0 (3.0.161): soft = a failed grounding answers false without ending the open */
+          if (!frozenScheduleDate) { if (soft) return false; sendResponse({ ok: false, opened: false, reason: 'schedule-date-missing-after-recovery', error: 'The exact requested schedule date was missing. Nothing was opened.' }); return false; }
           scheduleRegrounds++;
           /* restorehome-1.0.0 (3.0.133): after a Find Patient leg the work frame is the Find page and
              no frame carries the week strip (measured: eight goto-date answers found:false). Go Home
@@ -16174,6 +16174,7 @@ function mlsExactIdentityPair(expected, observed) {
           if (regroundX.timeout) { failOpenDeadline(stage || 'exact schedule restoration'); return false; }
           var verifiedDates = (regroundX.r || []).map(function (entry) { return entry && entry.result; }).filter(function (value) { return value && value.done === true && value.dateUnverified !== true && /^\d{4}-\d{2}-\d{2}$/.test(String(value.schedDate || '')); });
           var regroundOk = verifiedDates.length > 0 && verifiedDates.every(function (value) { return String(value.schedDate) === frozenScheduleDate; });
+          if (!regroundOk && soft) { scheduleRegrounds--; return false; } /* schedground-1.0.0: not verified - the scan and the Find leg still follow */
           if (!regroundOk) { sendResponse({ ok: false, opened: false, reason: 'schedule-date-restore-failed', error: 'The exact requested date could not be verified. No appointment was opened.', diag: { route: 'schedule', scheduleRegrounds: scheduleRegrounds, scheduleDateVerified: false, stage: String(stage || '').slice(0, 40), regroundTries: rgTry + 1, regroundFrames: (regroundX.r || []).map(function (entry) { return entry && entry.result; }).filter(Boolean).slice(0, 8).map(function (v) { return { done: v.done === true, unverified: v.dateUnverified === true, dateMatch: String(v.schedDate || '') === frozenScheduleDate, steps: Number(v.steps || 0), head: String(v.error || v.dateUnverifiedReason || '').replace(/\d{4}-\d{2}-\d{2}/g, 'D').slice(0, 70) }; }) } }); return false; } /* restorediag-1.0.0 (3.0.130) */
           return true;
         }
@@ -16322,6 +16323,8 @@ function mlsExactIdentityPair(expected, observed) {
                  including before/after navigation proof; never name-only. */
               if (!bootstrapIdentity && frozenApptId && frozenScheduleDate && oi > 0 && order[oi - 1] === 'find') { bootstrapIdentity = true; exactScheduleFallback = true; }
               if (exactScheduleFallback && !(await restoreExactSchedule('find-to-schedule restoration'))) return;
+              /* schedground-1.0.0 (3.0.161): the schedule-first leg (an appointment id, no MRN) grounds the tab on the exact date before its sweep; softly - an unverified grounding never ends the open */
+              if (!bootstrapIdentity && !exactScheduleFallback && oi === 0 && frozenApptId && frozenScheduleDate) { if (senderTab) progress(senderTab, 'Opening the schedule day before looking for the row...', openGuard.token); await restoreExactSchedule('schedule-first grounding', true); if (responseSent) return; }
               if (senderTab) progress(senderTab, 'Looking for “' + (msg.name || '') + '” on the athenaOne schedule…', openGuard.token);
               /* v1.89: a stuck-open Calendar nav dropdown can overlay the very
                  schedule rows this scan is about to read/click - close it first

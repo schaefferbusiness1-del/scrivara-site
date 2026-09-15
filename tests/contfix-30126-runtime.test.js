@@ -63,7 +63,7 @@ eq(bg.split('contfix-1.1.0').length - 1, 3, 'three contfix-1.1.0 sites');
 }
 /* 3. restorehome-1.0.0 (3.0.133): the exact-schedule restore goes Home before navigating the date */
 {
-  const s = bg.indexOf('async function restoreExactSchedule(stage) {');
+  const s = bg.indexOf('async function restoreExactSchedule(stage, soft) {'); /* schedground-1.0.0 (3.0.161) */
   const e = bg.indexOf('async function waitOpen(ms) {', s);
   ok(s > 0 && e > s, 'restoreExactSchedule present');
   const body = bg.slice(s, e);
