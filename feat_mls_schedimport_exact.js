@@ -10127,7 +10127,12 @@
       /* hs-1.0: stamp the settled value's OWN verdict - a resolved terminal
          failure (ok:false receipt) must never be recorded as a success. */
       safe(function () { stampManagedOutcome(value, opKind, opStartedAt); }); /* oown-1.0.0 */
-      safe(function () { window.__mlsPullBusyAt = 0; });
+      /* stamptruth-1.0.0 (F11): the day strip outlives this settle (its
+         convergence round and day-note drain follow) and refreshes the same
+         stamp every 8 s; zeroing it here told every consumer "no pull owns the
+         roster" for up to 8 s while DS.pulling was true. The strip's own
+         release zeroes it when it is really done. */
+      safe(function () { if (!(window.__mlsDaySwitch && typeof window.__mlsDaySwitch.isBusy === 'function' && window.__mlsDaySwitch.isBusy())) window.__mlsPullBusyAt = 0; });
       if (operationStarted) xtabBusyClear();
       if (operationStarted) releaseManagedAthenaWorkspace();
       /* p1-todaynote-deferred-retry-1.0.0: the lease this pull held is now
@@ -10154,7 +10159,7 @@
       releaseSiLease();
       releaseAthenaOwner();
       safe(function () { stampManagedOutcome({ ok: false, error: String(error && error.message || error || 'pull failed').slice(0, 200) }, opKind, opStartedAt); }); /* oown-1.0.0 */
-      safe(function () { window.__mlsPullBusyAt = 0; });
+      safe(function () { if (!(window.__mlsDaySwitch && typeof window.__mlsDaySwitch.isBusy === 'function' && window.__mlsDaySwitch.isBusy())) window.__mlsPullBusyAt = 0; }); /* stamptruth-1.0.0 (F11) */
       if (operationStarted) xtabBusyClear();
       if (operationStarted) releaseManagedAthenaWorkspace();
       safe(tnScheduleDeferredRound);
@@ -12956,7 +12961,10 @@
           retry: { providerRoster: true }
         };
         say(selectedError, "err");
-        p1PersistResumeIntent(day, opts, scope0, explicit ? "day-caller" : "day-account", false);
+        /* stamptruth-1.0.0 (audit 2026-09-15, F9): this refusal performed no
+           Athena read, so there is nothing to resume - the record it used to
+           write offered a phantom "Unfinished pull" card on the next load
+           (provider-* is not a terminal reason and attempts never advanced). */
         lastPullResult = selectedRefusal;
         safe(function () { window.__mlsPullLastOutcome = honestPullOutcome(selectedRefusal); });
         return selectedRefusal;

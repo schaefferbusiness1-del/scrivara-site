@@ -1680,6 +1680,7 @@ const tests = [
   'pull-button-idle-repaint-and-regenerate-wording.test.js',
   'statetruth-pull-lanes-one-truth.test.js',
   'navtruth-nav-counts-and-attention-sync.test.js',
+  'stamptruth-busy-stamp-and-phantom-resume.test.js',
   'notefirst-generate-reveals-the-note.test.js',
   'write-next-press-proof.js',
   'upnow-banner-state-proof.js',

@@ -26217,7 +26217,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   function releasePullLease() {
     var l = pullLease();
-    if (l && l.id === _ez3PullLeaseId) safe(function () { delete window.__mlsSchedulePullLease; window.__mlsPullBusyAt = 0; });
+    if (l && l.id === _ez3PullLeaseId) safe(function () { delete window.__mlsSchedulePullLease; if (!(window.__mlsDaySwitch && typeof window.__mlsDaySwitch.isBusy === 'function' && window.__mlsDaySwitch.isBusy())) window.__mlsPullBusyAt = 0; }); /* stamptruth-1.0.0 (F11): the day strip's stamp is its own to clear */
   }
 
   /* Chrome can clamp page timers in the background. One shared Worker owns
@@ -57396,7 +57396,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var lease = window.__mlsSchedulePullLease;
       if (lease && lease.id === leaseId) {
         delete window.__mlsSchedulePullLease;
-        window.__mlsPullBusyAt = 0;
+        if (!(window.__mlsDaySwitch && typeof window.__mlsDaySwitch.isBusy === 'function' && window.__mlsDaySwitch.isBusy())) window.__mlsPullBusyAt = 0; /* stamptruth-1.0.0 (F11) */
       }
     } catch (e) {}
   }
@@ -65328,9 +65328,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      painting "Waiting on athenaOne" forever, and the calendar day pinned.
      Parity with the strip: an absolute ceiling and a session-boundary
      terminal, each ending the run with its own sentence. */
-  var HERO_CEIL_MS = 75 * 60 * 1000;
-  var heroCeilTimer = null, heroEl = null;
-  function heroCeilStop() { if (heroCeilTimer != null) { try { clearTimeout(heroCeilTimer); } catch (eHc) {} heroCeilTimer = null; } }
+  var HERO_CEIL_MS = 75 * 60 * 1000, HERO_CEIL_TICK_MS = 60 * 1000;
+  var heroCeilTimer = null, heroEl = null, heroArc = 0, heroArcStartedAt = 0;
+  /* statetruth-1.0.1: ONE interval per pull arc (a manual press; automatic
+     retries continue the arc), never a timeout per run - the hero contract
+     counts every timeout a transient refusal arms and fires them by index. */
+  function heroCeilStop() { if (heroCeilTimer != null) { try { clearInterval(heroCeilTimer); } catch (eHc) {} heroCeilTimer = null; } }
   function heroRelease(el, line) {
     sessionSerial++; /* a late engine answer or a scheduled retry may not re-own this */
     busy = false; heroCeilStop();
@@ -65338,14 +65341,25 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     try { if (el) el.disabled = false; } catch (eHr1) {}
     try { if (el && line) paint(el, line, ''); } catch (eHr2) {}
   }
-  function heroNoSettle(el, serial) {
-    if (!busy || serial !== sessionSerial) return false;
+  function heroNoSettle(el, arc) {
+    if (arc !== heroArc) return false;
+    if (!busy && !(el && el.disabled === true)) return false; /* the arc is over */
     heroRelease(el, 'athenaOne did not answer for 75 minutes, so this pull was stopped. Nothing further was read. Select Pull to run the day again.');
     try { var siN = window.__mlsSI; if (siN && typeof siN.stopPull === 'function') siN.stopPull(); } catch (eHn) {}
     heroTerminals.ceiling++;
     return true;
   }
-  function heroArmCeiling(el, serial) { heroCeilStop(); try { heroCeilTimer = setTimeout(function () { heroNoSettle(el, serial); }, HERO_CEIL_MS); } catch (eHa) { heroCeilTimer = null; } }
+  function heroCeilTick(el, arc) {
+    if (arc !== heroArc) { heroCeilStop(); return; }
+    if ((Date.now() - heroArcStartedAt) > HERO_CEIL_MS) heroNoSettle(el, arc);
+  }
+  function heroArmCeiling(el, arc) {
+    heroCeilStop();
+    try { heroCeilTimer = setInterval(function () { heroCeilTick(el, arc); }, HERO_CEIL_TICK_MS); } catch (eHa) { heroCeilTimer = null; }
+    /* a browser ignores this; a node harness that loads the bundle must not be
+       kept alive by a ceiling nobody will ever need to fire there */
+    try { if (heroCeilTimer && typeof heroCeilTimer.unref === 'function') heroCeilTimer.unref(); } catch (eHu) {}
+  }
   var heroTerminals = { ceiling: 0, boundary: 0 };
   function onHeroSessionBoundary(ev) {
     var d = safe(function () { return (ev && ev.detail) || {}; }, {});
@@ -65727,7 +65741,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     }
     busy = true;
     var mySerial = ++sessionSerial;
-    heroEl = el; heroArmCeiling(el, mySerial); /* statetruth-1.0.0 (F3) */
+    heroEl = el; /* statetruth-1.0.0 (F3) */
+    if (!isAutoRetry) { heroArc++; heroArcStartedAt = Date.now(); heroArmCeiling(el, heroArc); } /* statetruth-1.0.1: one ceiling per arc */
     if (!isAutoRetry) { autoRetryCount = 0; clearDiag(); }
     var day = targetDay();
     /* psr-1.0.0: a MANUAL press is a new intent and buys a fresh recovery
@@ -65901,7 +65916,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     pullingDay: function () { return String(safe(function () { return window.__mlsCalPullDay || ''; }, '')); },
     busy: function () { return busy; },
     terminals: heroTerminals,           /* statetruth-1.0.0 contract-test seam */
-    _noSettle: function () { return heroNoSettle(heroEl, sessionSerial); }, /* statetruth-1.0.0 test seam: the ceiling, driven by hand */
+    _noSettle: function () { return heroNoSettle(heroEl, heroArc); }, /* statetruth-1.0.0 test seam: the ceiling, driven by hand */
     revert: function () {
       try { document.removeEventListener('click', onHeroClickCapture, true); } catch (e) {}
       try { window.removeEventListener('mls:session-boundary', onHeroSessionBoundary, false); } catch (eHbR) {}

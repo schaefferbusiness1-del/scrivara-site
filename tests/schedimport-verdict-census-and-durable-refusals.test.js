@@ -30,6 +30,8 @@
    which is what "survives a reload" has to mean.
    ========================================================================== */
 
+/* harness hygiene 2026-09-15: the loaded module arms real timeouts (deferred retries, resume offers); un-ref'd they kept node alive after PASS, so run-all saw a hang, never a verdict. */
+const unrefTimeout = (fn, ms) => { const t = setTimeout(fn, ms); if (t && typeof t.unref === 'function') t.unref(); return t; };
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
@@ -49,7 +51,7 @@ function boot(store, patients, sourceOverride) {
   const context = {
     console, Promise, Date, Math, JSON, Intl, Object, Array, String, Number, RegExp,
     encodeURIComponent, queueMicrotask,
-    setTimeout, clearTimeout, setInterval: () => 1, clearInterval: () => {},
+    setTimeout: unrefTimeout, clearTimeout, setInterval: () => 1, clearInterval: () => {},
     location: { pathname: '/ScribeFlow-staging.html' },
     localStorage: {
       getItem: (k) => (store.has(String(k)) ? store.get(String(k)) : null),

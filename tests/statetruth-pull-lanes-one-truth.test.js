@@ -45,9 +45,11 @@ ok(connect.includes("        if (pb.disabled) pb.disabled = false;\n      }"), '
 ok(connect.includes("        dsLeaseHold(); /* statetruth-1.0.0 (F5)"), 'F5: the relay run holds the busy lease');
 ok(connect.includes("          DS.pulling = false;\n          dsLeaseRelease();\n          if (sessionSerial !== DS.sessionSerial) return;\n          dsTerminalPullEpoch(dsRelayEpoch, ok === true);"), 'F5: relay teardown precedes the who-is-looking check; the terminal epoch stays behind the fence');
 ok(connect.includes("          try { syncRetryControl(DS.lastResult); } catch (eRelRetry) {}\n          try { dsAttentionCacheClear(); syncAttentionControl(true); } catch (eRelAtt) {}\n          try { syncIdentityControl(); } catch (eRelId) {}\n          renderList();"), 'F5: the relay terminal repaints the four controls');
-ok(connect.includes("  var HERO_CEIL_MS = 75 * 60 * 1000;"), 'F3: the hero lane has an absolute ceiling');
+ok(connect.includes("  var HERO_CEIL_MS = 75 * 60 * 1000, HERO_CEIL_TICK_MS = 60 * 1000;"), 'F3: the hero lane has an absolute ceiling checked every minute');
 ok(connect.includes("  try { window.addEventListener('mls:session-boundary', onHeroSessionBoundary, false); } catch (eHb) {}"), 'F3: the hero lane ends on a session boundary');
-ok(connect.includes("    heroEl = el; heroArmCeiling(el, mySerial); /* statetruth-1.0.0 (F3) */"), 'F3: every hero run arms the ceiling');
+ok(connect.includes("    if (!isAutoRetry) { heroArc++; heroArcStartedAt = Date.now(); heroArmCeiling(el, heroArc); } /* statetruth-1.0.1: one ceiling per arc */"), 'F3: every manual press arms one ceiling for the whole arc (automatic retries continue it; the hero contract counts per-run timeouts)');
+ok(connect.includes("    try { heroCeilTimer = setInterval(function () { heroCeilTick(el, arc); }, HERO_CEIL_TICK_MS); } catch (eHa) { heroCeilTimer = null; }"), 'F3: the ceiling is a 60 s interval, never a per-run timeout');
+ok(connect.includes("    try { if (heroCeilTimer && typeof heroCeilTimer.unref === 'function') heroCeilTimer.unref(); } catch (eHu) {}"), 'F3: the interval never keeps a node harness alive');
 ok(connect.includes("    heroCeilStop(); /* statetruth-1.0.0 (F3): the run settled on its own */"), 'F3: a settled run disarms it');
 
 /* ---- Part 2a: the shipped Pull Progress panel, executed ----------------- */
@@ -129,7 +131,7 @@ function bootPanel() {
 function bootHero() {
   const marker = connect.indexOf('window.__mlsCalHeroPull = {');
   assert(marker > 0, 'hero api marker missing');
-  const start = connect.lastIndexOf('(function () {', connect.indexOf('  var HERO_CEIL_MS = 75 * 60 * 1000;'));
+  const start = connect.lastIndexOf('(function () {', connect.indexOf('  var HERO_CEIL_MS = 75 * 60 * 1000, HERO_CEIL_TICK_MS'));
   const end = connect.indexOf('\n})();', marker) + '\n})();'.length;
   const src = connect.slice(start, end);
   const { doc, nodes } = fakeDom();

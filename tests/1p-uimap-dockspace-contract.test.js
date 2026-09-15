@@ -125,8 +125,8 @@ ok(connect.indexOf("mis-count, not a failure). Server sync completes") < 0,
    string it was written to pin. */
 ok(/not saved (—|\\u2014) each row below says why/.test(connect),
   '1p-mls-connect.js: "N not saved" still leaves the doctor with a number and no meaning');
-ok(/99% (—|\\u2014) reading today/.test(connect),
-  '1p-mls-connect.js: a bar held at 99% must say what it is waiting on');
+ok(/99% (—|\\u2014) reading (today|visit notes)/.test(connect),
+  '1p-mls-connect.js: a bar held at 99% must say what it is waiting on'); /* pin moved 2026-09-15: the day-note phase now reads "reading visit notes for <day>" (same clunky2 rename as CLUNKY 71); either spelling names the wait */
 
 /* ============================================================ PART 2 runtime */
 

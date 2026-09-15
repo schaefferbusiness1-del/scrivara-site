@@ -62,6 +62,8 @@
    engine finding rather than pinned - see the TODO at section 4b's tail.
    ========================================================================= */
 
+/* harness hygiene 2026-09-15: the loaded module arms real timeouts (deferred retries, resume offers); un-ref'd they kept node alive after PASS, so run-all saw a hang, never a verdict. */
+const unrefTimeout = (fn, ms) => { const t = setTimeout(fn, ms); if (t && typeof t.unref === 'function') t.unref(); return t; };
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
@@ -215,7 +217,7 @@ const context = {
   String,
   Number,
   RegExp,
-  setTimeout,
+  setTimeout: unrefTimeout,
   clearTimeout,
   setInterval: () => 1,
   clearInterval: () => {},
@@ -430,7 +432,7 @@ assert.strictEqual(selection.reason, 'provider-ambiguous');
   };
   const rt = {
     console, Promise, Date, Math, JSON, Intl, Object, Array, String, Number, RegExp,
-    encodeURIComponent, queueMicrotask, setTimeout, clearTimeout,
+    encodeURIComponent, queueMicrotask, setTimeout: unrefTimeout, clearTimeout,
     setInterval: () => 1, clearInterval: () => {},
     location: { pathname: '/ScribeFlow-staging.html' },
     localStorage: {

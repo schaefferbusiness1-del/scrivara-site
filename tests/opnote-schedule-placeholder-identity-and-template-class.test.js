@@ -185,6 +185,11 @@ function newGenerateHarness(patients) {
     opPrepAutosaveDraft() { return true; },
     _tplTextForDraft(t) { return t; },
     _opTomorrowDateStr() { return '2026-09-18'; },
+    /* harness moved 2026-09-15: the finalizer lane put a final safety review
+       between the generator's return and the row verdict (_opFinalizerRun,
+       which throws the draft when it refuses); the fake answers "ok" so the
+       identity/template scenarios below measure what they were written for. */
+    _opFinalizerRun() { return { ok: true, issues: [] }; },
     async _genOpNote(name, dateStr, procedure, tplText, genCtx) {
       genCalls.push({ name, dateStr, procedure, tplText, ctx: { ...genCtx } });
       return { note: 'STUB NOTE', missing: [] };
@@ -300,7 +305,14 @@ const PAD = 'sterile prep drape local anesthesia skin wheal needle advanced fluo
 function tpl(id, name, text) { return { id, name, keywords: [], text }; }
 
 const SI_RIGHT_A = tpl('si_right_a', 'Right Sacroiliac Joint Injection (Method A)', 'OPERATIVE REPORT\nProcedure: right sacroiliac joint injection\nTechnique: the right sacroiliac joint was injected for buttock pain. ' + PAD);
-const SI_RIGHT_B = tpl('si_right_b', 'Right Sacroiliac Joint Injection (Method B)', 'OPERATIVE REPORT\nProcedure: right sacroiliac joint injection\nTechnique: the right sacroiliac joint was injected for buttock pain. ' + PAD);
+/* fixture retuned 2026-09-15 (opmatch-1.0.0, b1271): two byte-identical
+   same-side copies are now resolved as EQUIVALENT (the owner's twin
+   templates) and never left to the doctor, so a genuine tie for this
+   scenario must differ in a parsed fact while scoring the same. Method B's
+   Procedure line (the facts are parsed from that line) names a level; a
+   level-less request earns neither copy the level bonus, so the score still
+   ties and the pair is no longer equivalent. */
+const SI_RIGHT_B = tpl('si_right_b', 'Right Sacroiliac Joint Injection (Method B)', 'OPERATIVE REPORT\nProcedure: right sacroiliac joint injection at S1\nTechnique: the right sacroiliac joint was injected for buttock pain. ' + PAD);
 const SI_GENERIC = tpl('si_generic', 'Sacroiliac Joint Injection', 'OPERATIVE REPORT\nProcedure: sacroiliac joint injection\nTechnique: the sacroiliac joint was injected for buttock pain. ' + PAD);
 const SI_LEFT = tpl('si_left', 'Left Sacroiliac Joint Injection', 'OPERATIVE REPORT\nProcedure: left sacroiliac joint injection\nTechnique: the left sacroiliac joint was injected for buttock pain. ' + PAD);
 // A real doctor's library carries templates the classifier's fixed
