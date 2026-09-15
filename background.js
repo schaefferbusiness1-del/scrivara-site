@@ -4312,39 +4312,31 @@ function mlsAthenaTeachWatcherFn(config) {
 /* ATHENA_ACTION_V2_HANDLER_END */
 
 /* ===========================================================================
- * v2.9.5 QUIET PULL (__mlsQp) — pulls must never steal the doctor's focus.
- * Live-measured ground truth (2026-07-13, this machine): a Chrome window that
- * is fully COVERED (or minimized) is occluded — visibilityState hidden, rAF
- * 0/s, timers 1/s then 1/min. So a pull genuinely needs the athena tab VISIBLE
- * somewhere; the old approach made it visible by foregrounding it over the
- * doctor's work (tab yank) and the guardian yanked back after — the reported
- * "keeps pulling me to the athena tab". Instead:
- *   - qpEnsure(tab, senderTabId): make athena visible WITHOUT touching focus —
- *     move it once into a narrow work-strip window on the right edge (created
- *     focused:false) without resizing/unmaximizing the user's window. Already
- *     visible -> no-op. If the strip is still occluded,
- *     visible afterwards (user re-maximized over it, another app on top),
- *     return 'limp': the read proceeds throttled under the callers' existing
- *     budgets/retries, and the strip flashes the taskbar ONCE. Never focuses.
- *   - qpRelease(): put Athena back (original window+index, while preserving the
- *     user's current non-Athena tab) — fired by end-of-run mlsAppFocusMlsTab, a 120s
- *     quiet watchdog + alarms backstop (worker restarts), and before any
- *     write op (writes keep the proven foreground-for-write behavior).
- * Quiet pulls record NO focus debt, so the guardian never yanks the doctor
- * back to MLS either. Moves/resizes windows only; clicks nothing; never
- * focuses a window the doctor is using.
+ * v2.9.5 QUIET PULL (__mlsQp) - pulls must never steal the doctor's focus.
+ * A covered or background tab is occluded (visibilityState hidden, rAF 0/s, timers
+ * throttled) and athenaOne does not paint there, so a read needs the tab VISIBLE
+ * somewhere without ever foregrounding it over the doctor's work.
+ *   - qpEnsure(tab, senderTabId): already visible -> 'visible'. Otherwise select the
+ *     tab inside its window only when that displaces nothing the doctor is looking at;
+ *     else (qpstrip-2.0.0, 3.0.135) move it once into an UNFOCUSED work window of its
+ *     own at the right edge of its display -> 'strip'. Still occluded -> 'limp': the
+ *     read proceeds under the callers' own budgets and retries.
+ *   - qpRelease(): move athena back to its original window and index, preserving
+ *     whatever tab the doctor has selected - fired by end-of-run mlsAppFocusMlsTab, a
+ *     120s quiet watchdog + alarms backstop (worker restarts), and before any write op.
+ * Quiet pulls record NO focus debt, so the guardian never yanks the doctor back to MLS.
+ * The doctor's window is never moved, resized, focused or re-selected.
  * =========================================================================== */
 (function () {
   'use strict';
-  var QP = { active: false, winId: null, athenaTabId: null, orig: null, soloWin: false, athOrig: null,
-             hostWinId: null, hostOrig: null, lastUse: 0, flashed: false, pending: null, restoring: null, epoch: 0 };
+  var QP = { active: false, winId: null, athenaTabId: null, orig: null, strip: null, lastUse: 0, pending: null, restoring: null, epoch: 0 };
   self.__mlsQp = QP;
   /* qpx-3075 layer 1: clear the lease the moment its tab closes (awake path). */
   try {
     chrome.tabs.onRemoved.addListener(function (tid) {
       try {
         if (QP.active && Number(QP.athenaTabId) === Number(tid)) {
-          QP.active = false; QP.winId = null; QP.orig = null; QP.soloWin = false;
+          QP.active = false; QP.winId = null; QP.orig = null; QP.strip = null;
           QP.athenaTabId = null; QP.pending = null; QP.restoring = null;
           try { chrome.storage.session.set({ mlsQpState: null }); } catch (eQxP) {}
         }
@@ -4365,8 +4357,7 @@ function mlsAthenaTeachWatcherFn(config) {
   function persist() {
     try {
       chrome.storage.session.set({ mlsQpState: QP.active ? {
-        winId: QP.winId, athenaTabId: QP.athenaTabId, orig: QP.orig, soloWin: QP.soloWin,
-        athOrig: QP.athOrig, hostWinId: QP.hostWinId, hostOrig: QP.hostOrig, strip: QP.strip || null, at: Date.now() } : null });
+        winId: QP.winId, athenaTabId: QP.athenaTabId, orig: QP.orig, strip: QP.strip || null, at: Date.now() } : null });
     } catch (e) {}
   }
 
@@ -4388,33 +4379,59 @@ function mlsAthenaTeachWatcherFn(config) {
     ]);
   }
 
+  /* qpstrip-2.0.0 (3.0.135): give a hidden athenaOne tab its own unfocused work window at the
+     right edge of its display. Returns {winId, orig, bounds} or null. The doctor's window,
+     focus and active tab are never touched; qpRelease moves the tab home afterwards. */
+  async function qpMakeStrip(tab, t2) {
+    try {
+      var host = await chrome.windows.get(t2.windowId);
+      if (!host || host.type !== 'normal') return null;
+      var wa = null;
+      try {
+        var displays = await chrome.system.display.getInfo();
+        var cx = Number(host.left || 0) + Number(host.width || 0) / 2, cy = Number(host.top || 0) + Number(host.height || 0) / 2;
+        var d = (displays || []).filter(function (x) { var b = x && x.workArea; return b && cx >= b.left && cx < b.left + b.width && cy >= b.top && cy < b.top + b.height; })[0] || (displays || [])[0];
+        wa = d && d.workArea;
+      } catch (eDisp) {}
+      var W = 760, H = Math.max(600, Math.round(((wa && wa.height) || 900) * 0.85));
+      var left = wa ? (wa.left + wa.width - W) : 40, top = wa ? (wa.top + 40) : 40;
+      var orig = { windowId: t2.windowId, index: t2.index };
+      var w = await chrome.windows.create({ tabId: tab.id, focused: false, type: 'normal', state: 'normal', left: left, top: top, width: W, height: H });
+      if (!w || w.id == null) return null;
+      return { winId: w.id, orig: orig, bounds: { left: left, top: top, width: W, height: H } };
+    } catch (e) { return null; }
+  }
+  self.__mlsQpMakeStrip = qpMakeStrip;
   async function ensureBody(tab, senderTabId) {
     /* v2.9.36: establish the quiet-work LEASE first - mlsPickAthenaTab pins
        every later read in this cohort to this EXACT tab, so a second signed-in
        Athena tab can never hop the batch mid-run (the same-frame-name-mismatch
-       / wrong-tab class). The watchdog release clears the lease as before.
-       No window is ever created, moved, or resized (v2.9.35 directive). */
+       / wrong-tab class). The watchdog release clears the lease as before. */
     if (typeof mlsAthTabSleeping === 'function' && mlsAthTabSleeping(tab)) { try { self.__mlsQpLastVerdict = { v: 'sleeping', at: Date.now(), tabId: tab.id }; } catch (eSleepVerdict) {} return 'sleeping'; }
-    QP.athenaTabId = tab.id; QP.winId = null; QP.soloWin = false; QP.orig = null; QP.athOrig = null; QP.strip = null;
-    QP.hostWinId = null; QP.hostOrig = null;
-    QP.active = true; QP.flashed = false;
+    QP.athenaTabId = tab.id; QP.winId = null; QP.orig = null; QP.strip = null;
+    QP.active = true;
     persist();
     if (await tabVisible(tab.id)) return 'visible'; /* already on screen (incl. doctor parked on athena) */
-    /* v2.9.35 owner directive: a read must NEVER create, move, or resize a
-       browser window. The old quiet-pull work-strip (windows.create at preset
-       bounds, cross-display moves, raise-jiggles) confused the doctor and was
-       the most Mac-fragile surface in the extension (fullscreen spaces,
-       occlusion throttling, display arrangement). The ONLY action allowed
-       now is selecting the Athena tab inside whatever window it already
-       lives in - and only when that would not displace a tab the doctor is
-       actively using. If the Athena window stays hidden or occluded, the
-       read proceeds throttled ('limp') under the callers' existing budgets
-       and bounded retries, exactly like the covered-strip case before. */
+    /* qpstrip-2.0.0 (3.0.135, owner 2026-09-14: "it shouldn't have to be visible to work").
+       Policy now: select the Athena tab inside its own window only when that displaces
+       nothing the doctor is looking at; otherwise, or when the tab stays hidden anyway,
+       give it an UNFOCUSED work window of its own on its own display (qpMakeStrip). The
+       doctor's window is never moved, resized, focused or re-selected; the awg-2.0.0
+       wrapper clamps the work window to a real display; qpRelease moves the tab back to
+       its original window and index when the run goes quiet. If the work window is still
+       occluded the read proceeds 'limp' under the callers' budgets, as before. The older
+       v2.9.35 rule (never create a window) is superseded by this owner instruction. */
     try {
       var t2 = await chrome.tabs.get(tab.id);
-      if (!t2.active) {
-        if (await mlsReadFocusWouldYank(tab.id)) return 'limp';
-        await chrome.tabs.update(tab.id, { active: true });
+      var yank = !t2.active && (await mlsReadFocusWouldYank(tab.id));
+      if (!t2.active && !yank) { await chrome.tabs.update(tab.id, { active: true }); await qpSleep(400); }
+      /* qpstrip-2.0.0 (3.0.135, owner: "it shouldn't have to be visible to work"): a background tab
+         does not paint, so the read cannot succeed there. When selecting the tab would displace what
+         the doctor is looking at, or selection still leaves it hidden, give it an unfocused work
+         window of its own; the doctor's window, focus and active tab stay exactly as they are. */
+      if (yank || !(await tabVisible(tab.id))) {
+        var strip = await qpMakeStrip(tab, t2);
+        if (strip) { QP.orig = strip.orig; QP.winId = strip.winId; QP.strip = strip.bounds; persist(); try { self.__mlsQpLastVerdict = { v: 'strip', at: Date.now(), tabId: tab.id, winId: strip.winId }; } catch (eQv) {} }
       }
     } catch (e) {}
     await qpSleep(400); /* let the compositor recompute occlusion */
@@ -4465,7 +4482,7 @@ function mlsAthenaTeachWatcherFn(config) {
        "yanked" to Athena the next time that window is used. Capture the
        selection immediately before the move, so a newer human choice wins. */
     var destinationActiveTabId = null, movedHome = false;
-    if (!QP.soloWin && QP.athenaTabId != null && QP.orig && QP.orig.windowId != null) {
+    if (QP.athenaTabId != null && QP.orig && QP.orig.windowId != null) {
       try {
         var destinationBefore = await chrome.windows.get(QP.orig.windowId, { populate: true });
         var destinationTabs = (destinationBefore && destinationBefore.tabs) || [];
@@ -4489,19 +4506,6 @@ function mlsAthenaTeachWatcherFn(config) {
         }
       } catch (e) {}
     }
-    if (QP.soloWin && QP.winId != null && QP.athOrig) {
-      try {
-        await chrome.windows.update(QP.winId, { left: QP.athOrig.left, top: QP.athOrig.top, width: QP.athOrig.width, height: QP.athOrig.height });
-        if (QP.athOrig.state === 'maximized') await chrome.windows.update(QP.winId, { state: 'maximized' });
-      } catch (e) {}
-    }
-    /* doctor's window back exactly as it was */
-    if (QP.hostWinId != null && QP.hostOrig) {
-      try {
-        await chrome.windows.update(QP.hostWinId, { left: QP.hostOrig.left, top: QP.hostOrig.top, width: QP.hostOrig.width, height: QP.hostOrig.height });
-        if (QP.hostOrig.state === 'maximized' || QP.hostOrig.state === 'fullscreen') await chrome.windows.update(QP.hostWinId, { state: QP.hostOrig.state });
-      } catch (e) {}
-    }
     if (preserveTabId != null) {
       try {
         var preserved = await chrome.tabs.get(preserveTabId);
@@ -4516,7 +4520,7 @@ function mlsAthenaTeachWatcherFn(config) {
   }
 
   async function qpRelease(reason) {
-    if (!QP.active && QP.hostOrig == null && !QP.pending && !QP.restoring) return;
+    if (!QP.active && !QP.pending && !QP.restoring) return;
     /* Supersede every ensure which began before this terminal release. Calls
        that were waiting on the old promise see the epoch change and exit limp
        instead of beginning window surgery after their request has settled. */
@@ -4540,8 +4544,7 @@ function mlsAthenaTeachWatcherFn(config) {
     var r = Promise.race([restoreTask, qpSleep(QP_RESTORE_WAIT_MS)]);
     QP.restoring = r;
     try { await r; } finally {
-      QP.restoring = null; QP.active = false; QP.winId = null; QP.orig = null; QP.soloWin = false;
-      QP.athOrig = null; QP.hostWinId = null; QP.hostOrig = null; QP.athenaTabId = null; QP.flashed = false;
+      QP.restoring = null; QP.active = false; QP.winId = null; QP.orig = null; QP.strip = null; QP.athenaTabId = null;
       try { chrome.alarms.clear('mlsQpWatch'); } catch (e) {}
       persist();
     }
@@ -4579,7 +4582,7 @@ function mlsAthenaTeachWatcherFn(config) {
         var s = st && st.mlsQpState;
         if (!s || QP.active) return;
         QP.active = true; QP.winId = s.winId; QP.athenaTabId = s.athenaTabId; QP.orig = s.orig || null;
-        QP.soloWin = !!s.soloWin; QP.athOrig = s.athOrig || null; QP.hostWinId = s.hostWinId; QP.hostOrig = s.hostOrig || null; QP.strip = s.strip || null;
+        QP.strip = s.strip || null;
         QP.lastUse = Date.now(); qpTouch();
       } catch (e) {}
     });
