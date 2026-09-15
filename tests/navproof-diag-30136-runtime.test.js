@@ -22,11 +22,12 @@ const loop = bg.slice(s, e + endMark.length);
 function run(frames, want) {
   const eaIdX = { r: frames.map((f, i) => ({ frameId: i, result: f.id })) };
   const eaSurById = {}; frames.forEach((f, i) => { if (f.sur) eaSurById[i] = f.sur; });
-  const __navDiag = { eaMatches: 0, eaRejVia: 0, eaRejName: 0, eaRejDob: 0, eaRejEncish: 0, eaRejDate: 0 };
-  const fn = new Function('eaIdX', 'eaSurById', 'msg', 'eaNameOk', 'eaDobKey', 'eaWantDob', 'eaWantDate', '__navDiag',
+  const __navDiag = { eaMatches: 0, eaRejVia: 0, eaRejName: 0, eaRejDob: 0, eaRejEncish: 0, eaRejDate: 0, eaDatelessChanged: 0 };
+  const eaChangedIds = frames.map((f, i) => (f.changed ? i : -1)).filter((i) => i >= 0);
+  const fn = new Function('eaIdX', 'eaSurById', 'msg', 'eaNameOk', 'eaDobKey', 'eaWantDob', 'eaWantDate', '__navDiag', 'eaChangedIds',
     loop + '\nreturn { eaMatches: eaMatches, d: __navDiag };');
   const norm = (v) => String(v || '').toLowerCase().replace(/[^a-z]/g, '');
-  return fn(eaIdX, eaSurById, { name: want.name }, (a, b) => norm(a) === norm(b), (v) => String(v || '').replace(/\D/g, ''), want.dob, want.date, __navDiag);
+  return fn(eaIdX, eaSurById, { name: want.name }, (a, b) => norm(a) === norm(b), (v) => String(v || '').replace(/\D/g, ''), want.dob, want.date, __navDiag, eaChangedIds);
 }
 {
   const r = run([
@@ -44,7 +45,8 @@ function run(frames, want) {
   eq(r.d.eaRejName, 1, 'a different name is counted');
   eq(r.d.eaRejDob, 1, 'a different DOB is counted');
   eq(r.d.eaRejEncish, 1, 'a non-encounter surface is counted');
-  eq(r.d.eaRejDate, 1, 'a surface printing another day is counted');
+  eq(r.d.eaRejDate, 1, 'an UNCHANGED surface printing another day is still rejected and counted');
+  eq(r.d.eaDatelessChanged, 0, 'no dateless acceptance when no frame changed');
   ok(Object.keys(r.d).every((k) => typeof r.d[k] === 'number'), 'the receipt holds counts, never the values');
 }
 {
@@ -52,22 +54,50 @@ function run(frames, want) {
   eq(r.eaMatches.length, 0, 'no frames, no matches'); eq(r.d.eaMatches, 0, 'zero counted');
 }
 
+{
+  /* navaccept-1.0.0 (3.0.137): a frame our click navigated, with banner-grade exact name+DOB on an encounter-ish surface, is accepted without the bound date */
+  const r = run([
+    { id: { via: 'banner', name: 'A B', dob: '1/2/1990' }, sur: { encish: true, dates: ['9/1/2026'] }, changed: true },
+    { id: { via: 'guess', name: 'A B', dob: '1/2/1990' }, sur: { encish: true, dates: ['9/1/2026'] }, changed: true }
+  ], { name: 'A B', dob: '121990', date: '9/14/2026' });
+  assert.deepStrictEqual(r.eaMatches, [0]); checks++;
+  eq(r.d.eaDatelessChanged, 1, 'the dateless acceptance is counted');
+  eq(r.d.eaRejDate, 0, 'no date rejection for a changed frame');
+  const r2 = run([
+    { id: { via: 'banner', name: 'A B', dob: '1/2/1990' }, sur: { encish: true, dates: ['9/1/2026'] }, changed: true },
+    { id: { via: 'banner', name: 'C D', dob: '1/2/1990' }, sur: { encish: true, dates: ['9/1/2026'] }, changed: true },
+    { id: { via: 'banner', name: 'A B', dob: '1/2/1991' }, sur: { encish: true, dates: ['9/1/2026'] }, changed: true },
+    { id: { via: 'banner', name: 'A B', dob: '1/2/1990' }, sur: { encish: false, dates: ['9/1/2026'] }, changed: true }
+  ], { name: 'A B', dob: '121990', date: '9/14/2026' });
+  assert.deepStrictEqual(r2.eaMatches, [0]); checks++;
+  eq(r2.d.eaRejName + r2.d.eaRejDob + r2.d.eaRejEncish, 3, 'name, DOB and encounter-surface rules still reject changed frames');
+}
+
 /* 2. the refusal carries the opener diag and the counts; the other counters are set at their gates */
-ok(bg.includes("var __navDiag = { navChangedFrames: 0, eaSkipped: 0, eaNoCand: 0, eaCand: 0, eaTimeout: 0, eaMatches: 0, eaRejVia: 0, eaRejName: 0, eaRejDob: 0, eaRejEncish: 0, eaRejDate: 0 };"), 'closed counter set declared per open');
+ok(bg.includes("var __navDiag = { navChangedFrames: 0, eaSkipped: 0, eaNoCand: 0, eaCand: 0, eaChanged: 0, eaTimeout: 0, eaMatches: 0, eaRejVia: 0, eaRejName: 0, eaRejDob: 0, eaRejEncish: 0, eaRejDate: 0, eaDatelessChanged: 0 };"), 'closed counter set declared per open');
+ok(bg.includes("if (eaChangedIds.indexOf(en.frameId) < 0) { __navDiag.eaRejDate++; return; }"), 'the date rule stays for unchanged frames');
+ok(bg.includes("sched.diag.encounterAccepted = true; sched.diag.eaDatelessChanged = __navDiag.eaDatelessChanged;"), 'the acceptance receipt records dateless acceptance');
 ok(bg.includes("__navDiag.navChangedFrames = appointmentNavigationFrameIds.length;"), 'URL-delta frames counted');
 ok(bg.includes("if (!(eaWantDob && eaWantDate && (msg.name || ''))) __navDiag.eaSkipped = 1;"), 'a skipped acceptance leg is visible');
 ok(bg.includes("__navDiag.eaCand = eaCand.length; if (!eaCand.length) __navDiag.eaNoCand = 1;"), 'candidate frames counted');
 ok(bg.includes("if (!(eaIdX && !eaIdX.timeout && eaSurX && !eaSurX.timeout)) __navDiag.eaTimeout = 1;"), 'an injection timeout is visible');
-ok(bg.includes("diag: searchOpenDiag(Object.assign({}, (sched && sched.diag) || {}, __navDiag, { appointmentNavigationProven: false })) }); return;"), 'the refusal carries the opener diag (route, apptIdBound, regrounds) and the counts');
+ok(bg.includes("diag: searchOpenDiag(Object.assign({}, (findRes && findRes.diag) || {}, (sched && sched.diag) || {}, __navDiag, { appointmentNavigationProven: false })) }); return;"), 'the refusal carries the opener diag (route, apptIdBound, regrounds) and the counts');
 eq(bg.split("reason: 'appointment-navigation-unverified'").length - 1, 1, 'one worker refusal site');
 
 /* 3. content.js carries the counts through its closed allowlist (numbers only) and apptIdBound */
 ok(ct.includes("'navChangedFrames', 'eaSkipped', 'eaNoCand', 'eaCand', 'eaTimeout', 'eaMatches', 'eaRejVia', 'eaRejName', 'eaRejDob', 'eaRejEncish', 'eaRejDate'"), 'bridge allowlist carries the counts');
 ok(ct.includes("safeDiag.apptIdBound = openedDiag.apptIdBound === true;"), 'bridge carries apptIdBound as a boolean');
+ok(ct.includes("'findRows', 'findDobHit', 'findNameHit', 'findDobOnly', 'findAltRows', 'findTokens', 'findPunct', 'findComma'") && ct.includes("'eaChanged', 'eaDatelessChanged'"), 'bridge allowlist carries the 3.0.137 counts');
+/* finddiag-1.0.0 (3.0.137): the Find driver counts what it rejected, never what it saw */
+ok(bg.includes("var __fd = { findRows: 0, findDobHit: 0, findNameHit: 0, findDobOnly: 0, findAltRows: 0 };"), 'find counters declared');
+ok(bg.includes("reason:pool.length?'ambiguous':'no-name-match',count:pool.length,tier:'exact-name-dob',diag:__fd};"), 'the no-name-match refusal carries the counts');
+ok(bg.includes("diag: { findTokens: String(name || '').split(") && bg.includes("findPunct: /") && bg.includes("findComma: String(name || '').indexOf(',') >= 0 ? 1 : 0 }"), 'the no-results refusal carries the searched term shape');
+ok(bg.includes("reason: findRes.reason, findReason: findRes.reason, diag: searchOpenDiag(Object.assign({}, findRes.diag || {}, { route: 'findpatient' })) }); return;"), 'the worker Find refusal carries the counts');
+{ const i = bg.indexOf('var __fd = { findRows'); const j = bg.indexOf("diag:__fd};", i); const blk = bg.slice(i, j); ok(!/__fd.[a-zA-Z]+s*=s*(cells|rowName|dates|name|dob)/.test(blk), 'find counters never hold a cell, name or DOB value'); }
 {
   const i = ct.indexOf("'navChangedFrames', 'eaSkipped'");
   const j = ct.indexOf("var value = Number(openedDiag[key]); if (isFinite(value)) safeDiag[key] = value;", i);
-  ok(i > 0 && j > i && j - i < 400, 'the counts pass only as finite numbers');
+  ok(i > 0 && j > i && j - i < 800, 'the counts pass only as finite numbers');
 }
 /* 4. readstage-1.0.0 (3.0.136): the absolute chart-read timer names the last step reached */
 ok(bg.includes("ok: false, reason: 'chart-deadline-exceeded', stage: String(stage || 'the read').replace(/[^a-z0-9 ()-]/gi, '').slice(0, 60),"), 'the deadline refusal carries a closed stage string');

@@ -10443,6 +10443,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
               if (sIdent && (!cand || cand.via !== 'banner' || (sIdent.score || 0) > (cand.score || 0))) cand = sIdent;
             }
           }
+          __chartStage = 'identity poll ' + polls + (cand && cand.name ? ((expectName && !nmm(cand.name, expectName)) ? ' other' : ' match') : ' none'); /* readstage-1.1.0 (3.0.137): which banner the poll saw, as a word */
           bootstrapReadyEarly = !!(bootstrapIdentity && cand && cand.name && expectName && nmm(cand.name, expectName) && bootstrapIdentityReady(cand, identityFrameResults));
           /* the RIGHT patient found (any via) -> done */
           if (cand && cand.name && expectName && nmm(cand.name, expectName) && (!bootstrapIdentity || (polls >= 2 && bootstrapIdentityReady(cand, identityFrameResults)))) { ident = cand; if (!bootstrapIdentity) try { self.__mlsExpectOpen = null; } catch (e) {} break; }
@@ -15760,7 +15761,7 @@ function mlsExactIdentityPair(expected, observed) {
         }
         break;
       }
-      if (!/\d+\s+results?\s+found/i.test(resText)) return { opened: false, reason: (/cannot leave the find text field blank/i.test(resText) ? 'blank-error' : (/no results/i.test(resText) ? 'no-results' : 'results-timeout')) };
+      if (!/\d+\s+results?\s+found/i.test(resText)) return { opened: false, reason: (/cannot leave the find text field blank/i.test(resText) ? 'blank-error' : (/no results/i.test(resText) ? 'no-results' : 'results-timeout')), diag: { findTokens: String(name || '').split(/\s+/).filter(Boolean).length, findPunct: /['\u2019\-.]/.test(String(name || '')) ? 1 : 0, findComma: String(name || '').indexOf(',') >= 0 ? 1 : 0 } /* finddiag-1.0.0 (3.0.137): counts only */ };
       /* v1.85: the "N results found" TEXT renders BEFORE the rows' action links
          hydrate (live: 2 Marie Dunnes on screen but zero Chart links at scan
          time -> false 'no-name-match'). Poll for the links. */
@@ -15790,16 +15791,19 @@ function mlsExactIdentityPair(expected, observed) {
         if(fi.length===1&&li.length===1)rowName=(cells[fi[0]]||'')+' '+(cells[li[0]]||'');
         if(!rowName){var names=cells.filter(function(x){return !/[0-9]/.test(x)&&mlsExactNameKey(x)===mlsExactNameKey(name);});if(names.length===1)rowName=names[0];}
         var dates=[];(di.length===1?[cells[di[0]]]:cells).forEach(function(x){var k=mlsExactDobKey(x);if(k&&dates.indexOf(k)<0)dates.push(k);});
-        return {ok:dates.length===1&&mlsExactIdentityPair({name:name,dob:dob},{name:rowName,dob:dates[0]}).ok,dob:dates.length===1?dates[0]:''};
+        var __dobHit=dates.length===1&&!!mlsExactDobKey(dob)&&dates[0]===mlsExactDobKey(dob), __nameHit=!!rowName&&!!mlsExactNameKey(name)&&mlsExactNameKey(rowName)===mlsExactNameKey(name); /* finddiag-1.0.0 (3.0.137) */
+        return {ok:dates.length===1&&mlsExactIdentityPair({name:name,dob:dob},{name:rowName,dob:dates[0]}).ok,dob:dates.length===1?dates[0]:'',dobHit:__dobHit,nameHit:__nameHit,alt:/\(|\blegal\b|\bpreferred\b/i.test(cells.join(' '))};
       }
       var exact = [], prefix = [], pool = [], mrnNarrowed = false;
+      var __fd = { findRows: 0, findDobHit: 0, findNameHit: 0, findDobOnly: 0, findAltRows: 0 }; /* finddiag-1.0.0 (3.0.137): counts only, never a name or DOB */
       for (var c=0;c<chartAs.length;c++) {
         var tr=chartAs[c].closest ? chartAs[c].closest('tr') : null;
         if(!tr) continue;
         var evidence=exactResultRow(tr);
+        __fd.findRows++; if(evidence.dobHit)__fd.findDobHit++; if(evidence.nameHit)__fd.findNameHit++; if(evidence.dobHit&&!evidence.nameHit)__fd.findDobOnly++; if(evidence.dobHit&&evidence.alt)__fd.findAltRows++;
         if(evidence.ok) pool.push({a:chartAs[c],dob:evidence.dob,mrnMatched:false});
       }
-      if(pool.length!==1) return {opened:false,attempted:false,reason:pool.length?'ambiguous':'no-name-match',count:pool.length,tier:'exact-name-dob'};
+      if(pool.length!==1) return {opened:false,attempted:false,reason:pool.length?'ambiguous':'no-name-match',count:pool.length,tier:'exact-name-dob',diag:__fd};
       /* rowreverify-1.0.0 (3.0.117, measured live 2026-09-11): the result list
          RE-ORDERS between the read that chose a row and the click that opens it,
          so the chart that opened was a different person's and the app-side merge
@@ -16232,7 +16236,7 @@ function mlsExactIdentityPair(expected, observed) {
               if (sched && sched.opened) {
                 var appointmentNavigationProven = !bootstrapIdentity;
                 var appointmentNavigationFrameIds = [];
-                var __navDiag = { navChangedFrames: 0, eaSkipped: 0, eaNoCand: 0, eaCand: 0, eaTimeout: 0, eaMatches: 0, eaRejVia: 0, eaRejName: 0, eaRejDob: 0, eaRejEncish: 0, eaRejDate: 0 }; /* navproof-diag-1.0.0 (3.0.136): counts only */
+                var __navDiag = { navChangedFrames: 0, eaSkipped: 0, eaNoCand: 0, eaCand: 0, eaChanged: 0, eaTimeout: 0, eaMatches: 0, eaRejVia: 0, eaRejName: 0, eaRejDob: 0, eaRejEncish: 0, eaRejDate: 0, eaDatelessChanged: 0 }; /* navproof-diag-1.0.0 (3.0.136) + navaccept-1.0.0 (3.0.137): counts only */
                 var encounterAcceptedReceipt = false; /* enc-accept-3.0.97 */
                 if (bootstrapIdentity && sched.diag && sched.diag.apptIdBound === true) {
                   var proofUntil = Math.min(openGuard.deadline, Date.now() + 12000);
@@ -16272,6 +16276,7 @@ function mlsExactIdentityPair(expected, observed) {
                         var eaChanged = eaAll.filter(function (fr) { return fr && typeof fr.frameId === 'number' && (!(fr.frameId in eaBeforeById) || eaBeforeById[fr.frameId] !== String(fr.url || '')); });
                         var eaCand = (eaChanged.length ? eaChanged : eaAll).map(function (fr) { return fr.frameId; }).filter(function (fid) { return typeof fid === 'number' && fid >= 0; }).slice(0, 12);
                         __navDiag.eaCand = eaCand.length; if (!eaCand.length) __navDiag.eaNoCand = 1;
+                        var eaChangedIds = eaChanged.map(function (fr) { return fr.frameId; }); __navDiag.eaChanged = eaChangedIds.length; /* navaccept-1.0.0 (3.0.137) */
                         if (eaCand.length) {
                           var eaIdX = await execOpen({ target: { tabId: tab.id, frameIds: eaCand }, func: mlsReadChartIdentity }, 15000);
                           var eaSurX = (eaIdX && eaIdX.timeout) ? { timeout: true } : await execOpen({ target: { tabId: tab.id, frameIds: eaCand }, func: mlsEncounterAcceptanceReaderFn }, 15000);
@@ -16288,7 +16293,13 @@ function mlsExactIdentityPair(expected, observed) {
                               var eaGotDob = eaDobKey(idr.dob);
                               if (!eaGotDob || eaGotDob !== eaWantDob) { __navDiag.eaRejDob++; return; }
                               if (sur.encish !== true) { __navDiag.eaRejEncish++; return; }
-                              if ((sur.dates || []).indexOf(eaWantDate) < 0) { __navDiag.eaRejDate++; return; }
+                              if ((sur.dates || []).indexOf(eaWantDate) < 0) {
+                                /* navaccept-1.0.0 (3.0.137): the date rule is for a checked-in row landing on its encounter. A frame
+                                   our click just navigated, printing banner-grade exact name+DOB, is this patient's chart - accept it;
+                                   the follow-up chart read re-proves the banner in this same frame id. An unchanged frame keeps the rule. */
+                                if (eaChangedIds.indexOf(en.frameId) < 0) { __navDiag.eaRejDate++; return; }
+                                __navDiag.eaDatelessChanged++;
+                              }
                               eaMatches.push(en.frameId);
                             });
                             eaMatches = eaMatches.filter(function (v, i, a) { return a.indexOf(v) === i; }); __navDiag.eaMatches = eaMatches.length;
@@ -16296,7 +16307,7 @@ function mlsExactIdentityPair(expected, observed) {
                               appointmentNavigationProven = true;
                               appointmentNavigationFrameIds = [eaMatches[0]];
                               encounterAcceptedReceipt = true;
-                              try { sched.diag.encounterAccepted = true; } catch (eEa1) {}
+                              try { sched.diag.encounterAccepted = true; sched.diag.eaDatelessChanged = __navDiag.eaDatelessChanged; } catch (eEa1) {} /* navaccept-1.0.0 (3.0.137) */
                             } else if (eaMatches.length > 1) {
                               try { sched.diag.encounterAcceptAmbiguous = eaMatches.length; } catch (eEa2) {}
                             }
@@ -16306,7 +16317,7 @@ function mlsExactIdentityPair(expected, observed) {
                     } catch (eEncAccept) {}
                   }
                   if (!appointmentNavigationProven) {
-                    sendResponse({ ok: false, opened: false, reason: 'appointment-navigation-unverified', error: 'Athena did not prove navigation from the exact appointment row. Nothing was read.', diag: searchOpenDiag(Object.assign({}, (sched && sched.diag) || {}, __navDiag, { appointmentNavigationProven: false })) }); return;
+                    sendResponse({ ok: false, opened: false, reason: 'appointment-navigation-unverified', error: 'Athena did not prove navigation from the exact appointment row. Nothing was read.', diag: searchOpenDiag(Object.assign({}, (findRes && findRes.diag) || {}, (sched && sched.diag) || {}, __navDiag, { appointmentNavigationProven: false })) }); return;
                   }
                 }
                 try { self.__mlsOpenPref = 'schedule'; } catch (e0) {}
@@ -16395,7 +16406,7 @@ function mlsExactIdentityPair(expected, observed) {
                     : findRes.reason === 'dob-mismatch' ? ('athenaOne has ' + (findRes.count || 1) + ' name match(es) for ' + (msg.name || '') + ' but the DOB on file does not match any of them — check the stored DOB.')
                     : findRes.reason === 'search-target-unverified' ? "athenaOne's search did not show this patient; nothing was opened."
                     : 'athenaOne patient search found no matching patient.',
-                  reason: findRes.reason, findReason: findRes.reason }); return;
+                  reason: findRes.reason, findReason: findRes.reason, diag: searchOpenDiag(Object.assign({}, findRes.diag || {}, { route: 'findpatient' })) }); return; /* finddiag-1.0.0 (3.0.137) */
               }
             }
           }

@@ -563,7 +563,9 @@
               var openRoute = openCode(openedSafe.via || openedDiag.route);
               var safeDiag = { findReason: openFindReason, route: openRoute };
               ['scanned', 'scrollers', 'topScore', 'inputCount', 'numericFieldsRefused', 'apptIdMatches', 'rowDobKnown',
-               'navChangedFrames', 'eaSkipped', 'eaNoCand', 'eaCand', 'eaTimeout', 'eaMatches', 'eaRejVia', 'eaRejName', 'eaRejDob', 'eaRejEncish', 'eaRejDate' /* navproof-diag-1.0.0 (3.0.136) */].forEach(function (key) {
+               'navChangedFrames', 'eaSkipped', 'eaNoCand', 'eaCand', 'eaTimeout', 'eaMatches', 'eaRejVia', 'eaRejName', 'eaRejDob', 'eaRejEncish', 'eaRejDate' /* navproof-diag-1.0.0 (3.0.136) */,
+               'findRows', 'findDobHit', 'findNameHit', 'findDobOnly', 'findAltRows', 'findTokens', 'findPunct', 'findComma' /* finddiag-1.0.0 (3.0.137) */,
+               'eaChanged', 'eaDatelessChanged' /* navaccept-1.0.0 (3.0.137) */].forEach(function (key) {
                 var value = Number(openedDiag[key]); if (isFinite(value)) safeDiag[key] = value;
               });
               ['rowRebinds', 'scheduleRegrounds'].forEach(function (key) {
