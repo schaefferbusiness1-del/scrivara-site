@@ -21,7 +21,8 @@ const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'u
 // 3.0.144: visitsshadow-1.0.0 (the visits driver reads athena's shadow-root banner first; the visits identity gate accepts the banner's other printed name, DOB exact) + rowveto-1.0.0 (problem/medication/history rows never form an encounter index); native persistence remains verified.
 // 3.0.145: restorehome-1.2.0 (the exact-schedule re-ground retries the date navigation up to ten times, about 30 s, while the only answer is the empty week strip; the refusal diag counts the tries) + visitsalt-1.0.0 (a visits result identity carries the printed name the gate matched; the primary rides as namePrinted); native persistence remains verified.
 // 3.0.146: qpsticky-1.0.0 (the quiet work window is handed back 30 s after the last verb, never per row; the next row's ensure keeps it); native persistence remains verified.
-assert.strictEqual(manifest.version, '3.0.146', 'regression must exercise the 3.0.146 candidate');
+// 3.0.147: nowindow-1.0.0 (the quiet-pull work window is deleted: no window is created, moved, resized or focused; a hidden athenaOne tab is read where it is, selected in place only when that displaces nothing); native persistence remains verified.
+assert.strictEqual(manifest.version, '3.0.147', 'regression must exercise the 3.0.147 candidate');
 const coreSha = (manifest.version_name.match(/core-sha256:([0-9a-f]{64})/) || [])[1];
 assert(coreSha, 'candidate manifest is missing its core hash');
 const computedCoreSha = execFileSync(process.execPath, [path.join(root, 'scripts', 'extension-core-digest.js')], { encoding: 'utf8' }).trim();
