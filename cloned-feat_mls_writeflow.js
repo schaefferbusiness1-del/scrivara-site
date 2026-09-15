@@ -7985,12 +7985,17 @@
     var capabilityLine = generationIssue
       ? (canonicalRecovery
         ? (esc(S(manifest.patient.name) || 'This note') + ' &middot; The note is unchanged and only its saved visit link needs to be refreshed for this selected appointment.')
-        : (esc(S(manifest.patient.name) || 'This note') + ' &middot; Existing note retained; review the updated source or complete its five sections.'))
+        : (esc(S(manifest.patient.name) || 'This note') + ' &middot; ' + (/canonical-source-changed$/.test(generationIssue)
+          /* sheetregen-1.0.0 (X3, extension session 2026-09-15): after a rebind the
+             five-field sidecar answers canonical-source-changed until the note is
+             regenerated; the old sentence never said so. */
+          ? 'The visit source changed since this note was generated. Regenerate the note for this visit, then send.'
+          : 'Existing note retained; review the updated source or complete its five sections.')))
       : (athenaFinalActionsReady()
         ? 'Reviewed note writes, Save Draft, billing staging, Sign &amp; Save, and each supported matched order run only after their own explicit confirmation; medication and injection orders stay yours in Athena.'
         : 'Only reviewed note write and Save Draft can be confirmed here; signing, billing and orders stay yours in Athena.');
     var boundaryLine = generationIssue
-      ? (canonicalRecovery ? 'Use the retained-note action to refresh only this saved visit link, then MLS opens the ordinary read-only encounter check. The note text remains exact and nothing is written.' : 'Existing note retained; review the updated source or complete its five sections. Nothing here checks an encounter, writes Athena, or changes the retained note.')
+      ? (canonicalRecovery ? 'Use the retained-note action to refresh only this saved visit link, then MLS opens the ordinary read-only encounter check. The note text remains exact and nothing is written.' : (/canonical-source-changed$/.test(generationIssue) ? 'Regenerate the note for this visit, then send. ' : 'Existing note retained; review the updated source or complete its five sections. ') + 'Nothing here checks an encounter, writes Athena, or changes the retained note.')
       : (athenaFinalActionsReady()
         ? 'One READY row is pre-selected and checked read-only; each Confirm &amp; Send click runs exactly that one action, and MLS never retries or auto-chains. Sign &amp; Save unlocks only after a verified note write; a reviewed matched order places only that item; prescriptions and claim submission stay yours in Athena.'
         : 'One READY note row is pre-selected and checked read-only; each Confirm &amp; Send click runs exactly that one action, and MLS never retries or auto-chains. Billing, orders, prescriptions, signature, attestation, and claim submission stay yours in Athena.');

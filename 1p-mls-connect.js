@@ -56806,8 +56806,26 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       !!(history && RETRYABLE.test(String(history.reason || '')));
     return partial && history && Array.isArray(history.retry) ? history.retry : [];
   }
+  /* pullbtn-1.0.0 (X2, measured by the extension session 2026-09-15): after a
+     retry round ended, #mlsDsPullBtn still read "Pulling <day>..." with the
+     spinner while DS.pulling and DS.retrying were both false. The label is
+     painted by whichever path started the work and only some terminal paths
+     restore it. This repaints it FROM THE STATE on every terminal transition
+     (syncRetryControl runs on each one): idle state + a spinner still on the
+     button = repaint the idle verb. Never touches a button that is busy. */
+  function dsPaintPullButtonFromState() {
+    try {
+      if (DS.pulling || DS.retrying || DS.__autoRetrying) return false;
+      var pb = $('mlsDsPullBtn');
+      if (!pb || String(pb.innerHTML || '').indexOf('ds-spin') < 0) return false;
+      pb.disabled = false; pb.innerHTML = '\ud83d\udce5 ' + esc(dsPullVerb());
+      DS.pullButtonRepaints = (DS.pullButtonRepaints || 0) + 1;
+      return true;
+    } catch (ePb) { return false; }
+  }
   function syncRetryControl(source) {
     var items = retryItems(source), retryBtn = $('mlsDsRetryHistoryBtn'), wakeBtn = $('mlsDsWakeRetryBtn');
+    dsPaintPullButtonFromState();
     DS.lastResult = items.length ? source : null;
     if (!retryBtn) return items.length;
     /* live 2026-07-21 (owner: "there is still no retry failed histories
@@ -57141,6 +57159,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
          once, from the caller, when the whole thing is really over. */
       if (!cvOpts.keepBar) { try { var rBar = document.getElementById('mlsDsPullBar'); if (rBar) rBar.style.display = 'none'; } catch (eBar) {} }
       if (pullBtn && !cvOpts.keepBar) pullBtn.disabled = false;
+      if (!cvOpts.keepBar) dsPaintPullButtonFromState(); /* pullbtn-1.0.0: a round that ends idle shows the idle verb */
       if (typeof cvOpts.onFinish === 'function') { syncRetryControl(err ? source : (receipt && receipt.complete === true && (!receipt.retry || !receipt.retry.length) ? null : { reason: 'history-partial', historyReceipt: receipt })); try { cvOpts.onFinish(receipt, err || null); } catch (eCv1) {} return; }
       if (err) {
         syncRetryControl(source);
