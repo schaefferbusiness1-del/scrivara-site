@@ -576,6 +576,7 @@
               safeDiag.exactScheduleFallback = openedDiag.exactScheduleFallback === true;
               safeDiag.rowMrnMatched = openedDiag.rowMrnMatched === true;
               safeDiag.apptIdBound = openedDiag.apptIdBound === true; /* navproof-diag-1.0.0 (3.0.136) */
+              ['legFind', 'legSched', 'legOrder'].forEach(function (key) { var v = String(openedDiag[key] == null ? '' : openedDiag[key]).toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 40); if (v) safeDiag[key] = v; }); /* legsdiag-1.0.0 (3.0.148): closed codes only */
               /* restorediag-1.1.0 (3.0.132): closed per-frame evidence for the schedule-date restore refusal (no row, DOB, MRN or name; digits masked). */
               safeDiag.stage = mlsStr(openedDiag.stage, 40).replace(/[^a-z0-9 -]/gi, '');
               if (Array.isArray(openedDiag.regroundFrames)) safeDiag.regroundFrames = openedDiag.regroundFrames.slice(0, 8).map(function (f) { f = (f && typeof f === 'object') ? f : {}; return { done: f.done === true, unverified: f.unverified === true, dateMatch: f.dateMatch === true, steps: Math.max(0, Math.min(99, Number(f.steps) || 0)), head: mlsStr(f.head, 70).replace(/\d/g, 'D') }; });

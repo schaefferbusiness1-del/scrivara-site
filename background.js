@@ -16170,7 +16170,7 @@ function mlsExactIdentityPair(expected, observed) {
         }
         sendResponse = function (payload) {
           if (responseSent) return; responseSent = true;
-          rawSendResponse(Object.assign({}, payload || {}, { requestId: openGuard.token, deadlineAt: openGuard.deadline }));
+          var __p = Object.assign({}, payload || {}, { requestId: openGuard.token, deadlineAt: openGuard.deadline }); if (!__p.ok) { try { var __fr = (typeof findRes !== 'undefined') ? findRes : null, __sr = (typeof sched !== 'undefined') ? sched : null; __p.diag = Object.assign({}, __p.diag || {}, { legFind: __fr ? (__fr.opened ? 'opened' : String(__fr.reason || 'refused')) : 'not-run', legSched: __sr ? (__sr.opened ? 'opened' : String(__sr.reason || 'refused')) : 'not-run', legOrder: (typeof order !== 'undefined' && Array.isArray(order)) ? order.join('-') : '' }); } catch (_eLegs) {} } /* legsdiag-1.0.0 (3.0.148): every refusal names both legs' outcomes as closed codes */ rawSendResponse(__p);
         };
         var findGuard = Object.freeze({ value: frozenMrn, deadline: openGuard.deadline, token: openGuard.token });
         /* openterminal-1.0.0 (3.0.125): one terminal answer per open request, even if an await never settles. */
