@@ -56942,7 +56942,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if (stat) { stat.style.display = 'block'; stat.textContent = line; }
       try { dsStatusLog(line); } catch (eSay) {}
     }
-    if (DS.pulling || DS.retrying || DS.__autoRetrying) {
+    if (DS.pulling || DS.retrying || DS.__autoRetrying || DS.preferenceGatePending) { /* navtruth-1.0.0 (F10): the open full-visit-notes choice is a pull about to start */
       say('A pull is still running. This button wakes up the moment it is done.');
       return;
     }
@@ -56965,10 +56965,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (btn) btn.disabled = true;
     if (pullBtn) pullBtn.disabled = true;
     dsLeaseHold();
+    try { syncRetryControl(DS.lastResult); } catch (eRaSync0) {} /* navtruth-1.0.0 (F10): the retry controls read DS.retrying only through this call */
     say('Re-reading ' + total + ' chart' + (total === 1 ? '' : 's') + ' for ' + fmtDay(day) + '...');
     function finish(lineFor) {
       DS.retrying = false;
       dsLeaseRelease();
+      try { syncRetryControl(DS.lastResult); } catch (eRaSync1) {} /* navtruth-1.0.0 (F10) */
       if (pullBtn) { pullBtn.disabled = false; pullBtn.innerHTML = '📥 ' + esc(dsPullVerb()); }
       dsAttentionCacheClear();
       var left = syncAttentionControl(true);

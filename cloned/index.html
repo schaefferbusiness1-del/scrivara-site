@@ -18420,7 +18420,12 @@ function updateNavCounts(patientSnapshot){
   const activeId=getActivePtId();
   let ap=null;
   for(let i=0;i<patients.length;i++){ if(patients[i]&&patients[i].id===activeId){ ap=patients[i]; break; } }
-  updateHistoryNavCount(ap?ap.id:'');
+  /* navtruth-1.0.0 (F7): an ACTIVE id that the snapshot cannot resolve (a
+     merge that retired it, a roster mid-replacement, a stale snapshot) used
+     to paint the whole account's note total as if no patient were active -
+     indistinguishable from a correct number. Count that id from the notes
+     index instead; only a genuinely empty selection shows the total. */
+  updateHistoryNavCount(ap?ap.id:(activeId?String(activeId):''));
   const oc=document.getElementById('navOrdCount');
   if(oc) oc.textContent = currentOrders.length;
 }
@@ -22084,6 +22089,12 @@ try{
     if(currentView==='patients')__mlsPtScheduleRosterPaint(owner.key,owner.epoch);
   },false);
   window.addEventListener('mls:session-boundary',__mlsPtCancelRosterRepair,false);
+  /* navtruth-1.0.0 (audit 2026-09-15, F6): a day pull mints charts and files
+     notes, and nothing repainted the Patients / History badges afterwards -
+     they kept the pre-pull numbers until an unrelated action happened to
+     call updateNavCounts. The pull lane's own PHI-free terminal event is
+     the seam. */
+  window.addEventListener('mls:pull-terminal',function(){try{scheduleNavCounts();}catch(eNav){}},false);
 }catch(e){}
 function renderPatients(){
   const all=getPatients();
