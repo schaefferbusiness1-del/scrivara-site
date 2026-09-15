@@ -4477,6 +4477,7 @@ function mlsAthenaTeachWatcherFn(config) {
   var QP_SERIAL_WAIT_MS = 5000;
   var QP_PENDING_RELEASE_MS = 1500;
   var QP_RESTORE_WAIT_MS = 8000;
+  var QP_STICKY_MS = 30000; /* qpsticky-1.0.0 (3.0.146): the work window is handed back this long after the LAST verb ended, never per row */
 
   function qpTouch() {
     QP.lastUse = Date.now();
@@ -4572,6 +4573,7 @@ function mlsAthenaTeachWatcherFn(config) {
   }
 
   async function qpEnsure(tab, senderTabId) {
+    qpStickyCancel(); /* qpsticky-1.0.0: the next row keeps the window */
     qpTouch();
     if (!tab || tab.id == null) return 'limp';
     var entryEpoch = Number(QP.epoch || 0);
@@ -4680,6 +4682,18 @@ function mlsAthenaTeachWatcherFn(config) {
     }
   }
   self.__mlsQpRelease = qpRelease;
+  /* qpsticky-1.0.0 (3.0.146): a verb terminal never hands the window back itself - it arms a hand-back that the
+     next row's ensure cancels; only a real end (app-end, quiet, alarm, write, wake recovery) releases at once. */
+  var qpStickyTimer = null, qpStickyArmed = 0, qpStickyCancelled = 0;
+  function qpReleaseSoon(reason) {
+    try { if (qpStickyTimer) clearTimeout(qpStickyTimer); } catch (eSt) {}
+    qpStickyArmed++;
+    qpStickyTimer = setTimeout(function () { qpStickyTimer = null; qpRelease(String(reason || 'sticky') + ':sticky').catch(function () {}); }, QP_STICKY_MS);
+    return Promise.resolve({ ok: true, deferred: true });
+  }
+  function qpStickyCancel() { try { if (qpStickyTimer) { clearTimeout(qpStickyTimer); qpStickyTimer = null; qpStickyCancelled++; } } catch (eSc) {} }
+  self.__mlsQpReleaseSoon = qpReleaseSoon;
+  self.__mlsQpSticky = function () { return { armed: qpStickyArmed, cancelled: qpStickyCancelled, pending: !!qpStickyTimer }; };
 
   /* end-of-run detection: quiet watchdog + alarm backstop (worker restarts) */
     /* qol-2.3d: same deferral the F1 focus watchdog got - the chart lane is
@@ -8149,7 +8163,7 @@ var mlsProv = (function () {
         self.__mlsDayScheduleQpOwner = '';
         try {
           if (!self.__mlsQpRelease) return;
-          var release = Promise.resolve(self.__mlsQpRelease(reason || 'goto-date-terminal')).catch(function () {});
+          var release = Promise.resolve((self.__mlsQpReleaseSoon || self.__mlsQpRelease)(reason || 'goto-date-terminal')).catch(function () {}); /* qpsticky-1.0.0 */
           Promise.race([release, mlsSleepW(5000)]).catch(function () {});
         } catch (e) {}
       }
@@ -8762,7 +8776,7 @@ if (!found) {
         self.__mlsDayScheduleQpOwner = '';
         try {
           if (!self.__mlsQpRelease) return;
-          var release = Promise.resolve(self.__mlsQpRelease(reason || 'schedule-terminal')).catch(function () {});
+          var release = Promise.resolve((self.__mlsQpReleaseSoon || self.__mlsQpRelease)(reason || 'schedule-terminal')).catch(function () {}); /* qpsticky-1.0.0 */
           Promise.race([release, mlsSleepW(5000)]).catch(function () {});
         } catch (e) {}
       }
@@ -13385,7 +13399,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           function startRelease() {
           try {
             if (!self.__mlsQpRelease) { resolve({ ok: true, skipped: true }); return; }
-            Promise.resolve(self.__mlsQpRelease(reason)).then(function () {
+            Promise.resolve((self.__mlsQpReleaseSoon || self.__mlsQpRelease)(reason)).then(function () { /* qpsticky-1.0.0 */
               resolve({ ok: true });
             }, function () {
               /* qpRelease owns its own best-effort restoration. A rejection is

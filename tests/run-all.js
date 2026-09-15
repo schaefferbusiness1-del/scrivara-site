@@ -1446,6 +1446,7 @@ const tests = [
   'legacysettle-30140-runtime.test.js',
   'rowscroll-30143-runtime.test.js',
   'visitsid-30144-runtime.test.js',
+  'qpsticky-30146-runtime.test.js',
   'visit-reader-minimal-deadline-contract.test.js',
   'visit-request-correlation-runtime.test.js',
   'cohort-request-correlation-runtime.test.js',
