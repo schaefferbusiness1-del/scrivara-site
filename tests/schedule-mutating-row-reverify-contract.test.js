@@ -1872,6 +1872,7 @@ function plain(value) { return JSON.parse(JSON.stringify(value)); }
           /* legacysettle-1.0.0 (3.0.140): additive read-only diagnostics (the settle looks, first/final row
              counts and the headings-only section census) - the accept/reject behaviour is pinned unchanged. */
           delete o.diag.legacySettleLooks; delete o.diag.legacyRowsFirst; delete o.diag.legacyRowsFinal; delete o.diag.legacySettled; delete o.diag.legacySections;
+          delete o.diag.legacyScrolls; /* legacyscroll-1.0.0 (3.0.142): the scroll count is additive diag */
         }
         return o;
       };

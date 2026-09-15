@@ -4523,7 +4523,7 @@ function mlsAthenaTeachWatcherFn(config) {
         var d = (displays || []).filter(function (x) { var b = x && x.workArea; return b && cx >= b.left && cx < b.left + b.width && cy >= b.top && cy < b.top + b.height; })[0] || (displays || [])[0];
         wa = d && d.workArea;
       } catch (eDisp) {}
-      var W = Math.max(1280, Math.min(1500, Math.round(((wa && wa.width) || 2340) * 0.55))), H = Math.max(600, Math.round(((wa && wa.height) || 900) * 0.85)); /* qpstrip-2.1.0 (3.0.141): a desktop-width viewport - below it athena's day grid prints a subset of a long section (measured: 8 of 28 rows at 760 px) */
+      var W = Math.max(1280, Math.min(1500, Math.round(((wa && wa.width) || 2340) * 0.55))), H = Math.max(600, Math.round(((wa && wa.height) || 900) * 0.85)); /* qpstrip-2.1.0 (3.0.141): a desktop-width viewport for the desktop layout. NOTE 3.0.142: the 8-of-28 rows measured at 760 px were athena's lazy-loaded FIRST PAGE, not a width effect (a 2248 px popup printed the same 24 rows) - cured by legacyscroll-1.0.0 in the day-grid lane */
       var left = wa ? (wa.left + wa.width - W) : 40, top = wa ? (wa.top + 40) : 40;
       var orig = { windowId: t2.windowId, index: t2.index };
       var w = await chrome.windows.create({ tabId: tab.id, focused: false, type: 'normal', state: 'normal', left: left, top: top, width: W, height: H });
@@ -9409,14 +9409,16 @@ async function mlsSchedDomInline(doc, CFG){
        and keep every unresolved non-slot row in candidate accounting so an
        ambiguous roster fails closed instead of silently importing a subset. */
     try{
-      /* legacysettle-1.0.0 (3.0.140): the classic day grid appends its provider/department sections after the
-         date navigation; reading once mid-load imported half a day. Wait until the row count holds across two
-         looks (bounded, hidden-safe, same action guard), and record what the grid printed (headings only). */
+      /* legacysettle-1.0.0 (3.0.140) + legacyscroll-1.0.0 (3.0.142): athena's classic day grid LAZY-LOADS on scroll -
+         it paints a first page (measured: 24 of 44 rows; the rest ~1 s after the list is scrolled to its end). Scroll
+         the list to its end before every look; read only after two looks agree (bounded, hidden-safe, same guard). */
       try {
         var _lsCount = function () { try { return doc.querySelectorAll('[class~="filled-appointment-row"]').length; } catch (_eLsC) { return 0; } };
-        var _lsPrev = -1, _lsNow = _lsCount(), _lsFirst = _lsNow, _lsLooks = 0;
-        while (_lsLooks < 4 && _lsNow !== _lsPrev && __scheduleActionAllowed()) { _lsPrev = _lsNow; if (!(await __scheduleActionSleep(700))) break; _lsLooks++; _lsNow = _lsCount(); }
-        out.diag.legacySettleLooks = _lsLooks; out.diag.legacyRowsFirst = _lsFirst; out.diag.legacyRowsFinal = _lsNow; out.diag.legacySettled = (_lsNow === _lsPrev);
+        var _lsScroll = function () { try { var sc = doc.querySelector('div.appointments'); if (!sc) return false; sc.scrollTop = sc.scrollHeight; try { sc.dispatchEvent(new Event('scroll', { bubbles: true })); } catch (_eLsE) {} return true; } catch (_eLsS) { return false; } };
+        var _lsPrev = -1, _lsNow = _lsCount(), _lsFirst = _lsNow, _lsLooks = 0, _lsScrolls = 0, _lsStable = 0;
+        while (_lsLooks < 10 && _lsStable < 2 && __scheduleActionAllowed()) { _lsPrev = _lsNow; if (_lsScroll()) _lsScrolls++; if (!(await __scheduleActionSleep(1000))) break; _lsLooks++; _lsNow = _lsCount(); _lsStable = (_lsNow === _lsPrev) ? _lsStable + 1 : 0; }
+        try { var _lsSc0 = doc.querySelector('div.appointments'); if (_lsSc0) _lsSc0.scrollTop = 0; } catch (_eLsR) {}
+        out.diag.legacySettleLooks = _lsLooks; out.diag.legacyRowsFirst = _lsFirst; out.diag.legacyRowsFinal = _lsNow; out.diag.legacySettled = (_lsStable >= 2); out.diag.legacyScrolls = _lsScrolls;
         var _lsList = doc.querySelector('[class~="appointments-container"]'), _lsSections = [], _lsCur = null;
         if (_lsList) { [].slice.call(_lsList.children).forEach(function (c) { var cls = String(c.className || ''); if (/appointment-header/.test(cls)) { _lsCur = { h: String(c.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 30), n: 0 }; if (_lsSections.length < 12) _lsSections.push(_lsCur); } else if (/filled-appointment-row/.test(cls) && _lsCur) { _lsCur.n++; } }); }
         out.diag.legacySections = _lsSections;
@@ -10053,7 +10055,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
         } catch (__eAC) {}
         var __receipt = {
           bandNormalize: (__dd && __dd.bandNormalize) || null, /* bandnormalize-1.0.0 (3.0.117): PHI-free - counts and flags only */
-          reader: { strategy: String(__dd.strategy || ''), via: String(__dd.via || ''), apptCount: Number(__dd.apptCount || 0), providerCount: Number(__dd.providerCount || 0), tables: Number(__dd.tables || 0), rowsScanned: Number(__dd.rowsScanned || 0), scrolled: !!__dd.scrolled, sectionHeaders: Number(__dd.sectionHeaders || 0), sectionTagged: Number(__dd.sectionTagged || 0), stackedTagged: Number(__dd.stackedTagged || 0), columnTagged: Number(__dd.columnTagged || 0), headingRows: Number(__dd.headingRows || 0), coordErr: String(__dd.coordErr || '').slice(0, 60), settleLooks: Number(__dd.legacySettleLooks || 0), rowsFirst: Number(__dd.legacyRowsFirst || 0), rowsFinal: Number(__dd.legacyRowsFinal || 0), settled: __dd.legacySettled !== false, sections: (Array.isArray(__dd.legacySections) ? __dd.legacySections : []).slice(0, 12).map(function (s) { return { h: String(s && s.h || '').slice(0, 30), n: Number(s && s.n || 0) }; }) }, /* readerdiag-1.0.0: PHI-free reader trace; legacysettle-1.0.0 (3.0.140) */
+          reader: { strategy: String(__dd.strategy || ''), via: String(__dd.via || ''), apptCount: Number(__dd.apptCount || 0), providerCount: Number(__dd.providerCount || 0), tables: Number(__dd.tables || 0), rowsScanned: Number(__dd.rowsScanned || 0), scrolled: !!__dd.scrolled, sectionHeaders: Number(__dd.sectionHeaders || 0), sectionTagged: Number(__dd.sectionTagged || 0), stackedTagged: Number(__dd.stackedTagged || 0), columnTagged: Number(__dd.columnTagged || 0), headingRows: Number(__dd.headingRows || 0), coordErr: String(__dd.coordErr || '').slice(0, 60), settleLooks: Number(__dd.legacySettleLooks || 0), rowsFirst: Number(__dd.legacyRowsFirst || 0), rowsFinal: Number(__dd.legacyRowsFinal || 0), settled: __dd.legacySettled !== false, scrolls: Number(__dd.legacyScrolls || 0), sections: (Array.isArray(__dd.legacySections) ? __dd.legacySections : []).slice(0, 12).map(function (s) { return { h: String(s && s.h || '').slice(0, 30), n: Number(s && s.n || 0) }; }) }, /* readerdiag-1.0.0: PHI-free reader trace; legacysettle-1.0.0 (3.0.140); legacyscroll-1.0.0 (3.0.142) */
           sessionProof: __sessionProof, staleRisk: __staleRisk, liveSessionProven: !!__live.proven, dataAgeMs: __dataAgeMs, scheduleVerified: true, requestId: __schedRequestId, complete: !!__complete, authoritativeEmpty: !!__authoritativeEmpty,
           expectedCount: __expectedCount, candidateCount: __candidateCount, parsedCount: __parsedCount, unverifiableRows: __unverifiableRows, unverifiableRowCount: __unverifiableRowCount, provenNonClinicalCount: __provenNonClinical,
           countStrategy: __countStrategy,
