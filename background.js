@@ -13685,7 +13685,7 @@ function mlsExactIdentityPair(expected, observed) {
   return {ok:true,reason:'exact-name+dob',mrnConflict:!!(expected.mrn && observed.mrn && String(expected.mrn) !== String(observed.mrn))};
 }
 
-    var __gr = mlsExactIdentityPair(frozen, live); /* visitsshadow-1.0.0 (3.0.144): athena's banner prints a used name and a legal name; the read path accepts either exact pair (chartNameViaLegal) - so does this gate, DOB still exact */ if (__gr && !__gr.ok && __gr.reason === 'same-frame-name-mismatch' && live && Array.isArray(live.altNames)) { for (var __ai = 0; __ai < live.altNames.length && __ai < 3; __ai++) { var __alt = mlsExactIdentityPair(frozen, { name: live.altNames[__ai], dob: live.dob, mrn: live.mrn }); if (__alt && __alt.ok) { __alt.viaAltName = true; return __alt; } } } return __gr;
+    var __gr = mlsExactIdentityPair(frozen, live); /* visitsshadow-1.0.0 (3.0.144): athena's banner prints a used name and a legal name; the read path accepts either exact pair (chartNameViaLegal) - so does this gate, DOB still exact */ if (__gr && !__gr.ok && __gr.reason === 'same-frame-name-mismatch' && live && Array.isArray(live.altNames)) { for (var __ai = 0; __ai < live.altNames.length && __ai < 3; __ai++) { var __alt = mlsExactIdentityPair(frozen, { name: live.altNames[__ai], dob: live.dob, mrn: live.mrn }); if (__alt && __alt.ok) { __alt.viaAltName = true; __alt.matchedName = String(live.altNames[__ai]); return __alt; } } } return __gr;
   }
   function realVisit(v, minLen) {
     if (!v) return false;
@@ -14101,7 +14101,7 @@ function mlsExactIdentityPair(expected, observed) {
         }
         if (!ecRelaxed) ecSeen.push({ url: ecNoise ? 'shared-ui' : 'chart-ui', score: ecScoreN, identityPresent: !!(ecIdentity && ecIdentity.name), drop: ecDrop || (ecNoise ? 'noise-identity-verified' : 'kept') });
         if (ecDrop) continue;
-        if (!ecPicked || ecGate.ok) { identity = ecIdentity; gate = ecGate; ecPicked = true; }
+        if (!ecPicked || ecGate.ok) { identity = (ecGate && ecGate.ok && ecGate.viaAltName && ecGate.matchedName && ecIdentity) ? Object.assign({}, ecIdentity, { namePrinted: ecIdentity.name, name: ecGate.matchedName, nameViaAlt: true }) : ecIdentity; gate = ecGate; ecPicked = true; } /* visitsalt-1.0.0 (3.0.145): the result identity carries the printed name the gate matched */
         if (ecGate.ok) { enumRes = ecCand.result; listFrame = ecCand.frameId; break; }
         if (Date.now() >= readDeadline) break;
         touchVisitLease();
@@ -16288,19 +16288,19 @@ function mlsExactIdentityPair(expected, observed) {
              tabs painted yet (measured); retry the date navigation a few times while that is the
              only answer, three seconds apart, under the absolute open deadline. */
           var regroundX = null;
-          for (var rgTry = 0; rgTry < 4; rgTry++) {
+          for (var rgTry = 0; rgTry < 10; rgTry++) { /* restorehome-1.2.0 (3.0.145): up to ten tries (~30 s) while the only answer is the empty strip */
             regroundX = await execOpen({ target: { tabId: tab.id, allFrames: true }, args: [frozenScheduleDate, false, openGuard], func: mlsAthenaGotoDate }, 40000);
             if (regroundX.timeout) break;
             var rgResults = (regroundX.r || []).map(function (entry) { return entry && entry.result; }).filter(Boolean);
             var rgVerified = rgResults.some(function (value) { return value.done === true && value.dateUnverified !== true; });
             var rgEmptyStripOnly = !rgVerified && rgResults.some(function (value) { return value.reason === 'weekstrip-empty'; }) && rgResults.every(function (value) { return value.reason === 'weekstrip-empty' || value.found === false; });
-            if (rgVerified || !rgEmptyStripOnly || rgTry === 3) break;
+            if (rgVerified || !rgEmptyStripOnly || rgTry === 9) break;
             if (!(await waitOpen(3000))) { failOpenDeadline(stage || 'exact schedule restoration'); return false; }
           }
           if (regroundX.timeout) { failOpenDeadline(stage || 'exact schedule restoration'); return false; }
           var verifiedDates = (regroundX.r || []).map(function (entry) { return entry && entry.result; }).filter(function (value) { return value && value.done === true && value.dateUnverified !== true && /^\d{4}-\d{2}-\d{2}$/.test(String(value.schedDate || '')); });
           var regroundOk = verifiedDates.length > 0 && verifiedDates.every(function (value) { return String(value.schedDate) === frozenScheduleDate; });
-          if (!regroundOk) { sendResponse({ ok: false, opened: false, reason: 'schedule-date-restore-failed', error: 'The exact requested date could not be verified. No appointment was opened.', diag: { route: 'schedule', scheduleRegrounds: scheduleRegrounds, scheduleDateVerified: false, stage: String(stage || '').slice(0, 40), regroundFrames: (regroundX.r || []).map(function (entry) { return entry && entry.result; }).filter(Boolean).slice(0, 8).map(function (v) { return { done: v.done === true, unverified: v.dateUnverified === true, dateMatch: String(v.schedDate || '') === frozenScheduleDate, steps: Number(v.steps || 0), head: String(v.error || v.dateUnverifiedReason || '').replace(/\d{4}-\d{2}-\d{2}/g, 'D').slice(0, 70) }; }) } }); return false; } /* restorediag-1.0.0 (3.0.130) */
+          if (!regroundOk) { sendResponse({ ok: false, opened: false, reason: 'schedule-date-restore-failed', error: 'The exact requested date could not be verified. No appointment was opened.', diag: { route: 'schedule', scheduleRegrounds: scheduleRegrounds, scheduleDateVerified: false, stage: String(stage || '').slice(0, 40), regroundTries: rgTry + 1, regroundFrames: (regroundX.r || []).map(function (entry) { return entry && entry.result; }).filter(Boolean).slice(0, 8).map(function (v) { return { done: v.done === true, unverified: v.dateUnverified === true, dateMatch: String(v.schedDate || '') === frozenScheduleDate, steps: Number(v.steps || 0), head: String(v.error || v.dateUnverifiedReason || '').replace(/\d{4}-\d{2}-\d{2}/g, 'D').slice(0, 70) }; }) } }); return false; } /* restorediag-1.0.0 (3.0.130) */
           return true;
         }
         async function waitOpen(ms) {

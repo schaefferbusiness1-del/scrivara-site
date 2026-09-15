@@ -19,7 +19,8 @@ const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'u
 // 3.0.142: legacyscroll-1.0.0 (athena's classic day grid lazy-loads on scroll; the legacy lane scrolls the list to its end before every look and reads after two agreeing looks; the 3.0.141 width theory is withdrawn in place); native persistence remains verified.
 // 3.0.143: rowscroll-1.0.0 (the schedule-row opener's sweep considers div.appointments and waits once at the bottom for athena's lazy page); native persistence remains verified.
 // 3.0.144: visitsshadow-1.0.0 (the visits driver reads athena's shadow-root banner first; the visits identity gate accepts the banner's other printed name, DOB exact) + rowveto-1.0.0 (problem/medication/history rows never form an encounter index); native persistence remains verified.
-assert.strictEqual(manifest.version, '3.0.144', 'regression must exercise the 3.0.144 candidate');
+// 3.0.145: restorehome-1.2.0 (the exact-schedule re-ground retries the date navigation up to ten times, about 30 s, while the only answer is the empty week strip; the refusal diag counts the tries) + visitsalt-1.0.0 (a visits result identity carries the printed name the gate matched; the primary rides as namePrinted); native persistence remains verified.
+assert.strictEqual(manifest.version, '3.0.145', 'regression must exercise the 3.0.145 candidate');
 const coreSha = (manifest.version_name.match(/core-sha256:([0-9a-f]{64})/) || [])[1];
 assert(coreSha, 'candidate manifest is missing its core hash');
 const computedCoreSha = execFileSync(process.execPath, [path.join(root, 'scripts', 'extension-core-digest.js')], { encoding: 'utf8' }).trim();

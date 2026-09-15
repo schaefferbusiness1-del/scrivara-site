@@ -35,13 +35,14 @@ const copy = fnBlock(driver, '    function visitsShadowBanner(doc) {');
 const strip = (s) => s.replace(/^[^\n]*\n/, '').replace(/\s+/g, ' ');
 eq(strip(copy), strip(probe), 'the copy is word-for-word the write probe\'s helper below its header');
 const gateSrc = fnBlock(bg, '  function visitIdentityGate(frozen, live) {');
-ok(gateSrc.includes('__alt.viaAltName = true; return __alt;'), 'the gate accepts an exact alternative printed name');
+ok(gateSrc.includes('__alt.viaAltName = true; __alt.matchedName = String(live.altNames[__ai]); return __alt;'), 'the gate accepts an exact alternative printed name and names it (visitsalt-1.0.0, 3.0.145)');
+ok(bg.includes("Object.assign({}, ecIdentity, { namePrinted: ecIdentity.name, name: ecGate.matchedName, nameViaAlt: true })"), 'the adopted frame identity carries the matched name, the printed name rides as namePrinted (visitsalt-1.0.0)');
 
 /* the gate in Node */
 const gate = new Function(gateSrc + '\nreturn visitIdentityGate;')();
 let g = gate({ name: 'Robert Dunne', dob: '1980-01-02', mrn: '5551234' }, { name: 'Bob Dunne', dob: '01/02/1980', mrn: '5551234', altNames: ['Robert Dunne'] });
 eq(g.ok, true, 'the legal printed name matches the requested legal name through altNames');
-eq(g.viaAltName, true, 'and says so');
+eq(g.viaAltName, true, 'and says so'); eq(g.matchedName, 'Robert Dunne', 'and names the printed name it matched');
 g = gate({ name: 'Robert Dunne', dob: '1980-01-02', mrn: '5551234' }, { name: 'Bob Dunne', dob: '01/03/1980', mrn: '5551234', altNames: ['Robert Dunne'] });
 eq(g.ok, false, 'one day off in the DOB refuses even with a matching alternative name');
 g = gate({ name: 'Robert Dunne', dob: '1980-01-02', mrn: '5551234' }, { name: 'Bob Dunne', dob: '01/02/1980', mrn: '5551234', altNames: ['Alan Dunne'] });
