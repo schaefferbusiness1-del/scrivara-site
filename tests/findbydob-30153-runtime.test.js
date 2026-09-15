@@ -36,8 +36,9 @@ eq(toUs(keyFn, ''), '', 'no date of birth, no search text (the ladder never asks
 
 /* findbydob-1.1.0 (3.0.154): the by-DOB rows' shapes travel as closed codes, never names */
 ok(bg.includes("return {rowName:rowName /* findbydob-1.1.0 (3.0.154): stays inside the driver; only the shape code below leaves */,ok:dates.length===1&&mlsExactIdentityPair("), 'the row name stays inside the driver');
-ok(bg.includes("if(byDob&&evidence.dobHit&&__dobShapes.length<4)__dobShapes.push(__shapeCode(name,evidence.rowName));"), 'DOB-hit rows are coded, at most four');
-ok(bg.includes("if(byDob)__fd.findByDobShape=__dobShapes.join('-'); /* findbydob-1.1.0 */ if(pool.length!==1) return {opened:false,attempted:false,reason:pool.length?'ambiguous':'no-name-match',count:pool.length,tier:'exact-name-dob',diag:__fd};"), 'the codes ride the unchanged refusal');
+ok(bg.includes("if(byDob&&evidence.dobHit){var __sc=__shapeCode(name,evidence.rowName);__dobShapes[__sc]=(__dobShapes[__sc]||0)+1;}"), 'EVERY DOB-hit row is coded (findbydob-1.2.0: a histogram, no four-row cap)');
+ok(bg.includes("if(byDob)__fd.findByDobShape=Object.keys(__dobShapes).sort().map(function(k){return k+'x'+__dobShapes[k];}).join('-').slice(0,40); /* findbydob-1.2.0 (3.0.155): every DOB-hit row, as code x count */ if(pool.length!==1) return {opened:false,attempted:false,reason:pool.length?'ambiguous':'no-name-match',count:pool.length,tier:'exact-name-dob',diag:__fd};"), 'the codes ride the unchanged refusal as code x count');
+ok(bg.includes(" var __dobShapes = {}; function __shapeCode(req, row) {"), 'the shape store is a histogram');
 ok(bg.includes("findByDobShape: String((frd && frd.diag && frd.diag.findByDobShape) || ''), dobFindRows: Number(frd && frd.diag && frd.diag.findRows) || 0, dobFindDobHit: Number(frd && frd.diag && frd.diag.findDobHit) || 0, dobFindNameHit: Number(frd && frd.diag && frd.diag.findNameHit) || 0, dobFindAltRows: Number(frd && frd.diag && frd.diag.findAltRows) || 0 }"), 'the ladder carries the by-DOB counts and codes');
 ok(ct.includes("'dobFindRows', 'dobFindDobHit', 'dobFindNameHit', 'dobFindAltRows' /* findbydob-1.1.0 (3.0.154) */"), 'content.js allowlists the by-DOB counts');
 ok(ct.includes("'findByDobShape' /* findbydob-1.1.0 (3.0.154) */"), 'content.js carries the shape code through the closed sanitizer');

@@ -10431,7 +10431,9 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
            day/month pull pattern) must wait for THAT patient's banner, not accept
            whatever identity some stale/lurking frame still carries. */
         const expectName = want || ((self.__mlsExpectOpen && (Date.now() - self.__mlsExpectOpen.at) < 180000) ? self.__mlsExpectOpen.name : '');
-        const nmm = (a, b) => { const nz = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim(); const ta = nz(a).split(' ').filter(x => x.length > 1), tb = nz(b).split(' ').filter(x => x.length > 1); const o = ta.filter(x => tb.indexOf(x) >= 0).length; return o >= 2 || (o >= 1 && Math.min(ta.length, tb.length) === 1); };
+        const __nmmOverlap = (a, b) => { const nz = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim(); const ta = nz(a).split(' ').filter(x => x.length > 1), tb = nz(b).split(' ').filter(x => x.length > 1); return { o: ta.filter(x => tb.indexOf(x) >= 0).length, na: ta.length, nb: tb.length }; }; /* pollaccept-1.0.0 (3.0.155): the shared-token count, also as a PHI-free poll code */
+        const nmm = (a, b) => { const r = __nmmOverlap(a, b); return r.o >= 2 || (r.o >= 1 && Math.min(r.na, r.nb) === 1); };
+        const __dobExactHere = (c) => !!(wantDob && c && mlsExactDobKey(c.dob) && mlsExactDobKey(c.dob) === mlsExactDobKey(wantDob));
         const exactBootstrapName = (observed, expected) => !!mlsExactNameKey(expected) && mlsExactNameKey(observed) === mlsExactNameKey(expected);
         const validBootstrapDob = (value) => !!mlsExactDobKey(value) && (!wantDob || mlsExactDobKey(value) === mlsExactDobKey(wantDob));
         const bootstrapLiveIdsAgree = (selected, candidates) => {
@@ -10503,10 +10505,12 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
               if (sIdent && (!cand || cand.via !== 'banner' || (sIdent.score || 0) > (cand.score || 0))) cand = sIdent;
             }
           }
-          __chartStage = 'identity poll ' + polls + (cand && cand.name ? ((expectName && !nmm(cand.name, expectName)) ? ' other' : ' match') : ' none'); /* readstage-1.1.0 (3.0.137): which banner the poll saw, as a word */
+          __chartStage = 'identity poll ' + polls + (cand && cand.name ? ((expectName && !nmm(cand.name, expectName)) ? ' other' : ' match') : ' none') + (cand && cand.name && expectName ? (' o' + __nmmOverlap(cand.name, expectName).o + 'd' + (__dobExactHere(cand) ? 1 : 0)) : ''); /* readstage-1.1.0 (3.0.137): which banner the poll saw, as a word; pollaccept-1.0.0 (3.0.155): shared tokens + DOB-exact as codes */
           bootstrapReadyEarly = !!(bootstrapIdentity && cand && cand.name && expectName && nmm(cand.name, expectName) && bootstrapIdentityReady(cand, identityFrameResults));
           /* the RIGHT patient found (any via) -> done */
           if (cand && cand.name && expectName && nmm(cand.name, expectName) && (!bootstrapIdentity || (polls >= 2 && bootstrapIdentityReady(cand, identityFrameResults)))) { ident = cand; if (!bootstrapIdentity) try { self.__mlsExpectOpen = null; } catch (e) {} break; }
+          /* pollaccept-1.0.0 (3.0.155): outside the bootstrap lease, a banner-grade candidate with the EXACT expected DOB and at least one shared name token is the expected patient printed under another name shape - no weaker than the 42 s catch-all below, and the app-side exact/alt name + DOB gate still judges the read. */
+          if (!bootstrapIdentity && polls >= 2 && cand && cand.name && expectName && (cand.score || 0) >= 0 && /^(?:banner|shadow-banner|shadow-labels)$/.test(String(cand.via || '')) && __dobExactHere(cand) && __nmmOverlap(cand.name, expectName).o >= 1) { ident = cand; __chartStage += ' dob-exact'; try { self.__mlsExpectOpen = null; } catch (eDx) {} break; }
           /* no expectation: a banner IS the open chart -> done (pre-v1.60 behavior, banner-only) */
           if (cand && cand.name && !expectName && cand.via === 'banner') { ident = cand; break; }
           /* catch-all: budget nearly spent - return the best we have; the app-side
@@ -10542,7 +10546,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
               const qpSettled = await chartSettle(self.__mlsQpEnsure(tab, sender && sender.tab && sender.tab.id), 8000);
               if (!qpSettled || !qpSettled.ok || chartExpired()) { chartFailDeadline('quiet Athena work-tab setup'); return; }
             }
-            if (!(await chartWait(1800))) { chartFailDeadline('clinical chart load'); return; } /* v2.9.40 speed: shorter first settle - the identity loop keeps re-probing under the same budget; cadence exonerated by the v2.9.34-36 reverted-run forensics */
+            if (!(await chartWait(1800))) { chartFailDeadline('clinical chart load p' + polls + ' n' + noClickRounds + ' b' + (sawBriefing ? 1 : 0)); return; } /* v2.9.40 speed: shorter first settle - the identity loop keeps re-probing under the same budget; cadence exonerated by the v2.9.34-36 reverted-run forensics */
             continue;
           }
           if (navClicked) {
@@ -10556,7 +10560,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
           }
           noClickRounds++;
           if (briefingNow && noClickRounds >= 5 && !navClicked) break; /* exam-prep with nothing safe to click -> fail honestly below */
-          if (!(await chartWait(bootstrapReadyEarly ? 600 : (polls < 3 ? 1200 : 2400)))) { chartFailDeadline('clinical chart readiness'); return; } /* v2.9.40 speed: faster early polls, same acceptance + budgets */
+          if (!(await chartWait(bootstrapReadyEarly ? 600 : (polls < 3 ? 1200 : 2400)))) { chartFailDeadline('clinical chart readiness p' + polls + ' n' + noClickRounds + ' b' + (sawBriefing ? 1 : 0)); return; } /* v2.9.40 speed: faster early polls, same acceptance + budgets */
         }
         if (chartExpired()) { chartFailDeadline('clinical chart readiness'); return; }
         __chartStage = 'identity settled after ' + polls + ' polls';
@@ -15916,16 +15920,16 @@ function mlsExactIdentityPair(expected, observed) {
         return {rowName:rowName /* findbydob-1.1.0 (3.0.154): stays inside the driver; only the shape code below leaves */,ok:dates.length===1&&mlsExactIdentityPair({name:name,dob:dob},{name:rowName,dob:dates[0]}).ok,dob:dates.length===1?dates[0]:'',dobHit:__dobHit,nameHit:__nameHit,alt:/\(|\blegal\b|\bpreferred\b/i.test(cells.join(' ')),mrnHit:!!wantMrn&&cells.some(function(x){return mrnCellMatches(x,wantMrn);}),dobVeto:dates.length===1&&!!mlsExactDobKey(dob)&&dates[0]!==mlsExactDobKey(dob)}; /* findmrn-1.0.0 (3.0.149): the row's MRN evidence and its DOB veto */
       }
       var exact = [], prefix = [], pool = [], mrnNarrowed = false;
-      var __fd = { findRows: 0, findDobHit: 0, findNameHit: 0, findDobOnly: 0, findAltRows: 0, findMrnHit: 0 }; var mrnPool = []; var __dobShapes = []; function __shapeCode(req, row) { /* findbydob-1.1.0 (3.0.154): a closed code, never a name */ function toks(s) { var r = String(s || '').toLowerCase(); try { r = r.normalize('NFKD').replace(/[\u0300-\u036f]/g, ''); } catch (e0) {} var ps = r.split(','); if (ps.length === 2) r = ps[1] + ' ' + ps[0]; return r.replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(function (t) { return t && !/^(mr|mrs|ms|miss|dr|prof|jr|sr|ii|iii|iv)$/.test(t); }); } var a = toks(req), b = toks(row); if (!a.length || !b.length) return 'n' + a.length + b.length; var af = a[0], al = a[a.length - 1], bf = b[0], bl = b[b.length - 1]; var c = 'n'; if (mlsExactNameKey(req) && mlsExactNameKey(req) === mlsExactNameKey(row)) c = 'e'; else if (af === bl && al === bf) c = 's'; else if (al === bl) c = 'l' + ((af.indexOf(bf) === 0 || bf.indexOf(af) === 0) ? 'p' : 'x'); else if (af === bf) c = 'f' + ((b.indexOf(al) >= 0 || a.indexOf(bl) >= 0) ? 'h' : 'x'); else if (a.every(function (t) { return b.indexOf(t) >= 0; })) c = 'c'; else if (b.every(function (t) { return a.indexOf(t) >= 0; })) c = 'r'; return c + Math.min(9, a.length) + Math.min(9, b.length); } /* findmrn-1.0.0 (3.0.149) */ /* finddiag-1.0.0 (3.0.137): counts only, never a name or DOB */
+      var __fd = { findRows: 0, findDobHit: 0, findNameHit: 0, findDobOnly: 0, findAltRows: 0, findMrnHit: 0 }; var mrnPool = []; var __dobShapes = {}; function __shapeCode(req, row) { /* findbydob-1.1.0 (3.0.154): a closed code, never a name */ function toks(s) { var r = String(s || '').toLowerCase(); try { r = r.normalize('NFKD').replace(/[\u0300-\u036f]/g, ''); } catch (e0) {} var ps = r.split(','); if (ps.length === 2) r = ps[1] + ' ' + ps[0]; return r.replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(function (t) { return t && !/^(mr|mrs|ms|miss|dr|prof|jr|sr|ii|iii|iv)$/.test(t); }); } var a = toks(req), b = toks(row); if (!a.length || !b.length) return 'n' + a.length + b.length; var af = a[0], al = a[a.length - 1], bf = b[0], bl = b[b.length - 1]; var c = 'n'; if (mlsExactNameKey(req) && mlsExactNameKey(req) === mlsExactNameKey(row)) c = 'e'; else if (af === bl && al === bf) c = 's'; else if (al === bl) c = 'l' + ((af.indexOf(bf) === 0 || bf.indexOf(af) === 0) ? 'p' : 'x'); else if (af === bf) c = 'f' + ((b.indexOf(al) >= 0 || a.indexOf(bl) >= 0) ? 'h' : 'x'); else if (a.every(function (t) { return b.indexOf(t) >= 0; })) c = 'c'; else if (b.every(function (t) { return a.indexOf(t) >= 0; })) c = 'r'; return c + Math.min(9, a.length) + Math.min(9, b.length); } /* findmrn-1.0.0 (3.0.149) */ /* finddiag-1.0.0 (3.0.137): counts only, never a name or DOB */
       for (var c=0;c<chartAs.length;c++) {
         var tr=chartAs[c].closest ? chartAs[c].closest('tr') : null;
         if(!tr) continue;
         var evidence=exactResultRow(tr);
-        __fd.findRows++; if(byDob&&evidence.dobHit&&__dobShapes.length<4)__dobShapes.push(__shapeCode(name,evidence.rowName)); if(evidence.dobHit)__fd.findDobHit++; if(evidence.nameHit)__fd.findNameHit++; if(evidence.dobHit&&!evidence.nameHit)__fd.findDobOnly++; if(evidence.dobHit&&evidence.alt)__fd.findAltRows++;
+        __fd.findRows++; if(byDob&&evidence.dobHit){var __sc=__shapeCode(name,evidence.rowName);__dobShapes[__sc]=(__dobShapes[__sc]||0)+1;} if(evidence.dobHit)__fd.findDobHit++; if(evidence.nameHit)__fd.findNameHit++; if(evidence.dobHit&&!evidence.nameHit)__fd.findDobOnly++; if(evidence.dobHit&&evidence.alt)__fd.findAltRows++;
         if(evidence.ok) pool.push({a:chartAs[c],dob:evidence.dob,mrnMatched:false}); else if(evidence.mrnHit&&!evidence.dobVeto){__fd.findMrnHit++; mrnPool.push({a:chartAs[c],dob:evidence.dob,mrnMatched:true});} /* findmrn-1.0.0 */
       }
       if(pool.length===0&&mrnPool.length===1){pool=mrnPool;mrnNarrowed=true;} /* findmrn-1.0.0 (3.0.149): the owner's rule - an exact MRN with no contradicting DOB identifies the row when the printed name does not; two MRN rows stay refused */
-      if(byDob)__fd.findByDobShape=__dobShapes.join('-'); /* findbydob-1.1.0 */ if(pool.length!==1) return {opened:false,attempted:false,reason:pool.length?'ambiguous':'no-name-match',count:pool.length,tier:'exact-name-dob',diag:__fd};
+      if(byDob)__fd.findByDobShape=Object.keys(__dobShapes).sort().map(function(k){return k+'x'+__dobShapes[k];}).join('-').slice(0,40); /* findbydob-1.2.0 (3.0.155): every DOB-hit row, as code x count */ if(pool.length!==1) return {opened:false,attempted:false,reason:pool.length?'ambiguous':'no-name-match',count:pool.length,tier:'exact-name-dob',diag:__fd};
       /* rowreverify-1.0.0 (3.0.117, measured live 2026-09-11): the result list
          RE-ORDERS between the read that chose a row and the click that opens it,
          so the chart that opened was a different person's and the app-side merge

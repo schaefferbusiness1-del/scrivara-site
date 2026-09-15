@@ -29,7 +29,8 @@ const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'u
 // 3.0.152: axscoped-1.1.0 (a scoped day's population is the harvested in-day encounters plus every classic index row the harvest did not cover whose printed date is the day or unknown, plus any declared total beyond both; receipt counts them); native persistence remains verified.
 // 3.0.153: findbydob-1.0.0 (after every name shape answers no-results, the open handler asks athena's Find once by date of birth; the driver's exact-pair/MRN row gate still decides)
 // 3.0.154: findbydob-1.1.0 (the by-DOB rows' shapes travel as closed codes; gate untouched)
-assert.strictEqual(manifest.version, '3.0.154', 'regression must exercise the 3.0.154 candidate');
+// 3.0.155: pollaccept-1.0.0 (DOB-exact banner ends the identity poll outside the bootstrap lease; poll codes) + findbydob-1.2.0 (shape histogram)
+assert.strictEqual(manifest.version, '3.0.155', 'regression must exercise the 3.0.155 candidate');
 const coreSha = (manifest.version_name.match(/core-sha256:([0-9a-f]{64})/) || [])[1];
 assert(coreSha, 'candidate manifest is missing its core hash');
 const computedCoreSha = execFileSync(process.execPath, [path.join(root, 'scripts', 'extension-core-digest.js')], { encoding: 'utf8' }).trim();
