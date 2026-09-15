@@ -12605,7 +12605,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           if (el.tagName === 'A') {
             var ah = String(el.getAttribute('href') || '');
             var am = ah.match(/\/(\d+)\/\d+\/ax\/encounter\/(\d+)\/(\w+)/);
-            if (am && axAcc.length < 80) axAcc.push({ eid: am[2], route: am[3], hrefPath: ah.replace(/[#?].*$/, '') });
+            if (am && axAcc.length < 80) { var axLd = ''; try { var axCtx = String(el.textContent || '').replace(/\s+/g, ' '); if (!/\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}/.test(axCtx) && el.parentElement) axCtx = String(el.parentElement.textContent || '').replace(/\s+/g, ' ').slice(0, 200); var axLm = axCtx.match(/\b(\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4})\b/); if (axLm) axLd = axLm[1]; } catch (eLd) {} axAcc.push({ eid: am[2], route: am[3], hrefPath: ah.replace(/[#?].*$/, ''), listDate: axLd }); } /* axlistdate-1.0.0 (3.0.151): the date athena prints beside the encounter link */
           }
           var at = el.getAttribute && el.getAttribute('data-testid');
           if (at) axTids[String(at).replace(/\d{3,}/g, 'N').slice(0, 30)] = 1;
@@ -12613,7 +12613,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       })(document, 0);
       var axSeenEid = {}, axUnique = [];
       for (var au = 0; au < axAcc.length; au++) { if (!axSeenEid[axAcc[au].eid]) { axSeenEid[axAcc[au].eid] = 1; axUnique.push(axAcc[au]); } }
-      return { ok: true, encounters: axUnique, surfaceSig: { route: String(location.pathname || '').replace(/\d{4,}/g, 'N').slice(0, 60), testids: Object.keys(axTids).sort().slice(0, 20), shadowN: axShadowN, nodes: axNodes } };
+      return { ok: true, encounters: axUnique, briefingPath: (typeof location !== 'undefined' ? String(location.pathname || '') : ''), surfaceSig: { route: String(location.pathname || '').replace(/\d{4,}/g, 'N').slice(0, 60), testids: Object.keys(axTids).sort().slice(0, 20), shadowN: axShadowN, nodes: axNodes } };
     }
     if (op === 'briefingGo') {
       /* im-3074: engine-owned recovery navigation of THIS frame to a chart
@@ -12823,7 +12823,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
       }
       if (!g) {
-        if (explicitEmptyVisits()) return { ok: true, selector: 'verified-empty-state', count: 0, renderedCount: 0, declaredCount: 0, score: 0, rows: [], indexComplete: true, authoritativeEmpty: true, frameUrl: (function () { try { return String(location.href).slice(0, 220); } catch (eU2) { return ''; } })() };
+        if (explicitEmptyVisits() && !/\/ax\/encounter\//i.test(typeof location !== 'undefined' ? String(location.pathname || '') : '')) return { ok: true, selector: 'verified-empty-state', /* axlistdate-1.0.0: an encounter page is not the visits list */ count: 0, renderedCount: 0, declaredCount: 0, score: 0, rows: [], indexComplete: true, authoritativeEmpty: true, frameUrl: (function () { try { return String(location.href).slice(0, 220); } catch (eU2) { return ''; } })() };
         /* 3.0.47 (Matthew, live 2026-08-08): this bare return carried NO reason,
            so ten identical passes of it rendered as the cryptic [idx:other;0/0]
            and nobody could tell WHICH surface answered. Name the state and
@@ -14110,7 +14110,7 @@ function mlsExactIdentityPair(expected, observed) {
              identity proof. Only positively dated other-day encounters are
              excluded; caps, missing dates and missing index rows stay partial. */
           var axOnlyDate = String((frozenHint && frozenHint.onlyDate) || "");
-          var axDateSkipped = 0, axDateUnknown = 0, axScannedAll = axCap === axBest.encounters.length;
+          var axDateSkipped = 0, axDateUnknown = 0, axDateFromList = 0, axScannedAll = axCap === axBest.encounters.length; /* axlistdate-1.0.0 */
           for (var axI = 0; axI < axCap; axI++) {
             if (Date.now() + 6000 >= readDeadline) { axScannedAll = false; break; }
             var axE = axBest.encounters[axI]; axAttempted++;
@@ -14155,12 +14155,13 @@ function mlsExactIdentityPair(expected, observed) {
             /* scoped-census-30121: identity precedes every date decision.
                Unknown dates cannot prove that an encounter is out of scope. */
             if (axOnlyDate) {
-              var axBodyDate = mlsVisitDateKeyForHint(axBody.headerDate);
+              var axBodyDate = mlsVisitDateKeyForHint(axBody.headerDate) || mlsVisitDateKeyForHint(axE.listDate); if (axBodyDate && !mlsVisitDateKeyForHint(axBody.headerDate)) axDateFromList++; /* axlistdate-1.0.0 (3.0.151): the ax encounter page prints no labeled date; the list beside its link does */
               if (!axBodyDate) { axDateUnknown++; continue; }
               if (axBodyDate !== axOnlyDate) { axDateSkipped++; continue; }
             }
             axVisits.push({ date: axBody.headerDate || '', type: 'ax encounter', raw: axBody.raw, cpt: [], icd10: [], source: 'athena-copy', patientName: (axIdent && axIdent.name) || '', patientDob: (axIdent && axIdent.dob) || '', patientMrn: (axIdent && axIdent.mrn) || '', binding: { rowKey: 'enc:' + axE.eid, encounterId: axE.eid, index: axI } });
           }
+          if (axAttempted > 0 && axBest.briefingPath && /^\/\d+\/\d+\/ax\/briefing\/\d+$/.test(String(axBest.briefingPath))) { try { await exec(emrId, [axBestFrame], ['briefingGo', cfg, axBest.briefingPath]); await sleep(900); touchVisitLease(); } catch (eAxBack) {} } /* axlistdate-1.0.0 (3.0.151): never leave the frame on an encounter page - the next read would harvest it as an empty day */
           if (axVisits.length || axOnlyDate) {
             /* a scoped day with NO in-day encounters, scanned cleanly, is an
                HONEST empty success - not a refusal (qol-2.3) */
@@ -14175,7 +14176,7 @@ function mlsExactIdentityPair(expected, observed) {
             var axSameDay = axOnlyDate ? (axCoverageComplete ? (axKept ? 'saved' : 'absent') : 'partial') : '';
             return {
               ok: axCoverageComplete, reason: axCoverageComplete ? '' : 'visit-bodies-incomplete', identity: (axVisits[0] ? { name: axVisits[0].patientName, dob: axVisits[0].patientDob, mrn: axVisits[0].patientMrn } : identity), visits: axVisits, diag: diag,
-              receipt: { complete: axCoverageComplete, indexComplete: true, indexRowsKnown: (total || 0), /* axh-3073 */ bodyComplete: axCoverageComplete, fullDetail: axCoverageComplete, onlyDate: axOnlyDate, scopeDate: axOnlyDate, sameDayStatus: axSameDay, noSubstitution: !!axOnlyDate, absenceProven: axSameDay === 'absent', temporalAuthority: axOnlyDate ? (axTodayValid ? 'account-local' : 'absent') : undefined, axDateSkipped: axDateSkipped, dateUnknownRows: axDateUnknown, expected: axExpected, parsed: axKept, attempted: axAttempted, notAttempted: Math.max(0, axKnown - axAttempted), failures: axRefused + axShapeUnknown + axDateUnknown, cap: cfg.maxVisits, retryCount: 0, surfaceResets: 0, surfaceResetOps: [], chartSurface: 'clincmp-ax-route', axEntry: rrFromPartial ? 'body-depth' : 'starved-walk', axEncounters: axTotalE, axRefused: axRefused, axShapeUnknown: axShapeUnknown, axSigs: axSigs.slice(0, 6), axRouteMs: Date.now() - axT0, axRrWaitMs: rrWait, axRrRecovered: rrRecovered, identityVerified: true, stableKeysComplete: true, timeBudgetMs: readBudgetMs, elapsedMs: Math.max(0, Date.now() - readStartedAt) },
+              receipt: { complete: axCoverageComplete, indexComplete: true, indexRowsKnown: (total || 0), /* axh-3073 */ bodyComplete: axCoverageComplete, fullDetail: axCoverageComplete, onlyDate: axOnlyDate, scopeDate: axOnlyDate, sameDayStatus: axSameDay, noSubstitution: !!axOnlyDate, absenceProven: axSameDay === 'absent', temporalAuthority: axOnlyDate ? (axTodayValid ? 'account-local' : 'absent') : undefined, axDateSkipped: axDateSkipped, dateUnknownRows: axDateUnknown, dateFromListRows: axDateFromList, expected: axExpected, parsed: axKept, attempted: axAttempted, notAttempted: Math.max(0, axKnown - axAttempted), failures: axRefused + axShapeUnknown + axDateUnknown, cap: cfg.maxVisits, retryCount: 0, surfaceResets: 0, surfaceResetOps: [], chartSurface: 'clincmp-ax-route', axEntry: rrFromPartial ? 'body-depth' : 'starved-walk', axEncounters: axTotalE, axRefused: axRefused, axShapeUnknown: axShapeUnknown, axSigs: axSigs.slice(0, 6), axRouteMs: Date.now() - axT0, axRrWaitMs: rrWait, axRrRecovered: rrRecovered, identityVerified: true, stableKeysComplete: true, timeBudgetMs: readBudgetMs, elapsedMs: Math.max(0, Date.now() - readStartedAt) },
               error: axOnlyDate ? (axCoverageComplete ? '' : ('The scoped ax read kept ' + axKept + ' in-day of ' + axTotalE + ' encounters (' + axDateSkipped + ' other-day skipped, ' + axRefused + ' refused, ' + axShapeUnknown + ' identity-unknown, ' + axDateUnknown + ' date-unknown' + (axScannedAll ? '' : ', scan capped or cut by deadline') + ').')) : ((axKept === axTotalE && (!(total > 0) || axKept >= total)) ? '' : ('The ax route read ' + axKept + ' of ' + Math.max(axTotalE, total || 0) + ' known encounters (classic index rows: ' + (total || 0) + '); ' + axRefused + ' refused (identity mismatch or read failure), ' + axShapeUnknown + ' refused as ax-identity-shape-unknown - signatures captured for the next probe shapes.'))
             };
           }
@@ -16515,6 +16516,20 @@ function mlsExactIdentityPair(expected, observed) {
                     var frc3 = (fxc3 && fxc3.r && fxc3.r[0] && fxc3.r[0].result) || null;
                     if (frc3 && (frc3.opened || /^(ambiguous|dob-mismatch)$/.test(frc3.reason || ''))) findRes = frc3;
                     else { try { findRes.diag = Object.assign({}, findRes.diag || {}, { findRetries: 2 }); } catch (eFr2) {} }
+                  }
+                  /* findparticle-1.0.0 (3.0.151): a surname carrying a lowercase particle (de, van, la, ...) is filed by
+                     athena joined or under its bare last word; two more honest shapes, same driver gate, never name-only. */
+                  var __pIdx = -1; for (var __pi = 1; __pi < cTok.length - 1; __pi++) { if (/^(de|da|del|della|delle|di|du|dos|das|la|le|les|van|von|der|den|ter|te|el|al|bin|ibn|st|saint|mc|mac|o)$/.test(cTok[__pi]) && cTok[__pi] === cTok[__pi].toLowerCase()) { __pIdx = __pi; break; } }
+                  if (__pIdx > 0 && !(findRes && (findRes.opened || /^(ambiguous|dob-mismatch)$/.test(findRes.reason || ''))) && !responseSent) {
+                    var __pShapes = [cTok.slice(__pIdx).join('') + ', ' + cTok.slice(0, __pIdx).join(' '), cTok[cTok.length - 1] + ', ' + cTok[0]];
+                    for (var __ps = 0; __ps < __pShapes.length && !responseSent; __ps++) {
+                      if (senderTab) progress(senderTab, 'Still no match - retrying with the surname written as athena may file it...', openGuard.token);
+                      var fxp = await execOpen({ target: { tabId: tab.id }, world: 'MAIN', args: [__pShapes[__ps], msg.dob || '', findGuard, frozenMrn], func: mlsFindPatientOpenDriverFn }, 42000);
+                      if (fxp.timeout) { failOpenDeadline('compound-name open'); return; }
+                      var frp = (fxp && fxp.r && fxp.r[0] && fxp.r[0].result) || null;
+                      if (frp && (frp.opened || /^(ambiguous|dob-mismatch)$/.test(frp.reason || ''))) { findRes = frp; break; }
+                      try { findRes.diag = Object.assign({}, findRes.diag || {}, { findRetries: 3 + __ps }); } catch (eFrp) {}
+                    }
                   }
                 }
               }
