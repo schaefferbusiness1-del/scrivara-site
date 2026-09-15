@@ -74,7 +74,7 @@ for (const [name, open, close] of BLOCKS) {
   /* the today-path wordings are untouched */
   ok(/dnRaw === 'not-yet' \? 'not seen yet'/.test(MC), 'the TODAY not-yet wording changed');
   ok(MC.indexOf("'today’s note not read yet — retrying'") > 0, 'the retrying wording changed');
-  ok(MC.indexOf("'today’s note not read this time (chart saved)'") > 0, 'the spent-retry wording changed');
+  ok(MC.indexOf("today's note not read this time (chart saved)") > 0, 'the spent-retry wording changed'); /* pin moved 2026-09-15: the bundle carries this one inside a double-quoted string with an ASCII apostrophe; the old single-quoted curly pin never matched (pre-existing red on b1277) */
   ok(/dnRaw === 'read' \? 'note saved'/.test(MC), 'the read wording changed');
   /* fd-1.0.0 semantics are NOT touched: future-day stays a calm class, and is
      still never counted as a failure. */
@@ -140,11 +140,11 @@ for (const [name, open, close] of BLOCKS) {
   ok(/try \{ window\.__mlsCalUserDayAt = Date\.now\(\); \} catch \(eUd\) \{\}/.test(MC),
     'runHeroPull does not stamp the day-choice the automatic jump honours');
   ok(/try \{ window\.__mlsCalPullDay = ''; \} catch \(ePd2\) \{\}/.test(MC), 'settle never clears the in-flight day');
-  eq(MC.split("window.__mlsCalPullDay = ''").length - 1, 1, 'the in-flight day is cleared in more than one place');
+  eq(MC.split("window.__mlsCalPullDay = ''").length - 1, 2, 'the in-flight day is cleared in more than two places (settle, and the statetruth-1.0.0 ceiling/boundary release)');
   /* the clear must sit AFTER the transient-retry early return, or a re-read
      would drop the pin halfway through the run */
   const retryReturn = MC.indexOf('setTimeout(function () { if (mySerial === sessionSerial) runHeroPull(el, true); }, waitMs);');
-  const clear = MC.indexOf("window.__mlsCalPullDay = ''");
+  const clear = MC.indexOf("window.__mlsCalPullDay = ''; } catch (ePd2)"); /* settle's own clear; the statetruth release sits earlier by design */
   ok(retryReturn > 0 && clear > retryReturn, 'the in-flight day is cleared before the auto-retry branch returns');
   ok(/function wrapRender\(\)/.test(MC) && /function wrapOpen\(\)/.test(MC), 'caldaysel does not wrap both repaint entry points');
   ok(/w\.__calDaySelWrapped = true;/.test(MC), 'the wrap-once stamp is not on the wrapper');

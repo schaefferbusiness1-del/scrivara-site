@@ -1678,6 +1678,7 @@ const tests = [
   'upnow-note-exists-and-opnote-fallback-history.test.js',
   'residue-switch-landing-empties-foreign-editor.test.js',
   'pull-button-idle-repaint-and-regenerate-wording.test.js',
+  'statetruth-pull-lanes-one-truth.test.js',
   'notefirst-generate-reveals-the-note.test.js',
   'write-next-press-proof.js',
   'upnow-banner-state-proof.js',

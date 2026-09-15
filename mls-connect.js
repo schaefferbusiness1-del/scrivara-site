@@ -5029,6 +5029,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   'use strict';
   try { if (window.__mlsPullProgress) return; } catch (e) { return; }
   var api = { version: '1.1.0', opens: 0 };
+  api._render = function () { render(); }; /* statetruth-1.0.0 contract-test seam: one tick, by hand */
   var PANEL = 'mlsPullProgPanel', FAB = 'mlsPullProgFab';
   /* b940 #36: NON-BLOCKING BY DEFAULT. The pull opens as the bottom-left
      pill; the full panel is one click away. hidden survives the whole pull
@@ -5454,12 +5455,36 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      This block keeps the count honest while it runs and gives that run the
      same closing verdict every other run gets. It changes no engine state. */
   var watchedMaxTotal = 0;
+  /* ===== statetruth-1.0.0 (F1, audit 2026-09-15) ============================
+     The engine flips state.running false at the end of the HISTORY BATCH
+     (ppEnd), while the day strip still owns the run: calendar reconcile,
+     the automatic convergence round and the day-note drain follow. This
+     panel painted its DONE card at that instant and then tore it down when
+     the convergence batch minted a new runId - the modal said done, then
+     the pull went again. Now: while the owning lane (__mlsDaySwitch.isBusy)
+     is still busy the DONE card is HELD and the run the convergence batch
+     starts is treated as a continuation (no clock reset, no card removal);
+     the lane's own terminal event re-renders, and a 30-minute wall clock is
+     the backstop so a wedged lane can never hold the card forever. */
+  var laneHeld = false, laneHoldSince = 0;
+  var LANE_HOLD_MAX_MS = 30 * 60 * 1000;
+  function laneIsBusy() { try { var ds = window.__mlsDaySwitch; return !!(ds && typeof ds.isBusy === 'function' && ds.isBusy()); } catch (eLb) { return false; } }
+  try { window.addEventListener('mls:pull-terminal', function () { try { render(); } catch (eLr) {} }, false); } catch (eLt) {}
   function render() {
     var S = state();
     var running = !!(S && S.running);
     var runId = running ? String(S.runId || '') : '';
     var replacedWhileRunning = !!(running && runId && watchedRunId && runId !== watchedRunId);
     var newRun = running && (!wasRunning || replacedWhileRunning);
+    /* statetruth-1.0.0: hold the verdict while the lane still works; a run
+       that starts while the hold is on is the same pull continuing. */
+    var continuation = !!(replacedWhileRunning && laneHeld);
+    if (!running && startedAt > 0 && !doneDismissed && laneIsBusy()) {
+      if (!laneHoldSince) laneHoldSince = Date.now();
+      if ((Date.now() - laneHoldSince) < LANE_HOLD_MAX_MS) { laneHeld = true; api.laneHolds = (api.laneHolds || 0) + 1; return; }
+    }
+    if (running) { laneHoldSince = 0; }
+    if (!continuation) laneHeld = false;
     /* ===== pillfirst-1.0.0 (the door, gated) ==============================
        A NEW run always starts in the corner pill, whoever started it and
        whatever the last run left behind. A sweep/sub-batch never flips
@@ -5475,8 +5500,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        watchedMaxTotal and stopRequested values. Reset on the shared newRun
        boundary; same-run sweeps never cross it. */
     if (newRun) {
+      /* statetruth-1.0.0: a convergence batch inside one held pull keeps the
+         clock, the maximum, the Stop request and the card it is painting. */
+      if (!continuation) {
       startedAt = 0; watchedMaxTotal = 0; doneDismissed = false; stopRequested = false;
       (function () { var oldPanel = document.getElementById(PANEL); if (oldPanel) oldPanel.remove(); })();
+      }
     }
     if (running && runId) watchedRunId = runId;
     if (!running) watchedRunId = '';
@@ -5485,6 +5514,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     /* ===== end pillfirst-1.0.0 (the door, gated) ===== */
     if (running) watchedMaxTotal = Math.max(watchedMaxTotal, Number(S.total) || 0);
     if (!running) {
+      laneHeld = false; laneHoldSince = 0; /* statetruth-1.0.0: the hold ends with the run */
       /* dn-1.0 (owner 2026-08-11: "when its done it should stop and say
          done"): the run THIS panel watched (startedAt>0) paints ONE honest
          DONE card - saved / not saved / pulled-day-note refusals - and stays
@@ -56014,9 +56044,15 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (lb && lb.innerHTML !== desiredDayLabel) lb.innerHTML = desiredDayLabel;
     try {
       var pb = $('mlsDsPullBtn');
-      if (pb && !DS.pulling && !DS.retrying) {
+      /* statetruth-1.0.0 (F4): the same four-part idle predicate the status
+         line below uses. With the two-part one, the 1.2 s strip tick relabelled
+         the button to the idle verb during the automatic convergence round
+         (pulling false, __autoRetrying true, button still disabled): a normal-
+         looking Pull button that did nothing for the whole phase. */
+      if (pb && !DS.pulling && !DS.retrying && DS.__autoRetrying !== true && !DS.preferenceGatePending) {
         var desiredPull = '📥 ' + esc(dsPullVerb());
         if (pb.innerHTML !== desiredPull) pb.innerHTML = desiredPull;
+        if (pb.disabled) pb.disabled = false;
       }
     } catch (ePb) {}
     /* Keep one stable strip topology on every date. The Today shortcut used
@@ -57881,14 +57917,19 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       };
       paintRelayBar('');
       try {
+        dsLeaseHold(); /* statetruth-1.0.0 (F5): the office-computer pull owns the busy stamp too */
         window.__mlsRelayLink.pullDay(rday, {
         pullVisitBodies: DS.pullVisitBodies,
         provider: DS.pullProviderScope,
         onStatus: function (m) { if (sessionSerial !== DS.sessionSerial) return; try { if (rstat) rstat.textContent = String(m); } catch (e) {} dsStatusLog(m); try { paintRelayBar(m); } catch (e2) {} },
         onDone: function (ok, msg) {
+          /* statetruth-1.0.0 (F5): teardown before the who-is-looking check,
+             the dsbt-1.0.0 law the local done() already follows; the terminal
+             epoch stays behind the fence (pull-terminal-scope-blocks). */
+          DS.pulling = false;
+          dsLeaseRelease();
           if (sessionSerial !== DS.sessionSerial) return;
           dsTerminalPullEpoch(dsRelayEpoch, ok === true); /* pts-1.1.0: identical terminal semantics; the latch absorbs duplicate callbacks */
-          DS.pulling = false;
           ownAttemptResult({ ok: ok === true, complete: ok === true, reason: ok === true ? 'complete' : 'relay-failed', error: ok === true ? '' : String(msg || ''), visitNotesRequested: DS.pullVisitBodies === true }, rday);
           dsStatusLog(msg);
           dsSyncDiagBtn(!ok);
@@ -57896,6 +57937,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           if (rstat) { rstat.style.display = 'block'; rstat.textContent = String(msg || (ok ? (fmtDay(rday) + ' pull completed successfully.') : (fmtDay(rday) + ' pull failed. Try again.'))); }
           try { var rb = document.getElementById('mlsDsPullBar'); if (rb) rb.style.display = 'none'; } catch (e3) {}
           try { if (typeof window.toast === 'function') window.toast(msg, ok ? 'ok' : 'err'); } catch (e) {}
+          /* statetruth-1.0.0 (F5): the four controls the local terminal repaints */
+          try { syncRetryControl(DS.lastResult); } catch (eRelRetry) {}
+          try { dsAttentionCacheClear(); syncAttentionControl(true); } catch (eRelAtt) {}
+          try { syncIdentityControl(); } catch (eRelId) {}
           renderList();
         }
         });
@@ -57904,6 +57949,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
            not leave the strip spinning with no durable answer. */
         dsTerminalPullEpoch(dsRelayEpoch, false); /* pts-1.1.0 */
         DS.pulling = false;
+        dsLeaseRelease(); /* statetruth-1.0.0 (F5) */
         var relayStartMsg = 'The office-computer pull could not start. ' + String((relayStartError && relayStartError.message) || relayStartError || 'relay-start-failed');
         ownAttemptResult(null, rday, 'pull-start-failed', relayStartMsg);
         dsStatusLog(relayStartMsg);
@@ -58208,6 +58254,17 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
             dsStatusLog(busyMsg);
             try { var busyBtn = $('mlsDsPullBtn'); if (busyBtn) { busyBtn.disabled = false; busyBtn.innerHTML = '📥 ' + esc(dsPullVerb()); } } catch (eBusyB) {}
             try { if (typeof window.toast === 'function') window.toast(busyMsg, ''); } catch (eBusyT) {}
+            /* statetruth-1.0.0 (F2): this attempt never started, so it ends
+               here - without this the ceiling timer kept ticking on a run that
+               did not exist and, 75 minutes later, wrote engine-no-settle and
+               called si.stopPull() on whichever pull WAS running; the bar it
+               had mounted stayed under the calm sentence; a later session
+               boundary painted "interrupted" for it. */
+            closed = true;
+            dsCeilStop();
+            dsRunTeardown(dsRunHandle);
+            try { hideDsProgress(); } catch (eBusyBar) {}
+            DS.busyRefusalsTornDown = (DS.busyRefusalsTornDown || 0) + 1;
             return;
           }
           var __stoppedByUser = false;
@@ -65261,6 +65318,42 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var busy = false;
   var autoRetryCount = 0;
   var sessionSerial = 0;
+  /* ===== statetruth-1.0.0 (F3, audit 2026-09-15) ============================
+     This lane released `busy`, __mlsCalPullDay and the button ONLY from
+     settle(), reachable only through the engine promise. A promise that
+     never settles - the class the strip's dsceil-1.0.0 ceiling exists for -
+     left the Calendar pull button disabled for the life of the tab, the bar
+     painting "Waiting on athenaOne" forever, and the calendar day pinned.
+     Parity with the strip: an absolute ceiling and a session-boundary
+     terminal, each ending the run with its own sentence. */
+  var HERO_CEIL_MS = 75 * 60 * 1000;
+  var heroCeilTimer = null, heroEl = null;
+  function heroCeilStop() { if (heroCeilTimer != null) { try { clearTimeout(heroCeilTimer); } catch (eHc) {} heroCeilTimer = null; } }
+  function heroRelease(el, line) {
+    sessionSerial++; /* a late engine answer or a scheduled retry may not re-own this */
+    busy = false; heroCeilStop();
+    try { window.__mlsCalPullDay = ''; } catch (eHr0) {}
+    try { if (el) el.disabled = false; } catch (eHr1) {}
+    try { if (el && line) paint(el, line, ''); } catch (eHr2) {}
+  }
+  function heroNoSettle(el, serial) {
+    if (!busy || serial !== sessionSerial) return false;
+    heroRelease(el, 'athenaOne did not answer for 75 minutes, so this pull was stopped. Nothing further was read. Select Pull to run the day again.');
+    try { var siN = window.__mlsSI; if (siN && typeof siN.stopPull === 'function') siN.stopPull(); } catch (eHn) {}
+    heroTerminals.ceiling++;
+    return true;
+  }
+  function heroArmCeiling(el, serial) { heroCeilStop(); try { heroCeilTimer = setTimeout(function () { heroNoSettle(el, serial); }, HERO_CEIL_MS); } catch (eHa) { heroCeilTimer = null; } }
+  var heroTerminals = { ceiling: 0, boundary: 0 };
+  function onHeroSessionBoundary(ev) {
+    var d = safe(function () { return (ev && ev.detail) || {}; }, {});
+    var ends = (String(d.reason || '') === 'logout') || (String(d.nextAccount || '') === '');
+    if (!ends) return;
+    var wasBusy = busy;
+    heroRelease(heroEl, wasBusy ? 'The pull was interrupted before it finished. Nothing further was read. Select Pull to run the day again.' : '');
+    if (wasBusy) heroTerminals.boundary++;
+  }
+  try { window.addEventListener('mls:session-boundary', onHeroSessionBoundary, false); } catch (eHb) {}
   var choicePending = false;
   var activeFullNotes = null;
   /* psr-1.0.0 (end of this file): the ONE recovery-and-retry cycle this lane
@@ -65632,6 +65725,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     }
     busy = true;
     var mySerial = ++sessionSerial;
+    heroEl = el; heroArmCeiling(el, mySerial); /* statetruth-1.0.0 (F3) */
     if (!isAutoRetry) { autoRetryCount = 0; clearDiag(); }
     var day = targetDay();
     /* psr-1.0.0: a MANUAL press is a new intent and buys a fresh recovery
@@ -65737,6 +65831,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       return;
     }
     busy = false;
+    heroCeilStop(); /* statetruth-1.0.0 (F3): the run settled on its own */
     /* calday-1.0.0: the run is genuinely over here (the transient-retry branch
        above returns without reaching this line, so a re-read keeps the pin). */
     try { window.__mlsCalPullDay = ''; } catch (ePd2) {}
@@ -65803,8 +65898,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        IIFE can read the same truth. */
     pullingDay: function () { return String(safe(function () { return window.__mlsCalPullDay || ''; }, '')); },
     busy: function () { return busy; },
+    terminals: heroTerminals,           /* statetruth-1.0.0 contract-test seam */
+    _noSettle: function () { return heroNoSettle(heroEl, sessionSerial); }, /* statetruth-1.0.0 test seam: the ceiling, driven by hand */
     revert: function () {
       try { document.removeEventListener('click', onHeroClickCapture, true); } catch (e) {}
+      try { window.removeEventListener('mls:session-boundary', onHeroSessionBoundary, false); } catch (eHbR) {}
+      heroCeilStop();
       clearDiag();
       try { var s = document.getElementById(STATUS_ID); if (s && s.parentNode) s.parentNode.removeChild(s); } catch (e2) {}
       this.installed = false;

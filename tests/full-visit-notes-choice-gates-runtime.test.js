@@ -287,6 +287,8 @@ function receiptCases() {
        owner - stubbed here; pull-terminal-scope-blocks executes the real one. */
     dsBeginPullEpoch: () => ({ sessionSerial: '0', pullId: 'pull-1', emitted: false }),
     dsTerminalPullEpoch: () => true,
+    /* statetruth-1.0.0 (F5): the relay branch holds and releases the busy lease; stubbed here like the epoch owner. */
+    dsLeaseHold() {}, dsLeaseRelease() {},
     esc: x => String(x), dsStatusLog: m => statusLog.push(String(m || '')), dsSyncDiagBtn() {},
     renderList() {}, ownAttemptResult: (result, day) => { DS.lastAttemptResult = Object.assign({}, result, { target: day }); return DS.lastAttemptResult; },
     documentElement: doc
