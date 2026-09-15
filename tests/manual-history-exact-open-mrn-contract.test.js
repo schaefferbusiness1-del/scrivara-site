@@ -52,7 +52,7 @@ assert(findDriver.includes('exactResultRow(_rvTr).ok'), 'the same exact pair mus
 assert(searchHandler.includes("var frozenMrn = String(msg.mrn || msg.patientMrn || msg.athenaId || '')"), 'SearchOpen does not freeze the incoming MRN');
 assert(searchHandler.includes("frozenMrn ? ['find', 'sched']"), 'MRN-backed opens can still prefer the name-only schedule clicker');
 const driverCalls = searchHandler.match(/args: \[[^\]]*\], func: mlsFindPatientOpenDriverFn/g) || [];
-assert.strictEqual(driverCalls.length, 2, 'only the ordinary and compound-name Find routes may remain');
+assert.strictEqual(driverCalls.length, 3, 'only the ordinary, two-word and three-word compound-name Find routes may remain'); /* compound3-1.0.0 (3.0.139): the third route reuses the same driver, guard, DOB and MRN slots - pinned by the assertions below */
 assert(driverCalls.every(call => call.includes('findGuard, frozenMrn')), 'findpatient routes do not keep the action guard and MRN in separate argument slots');
 assert(driverCalls.every(call => call.includes("msg.dob || ''")), 'a Find retry must never remove the requested DOB');
 assert(!searchHandler.includes('dobOverride: true'), 'a contradictory DOB must never be overridden');

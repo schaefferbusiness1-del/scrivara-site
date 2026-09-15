@@ -10694,7 +10694,8 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
             try {
               if (!document.body) return { u: u, t: '', fullLen: 0, truncated: false, readOk: false, reason: 'body-missing' };
               const raw = String(document.body.innerText || '');
-              return { u: u, t: raw.slice(0, PER_FRAME_CAP), fullLen: raw.length, truncated: raw.length > PER_FRAME_CAP, readOk: true };
+              var mp = ''; try { var ms = document.querySelectorAll('meta'); for (var mi = 0; mi < ms.length; mi++) { var mc = ms[mi].getAttribute('content') || ''; if (!/encounter_id/.test(mc)) continue; var arr = JSON.parse(mc); if (!Array.isArray(arr)) continue; for (var ai = 0; ai < arr.length; ai++) { var it = arr[ai]; if (it && typeof it === 'object' && it.patient_id != null) { mp = String(it.patient_id).replace(/\D/g, ''); break; } } if (mp) break; } } catch (eMp) { mp = ''; } /* metabind-1.0.0 (3.0.139) */
+              return { u: u, t: raw.slice(0, PER_FRAME_CAP), fullLen: raw.length, truncated: raw.length > PER_FRAME_CAP, readOk: true, mp: mp };
             } catch (e) { return { u: u, t: '', fullLen: 0, truncated: false, readOk: false, reason: 'frame-read-failed' }; }
           } }, 25000);
           if (tx.timeout) { /* frozen mid-read - recover and fail honestly (the app retries) */
@@ -10734,7 +10735,8 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
               try {
                 if (!document.body) return { u: u, t: '', fullLen: 0, truncated: false, readOk: false, reason: 'body-missing' };
                 const raw = String(document.body.innerText || '');
-                return { u: u, t: raw.slice(0, PER_FRAME_CAP), fullLen: raw.length, truncated: raw.length > PER_FRAME_CAP, readOk: true };
+                var mp = ''; try { var ms = document.querySelectorAll('meta'); for (var mi = 0; mi < ms.length; mi++) { var mc = ms[mi].getAttribute('content') || ''; if (!/encounter_id/.test(mc)) continue; var arr = JSON.parse(mc); if (!Array.isArray(arr)) continue; for (var ai = 0; ai < arr.length; ai++) { var it = arr[ai]; if (it && typeof it === 'object' && it.patient_id != null) { mp = String(it.patient_id).replace(/\D/g, ''); break; } } if (mp) break; } } catch (eMp) { mp = ''; } /* metabind-1.0.0 (3.0.139) */
+                return { u: u, t: raw.slice(0, PER_FRAME_CAP), fullLen: raw.length, truncated: raw.length > PER_FRAME_CAP, readOk: true, mp: mp };
               } catch (e) { return { u: u, t: '', fullLen: 0, truncated: false, readOk: false, reason: 'frame-read-failed' }; }
             } }, 25000);
             if (!tx2.timeout && tx2.r) {
@@ -10749,7 +10751,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
           const NOISE_FRAME_RE = /stm\.esp|coordinator\/enterprise|globalnav\.esp|globalframeset\.esp|globaliframe\.esp|framecontent\.esp|statusbar\.esp|schedulenavclose|findpatient\.esp|(?:static\/)?blank\.html/i;
           const rawFrames = (results || []).map((r) => {
             const x = (r && r.result) || {};
-            return { frameId: (r && typeof r.frameId === 'number') ? r.frameId : -1, u: x.u || '', t: x.t || '', fullLen: Number(x.fullLen || 0), truncated: x.truncated === true, readOk: x.readOk === true, reason: x.reason || '' };
+            return { frameId: (r && typeof r.frameId === 'number') ? r.frameId : -1, u: x.u || '', t: x.t || '', fullLen: Number(x.fullLen || 0), truncated: x.truncated === true, readOk: x.readOk === true, reason: x.reason || '', mp: String(x.mp || '').replace(/\D/g, '') };
           });
           const textDiagStrict = rawFrames.map((f) => ({ n: f.fullLen, got: f.t.length, ok: f.readOk, cut: f.truncated })).slice(0, 24);
           const eligibleFrames = rawFrames.filter((f) => !NOISE_FRAME_RE.test(f.u || ''));
@@ -10849,9 +10851,13 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
             const esc = expectedAppointmentId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
             return new RegExp('(?:^|[^A-Za-z0-9])' + esc + '(?![A-Za-z0-9])').test(url);
           };
+          let metaBoundClinicalFrames = 0; /* metabind-1.0.0 (3.0.139) */
           const frameBoundToTarget = (f) => {
             if (!want || (!wantDob && !wantMrn)) return false;
             if (identityMatchesTarget(frameIdentity[f.frameId])) return true;
+            /* metabind-1.0.0 (3.0.139) DOOR 4: athena's own machine-typed stage context names this patient.
+               Exact digit equality with the requested MRN; a missing or different meta binds nothing. */
+            if (wantMrn && f.mp && f.mp.length >= 4 && f.mp === String(wantMrn).replace(/\D/g, '')) { metaBoundClinicalFrames++; return true; }
             if (frameUrlBindsAppointment(f.u)) return true;
             if (!textHasPairStrict(f.t)) return false;
             return !!((wantDob && textHasDobStrict(f.t, wantDob)) || (wantMrn && textHasMrnStrict(f.t, wantMrn)));
@@ -10915,7 +10921,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
             complete: !!(chartTextStrict.trim() && chosenStrict.length && exactGlobalIdentity && !chartTruncatedStrict && unreadFrames === 0 && unboundClinicalFrames === 0 && chosenStrict.length === expectedClinicalFramesStrict),
             readerVersion: '2.9.19-chart-r3', capturedAt: Date.now(),
             expectedClinicalFrames: expectedClinicalFramesStrict, readClinicalFrames: chosenStrict.length,
-            boundClinicalFrames: chosenStrict.length, unboundClinicalFrames: unboundClinicalFrames,
+            boundClinicalFrames: chosenStrict.length, unboundClinicalFrames: unboundClinicalFrames, metaBoundClinicalFrames: metaBoundClinicalFrames, /* metabind-1.0.0 (3.0.139) */
             oversizeClinicalFrames: oversizeClinicalFrames, unreadFrames: unreadFrames, omittedForCap: omittedForCap,
             consideredFrames: eligibleFrames.length, textChars: chartTextStrict.length, truncated: chartTruncatedStrict,
             unscoredReadableFrames: unscoredReadableFrames, settleReread: __chartSettleReread === true, settleGainChars: Number(__chartSettleGain || 0),
@@ -16512,6 +16518,19 @@ function mlsExactIdentityPair(expected, observed) {
                   if (fxc.timeout) { failOpenDeadline('compound-name open'); return; }
                   var frc = (fxc && fxc.r && fxc.r[0] && fxc.r[0].result) || null;
                   if (frc && (frc.opened || /^(ambiguous|dob-mismatch)$/.test(frc.reason || ''))) findRes = frc;
+                  else { try { findRes.diag = Object.assign({}, findRes.diag || {}, { findRetries: 1 }); } catch (eFr1) {} } /* compound3-1.0.0 (3.0.139): count the honest retries */
+                  /* compound3-1.0.0 (3.0.139): a FOUR-word name that found nothing as "Last,First" and nothing
+                     as a two-word surname gets ONE more honest shape - the last three words as the surname.
+                     Same adoption rule, same DOB veto and exact-pair row gate inside the driver, never name-only. */
+                  if (!(frc && (frc.opened || /^(ambiguous|dob-mismatch)$/.test(frc.reason || ''))) && cTok.length >= 4 && !responseSent) {
+                    var cName3 = cTok.slice(-3).join(' ') + ', ' + cTok.slice(0, -3).join(' ');
+                    if (senderTab) progress(senderTab, 'Still no match - retrying once with a three-word last name...', openGuard.token);
+                    var fxc3 = await execOpen({ target: { tabId: tab.id }, world: 'MAIN', args: [cName3, msg.dob || '', findGuard, frozenMrn], func: mlsFindPatientOpenDriverFn }, 42000);
+                    if (fxc3.timeout) { failOpenDeadline('compound-name open'); return; }
+                    var frc3 = (fxc3 && fxc3.r && fxc3.r[0] && fxc3.r[0].result) || null;
+                    if (frc3 && (frc3.opened || /^(ambiguous|dob-mismatch)$/.test(frc3.reason || ''))) findRes = frc3;
+                    else { try { findRes.diag = Object.assign({}, findRes.diag || {}, { findRetries: 2 }); } catch (eFr2) {} }
+                  }
                 }
               }
               if (findRes && findRes.opened) {

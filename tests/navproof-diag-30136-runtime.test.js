@@ -106,4 +106,12 @@ ok(bg.includes("chartDeadlineTimer = setTimeout(() => { chartFailDeadline('the r
 ok(bg.includes("__chartStage = 'tab selection';") && bg.includes("__chartStage = 'identity poll ' + polls;") && bg.includes("__chartStage = 'identity settled after ' + polls + ' polls';") && bg.includes("__chartStage = 'text read';"), 'the four step markers are set in order');
 { const i1 = bg.indexOf("__chartStage = 'tab selection';"), i2 = bg.indexOf("__chartStage = 'identity poll ' + polls;"), i3 = bg.indexOf("__chartStage = 'identity settled after ' + polls + ' polls';"), i4 = bg.indexOf("__chartStage = 'text read';"); ok(i1 > 0 && i2 > i1 && i3 > i2 && i4 > i3, 'markers follow the read order'); ok(bg.indexOf('polls = 0') < i2, 'polls is declared before its first marker'); }
 { const f = new Function('stage', "return String(stage || 'the read').replace(/[^a-z0-9 ()-]/gi, '').slice(0, 60);"); eq(f('the read after identity poll 7'), 'the read after identity poll 7', 'a plain stage passes'); eq(f('x<script>y'), 'xscripty', 'markup is stripped'); eq(f(''), 'the read', 'empty defaults'); }
+/* compound3-1.0.0 (3.0.139): a four-word name gets one more honest surname shape after the two-word retry fails */
+{ const i = bg.indexOf("var cName3 = cTok.slice(-3).join(' ') + ', ' + cTok.slice(0, -3).join(' ');"); ok(i > 0, 'three-word surname shape built from the same tokens'); const blk = bg.slice(i - 400, i + 900);
+  ok(blk.includes("cTok.length >= 4 && !responseSent"), 'only for four-or-more word names and only while no terminal answer went out');
+  ok(blk.includes("if (frc3 && (frc3.opened || /^(ambiguous|dob-mismatch)$/.test(frc3.reason || ''))) findRes = frc3;"), 'adopted only when it opens or contradicts, like the two-word retry');
+  ok(blk.includes("func: mlsFindPatientOpenDriverFn }, 42000)") && blk.includes("failOpenDeadline('compound-name open')"), 'same driver, same deadline discipline');
+  ok(blk.includes("{ findRetries: 2 }") && bg.includes("{ findRetries: 1 }"), 'the refusal counts the honest retries');
+  eq(bg.split('var cName3').length - 1, 1, 'one three-word retry site'); }
+ok(ct.includes("'findRetries' /* compound3-1.0.0 (3.0.139) */"), 'bridge allowlist carries findRetries');
 console.log('PASS navproof-diag-30136-runtime: ' + checks + ' checks');
