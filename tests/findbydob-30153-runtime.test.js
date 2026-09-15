@@ -92,7 +92,7 @@ eq(usedShape('Bill M Souza', 'William J Souza'), false, 'a different middle toke
 eq(usedShape('Souza', 'William Souza'), false, 'a single token never qualifies');
 ok(bg.includes("__resTotal = (function () { var __rm = (typeof resText === 'string') ? /(\\d+)\\s+results?\\s+found/i.exec(resText) : null; return __rm ? +__rm[1] : 0; })();"), 'the results total is read from athena\'s own count');
 /* axrefusals-1.0.0 */
-ok(bg.includes("refusedNav: axRefNav, refusedIdentity: axRefIdentity, refusedBody: axRefBody, refusedAfterIdentity: axRefAfter, shapeUnknown: axShapeUnknown,"), 'the visits receipt names the refusing step');
+ok(bg.includes("refusedNav: axRefNav, refusedIdentity: axRefIdentity, refusedIdentityWeak: axRefIdentityWeak, refusedBody: axRefBody, refusedAfterIdentity: axRefAfter, shapeUnknown: axShapeUnknown,"), 'the visits receipt names the refusing step (and the weak-identity class, axidwait-1.0.0)');
 eq((bg.match(/axRef(Nav|Identity|Body|After)\+\+/g) || []).length, 4, 'each of the four refusal steps counts itself');
 
 /* the ladder block */

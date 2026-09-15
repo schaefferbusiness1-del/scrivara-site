@@ -33,7 +33,8 @@ const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'u
 // 3.0.156: hoistfix-1.0.0 (the chart handler's block-level key copies deleted - they hoisted as undefined and failed every 3.0.155 read; the worker now holds one top-level copy)
 // 3.0.157: findbydob-2.0.0 (one used-vs-legal by-DOB row opened; the banner gate decides) + axrefusals-1.0.0 (receipt names the refusing step)
 // 3.0.158: findbydob-2.1.0 (a middle initial against the full middle name qualifies the used-name row; shape codes carry the middle relation)
-assert.strictEqual(manifest.version, '3.0.158', 'regression must exercise the 3.0.158 candidate');
+// 3.0.159: axidwait-1.0.1 (encounter-page identity/body polls 12 s; weak identity its own class) + schedwait-1.0.0 (the row opener polls the lazy list for 8 s at the bottom)
+assert.strictEqual(manifest.version, '3.0.159', 'regression must exercise the 3.0.159 candidate');
 const coreSha = (manifest.version_name.match(/core-sha256:([0-9a-f]{64})/) || [])[1];
 assert(coreSha, 'candidate manifest is missing its core hash');
 const computedCoreSha = execFileSync(process.execPath, [path.join(root, 'scripts', 'extension-core-digest.js')], { encoding: 'utf8' }).trim();

@@ -61,10 +61,11 @@ ok(SRC.split('var axRouteRun = async function').length - 1 === 1,
 ok(/error: \(String\(gate\.reason \|\| ''\) === 'identity-hint-incomplete'\) \? 'Could not read a clear patient identity \(name plus DOB or MRN\) from the open athenaOne chart header, so nothing was read\. Open the patient chart fully and retry\.' : 'Safety stop: the live patient identity in the encounter-list frame did not match the frozen MLS patient \(name plus DOB\/MRN\)\. No encounter body was read\.'/.test(SRC),
   'the identity-mismatch refusal is byte-identical inside the axh-3073 ternary (fail-closed untouched, incomplete-hint message honest)');
 const hookBlock = SRC.slice(closureAt, axHookAt);
-ok(/if \(axIdent && \(axIdent\.name \|\| axIdent\.dob\)\) \{ axRefused\+\+; axRefIdentity\+\+; \}/.test(hookBlock),
-  'a SEEN-and-mismatched identity is a hard refusal, never a shape-unknown (counted by step since axrefusals-1.0.0, 3.0.157)');
+ok(/if \(axIdent && \(axIdent\.name \|\| axIdent\.dob\)\) \{ axRefused\+\+; if \(axIdent\.dob\) axRefIdentity\+\+; else axRefIdentityWeak\+\+; \}/.test(hookBlock),
+  'a SEEN-and-mismatched identity is a hard refusal, never a shape-unknown (counted by step since axrefusals-1.0.0; a partial identity without a printed DOB is its own class since axidwait-1.0.1, 3.0.159 - still refused)');
+ok(/var axIdDeadline = Math\.min\(readDeadline, Date\.now\(\) \+ 12000\);/.test(hookBlock) && /var axBodyDeadline = Math\.min\(readDeadline - 500, Date\.now\(\) \+ 12000\);/.test(hookBlock), 'axidwait-1.0.0: the encounter page gets 12 s for identity and body on a hidden tab, bounded by the read deadline');
 ok(/await sleep\(1800\);[\s\S]{0,80}touchVisitLease\(\);/.test(hookBlock), 'settle + lease touch after every navigation');
-ok(/axIdDeadline = Math\.min\(readDeadline, Date\.now\(\) \+ 5200\)/.test(hookBlock), 'identity re-poll bounded like srr-1.2');
+ok(/axIdDeadline = Math\.min\(readDeadline, Date\.now\(\) \+ 12000\)/.test(hookBlock), 'identity re-poll bounded by the read deadline (12 s since axidwait-1.0.0; was 5.2 s like srr-1.2)');
 
 /* arm 3: functional - href harvest regex + axGo href guard, extracted and run */
 const harvestRe = /\/(\d+)\/\d+\/ax\/encounter\/(\d+)\/(\w+)/;
