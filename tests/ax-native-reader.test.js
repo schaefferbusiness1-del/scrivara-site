@@ -61,8 +61,8 @@ ok(SRC.split('var axRouteRun = async function').length - 1 === 1,
 ok(/error: \(String\(gate\.reason \|\| ''\) === 'identity-hint-incomplete'\) \? 'Could not read a clear patient identity \(name plus DOB or MRN\) from the open athenaOne chart header, so nothing was read\. Open the patient chart fully and retry\.' : 'Safety stop: the live patient identity in the encounter-list frame did not match the frozen MLS patient \(name plus DOB\/MRN\)\. No encounter body was read\.'/.test(SRC),
   'the identity-mismatch refusal is byte-identical inside the axh-3073 ternary (fail-closed untouched, incomplete-hint message honest)');
 const hookBlock = SRC.slice(closureAt, axHookAt);
-ok(/if \(axIdent && \(axIdent\.name \|\| axIdent\.dob\)\) axRefused\+\+;/.test(hookBlock),
-  'a SEEN-and-mismatched identity is a hard refusal, never a shape-unknown');
+ok(/if \(axIdent && \(axIdent\.name \|\| axIdent\.dob\)\) \{ axRefused\+\+; axRefIdentity\+\+; \}/.test(hookBlock),
+  'a SEEN-and-mismatched identity is a hard refusal, never a shape-unknown (counted by step since axrefusals-1.0.0, 3.0.157)');
 ok(/await sleep\(1800\);[\s\S]{0,80}touchVisitLease\(\);/.test(hookBlock), 'settle + lease touch after every navigation');
 ok(/axIdDeadline = Math\.min\(readDeadline, Date\.now\(\) \+ 5200\)/.test(hookBlock), 'identity re-poll bounded like srr-1.2');
 

@@ -47,7 +47,7 @@ assert(findDriver.includes('exactResultRow(tr)'), 'Find must prove the row first
 assert(findDriver.includes('dates.length===1&&mlsExactIdentityPair'), 'Find must require exact valid DOB on the row');
 assert(findDriver.includes('if(pool.length!==1)'), 'duplicate exact first/last+DOB pairs must refuse');
 assert(!findDriver.includes('var mrnPool = pool.filter'), 'a stale caller MRN must not choose among ambiguous pairs');
-assert(findDriver.includes('var _rvEv=exactResultRow(_rvTr);if(_rvEv.ok||(pool[0].mrnMatched===true&&_rvEv.mrnHit&&!_rvEv.dobVeto))'), 'the same exact pair (or the one MRN row that narrowed the choice, findmrn-1.0.0) must be reverified immediately before the Chart click');
+assert(findDriver.includes('var _rvEv=exactResultRow(_rvTr);if(_rvEv.ok||(pool[0].mrnMatched===true&&_rvEv.mrnHit&&!_rvEv.dobVeto)'), 'the same exact pair (or the one MRN row that narrowed the choice, findmrn-1.0.0) must be reverified immediately before the Chart click');
 
 assert(searchHandler.includes("var frozenMrn = String(msg.mrn || msg.patientMrn || msg.athenaId || '')"), 'SearchOpen does not freeze the incoming MRN');
 assert(searchHandler.includes("frozenMrn ? ['find', 'sched']"), 'MRN-backed opens can still prefer the name-only schedule clicker');

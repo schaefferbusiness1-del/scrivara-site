@@ -59,6 +59,32 @@ eq(shape('Ana Souza', 'Rui Lima'), 'n22', 'nothing shared');
 eq(shape('Souza, Maria', 'Maria Souza'), 'e22', 'a comma request is read as Last, First');
 ok(!/[A-Z]/.test(shape('Maria Souza', 'Rui Lima')) && shape('Maria Souza', 'Rui Lima').length <= 4, 'the code carries no letters of any name');
 
+/* findbydob-2.0.0 (3.0.157): exactly one used-vs-legal row on an uncapped by-DOB list is opened; the chart read's
+   banner gate still decides; twins (two such rows) and capped lists stay refused */
+ok(bg.includes("if(byDob&&pool.length===0&&mrnPool.length===0&&usedPool.length===1&&__resTotal>0&&__resTotal===__fd.findRows){pool=usedPool;usedNarrowed=true;}"), 'the used-name narrowing: dob mode, empty exact and MRN pools, ONE used-shape row, list uncapped');
+ok(bg.includes("else if(byDob&&evidence.dobHit&&__usedShape(name,evidence.rowName)){__fd.findUsedRows=(__fd.findUsedRows||0)+1; usedPool.push({a:chartAs[c],dob:evidence.dob,mrnMatched:false,usedName:true});}"), 'a DOB-hit row differing in the first token only joins the used pool');
+ok(bg.includes("||(pool[0].usedName===true&&_rvEv.dobHit&&__usedShape(name,_rvEv.rowName)))_rvRows.push(_rvAs[_rvI]);"), 'the settled re-read accepts the same evidence');
+ok(bg.includes("usedNameCandidate: pool[0].usedName === true, diag: __fd };"), 'the open answer says how the row was found');
+ok(bg.includes("usedNameCandidate: findRes.usedNameCandidate === true, diag: { route: 'findpatient', usedNameCandidate: findRes.usedNameCandidate === true"), 'and the app receives it');
+ok(ct.includes("safeDiag.usedNameCandidate = openedDiag.usedNameCandidate === true;"), 'content.js forwards the flag as a boolean');
+ok(ct.includes("'findUsedRows', 'findResultsTotal' /* findbydob-2.0.0 (3.0.157) */"), 'content.js allowlists the used-row count and the results total');
+const usStart = bg.indexOf('function __usedShape(req, row) {'); const usEndTok = 'for (var i = 1; i < a.length; i++) { if (a[i] !== b[i]) return false; } return true; }'; const usEnd = bg.indexOf(usEndTok, usStart);
+ok(usStart > 0 && usEnd > usStart, 'used-shape coder present');
+const usedShape = new Function(bg.slice(usStart, usEnd + usEndTok.length) + '\nreturn __usedShape;')();
+eq(usedShape('Bill M de Souza', 'William M de Souza'), true, 'used vs legal first name, everything else equal');
+eq(usedShape('Bill M de Souza', 'WILLIAM M DE SOUZA'), true, 'case and accents aside');
+eq(usedShape('Bill M de Souza', 'M DE SOUZA, WILLIAM'), true, 'a comma row is read as Last, First');
+eq(usedShape('Bill Souza', 'William Souza'), true, 'two tokens');
+eq(usedShape('Bill Souza', 'Bill Souza'), false, 'the same name is not a used-name case (the exact pool already has it)');
+eq(usedShape('Bill Souza', 'William Souza-Lima'), false, 'a different last name is not');
+eq(usedShape('Bill M Souza', 'William Souza'), false, 'a different token count is not');
+eq(usedShape('Bill M Souza', 'William J Souza'), false, 'a different middle token is not');
+eq(usedShape('Souza', 'William Souza'), false, 'a single token never qualifies');
+ok(bg.includes("__resTotal = (function () { var __rm = (typeof resText === 'string') ? /(\\d+)\\s+results?\\s+found/i.exec(resText) : null; return __rm ? +__rm[1] : 0; })();"), 'the results total is read from athena\'s own count');
+/* axrefusals-1.0.0 */
+ok(bg.includes("refusedNav: axRefNav, refusedIdentity: axRefIdentity, refusedBody: axRefBody, refusedAfterIdentity: axRefAfter, shapeUnknown: axShapeUnknown,"), 'the visits receipt names the refusing step');
+eq((bg.match(/axRef(Nav|Identity|Body|After)\+\+/g) || []).length, 4, 'each of the four refusal steps counts itself');
+
 /* the ladder block */
 const s = bg.indexOf("              /* findbydob-1.0.0 (3.0.153): when every name shape answered no-results");
 ok(s > 0, 'ladder block present');
