@@ -1674,6 +1674,7 @@ const tests = [
   'tplnote-template-run-uses-athena-sidecar.test.js',
   'word97-doc-reader.test.js',
   'calfresh-match-refreshes-the-day.test.js',
+  'template-same-name-copies-review.test.js',
   'write-next-press-proof.js',
   'upnow-banner-state-proof.js',
   'visit-next-one-door-proof.js',

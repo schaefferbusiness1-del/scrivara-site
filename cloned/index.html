@@ -5994,6 +5994,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 8px"><h4 style="margin:0">Saved templates</h4>
       <button class="btn-ghost" style="margin-left:auto;font-size:12.5px;padding:6px 11px" onclick="fixTemplateNames()" title="Rename your saved templates by NOTE TYPE (the procedure) instead of patient name — fixes op notes you already uploaded">🏷 Rename by note type</button>
       <button class="btn-ghost" style="font-size:12.5px;padding:6px 11px" onclick="dedupeSavedTemplates(true)" title="Remove duplicate templates (same name + same text)">🧹 Remove duplicates</button>
+      <button class="btn-ghost" style="font-size:12.5px;padding:6px 11px" onclick="reviewDuplicateTemplates()" title="Two templates with the same name: see every copy, keep the fullest, archive the rest (restorable)">🔍 Review same-name copies</button>
     </div>
     <div class="field" style="margin:0 0 8px">
       <input type="text" id="tplSearch" placeholder="🔎 Search templates by name, keyword, or content…" aria-label="Search templates" oninput="tplSearchChanged()" style="width:100%">
@@ -23814,6 +23815,104 @@ function _opPreviewHtml(proc, name, dateStr){
   '</div>';
 }
 /* Remove DUPLICATE saved templates (same name + same text), keep the first, persist. */
+/* ===== tpldups-1.0.0 (2026-09-15) - REVIEW SAME-NAME TEMPLATE COPIES =========
+   Measured on the owner's real library: 199 templates under 102 names, 27 of
+   those names carried by 124 rows, 27 rows under 600 characters (header sheets
+   with no operative narrative), and ZERO byte-identical pairs - so the
+   "Remove duplicates" button above, which only removes byte-identical copies,
+   had nothing to remove while the ranker kept meeting five "Left sacroiliac
+   joint injection" rows and refusing to choose. This tool shows every
+   same-name group, scores each copy by the two things that make an operative
+   note (prose lines and a narrative section - the same measure the op-note
+   ranker uses), proposes keeping the fullest copy, and on the doctor's press
+   ARCHIVES the others. Archived copies are never deleted: they move to a
+   separate store and come back with one press. Nothing runs by itself. */
+function _tplSubstanceOf(t){
+  try{ var api=window.__mlsOpNoteIntegrity; if(api&&typeof api.templateSubstance==='function'){ var s=api.templateSubstance(t); return {prose:Number(s.prose)||0,narrative:Number(s.narrative)||0,chars:Number(s.chars)||String(t&&t.text||'').length,score:Number(s.score)||0}; } }catch(eSub){}
+  var text=String(t&&(t.text||'')||''), lines=text.split(/\r?\n/), prose=0, i;
+  for(i=0;i<lines.length;i++){ var l=lines[i].trim(); if(!l) continue; var colon=l.indexOf(':'); var body=(colon>=0&&colon<=60)?l.slice(colon+1).trim():l; if(body&&body.split(/\s+/).length>=12) prose++; }
+  var narrative=/(?:description|technique|details?)\s+of\s+(?:the\s+)?(?:procedure|operation)|^\s*procedure\s*:\s*$/im.test(text)?1:0;
+  return {prose:prose,narrative:narrative,chars:text.length,score:prose+narrative*3};
+}
+function _tplSameNameGroups(list){
+  var groups={}, order=[], i;
+  (list||[]).forEach(function(t){ if(!t||!t.id) return; var k=String(t.name||'').trim().toLowerCase().replace(/\s+/g,' '); if(!k) return; if(!groups[k]){ groups[k]=[]; order.push(k); } groups[k].push(t); });
+  var out=[];
+  for(i=0;i<order.length;i++){
+    var k=order[i], rows=groups[k]; if(rows.length<2) continue;
+    var scored=rows.map(function(t,idx){ var s=_tplSubstanceOf(t); return {id:String(t.id),name:String(t.name||''),chars:s.chars,prose:s.prose,narrative:s.narrative,score:s.score,index:idx}; });
+    var anySubstance=scored.some(function(r){ return r.prose>0||r.narrative>0; });
+    scored.forEach(function(r){ r.stub=anySubstance&&r.prose===0&&r.narrative===0; });
+    scored.sort(function(a,b){ return b.score-a.score||b.chars-a.chars||a.index-b.index; });
+    /* the display name is the spelling the doctor filed FIRST, not the fullest copy's */
+    out.push({key:k,name:String(rows[0].name||''),rows:scored,keepId:scored[0].id,stubs:scored.filter(function(r){return r.stub;}).length});
+  }
+  return out;
+}
+function _tplArchiveRead(){ try{ var a=JSON.parse(localStorage.getItem(uns('templatesArchive'))||'[]'); return Array.isArray(a)?a:[]; }catch(e){ return []; } }
+function _tplArchiveWrite(arr){ try{ localStorage.setItem(uns('templatesArchive'),JSON.stringify(arr||[])); }catch(e){} }
+function archiveTemplateCopies(groupKey,keepId){
+  var list=getTemplates(), key=String(groupKey||''), keep=String(keepId||'');
+  var group=list.filter(function(t){ return String(t.name||'').trim().toLowerCase().replace(/\s+/g,' ')===key; });
+  if(group.length<2||!group.some(function(t){ return String(t.id)===keep; })){ try{ toast('Nothing archived — pick the copy to keep first.',''); }catch(e0){} return {archived:0}; }
+  var now=Date.now(), moving=group.filter(function(t){ return String(t.id)!==keep; }), movingIds={};
+  moving.forEach(function(t){ movingIds[String(t.id)]=1; });
+  var archive=_tplArchiveRead();
+  moving.forEach(function(t){ var copy=_tplClone(t); copy.archivedAt=now; copy.archivedGroup=key; copy.keptId=keep; archive.push(copy); });
+  _tplArchiveWrite(archive);
+  var remaining=list.filter(function(t){ return !movingIds[String(t.id)]; });
+  setTemplates(remaining);
+  var adopted=false;
+  try{ if(movingIds[String(getActiveTemplateId()||'')]){ localStorage.setItem(uns('templateActive'),keep); adopted=true; } }catch(e1){}
+  try{ toast('Kept "'+String(group[0].name||'').slice(0,50)+'" ×1 and archived '+moving.length+' other cop'+(moving.length===1?'y':'ies')+(adopted?' (your default template now points at the kept copy)':'')+'. Restore is one press away.','ok'); }catch(e2){}
+  try{ reviewDuplicateTemplates(); }catch(e3){}
+  return {archived:moving.length,keepId:keep,adopted:adopted};
+}
+function archiveAllHeaderOnlyCopies(){
+  var groups=_tplSameNameGroups(getTemplates()), total=0;
+  groups.forEach(function(g){ if(!g.stubs) return; var list=getTemplates(), stubIds={}; g.rows.forEach(function(r){ if(r.stub) stubIds[r.id]=1; });
+    var archive=_tplArchiveRead(), now=Date.now();
+    list.filter(function(t){ return stubIds[String(t.id)]; }).forEach(function(t){ var c=_tplClone(t); c.archivedAt=now; c.archivedGroup=g.key; c.keptId=g.keepId; archive.push(c); total++; });
+    _tplArchiveWrite(archive); setTemplates(list.filter(function(t){ return !stubIds[String(t.id)]; }));
+    try{ if(stubIds[String(getActiveTemplateId()||'')]) localStorage.setItem(uns('templateActive'),g.keepId); }catch(e0){} });
+  try{ toast(total?('Archived '+total+' header-only cop'+(total===1?'y':'ies')+' that had a full copy of the same name. Restore is one press away.'):'No header-only copies to archive.',total?'ok':''); }catch(e1){}
+  try{ reviewDuplicateTemplates(); }catch(e2){}
+  return total;
+}
+function restoreArchivedTemplates(){
+  var archive=_tplArchiveRead(); if(!archive.length){ try{ toast('Nothing archived.',''); }catch(e0){} return 0; }
+  var list=getTemplates(), have={}, restored=0;
+  list.forEach(function(t){ have[String(t.id)]=1; });
+  archive.forEach(function(t){ if(!t||have[String(t.id)]) return; var c=_tplClone(t); delete c.archivedAt; delete c.archivedGroup; delete c.keptId; list.push(c); have[String(c.id)]=1; restored++; });
+  setTemplates(list); _tplArchiveWrite([]);
+  try{ toast('Restored '+restored+' archived template'+(restored===1?'':'s')+'.','ok'); }catch(e1){}
+  try{ reviewDuplicateTemplates(); }catch(e2){}
+  return restored;
+}
+function reviewDuplicateTemplates(){
+  var pane=document.getElementById('tplDetail'); if(!pane) return;
+  _tplUI.selectedId=''; _tplUI.renderedId='__dups__'; _tplUI.dirty=false;
+  var groups=_tplSameNameGroups(getTemplates()), archived=_tplArchiveRead().length, stubs=0;
+  groups.forEach(function(g){ stubs+=g.stubs; });
+  var h='<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px"><strong style="font-size:14px">Same-name copies</strong>'+
+    '<span style="font-size:12px;color:var(--muted)">'+(groups.length?(groups.length+' name'+(groups.length===1?'':'s')+' with more than one copy'):'every template has its own name')+'</span>'+
+    (archived?'<button class="btn-ghost" style="margin-left:auto;font-size:12px;padding:5px 10px" onclick="restoreArchivedTemplates()">↩ Restore '+archived+' archived</button>':'')+'</div>';
+  if(stubs) h+='<div style="margin:0 0 10px"><button class="btn-ghost" style="font-size:12px;padding:6px 10px" onclick="archiveAllHeaderOnlyCopies()" title="A header-only copy has no operative narrative; a full copy of the same name exists">Archive all '+stubs+' header-only cop'+(stubs===1?'y':'ies')+' at once</button></div>';
+  if(!groups.length) h+='<p style="color:var(--muted);font-size:13px;margin:0">Nothing to review. When two templates share a name, they show up here and you choose which one MLS should use.</p>';
+  groups.forEach(function(g){
+    var gid='tplDupKeep_'+g.key.replace(/[^a-z0-9]+/g,'_');
+    h+='<div style="border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:10px"><div style="font-weight:800;font-size:13px;margin-bottom:6px">'+esc(g.name)+' <span style="font-weight:400;color:var(--muted)">× '+g.rows.length+'</span></div>';
+    g.rows.forEach(function(r,i){
+      h+='<label style="display:flex;gap:8px;align-items:center;font-size:12.5px;margin:3px 0;cursor:pointer"><input type="radio" name="'+esc(gid)+'" value="'+esc(r.id)+'"'+(i===0?' checked':'')+'>'+
+        '<span style="flex:1">'+(r.stub?'<span style="color:#8b2525;font-weight:700">header only</span>':(i===0?'<span style="color:#127a55;font-weight:700">fullest copy</span>':'full copy'))+' · '+r.chars+' chars · '+r.prose+' prose line'+(r.prose===1?'':'s')+(r.narrative?' · has procedure narrative':'')+'</span>'+
+        '<button class="btn-ghost" style="font-size:11.5px;padding:3px 8px" onclick="tplSelect(\''+esc(r.id)+'\')">Open</button></label>';
+    });
+    h+='<div style="margin-top:8px"><button class="btn-ghost" style="font-size:12px;padding:6px 10px" onclick="(function(){var c=document.querySelector(\'input[name=&quot;'+esc(gid)+'&quot;]:checked\');archiveTemplateCopies(\''+esc(g.key)+'\',c?c.value:\'\');})()">Keep the selected copy, archive the other '+(g.rows.length-1)+'</button></div></div>';
+  });
+  pane.innerHTML=h;
+}
+try{ window._tplSameNameGroups=_tplSameNameGroups; window.archiveTemplateCopies=archiveTemplateCopies; window.restoreArchivedTemplates=restoreArchivedTemplates; window.reviewDuplicateTemplates=reviewDuplicateTemplates; window.archiveAllHeaderOnlyCopies=archiveAllHeaderOnlyCopies; }catch(eTplDupsX){}
+/* ===== end tpldups-1.0.0 ===== */
 function dedupeSavedTemplates(announce){
   try{
     var list=(typeof getTemplates==='function'?getTemplates():[])||[];
