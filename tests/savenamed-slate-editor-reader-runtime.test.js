@@ -26,7 +26,8 @@ const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'u
 // 3.0.149: findmrn-1.0.0 (on athena's Find results, exactly one row carrying the requested MRN with no contradicting DOB is the patient when no row passes the exact pair) + legsdiag-1.1.0 (refusals carry the Find counts) + nowindow-1.0.1 (module header comment); native persistence remains verified.
 // 3.0.150: nofront-1.0.0 (reads never activate the athena tab or focus its window: the fronting function is a null stub and ensureBody never selects a tab); native persistence remains verified.
 // 3.0.151: axlistdate-1.0.0 (the ax harvest carries the date printed beside each encounter link and the briefing path; the scoped-day decision falls back to it; the frame returns to the briefing after the encounter reads; an explicit empty on an encounter route is not an empty day) + findparticle-1.0.0 (two more Find shapes for a surname carrying a lowercase particle); native persistence remains verified.
-assert.strictEqual(manifest.version, '3.0.151', 'regression must exercise the 3.0.151 candidate');
+// 3.0.152: axscoped-1.1.0 (a scoped day's population is the harvested in-day encounters plus every classic index row the harvest did not cover whose printed date is the day or unknown, plus any declared total beyond both; receipt counts them); native persistence remains verified.
+assert.strictEqual(manifest.version, '3.0.152', 'regression must exercise the 3.0.152 candidate');
 const coreSha = (manifest.version_name.match(/core-sha256:([0-9a-f]{64})/) || [])[1];
 assert(coreSha, 'candidate manifest is missing its core hash');
 const computedCoreSha = execFileSync(process.execPath, [path.join(root, 'scripts', 'extension-core-digest.js')], { encoding: 'utf8' }).trim();
