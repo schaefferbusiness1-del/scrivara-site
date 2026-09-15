@@ -12326,8 +12326,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
     // Build candidate groups: for each selector, group matching nodes by parent,
     // keep groups whose members look like dated encounter rows; return scored groups.
+    var __furnitureVetoed = 0; /* rowveto-1.0.0 (3.0.144) */
+    function furnitureRow(n) { try { var c = String((n.className && n.className.baseVal != null ? n.className.baseVal : n.className) || '') + ' ' + String((n.parentElement && n.parentElement.className && n.parentElement.className.baseVal == null ? n.parentElement.className : '') || ''); return /problem|medication|allerg|surgicalhx|familyhx|socialhx|immuniz|vaccin|vitals?(row|item|bullet)|orderrow|resultrow/i.test(c); } catch (_eFr) { return false; } } /* rowveto-1.0.0 (3.0.144): the classic walk indexed a problem list as the encounter list */
     function candidateGroups() {
-      var groups = [];
+      var groups = []; __furnitureVetoed = 0;
       for (var s = 0; s < cfg.rowSelectors.length; s++) {
         var nodes;
         try { nodes = Array.prototype.slice.call(document.querySelectorAll(cfg.rowSelectors[s])); } catch (e) { continue; }
@@ -12361,7 +12363,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
              mutation-label filter for generic fallback rows; the explicit
              encounter row is still bound by patient + encounter ID and its
              actual child click target is checked separately below. */
-          if (cfg.rowSelectors[s] !== 'li.encounter-list-item' && excluded(t)) continue;
+          if (cfg.rowSelectors[s] !== 'li.encounter-list-item' && excluded(t)) continue; if (cfg.rowSelectors[s] !== 'li.encounter-list-item' && furnitureRow(n)) { __furnitureVetoed++; continue; } /* rowveto-1.0.0 (3.0.144) */
           var par = n.parentElement || n;
           if (!byParent.has(par)) byParent.set(par, []);
           byParent.get(par).push(n);
@@ -12477,7 +12479,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return {
         host: host,
         frameDepth: (function () { try { return window.top === window ? 0 : 1; } catch (e) { return 1; } })(),
-        counts: { tr: cnt('tr'), role_row: cnt('[role="row"]'), li: cnt('li'), tables: cnt('table'), iframes: cnt('iframe'), encounterish: cnt('[class*="encounter" i],[id*="encounter" i]'), visitish: cnt('[class*="visit" i]') },
+        counts: { tr: cnt('tr'), role_row: cnt('[role="row"]'), li: cnt('li'), tables: cnt('table'), iframes: cnt('iframe'), encounterish: cnt('[class*="encounter" i],[id*="encounter" i]'), visitish: cnt('[class*="visit" i]'), furnitureVetoed: __furnitureVetoed },
         groupCount: groups.length, candidates: cands
       };
     }
@@ -12557,8 +12559,113 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (!visitActionAllowed()) return visitDeadlineFailure();
       try { tab.click(); return { ok: true, clicked: true }; } catch (e2) { return { ok: false, reason: 'visits-tab-click-failed' }; }
     }
+    function visitsShadowBanner(doc) { /* visitsshadow-1.0.0 (3.0.144): verbatim copy of the write probe's shadowBannerIdentities - the two injected functions cannot share code */
+      var found = [];
+      try {
+        var els = doc.querySelectorAll('*'), hosts = [];
+        var capEls = Math.min(els.length, 20000);
+        for (var i = 0; i < capEls; i++) { if (els[i].shadowRoot) hosts.push(els[i]); }
+        if (!hosts.length) return found;
+        var BLOCK = /^(div|p|li|tr|td|th|section|header|footer|h[1-6]|ul|ol|table|article|aside|nav|form|fieldset|dl|dt|dd|pre|address|hr|br)$/;
+        var AGE_CHIP = /\b(\d{1,3})\s*(?:yo|y\/o|yrs?\.?|years?\s*old)\b/i;
+        var BARE_DATE = /\b([01]?\d)[\/\-\.]([0-3]?\d)[\/\-\.](\d{4})\b/;
+        var MRN_HASH = /#\s?(\d{4,})/;
+        var PROVCRED = /^(MD|DO|PA|PAC|NP|CRNA|APRN|DPM|DDS|DMD|RN|CRNP|FNP|DNP|PHD|MBBS|OD|MSN|LPN|CNM|DC|DPT|DR|PHYS|PT)$/i;
+        var STOP1 = /^(please|the|new|find|create|search|no|today|welcome|inbox|schedule|calendar|department|provider|patient|results|appointment|encounter|billing|orders|messages|close|camera|panel)$/i;
+        function dstr(m) { return ('0' + m[1]).slice(-2) + '/' + ('0' + m[2]).slice(-2) + '/' + m[3]; }
+        function okName(cand) {
+          if (!cand || cand.length < 4 || cand.length > 60) return '';
+          var m = /^([A-Z][A-Za-z'\-\.]*(?:\s+[A-Z][A-Za-z'\-\.]*){1,3})$/.exec(cand);
+          if (!m) return '';
+          var toks = cand.replace(/,/g, ' ').split(/\s+/);
+          for (var q = 0; q < toks.length; q++) { if (STOP1.test(toks[q])) return ''; }
+          if (PROVCRED.test(toks[toks.length - 1].replace(/[.\-]/g, ''))) return '';
+          if (/^DR\.?$/i.test(toks[0])) return '';
+          return cand;
+        }
+        function collect(root, acc, depth) {
+          if (depth > 25 || acc.n > 4000) return;
+          var kids = root.childNodes || [];
+          for (var k = 0; k < kids.length; k++) {
+            if (acc.n > 4000) return;
+            var n = kids[k];
+            if (n.nodeType === 3) { var s = String(n.nodeValue || '').replace(/\s+/g, ' ').trim(); if (s) { acc.items.push({ t: s }); acc.n++; } }
+            else if (n.nodeType === 1) {
+              var tag = (n.tagName || '').toLowerCase();
+              if (tag === 'script' || tag === 'style') continue;
+              var isB = BLOCK.test(tag);
+              if (isB) { acc.items.push({ nl: 1 }); acc.n++; }
+              try {
+                if (tag === 'slot' && n.assignedNodes) {
+                  var an = n.assignedNodes({ flatten: true });
+                  for (var a2 = 0; a2 < an.length; a2++) {
+                    if (an[a2].nodeType === 3) { var s2 = String(an[a2].nodeValue || '').replace(/\s+/g, ' ').trim(); if (s2) { acc.items.push({ t: s2 }); acc.n++; } }
+                    else if (an[a2].nodeType === 1) collect(an[a2], acc, depth + 1);
+                  }
+                } else if (n.shadowRoot) collect(n.shadowRoot, acc, depth + 1);
+                else collect(n, acc, depth + 1);
+              } catch (e) {}
+              if (isB) { acc.items.push({ nl: 1 }); acc.n++; }
+            }
+          }
+        }
+        function toLines(items) {
+          var lines = [], cur = [];
+          for (var x = 0; x < items.length; x++) {
+            if (items[x].nl) { if (cur.length) { lines.push(cur.join(' ')); cur = []; } }
+            else cur.push(items[x].t);
+          }
+          if (cur.length) lines.push(cur.join(' '));
+          return lines;
+        }
+        function labelVal(lines, re) {
+          for (var i2 = 0; i2 < lines.length - 1; i2++) { if (re.test(lines[i2])) return lines[i2 + 1]; }
+          return '';
+        }
+        var isVal = function (s) { return s && s.length <= 40 && /^[A-Z]/.test(s) && !/name|birth|patient|gender|age|detail/i.test(s); };
+        for (var h = 0; h < hosts.length; h++) {
+          var acc = { items: [], n: 0 };
+          collect(hosts[h].shadowRoot, acc, 0);
+          var lines = toLines(acc.items);
+          if (!lines.length) continue;
+          var name = '', dob = '', mrn = '', via = '', altNames = [];
+          var first = labelVal(lines, /^first name used$/i) || labelVal(lines, /^legal first name$/i);
+          var middle = labelVal(lines, /^middle name$/i);
+          var last = labelVal(lines, /^legal last name$/i);
+          var legalFirst = labelVal(lines, /^legal first name$/i);
+          var dobA = labelVal(lines, /^date of birth$/i);
+          var pidA = (labelVal(lines, /^patient id$/i).match(/#?\s?(\d{4,})/) || [])[1] || '';
+          if (isVal(first) && isVal(last)) {
+            var comp = first + ((middle && middle.length <= 20 && isVal(middle)) ? ' ' + middle : '') + ' ' + last;
+            var okA = okName(comp.replace(/\s+/g, ' ').trim());
+            var dm = BARE_DATE.exec(dobA || '');
+            if (okA && dm) { name = okA; dob = dstr(dm); mrn = pidA; via = 'shadow-labels'; }
+            if (name && isVal(legalFirst) && isVal(last) && legalFirst !== first) { var altS = okName((legalFirst + ' ' + last).replace(/\s+/g, ' ').trim()); if (altS && altS !== name && altNames.indexOf(altS) < 0) altNames.push(altS); }
+          }
+          if (!name) {
+            for (var i3 = 0; i3 < lines.length; i3++) {
+              if (!AGE_CHIP.test(lines[i3]) || !BARE_DATE.test(lines[i3])) continue;
+              var bd = BARE_DATE.exec(lines[i3]);
+              var dobB = dstr(bd);
+              var mh = MRN_HASH.exec(lines[i3]);
+              var nameB = '';
+              for (var kk = 3; kk >= 1 && !nameB; kk--) {
+                if (i3 - kk < 0) continue;
+                var joinedB = lines.slice(i3 - kk, i3).join(' ').replace(/[()]/g, ' ').replace(/\s+/g, ' ').trim();
+                var partsB = joinedB.split(/legal\s*:/i).map(function (s) { return s.replace(/\s+/g, ' ').trim(); }).filter(Boolean);
+                for (var pb = 0; pb < partsB.length; pb++) { var candB = okName(partsB[pb]); if (!candB) continue; if (!nameB) nameB = candB; else if (candB !== nameB && altNames.indexOf(candB) < 0) altNames.push(candB); }
+              }
+              if (nameB) { name = nameB; dob = dobB; mrn = (mh && mh[1]) || ''; via = 'shadow-banner'; break; }
+            }
+          }
+          if (!name || !dob) continue;
+          found.push({ name: name, dob: dob, mrn: mrn, altNames: altNames, via: via });
+        }
+      } catch (e) {}
+      return found;
+    }
     if (op === 'identity') {
-      var body = txt(document.body), dob = '', name = '', mrn = '', weakName = false;
+      var body = txt(document.body), dob = '', name = '', mrn = '', weakName = false; try { var __sbv = visitsShadowBanner(document); if (__sbv && __sbv.length && __sbv[0] && __sbv[0].name && __sbv[0].dob) { return { name: __sbv[0].name, dob: __sbv[0].dob, mrn: __sbv[0].mrn || '', weakName: false, via: 'banner', score: 30, altNames: (__sbv[0].altNames || []).slice(0, 3), shadow: true }; } } catch (_eSbv) {} /* visitsshadow-1.0.0 (3.0.144): body.innerText cannot see athena's shadow-root banner; a stale legacy frame used to win the vote */
       var dm = body.match(/\b(?:DOB|D\.O\.B\.|Date of Birth|Born)\D{0,8}(\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4})/i); if (dm) dob = dm[1];
       var mm = body.match(/\b(?:MRN|Medical Record(?: Number| No\.?| ID)?|Patient ID)\s*[:#\-]?\s*([A-Z0-9\-]{4,})/i); if (mm) mrn = mm[1];
       var nm = body.match(/\bPatient\D{0,4}([A-Z][a-z]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-z]+)/); if (nm) name = nm[1];
@@ -13578,7 +13685,7 @@ function mlsExactIdentityPair(expected, observed) {
   return {ok:true,reason:'exact-name+dob',mrnConflict:!!(expected.mrn && observed.mrn && String(expected.mrn) !== String(observed.mrn))};
 }
 
-    return mlsExactIdentityPair(frozen, live);
+    var __gr = mlsExactIdentityPair(frozen, live); /* visitsshadow-1.0.0 (3.0.144): athena's banner prints a used name and a legal name; the read path accepts either exact pair (chartNameViaLegal) - so does this gate, DOB still exact */ if (__gr && !__gr.ok && __gr.reason === 'same-frame-name-mismatch' && live && Array.isArray(live.altNames)) { for (var __ai = 0; __ai < live.altNames.length && __ai < 3; __ai++) { var __alt = mlsExactIdentityPair(frozen, { name: live.altNames[__ai], dob: live.dob, mrn: live.mrn }); if (__alt && __alt.ok) { __alt.viaAltName = true; return __alt; } } } return __gr;
   }
   function realVisit(v, minLen) {
     if (!v) return false;

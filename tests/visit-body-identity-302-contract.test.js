@@ -29,8 +29,8 @@ const bg = fs.readFileSync(path.join(root, 'background.js'), 'latin1');
 // ---- structural pins ---------------------------------------------------------
 assert(bg.includes('visitIdentityGate(frozenHint, ecIdentity)'), 'candidate-frame identity walk missing');
 assert(bg.includes('enumCandidates'), 'identity-aware frame candidate selection missing');
-assert(bg.includes('return mlsExactIdentityPair(frozen, live);'),
-  '3.0.123 exact first/last+DOB authority missing');
+assert(bg.includes('var __gr = mlsExactIdentityPair(frozen, live);') && bg.includes("__gr.reason === 'same-frame-name-mismatch' && live && Array.isArray(live.altNames)"),
+  '3.0.123 exact first/last+DOB authority missing (3.0.144 visitsshadow-1.0.0: the gate still delegates to the exact pair; only the banner\'s other printed name is tried as an exact alternative, DOB still exact)');
 
 // ---- behavioral: run the gate ------------------------------------------------
 const gateStart = bg.indexOf('function visitIdentityGate(frozen, live)');
