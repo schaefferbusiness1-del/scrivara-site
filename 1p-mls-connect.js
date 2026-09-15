@@ -10190,7 +10190,30 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     try { if (typeof window.__mlsSyncGenerationGateUi === 'function') window.__mlsSyncGenerationGateUi(); } catch (e2) {}
   }
   function onLaneGenStarted(ev) { noteGenStarted(ev && ev.detail); repaintGenSurfaces(); }
-  function onLaneGenSettled(ev) { noteGenSettled(ev && ev.detail); repaintGenSurfaces(); }
+  /* notefirst-1.0.0 (2026-09-15, measured live on the dummy at b1274): after a
+     successful Generate the lane painted "Your note is ready below" while the
+     note itself sat ~2,000 px down inside the review workspace - or was not
+     on screen at all when that workspace was collapsed - and the page did not
+     move. The doctor's first sight after Generate was the Start-recording
+     button and, on this run, a stale red "Recording did not start" verdict
+     carried over from an earlier press on ANOTHER chart. Owner (GOAL section
+     6): "After Generate, show the doctor what is about to be sent to athena,
+     let them edit it there, and only then move on." So a successful settle
+     opens the workspace (quietly if it was closed) and brings the note into
+     view through the lane's own openWorkspace/bringIntoView - the same door
+     the Review step already uses - and clears the recording verdict, which
+     cannot describe a visit whose note just arrived. A patient switch clears
+     the verdict too: a verdict is about one press on one chart. */
+  function revealGeneratedNote(detail) {
+    var d = detail || {};
+    var status = String(d.status || '');
+    if (status !== 'success' && status !== 'ok') return false;
+    try { recFailClear(); _recPending = null; } catch (e0) {}
+    try { openWorkspace(true); } catch (e1) {}
+    return true;
+  }
+  function onLaneGenSettled(ev) { noteGenSettled(ev && ev.detail); repaintGenSurfaces(); revealGeneratedNote(ev && ev.detail); }
+  function onLanePatientChanged() { try { recFailClear(); _recPending = null; _recLive = null; } catch (e) {} }
   function boot() {
     try { _obs = new MutationObserver(function () { scheduleFromMutation(); }); } catch (e) {}
     run();
@@ -10206,6 +10229,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     window.addEventListener('mls:athena-review-closed', laneUnifiedReviewClosed);
     window.addEventListener('mls:generation-started', onLaneGenStarted);
     window.addEventListener('mls:generation-settled', onLaneGenSettled);
+    window.addEventListener('mls:active-patient-changed', onLanePatientChanged);
     /* Event-driven updates cover normal recording/transcript/note/voice work.
        This slow, visibility-gated safety pass only catches a legacy owner that
        mutates .value without firing an event; it no longer forces layout and
@@ -10268,6 +10292,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       try { window.removeEventListener('mls:athena-review-closed', laneUnifiedReviewClosed); } catch (e) {}
       try { window.removeEventListener('mls:generation-started', onLaneGenStarted); } catch (e) {}
       try { window.removeEventListener('mls:generation-settled', onLaneGenSettled); } catch (e) {}
+      try { window.removeEventListener('mls:active-patient-changed', onLanePatientChanged); } catch (e) {}
       try { if (window.__mlsGenerationRunState === genRunState) delete window.__mlsGenerationRunState; } catch (e) {}
       try { if (_topSegmentStopIv) clearInterval(_topSegmentStopIv); } catch (e) {}
       try { document.body.classList.remove('mls-top-voice-tools'); } catch (e) {}
