@@ -15680,7 +15680,7 @@ function mlsExactIdentityPair(expected, observed) {
      Save/Sign/orders. Runs from the TOP frame (which never navigates) so the
      driver survives the content frame's two navigations. The result row shows
      name + DOB, so the match is verified BEFORE the chart is opened. */
-  async function mlsFindPatientOpenDriverFn(name, dob, requestGuard, mrn) {
+  async function mlsFindPatientOpenDriverFn(name, dob, requestGuard, mrn, mode) {
 function mlsExactNameKey(value) {
   var raw = String(value || '').trim().toLowerCase();
   try { raw = raw.normalize('NFKD').replace(/[\u0300-\u036f]/g, ''); } catch (e) {}
@@ -15747,7 +15747,7 @@ function mlsExactIdentityPair(expected, observed) {
       /* 3.0.124: comparison already ignored titles; the search query must too. */
       fname = fname.replace(/^(?:(?:mr|mrs|ms|miss|dr|prof)\.?\s+)+/i, '').trim();
       var fq = (fname.split(/\s+/)[0] || '');
-      var searchStr = fq ? (lname + ',' + fq) : lname;
+      var searchStr = fq ? (lname + ',' + fq) : lname; var __dobKeyF = mlsExactDobKey(dob), __dobP = __dobKeyF ? __dobKeyF.split('-') : null, __dobUs = __dobP ? (('0' + __dobP[1]).slice(-2) + '/' + ('0' + __dobP[2]).slice(-2) + '/' + __dobP[0]) : ''; var byDob = (mode === 'dob' && !!__dobUs); var findText = byDob ? __dobUs : searchStr; /* findbydob-1.0.0 (3.0.153): the Find page filtered by date of birth; the row gate below is unchanged */
       function nrmDob(s) { /* isodob-1.1.0 (3.0.117): anchored ISO branch first - the M/D/Y regex matched INSIDE an ISO year, so this DOB veto compared 1962-03-04, 1942-03-04 and 1902-03-04 EQUAL and both passed and refused the wrong rows. The hardcoded >26 two-digit pivot is retired for the dynamic one. */ var iso = /(^|[^0-9])(\d{4})-([01]\d)-([0-3]\d)(?![0-9])/.exec(String(s || '')); if (iso) return Number(iso[3]) + '/' + Number(iso[4]) + '/' + iso[2]; var m = /([01]?\d)[\/\-\.]([0-3]?\d)[\/\-\.](\d{2,4})/.exec(String(s || '')); if (!m) return ''; var y = m[3].length === 2 ? ((Number(m[3]) > ((new Date().getFullYear() % 100) + 1) ? '19' : '20') + m[3]) : m[3]; return Number(m[1]) + '/' + Number(m[2]) + '/' + y; }
       function nrmMrn(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
       function mrnCellMatches(value, wanted) {
@@ -15813,7 +15813,7 @@ function mlsExactIdentityPair(expected, observed) {
          the form WITH the search text pre-filled; then click Find to run the
          real search (the URL-only search itself returns nothing). */
       if (!openAllowed()) return deadlineOut();
-      best.w.location.href = prefix + 'client/findpatient.esp?filtertype=NAME&findtext=' + encodeURIComponent(searchStr)
+      best.w.location.href = prefix + 'client/findpatient.esp?filtertype=' + (byDob ? 'DOB' : 'NAME') + '&findtext=' + encodeURIComponent(findText)
         + '&defaultaction=' + encodeURIComponent(prefix + 'client/clientsummary.esp')
         + (tok ? ('&CSRFPROTECT=' + encodeURIComponent(tok)) : '');
       var deadline = Math.min(__openGuard.deadline, Date.now() + 14000), ready = false;
@@ -15856,10 +15856,10 @@ function mlsExactIdentityPair(expected, observed) {
         if (!inp) { await sleep(500); continue; }
         if (!openAllowed()) return deadlineOut();
         try { inp.focus(); } catch (e) {}
-        if (!setVal(inp, searchStr)) return deadlineOut();
+        if (!setVal(inp, findText)) return deadlineOut();
         await sleep(600);
         var inpChk = findInput();
-        if (inpChk && inpChk.value === searchStr) { filled = true; break; }
+        if (inpChk && inpChk.value === findText) { filled = true; break; }
       }
       if (!filled) return { opened: false, reason: 'fill-not-sticking' };
       var resText = '';
@@ -15877,7 +15877,7 @@ function mlsExactIdentityPair(expected, observed) {
         }
         if (/cannot leave the find text field blank/i.test(resText)) {
           var inpR = findInput();
-          if (inpR) { if (!setVal(inpR, searchStr)) return deadlineOut(); await sleep(500); }
+          if (inpR) { if (!setVal(inpR, findText)) return deadlineOut(); await sleep(500); }
           continue;
         }
         break;
@@ -16532,6 +16532,16 @@ function mlsExactIdentityPair(expected, observed) {
                     }
                   }
                 }
+              }
+              /* findbydob-1.0.0 (3.0.153): when every name shape answered no-results, or listed rows with no exact/MRN match, ask
+                 athena's Find ONCE by date of birth; the driver's row gate (exact name+DOB, or one exact-MRN row) still decides. */
+              if (findRes && !findRes.opened && /^(no-results|no-name-match)$/.test(findRes.reason || '') && msg.dob && !responseSent) {
+                if (senderTab) progress(senderTab, 'Still no match by name - asking athenaOne by date of birth...', openGuard.token);
+                var fxd = await execOpen({ target: { tabId: tab.id }, world: 'MAIN', args: [msg.name || '', msg.dob || '', findGuard, frozenMrn, 'dob'], func: mlsFindPatientOpenDriverFn }, 42000);
+                if (fxd.timeout) { failOpenDeadline('find-by-dob open'); return; }
+                var frd = (fxd && fxd.r && fxd.r[0] && fxd.r[0].result) || null;
+                if (frd && (frd.opened || /^(ambiguous|dob-mismatch)$/.test(frd.reason || ''))) findRes = frd;
+                else { try { findRes.diag = Object.assign({}, findRes.diag || {}, { findRetries: 5, findByDob: 1, findByDobReason: String((frd && frd.reason) || '') }); } catch (eFrd) {} }
               }
               if (findRes && findRes.opened) {
                 try { self.__mlsOpenPref = 'findpatient'; } catch (e0) {}

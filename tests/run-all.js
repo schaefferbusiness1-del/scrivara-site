@@ -1444,6 +1444,7 @@ const tests = [
   'findmrn-30149-runtime.test.js',
   'axlistdate-30151-runtime.test.js',
   'findparticle-30151-runtime.test.js',
+  'findbydob-30153-runtime.test.js',
   'navproof-diag-30136-runtime.test.js',
   'shadowbanner-30138-runtime.test.js',
   'metabind-30139-runtime.test.js',

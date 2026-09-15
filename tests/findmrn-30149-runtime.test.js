@@ -14,16 +14,16 @@ const ok = (v, m) => { assert.ok(v, m); checks++; };
 const eq = (a, b, m) => { assert.strictEqual(a, b, m); checks++; };
 function fnBlock(src, start, from) { const i = src.indexOf(start, from || 0); assert(i >= 0, 'fn: ' + start.slice(0, 50)); let d = 0, e = i; for (; e < src.length; e++) { if (src[e] === '{') d++; else if (src[e] === '}') { d--; if (d === 0) break; } } return src.slice(i, e + 1); }
 
-const drvStart = bg.indexOf('  async function mlsFindPatientOpenDriverFn(name, dob, requestGuard, mrn) {');
+const drvStart = bg.indexOf('  async function mlsFindPatientOpenDriverFn(name, dob, requestGuard, mrn, mode) {');
 ok(drvStart > 0, 'Find driver located');
-const driver = fnBlock(bg, '  async function mlsFindPatientOpenDriverFn(name, dob, requestGuard, mrn) {');
+const driver = fnBlock(bg, '  async function mlsFindPatientOpenDriverFn(name, dob, requestGuard, mrn, mode) {');
 /* static pins */
 ok(driver.includes("mrnHit:!!wantMrn&&cells.some(function(x){return mrnCellMatches(x,wantMrn);}),dobVeto:dates.length===1&&!!mlsExactDobKey(dob)&&dates[0]!==mlsExactDobKey(dob)}"), 'the row evidence carries MRN hit and DOB veto');
 ok(driver.includes("else if(evidence.mrnHit&&!evidence.dobVeto){__fd.findMrnHit++; mrnPool.push({a:chartAs[c],dob:evidence.dob,mrnMatched:true});}"), 'an MRN row with no contradicting DOB joins the MRN pool');
 ok(driver.includes("if(pool.length===0&&mrnPool.length===1){pool=mrnPool;mrnNarrowed=true;}"), 'exactly one MRN row is accepted only when the exact pair found nobody');
 ok(driver.includes("if(_rvEv.ok||(pool[0].mrnMatched===true&&_rvEv.mrnHit&&!_rvEv.dobVeto))_rvRows.push(_rvAs[_rvI]);"), 'the re-read accepts the same evidence');
 ok(driver.includes("findMrnHit: 0 }"), 'the counter exists');
-ok(ct.includes("'findRetries' /* compound3-1.0.0 (3.0.139) */, 'findMrnHit' /* findmrn-1.0.0 (3.0.149) */]"), 'content.js allowlists findMrnHit as a count');
+ok(ct.includes("'findRetries' /* compound3-1.0.0 (3.0.139) */, 'findMrnHit' /* findmrn-1.0.0 (3.0.149) */, 'findByDob' /* findbydob-1.0.0 (3.0.153) */]"), 'content.js allowlists findMrnHit as a count');
 ok(bg.includes("['findRows', 'findDobHit', 'findNameHit', 'findDobOnly', 'findAltRows', 'findMrnHit', 'findTokens', 'findRetries'].forEach(function (k) { if (__p.diag[k] == null && __fr.diag[k] != null) __p.diag[k] = __fr.diag[k]; });"), 'every refusal carries the Find counts (legsdiag-1.1.0)');
 
 /* the real evidence function */

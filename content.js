@@ -566,7 +566,7 @@
                'navChangedFrames', 'eaSkipped', 'eaNoCand', 'eaCand', 'eaTimeout', 'eaMatches', 'eaRejVia', 'eaRejName', 'eaRejDob', 'eaRejEncish', 'eaRejDate' /* navproof-diag-1.0.0 (3.0.136) */,
                'findRows', 'findDobHit', 'findNameHit', 'findDobOnly', 'findAltRows', 'findTokens', 'findPunct', 'findComma' /* finddiag-1.0.0 (3.0.137) */,
                'eaChanged', 'eaDatelessChanged' /* navaccept-1.0.0 (3.0.137) */,
-               'findRetries' /* compound3-1.0.0 (3.0.139) */, 'findMrnHit' /* findmrn-1.0.0 (3.0.149) */].forEach(function (key) {
+               'findRetries' /* compound3-1.0.0 (3.0.139) */, 'findMrnHit' /* findmrn-1.0.0 (3.0.149) */, 'findByDob' /* findbydob-1.0.0 (3.0.153) */].forEach(function (key) {
                 var value = Number(openedDiag[key]); if (isFinite(value)) safeDiag[key] = value;
               });
               ['rowRebinds', 'scheduleRegrounds'].forEach(function (key) {
@@ -576,7 +576,7 @@
               safeDiag.exactScheduleFallback = openedDiag.exactScheduleFallback === true;
               safeDiag.rowMrnMatched = openedDiag.rowMrnMatched === true;
               safeDiag.apptIdBound = openedDiag.apptIdBound === true; /* navproof-diag-1.0.0 (3.0.136) */
-              ['legFind', 'legSched', 'legOrder'].forEach(function (key) { var v = String(openedDiag[key] == null ? '' : openedDiag[key]).toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 40); if (v) safeDiag[key] = v; }); /* legsdiag-1.0.0 (3.0.148): closed codes only */
+              ['legFind', 'legSched', 'legOrder', 'findByDobReason' /* findbydob-1.0.0 (3.0.153) */].forEach(function (key) { var v = String(openedDiag[key] == null ? '' : openedDiag[key]).toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 40); if (v) safeDiag[key] = v; }); /* legsdiag-1.0.0 (3.0.148): closed codes only */
               /* restorediag-1.1.0 (3.0.132): closed per-frame evidence for the schedule-date restore refusal (no row, DOB, MRN or name; digits masked). */
               safeDiag.stage = mlsStr(openedDiag.stage, 40).replace(/[^a-z0-9 -]/gi, '');
               if (Array.isArray(openedDiag.regroundFrames)) safeDiag.regroundFrames = openedDiag.regroundFrames.slice(0, 8).map(function (f) { f = (f && typeof f === 'object') ? f : {}; return { done: f.done === true, unverified: f.unverified === true, dateMatch: f.dateMatch === true, steps: Math.max(0, Math.min(99, Number(f.steps) || 0)), head: mlsStr(f.head, 70).replace(/\d/g, 'D') }; });

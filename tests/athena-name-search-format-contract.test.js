@@ -36,7 +36,7 @@ assert(/Searching [^\n]*esc\(lf\)/.test(search),
 
 /* Pin the extension behavior that raw "MLS B1050 769189" relies on: first a
    normal Last,First query, then "B1050 769189,MLS" as the compound retry. */
-const searchLane = between(background, 'async function mlsFindPatientOpenDriverFn(name, dob, requestGuard, mrn) {', '// ---- v1.40: Athena "Sign & Save"');
+const searchLane = between(background, 'async function mlsFindPatientOpenDriverFn(name, dob, requestGuard, mrn, mode) {', '// ---- v1.40: Athena "Sign & Save"');
 const driver = searchLane.slice(0, searchLane.indexOf('v2.9.6 COMPOUND-SURNAME RETRY'));
 assert(/var searchStr = fq \? \(lname \+ ',' \+ fq\) : lname;/.test(driver),
   'the Athena driver must submit Last,First');

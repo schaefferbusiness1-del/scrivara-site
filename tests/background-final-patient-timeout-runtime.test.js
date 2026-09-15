@@ -51,7 +51,7 @@ const searchDriver = sliceBetween(
 );
 const findDriver = sliceBetween(
   searchIife,
-  'async function mlsFindPatientOpenDriverFn(name, dob, requestGuard, mrn)',
+  'async function mlsFindPatientOpenDriverFn(name, dob, requestGuard, mrn, mode)',
   'chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse)'
 );
 const searchHandler = sliceBetween(
