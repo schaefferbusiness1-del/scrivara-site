@@ -23570,6 +23570,18 @@ function _opFmtKv(v){
   }
   return String(v);
 }
+function _opFallbackHistory(p){
+  if(!p) return '';
+  var L=[], lim=14000;
+  function add(label,v){ var t=String(v==null?'':v).trim(); if(t) L.push(label+':\n'+t.slice(0,2500)); }
+  add('PROBLEM LIST',p.problems); add('MEDICATIONS',p.meds||p.medications); add('ALLERGIES',p.allergies); add('CHART SUMMARY',p.summary);
+  var head=L.join('\n\n'), used=head.length, notes=[];
+  try{ notes=(typeof patientNotes==='function'?(patientNotes(p.id)||[]):[]).filter(function(n){ return n&&!n.isDraft&&String(n.soap||n.text||'').trim(); }).sort(function(a,b){ return (Number(b.updated||b.created)||0)-(Number(a.updated||a.created)||0); }); }catch(eNotes){ notes=[]; }
+  var out=[];
+  for(var i=0;i<notes.length&&used<lim;i++){ var n=notes[i], when=''; try{ when=new Date(Number(n.updated||n.created)||0).toLocaleDateString(); }catch(eW){} var body=String(n.soap||n.text||'').replace(/\s+/g,' ').trim().slice(0,1500); var line='['+when+(n.kind==='opnote'?' - prior operative note':' - prior visit note')+'] '+body; if(used+line.length>lim) break; out.push(line); used+=line.length+1; }
+  if(out.length) L.push('PRIOR NOTES (most recent first, '+out.length+' of '+notes.length+')\n'+out.join('\n'));
+  return L.join('\n\n').slice(0,lim);
+}
 /* Gather everything we already know about this exact patient for the op note. */
 function _opPatientCtx(name,dob,patientId){
   try{
@@ -23579,7 +23591,13 @@ function _opPatientCtx(name,dob,patientId){
        pulled vs. two charts tie) instead of one catch-all sentence. */
     if(!p) return {identityReason:_opLastIdentityReason||''};
     var history='';
-    try{ if(typeof compilePatientRecord==='function') history=compilePatientRecord(p)||''; }catch(e){}
+    /* ophist-1.0.0 (2026-09-15): compilePatientRecord lists notes OLDEST first
+       and the caller slices the result to 14,000 characters, so a long chart
+       lost its most recent notes - the ones an operative note needs. This
+       fallback (only reached when the verified-history owner is not installed)
+       builds newest-first and bounded. */
+    try{ history=_opFallbackHistory(p)||''; }catch(eOpHist){ history=''; }
+    try{ if(!history&&typeof compilePatientRecord==='function') history=compilePatientRecord(p)||''; }catch(e){}
     if(!history){ history=['Problems: '+_opFmtKv(p.problems),'Medications: '+_opFmtKv(p.meds||p.medications),'Allergies: '+_opFmtKv(p.allergies),'Chart summary: '+_opFmtKv(p.summary),'Vitals: '+_opFmtKv(p.vitals),'History & background: '+_opFmtKv(p.background||p.history)].filter(function(x){return !/:\s*$/.test(x);}).join('\n'); }
     /* Identity separation (owner goal 2026-07-21, pinned by
        tests/provider-identity-separation-contract): a LOGIN/account name is not
@@ -31986,7 +32004,14 @@ function _calLoadNextUp(){
       if(scheduled){ scheduled.innerHTML='On the schedule now: <b>'+esc(a.name||'patient')+'</b>. Your selected patient is unchanged.'; scheduled.style.display='block'; }
       return;
     }
-    var el=document.getElementById('heroPullStatus'); if(el){ var _ut=_fmtApptTime(a.time||''); el.innerHTML='⏰ Up now: <b>'+esc(a.name||'patient')+'</b>'+(_ut?(' at '+esc(_ut)):'')+' — loaded &amp; ready. Hit 🎙️ Start recording.'; el.style.color='#d8ffe8'; el.style.display='block'; }
+    /* upnow-1.0.0 (2026-09-15, owner: the hero said "loaded & ready. Hit Start
+       recording" while a note for this visit already existed on screen or in
+       History). Say which it is: a doctor with a finished note is told to
+       review it, not to start over. */
+    var _hasNote=false;
+    try{ _hasNote=!!(typeof currentSoap!=='undefined'&&String(currentSoap||'').trim()); }catch(eUpNow1){}
+    if(!_hasNote){ try{ var _dayKey=(typeof _opDayKey==='function')?_opDayKey(new Date()):''; _hasNote=!!_dayKey&&(patientNotes(active.id)||[]).some(function(n){ return n&&!n.isDraft&&String(n.soap||n.text||'').trim()&&_opDayKey(new Date(Number(n.updated||n.created)||0))===_dayKey; }); }catch(eUpNow2){} }
+    var el=document.getElementById('heroPullStatus'); if(el){ var _ut=_fmtApptTime(a.time||''); el.innerHTML='⏰ Up now: <b>'+esc(a.name||'patient')+'</b>'+(_ut?(' at '+esc(_ut)):'')+(_hasNote?' — a note already exists for this visit. Review it below, or press 🎙️ Start recording to add to it.':' — loaded &amp; ready. Hit 🎙️ Start recording.'); el.style.color='#d8ffe8'; el.style.display='block'; }
   }catch(e){}
 }
 function _heroPickPatient(i){

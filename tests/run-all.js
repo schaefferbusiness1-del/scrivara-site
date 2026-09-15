@@ -1675,6 +1675,7 @@ const tests = [
   'word97-doc-reader.test.js',
   'calfresh-match-refreshes-the-day.test.js',
   'template-same-name-copies-review.test.js',
+  'upnow-note-exists-and-opnote-fallback-history.test.js',
   'write-next-press-proof.js',
   'upnow-banner-state-proof.js',
   'visit-next-one-door-proof.js',
