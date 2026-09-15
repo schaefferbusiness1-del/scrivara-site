@@ -261,8 +261,8 @@ const setVisitDaySource = easy.slice(setVisitDayStart, setVisitDayEnd);
 const ensureSource = functionSource(ds, 'ensure', 'onEasyVisitDayChanged');
 assert(ds.includes("if (DS.followToday && DS.day !== todayKey()) setDay(todayKey());"),
   'account-local midnight rollover ownership is missing');
-assert(/setInterval\(function \(\) \{ try \{ ensure\(\); \} catch \(e\) \{\} \}, 1200\)/.test(ds),
-  'midnight rollover is not attached to the bounded ensure loop');
+assert(/setInterval\(function \(\) \{ try \{ ensure\(\); \} catch \(e\) \{\} (?:try \{ dsWedgeSweep\(\); \} catch \(eSweep\) \{\} )?\}, 1200\)/.test(ds),
+  'midnight rollover is not attached to the bounded ensure loop'); /* pin moved 2026-09-15: dsbt-1.0.0 added the wedge sweep to the same 1.2 s loop; the rollover still rides it */
 {
   let accountToday = '2027-01-01';
   const transitions = [], syncs = [];

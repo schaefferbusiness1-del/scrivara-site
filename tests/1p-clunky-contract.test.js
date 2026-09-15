@@ -1351,9 +1351,9 @@ async function runtime() {
     ok(pull.api && pull.panel, 'the pull progress panel did not open, so nothing below was measured');
     eq(pull.big, '7 of 23',
       `during the day-note phase the headline reads "${pull.big}" - a finished count on an unfinished pull (CLUNKY 71)`);
-    ok(/Today’s notes/.test(pull.phase || ''),
+    ok(/Today’s notes|Visit notes for this day/.test(pull.phase || ''), /* pin moved 2026-09-15: clunky2 (91a80138, 2026-08-18) renamed the phase headline; either spelling names WHICH count it is */
       `the headline does not say WHICH count it is showing (got "${pull.phase}") (CLUNKY 71)`);
-    ok(/Today’s notes 7\/23/.test(pull.fab || ''),
+    ok(/(?:Today’s|Visit) notes 7\/23/.test(pull.fab || ''), /* pin moved 2026-09-15: same clunky2 rename as the headline */
       `the pill still counts finished histories during the day-note phase: "${pull.fab}" (CLUNKY 71)`);
     eq(pull.curLbl, 'Now:', `the "now" box is labelled "${pull.curLbl}" while its counts moved to the headline (CLUNKY 71)`);
     ok(!/\d+ of \d+/.test(pull.current || ''),

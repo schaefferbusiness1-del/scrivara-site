@@ -129,6 +129,10 @@ function runNativeHero(scheduleRow, patientRows) {
     getPatients() { return patientRows; },
     upsertPatient(patient) { if (!patientRows.includes(patient)) patientRows.push(patient); },
     setActivePtId(id) { selected.push(id); },
+    /* harness moved 2026-09-15: the shipped picker now confirms the canonical
+       binding through activePatient() after setActivePtId (a guard can refuse
+       without throwing); the fake reflects the last accepted id. */
+    activePatient() { return selected.length ? { id: selected[selected.length - 1] } : null; },
     _heroSyncName() {}, _renderTodayPatients() {}, renderProfile() {}, renderPatientBar() {},
     renderPatients() {}, updateNavCounts() {}, toast() {}
   };
