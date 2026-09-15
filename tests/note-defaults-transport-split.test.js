@@ -42,7 +42,7 @@ const generateBody = body.slice(generate, generate + 600);
 if (!/body:JSON\.stringify\(\{system:sys,user:user/.test(completeBody)) {
   fail('/api/complete no longer sends the client system prompt');
 }
-if (!generateBody.includes("body:JSON.stringify({transcript:user, model:(typeof getNoteModel==='function'?getNoteModel():''), notePreferences:hostedNotePreferences(), draftFamily:_draftFamily||'soap', draftTuning:_draftTuning||undefined})")) {
+if (!generateBody.includes("body:JSON.stringify({transcript:user, model:(typeof getNoteModel==='function'?getNoteModel():''), notePreferences:(opts.templateAttached?Object.assign({},hostedNotePreferences()||{},{noteFormat:'template'}):hostedNotePreferences()), draftFamily:_draftFamily||'soap', draftTuning:_draftTuning||undefined})")) {
   fail('/api/generate does not send the structured notePreferences object');
 }
 if (!/out\.patientSummary=\(typeof getGenPatientSummary==='function'&&getGenPatientSummary\(\)===true\)/.test(sf)) {

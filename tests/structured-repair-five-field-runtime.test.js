@@ -55,7 +55,7 @@ function rejected(api, note, expected, label) {
 (async function () {
   for (const file of shells) {
     const source = fs.readFileSync(path.join(root, file), 'utf8');
-    const strictBeforeMutation = source.indexOf('_mlsValidateStructuredNoteResult(result,generationDraftTuning);');
+    const strictBeforeMutation = source.indexOf('_mlsValidateStructuredNoteResult(result,generationDraftTuning,generationTemplateRun);');
     const firstEditorMutation = source.indexOf('currentSoap=_reorderNoteForStyle(result.note', strictBeforeMutation);
     const ensureTuning = source.indexOf('await _mlsAwaitGeneration(run,Promise.resolve().then(function(){return window.__mlsEnsureDraftTuning();})');
     const captureTuning = source.indexOf('const generationDraftTuning=_mlsResolvedGenerationDraftTuning(transcript,evidence);');

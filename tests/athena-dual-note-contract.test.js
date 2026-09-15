@@ -169,14 +169,14 @@ function runPlan(source, file, setup) {
   for (const [file, source] of sources) {
     eq(canonicalBlock(source, file), firstCanonical, file + ': canonical Athena contract drifted from the canonical 1p lane');
     ok(source.includes('"athena_note": "<the SAME visit as plain text in EXACTLY five flat top-level sections'), file + ': generation prompt does not require athena_note');
-    const displayValidation = source.indexOf('_mlsValidateStructuredNoteResult(result,generationDraftTuning);');
+    const displayValidation = source.indexOf('_mlsValidateStructuredNoteResult(result,generationDraftTuning,generationTemplateRun);');
     /* Fixed SOAP uses the clinician-reviewed display. Legacy alternate formats
        retain their separately generated canonical sidecar. */
     const fallbackExpr = "result.athena_note==null?(typeof _autoDraftStripCarried==='function'?_autoDraftStripCarried(result.note):result.note):result.athena_note";
-    const athenaValidation = source.indexOf("generationStyle==='soap'?_mlsAthenaCanonicalFromStandardNote(result.note):_mlsValidateAthenaNote(" + fallbackExpr + ');', displayValidation);
+    const athenaValidation = source.indexOf("effectiveGenStyle==='soap'?_mlsAthenaCanonicalFromStandardNote(result.note):_mlsValidateAthenaNote(" + fallbackExpr + ');', displayValidation);
     ok(athenaValidation > displayValidation, file + ': reviewed display/canonical fallback was not validated after the display note contract');
     ok(source.includes(fallbackExpr), file + ': alternate-format sidecar fallback disappeared');
-    const canonicalCapture = source.indexOf("_mlsSetAthenaNote(generationStyle==='soap'?_mlsAthenaCanonicalFromStandardNote(currentSoap).text:canonicalAthenaNote.text,'generated');", source.indexOf('const canonicalAthenaNote='));
+    const canonicalCapture = source.indexOf("_mlsSetAthenaNote(effectiveGenStyle==='soap'?_mlsAthenaCanonicalFromStandardNote(currentSoap).text:canonicalAthenaNote.text,'generated');", source.indexOf('const canonicalAthenaNote='));
     ok(canonicalCapture > source.indexOf('const canonicalAthenaNote='), file + ': final reviewed display/canonical sidecar is not captured after validation');
     const settledComment = source.lastIndexOf('applyVisitCommentToNote();', canonicalCapture);
     ok(settledComment > source.indexOf('const canonicalAthenaNote=') && settledComment < canonicalCapture, file + ': canonical sidecar was captured before deterministic display/comment mutations settled');

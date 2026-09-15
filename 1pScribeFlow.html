@@ -32752,12 +32752,24 @@ function _mlsValidateActiveTemplateStructure(canonical,tuning){
   });
   return canonical;
 }
-function _mlsValidateStructuredNoteResult(result,tuning){
+function _mlsValidateStructuredNoteResult(result,tuning,templateRun){
   if(!result || typeof result!=='object' || Array.isArray(result)) throw _mlsStructuredNoteQualityError('response is not an object');
   if(typeof result.note!=='string') throw _mlsStructuredNoteQualityError('note is not a string');
   var note=result.note.trim();
   if(!note) throw _mlsStructuredNoteQualityError('note is blank');
   if(note.length>50000) throw _mlsStructuredNoteQualityError('note exceeds the browser safety bound');
+  if(templateRun===true){
+    /* tplnote-1.0.0 (2026-09-15): the display note is the doctor's filled
+       template, so the exact five fields are validated on the athena_note
+       sidecar instead - still before any editor surface changes, and still
+       fail-closed: a missing or malformed sidecar refuses the whole result. */
+    if(/TEMPLATE_CONTRACT_(?:BEGIN|END)|TEMPLATE TO REPRODUCE - every line/i.test(note)) throw _mlsStructuredNoteQualityError('note echoed the template contract instead of filling the template');
+    var tplCanonical;
+    try{tplCanonical=_mlsValidateAthenaNote(String(result.athena_note==null?'':result.athena_note));}
+    catch(errorTpl){throw _mlsStructuredNoteQualityError(String(errorTpl&&errorTpl.mlsAi&&errorTpl.mlsAi.detail||'templated note did not carry the exact five-field athena copy'));}
+    _mlsValidateActiveTemplateStructure(tplCanonical,tuning);
+    return result;
+  }
   /* Visit notes are now one fixed, exact five-field display. Validate the
      bytes the clinician would see before any editor/canonical mutation. */
   var canonical;
@@ -33654,7 +33666,15 @@ async function generateNote(){
     /* Validate before currentSoap/currentInsurance/currentCoding or any editor
        surface changes.  A bad model/backend response leaves the current draft
        intact and remains explicitly retryable. */
-    _mlsValidateStructuredNoteResult(result,generationDraftTuning);
+    /* tplnote-1.0.0 (2026-09-15): a run that attached a TEMPLATE_CONTRACT is
+       handled like a reviewed non-SOAP style - the DISPLAY note is the
+       doctor's filled template, and the exact five-section athena_note sidecar
+       is the validated copy that reaches athena. Before this the five-field
+       check ran on the template-shaped display note and refused it. */
+    var generationTemplateRun=false;
+    try{ generationTemplateRun=!!(window.__mlsLastGenTemplateContract&&window.__mlsLastGenTemplateContract.id); }catch(eTplRun){ generationTemplateRun=false; }
+    const effectiveGenStyle=generationTemplateRun?'template':generationStyle;
+    _mlsValidateStructuredNoteResult(result,generationDraftTuning,generationTemplateRun);
     /* noteq-1.0.0 (b1169): grade the validated draft and, when it lands under
        floor, run the ONE permitted repair pass - before any editor surface is
        mutated, so a failed retry cannot disturb a good draft. */
@@ -33676,7 +33696,7 @@ async function generateNote(){
        validator bytes and the write gate are unchanged; only the blast radius
        is. */
     let canonicalAthenaNoteOrNull=null,athenaSidecarReason='';
-    try{ canonicalAthenaNoteOrNull=generationStyle==='soap'?_mlsAthenaCanonicalFromStandardNote(result.note):_mlsValidateAthenaNote(result.athena_note==null?(typeof _autoDraftStripCarried==='function'?_autoDraftStripCarried(result.note):result.note):result.athena_note); }
+    try{ canonicalAthenaNoteOrNull=effectiveGenStyle==='soap'?_mlsAthenaCanonicalFromStandardNote(result.note):_mlsValidateAthenaNote(result.athena_note==null?(typeof _autoDraftStripCarried==='function'?_autoDraftStripCarried(result.note):result.note):result.athena_note); }
     catch(eAthenaSidecar){ athenaSidecarReason=String((eAthenaSidecar&&eAthenaSidecar.mlsAi&&eAthenaSidecar.mlsAi.detail)||'malformed athena_note').slice(0,120); }
     const canonicalAthenaNote=canonicalAthenaNoteOrNull;
     if(!_athenaAsyncBindingStillSafe(generationBinding,'note generation',generationEpoch)){try{run.abortDiscardField='binding';_mlsNoteGenerationDiscard(run.id,'binding');}catch(eDbind){}throw _mlsGenerationAbortError('source-changed','binding');}
@@ -33710,12 +33730,12 @@ async function generateNote(){
       try{run.abortDiscardField=_mlsDiscardField||'unknown';_mlsNoteGenerationDiscard(run.id,_mlsDiscardField||'unknown');}catch(eDiscardReceipt){}
       throw _mlsGenerationAbortError('source-changed',_mlsDiscardField||'unknown');
     }
-    currentSoap=_reorderNoteForStyle(result.note, generationStyle);
+    currentSoap=_reorderNoteForStyle(result.note, effectiveGenStyle);
     /* noteadv-1.0.0: the note the doctor is about to read is committed on the
        line above. Its lines-to-check and the template that shaped it belong to
        it from here on, and travel with it into the draft and the saved note. */
     try{ if(typeof _mlsStampVisitNoteAdvisory==='function') _mlsStampVisitNoteAdvisory(); }catch(eNoteAdvStamp){}
-    currentNoteProvenance=generationStyle==='soap'?'generated_soap':'generated_nonsoap';
+    currentNoteProvenance=effectiveGenStyle==='soap'?'generated_soap':'generated_nonsoap';
     lastAIDraft=currentSoap; // baseline snapshot for "Teach MLS" before edits
     currentInsurance=result.insuranceNote||'';
     currentCoding=result.coding;
@@ -33731,7 +33751,7 @@ async function generateNote(){
        (default comment/signature) has settled. Its fingerprint therefore owns
        the exact standard note the clinician reviewed, not the pre-render text. */
     if(canonicalAthenaNote){
-      _mlsSetAthenaNote(generationStyle==='soap'?_mlsAthenaCanonicalFromStandardNote(currentSoap).text:canonicalAthenaNote.text,'generated');
+      _mlsSetAthenaNote(effectiveGenStyle==='soap'?_mlsAthenaCanonicalFromStandardNote(currentSoap).text:canonicalAthenaNote.text,'generated');
     }else{
       /* sidecar-1.0.0: these three assignments are LOAD-BEARING, not belt and
          braces. _mlsMarkAthenaNoteStale returns early when provenance is
@@ -34544,6 +34564,29 @@ function buildPatientContext(){
     if(meds)       parts.push('Current medications:\n'+meds);
     if(allergies)  parts.push('Allergies:\n'+allergies);
     if(summary)    parts.push('Running history / prior-visit summary:\n'+summary);
+    /* priorvisits-1.0.0 (2026-09-15, owner: ordinary notes and op notes must
+       both see the patient's history AND prior visits). The BACKGROUND_ONLY
+       block carried the chart summary but not one prior note, so a follow-up
+       visit was drafted blind to what was decided last time. The three most
+       recent finished notes ride here, newest first, each bounded, under the
+       same BACKGROUND_ONLY rule the backend already enforces: background may
+       disambiguate an explicit reference in TODAY_TRANSCRIPT and may never
+       become today's complaint, finding, plan or code. Drafts and empty notes
+       are skipped; every read is guarded so this can never break a generation. */
+    try{
+      var priorNotes=(typeof patientNotes==='function'?(patientNotes(p.id)||[]):[])
+        .filter(function(n){ return n&&!n.isDraft&&String(n.soap||n.text||'').trim(); })
+        .sort(function(a,b){ return (Number(b.updated||b.created)||0)-(Number(a.updated||a.created)||0); })
+        .slice(0,3);
+      if(priorNotes.length){
+        var priorLines=priorNotes.map(function(n){
+          var when=''; try{ when=new Date(Number(n.updated||n.created)||0).toLocaleDateString(); }catch(eWhen){ when=''; }
+          var body=String(n.soap||n.text||'').replace(/\s+/g,' ').trim().slice(0,900);
+          return '['+when+(n.kind==='opnote'?' - prior operative note':' - prior visit note')+'] '+body;
+        });
+        parts.push('Prior notes (most recent first; BACKGROUND ONLY - never today\'s findings, decisions or codes):\n'+priorLines.join('\n'));
+      }
+    }catch(ePriorNotes){}
   }
   const pasted=getContext();
   if(pasted) parts.push('Additional context the clinician pasted for this visit:\n'+pasted);
@@ -35686,7 +35729,7 @@ For red_flags/suggested_orders/differentials/opioids/recommendations: use ONLY w
     templateName:(tplContract&&tplContract.name)?tplContract.name:'',
     findings:options.noteqFindings||null
   });
-  return await postChat(sys+tplSysLine,'TODAY_TRANSCRIPT_BEGIN\n'+transcript+'\nTODAY_TRANSCRIPT_END'+ctxLine+turnsBlock+seedLine+tplBlock+noteqBlock,key,{draftTuning:options.resolvedDraftTuning||_mlsGenerationDraftTuning(options.evidence),draftTuningResolved:!!options.resolvedDraftTuning,specialty:spec,signal:options.signal});
+  return await postChat(sys+tplSysLine,'TODAY_TRANSCRIPT_BEGIN\n'+transcript+'\nTODAY_TRANSCRIPT_END'+ctxLine+turnsBlock+seedLine+tplBlock+noteqBlock,key,{draftTuning:options.resolvedDraftTuning||_mlsGenerationDraftTuning(options.evidence),draftTuningResolved:!!options.resolvedDraftTuning,specialty:spec,templateAttached:!!tplContract,signal:options.signal});
 }
 
 /* noteq-1.0.0 (b1169): ONE repair pass for the PRIMARY structured note.
@@ -36143,10 +36186,16 @@ async function aiCallRaw(sys,user,key,opts){
       try{ window.__mlsLastAiModel=String((d&&d.model)||''); }catch(e){}
       return String((d&&d.content)||'').trim();
     }
+    /* tplnote-1.0.0 (2026-09-15): when the run attached a TEMPLATE_CONTRACT
+       the backend is told so explicitly - noteFormat "template" puts the
+       request on its reviewed lane, where "note" is the filled template and
+       the exact five-section "athena_note" is generated and validated on
+       its own. A backend that predates the format drops the unknown value
+       and behaves exactly as before; it also detects the block itself. */
     const res=await fetch(bkBase()+'/api/generate',{
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},
-      body:JSON.stringify({transcript:user, model:(typeof getNoteModel==='function'?getNoteModel():''), notePreferences:hostedNotePreferences(), draftFamily:_draftFamily||'soap', draftTuning:_draftTuning||undefined}),
+      body:JSON.stringify({transcript:user, model:(typeof getNoteModel==='function'?getNoteModel():''), notePreferences:(opts.templateAttached?Object.assign({},hostedNotePreferences()||{},{noteFormat:'template'}):hostedNotePreferences()), draftFamily:_draftFamily||'soap', draftTuning:_draftTuning||undefined}),
       signal:opts.signal
     });
     if(res.status===401){ handle401(); const e=new Error('401 unauthorized'); throw e; }

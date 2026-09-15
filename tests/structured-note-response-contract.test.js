@@ -102,7 +102,7 @@ for (const [name, source] of sources) {
   const validator = loadValidator(source, name);
   const generation = source.indexOf('async function generateNote()');
   const generate = generation >= 0 ? generation : source.indexOf('function generateNote()');
-  const validation = source.indexOf('_mlsValidateStructuredNoteResult(result,generationDraftTuning);', generate);
+  const validation = source.indexOf('_mlsValidateStructuredNoteResult(result,generationDraftTuning,generationTemplateRun);', generate);
   const mutation = source.indexOf('currentSoap=_reorderNoteForStyle(result.note', generate);
   ok(generate >= 0, name + ' has no generateNote sink');
   ok(validation > generate, name + ' does not validate the structured result inside generateNote');

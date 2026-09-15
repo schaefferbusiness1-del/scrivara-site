@@ -48,8 +48,24 @@
 
   function toast(msg, kind) { try { if (isFn(window.toast)) window.toast(msg, kind || ''); } catch (e) {} }
   function templates() { try { return isFn(window.getTemplates) ? (window.getTemplates() || []) : []; } catch (e) { return []; } }
+  /* opmatch-1.0.0: ONE splitter for compact level spellings, shared by
+     normText (lower case) and levelsOf (upper case). Case-insensitive; the
+     region letter's case is preserved in the output. */
+  function expandCompactLevels(text) {
+    /* Lookbehind, not \b: inside "L1L2L3" the boundary between "1" and "L" is
+       not a word boundary, so a \b-anchored rule split only the first level
+       (measured: "L1L2L3MB" -> "L1 L2L3MB"). */
+    return S(text)
+      .replace(/(?<![a-z])([clts])(\d{1,2})(?=[clts]\d)/gi, '$1$2 ')
+      .replace(/(?<![a-z])([clts]\d{1,2})(?=[a-z])/gi, '$1 ')
+      .replace(/(?<![a-z0-9])([lsc])(\d{2,3})(?![a-z0-9])/gi, function (m, p, d) {
+        var max = /l/i.test(p) ? 5 : (/s/i.test(p) ? 4 : 8), out = [];
+        for (var i = 0; i < d.length; i++) { var n = +d.charAt(i); if (n < 1 || n > max) return m; out.push(p + n); }
+        return out.join(' ');
+      });
+  }
   function normText(x) {
-    return S(x).toLowerCase()
+    return expandCompactLevels(S(x).toLowerCase())
       /* oni-2.11.0: frequent clinic TYPOS normalize before anything else — a
          one-letter slip must not flip a block into an RFA via keyword scoring. */
       .replace(/\b(transforminal|tranforaminal|transformainal|transforaminel)\b/g, ' transforaminal ')
@@ -62,6 +78,27 @@
          Expanded BEFORE phrase mapping so the class guard can fire and a
          cross-procedure template gets rejected instead of silently used. */
       .replace(/\bb\s*\/\s*l\b/g, ' bilateral ')
+      /* opmatch-1.0.0 (2026-09-15). THE PRACTICE'S OWN FILE NAMES WRITE LEVELS
+         COMPACTLY - "MBB L3L4L5 bilateral", "FACETS L45 L5S1-right",
+         "TF-L4L5-left", "MBB T12L1L2-bilateral", "L1L2L3mb-bilateral",
+         "TF-L3and S1 right" - and MEASURED through the shipped parser every one
+         of them read as NO level at all (levels:[]), so a template named for
+         L3-L5 could never out-score one named for L2-L5, and 13 of 29 real
+         schedule reasons ended in a tie refusal. Three deterministic splits:
+         a letter-digit run at every letter boundary ("l5s1" -> "l5 s1",
+         "t12l1l2" -> "t12 l1 l2"); a level glued to a following word
+         ("l3and" -> "l3 and", "l5mb" -> "l5 mb"); and a same-letter digit run
+         whose digits are EACH a valid level of that region ("l45" -> "l4 l5",
+         "l345" -> "l3 l4 l5", "c67" -> "c6 c7", "s12" -> "s1 s2"). Thoracic is
+         deliberately left alone because "t12" is itself a level. A digit that
+         is not a level of that region ("l0", "l6", "c9") leaves the run
+         untouched, so nothing is invented. */
+      /* opmatch-1.0.0: the practice's abbreviations. "TF" is transforaminal in
+         every one of its file names; "MB" a medial branch; "DR" (not "Dr.") a
+         dorsal ramus; "SI-<side>" the sacroiliac joint injection. */
+      .replace(/\btf\b/g, ' transforaminal ')
+      .replace(/\bmb\b/g, ' medial branch ')
+      .replace(/\bsi\s*-?\s*(bilateral|left|right)\b/g, ' si joint injection $1 ')
       .replace(/\binjs?\b/g, ' injection ')
       .replace(/\b([lcts]\d{1,2})\s*mbs?\b/g, ' $1 medial branch block ')
       .replace(/\bmbs\b/g, ' medial branch blocks ')
@@ -71,6 +108,9 @@
       .replace(/\brfas\b/g, ' rfa ')
       .replace(/\bdr\s*b\b/g, ' dorsal ramus block ')
       .replace(/\bdrb\b/g, ' dorsal ramus block ')
+      /* opmatch-1.0.0: a bare "DR" (never "Dr.") after the two block forms
+         above have had their turn - "L5 DR blocks bilateral", "L5 Dr and SI". */
+      .replace(/\bdr\b(?!\.)/g, ' dorsal ramus ')
       /* oni-2.11.0: "ESI-TF" / "TF ESI" shorthand */
       .replace(/\btf[\s-]*esi\b|\besi[\s-]*tf\b/g, ' tfesi ')
       .replace(/\btransforaminal epidural steroid injection\b/g, ' tfesi ')
@@ -93,9 +133,9 @@
     ['genicular_rfa', /\bgenicular\b[\s\S]{0,50}\b(rfa|radiofrequency|ablation)\b|\b(rfa|radiofrequency|ablation)\b[\s\S]{0,50}\bgenicular\b|\b64624\b/],
     ['genicular_block', /\bgenicular\b[\s\S]{0,50}\b(block|injection|64454)\b|\b64454\b/],
     ['facet_rfa', /\b(facet|medial branch|mbb|rhizotomy)\b[\s\S]{0,60}\b(rfa|radiofrequency|ablation|6463[3-6])\b|\b(rfa|radiofrequency|ablation)\b[\s\S]{0,60}\b(facet|medial branch|mbb)\b|\b6463[3-6]\b|\brhizotomy\b|\b(cervical|thoracic|lumbar)\b[\s\S]{0,30}\brfa\b|\brfa\b[\s\S]{0,30}\b(cervical|thoracic|lumbar)\b/],
-    ['facet_mbb', /\bmbb\b|\b(facet|medial branch)\b[\s\S]{0,60}\b(block|injection|6449[0-5])\b|\b6449[0-5]\b/],
+    ['facet_mbb', /\bmbb\b|\b(facet|medial branch|dorsal ramus)\b[\s\S]{0,60}\b(blocks?|injections?|6449[0-5])\b|\b6449[0-5]\b/],
     ['si_rfa', /\b(si joint|sacroiliac)\b[\s\S]{0,50}\b(rfa|radiofrequency|ablation)\b|\b(rfa|radiofrequency|ablation)\b[\s\S]{0,50}\b(si joint|sacroiliac)\b|\b64625\b/],
-    ['si_injection', /\b(si joint|sacroiliac)\b[\s\S]{0,50}\b(injection|block|27096)\b|\b27096\b/],
+    ['si_injection', /\b(si joint|sacroiliac)\b[\s\S]{0,50}\b(injection|block|27096|diagnostic)\b|\b27096\b|\b(?:bilateral|left|right)\s+si joint\s*$|\bsi joint\s+(?:bilateral|left|right)\s*$/],
     ['tfesi', /\b(tfesi|transforaminal|64479|64483|64484)\b/],
     ['interlaminar_esi', /\b(interlaminar|62321|62323)\b/],
     ['caudal_esi', /\bcaudal\b[\s\S]{0,40}\b(esi|epidural|injection)\b/],
@@ -235,7 +275,11 @@
   function levelsOf(text) {
     /* oni-2.9.0: slash notation ("L4/5", "L4/L5") is a routine clinical short
        form and must parse exactly like the hyphen range. */
-    var raw=S(text).toUpperCase().replace(/[–—]/g,'-'), seen={}, out=[];
+    /* opmatch-1.0.0: the level parser reads the RAW text, not normText, so the
+       compact-name splits must run here too - the same three rules, applied
+       in upper case ("L3L4L5" -> "L3 L4 L5", "L45" -> "L4 L5", "T12L1L2" ->
+       "T12 L1 L2", "L3AND" -> "L3 AND"). */
+    var raw=expandCompactLevels(S(text).toUpperCase().replace(/[–—]/g,'-')), seen={}, out=[];
     function add(prefix,num){num=Number(num);if(!/^[CLTS]$/.test(prefix)||num<1||num>12)return;var level=prefix+num;if(!seen[level]){seen[level]=1;out.push(level);}}
     var range=/\b([CLTS])\s*(\d{1,2})\s*[-\/]\s*(?:([CLTS])\s*)?(\d{1,2})\b/g,m;
     while((m=range.exec(raw))){var p1=m[1],p2=m[3]||p1,a=Number(m[2]),b=Number(m[4]);if(p1===p2&&a<=b&&b-a<=6){for(var x=a;x<=b;x++)add(p1,x);}else{add(p1,a);add(p2,b);}}
@@ -806,7 +850,18 @@
       ['left','right','bilateral','cervical','thoracic','lumbar'].forEach(function (w) {
         if (proc.indexOf(w) >= 0 && (name.indexOf(w) >= 0 || body.indexOf(w) >= 0)) score += 2;
       });
-      return { tpl:t, score:score, procClass:pc, tplClass:tc, compatible:compat.pass, conflicts:compat.errors, index:index };
+      /* opmatch-1.0.0: THE EXACT LEVEL SET AND THE EXACT SIDE ARE NOT TWO MORE
+         TOKENS. Under token scoring "MBB L2L3L4L5 -left" and "MBB L3L4L5 -left"
+         tie for "L MBB L3-5" - both names carry l3, l4 and l5 - and the tie
+         refused. A template whose parsed level set equals the requested one,
+         when the request names levels, is the one the doctor filed for that
+         procedure; the same for a side. Both bonuses are earned only against a
+         PARSED fact on both sides, so a level-less request or a level-less
+         template earns nothing and nothing is guessed. */
+      var tf = compat.template || {};
+      if (pf.levels && pf.levels.length && tf.levels && tf.levels.length && sameLevels(pf.levels, tf.levels)) score += 30;
+      if (pf.side && tf.side && pf.side === tf.side) score += 10;
+      return { tpl:t, score:score, procClass:pc, tplClass:tc, compatible:compat.pass, conflicts:compat.errors, index:index, facts:tf };
     });
     return demoteSameNameStubs(scored).sort(function (a, b) { return b.score - a.score || a.index - b.index; });
   }
@@ -1000,6 +1055,37 @@
        separates them. A tie now falls through to the closest-guess path, which
        still offers the template but says out loud that it was not decided. */
     var deadHeat = !!(second && second.tpl && margin === 0 && S(second.tplClass) === S(top.tplClass));
+    /* opmatch-1.0.0: A TIE BETWEEN TWO COPIES OF THE SAME PROCEDURE IS NOT A
+       DEAD HEAT. The owner's real library holds 27 same-name groups (124 rows)
+       and his file library has "MBB L3L4L5 bilateral" beside "MBB L3L4L5 2_
+       bilateral": the same operative note filed twice. Refusing between them
+       is refusing to draft at all, which is what he reported. When EVERY
+       candidate at the top score parses to the same procedure type, region,
+       side, exact levels and approach, either is the doctor's own note for
+       this procedure: take the one with more operative substance, then the
+       one filed first, and say so in the receipt. Two candidates whose parsed
+       facts DIFFER - L3-L4 beside L4-L5, left beside right - still refuse
+       exactly as before, because that is the guess this rule must never make. */
+    var equivalentTie = false;
+    if (deadHeat) {
+      var tied = [];
+      for (var ti = 0; ti < r.length && r[ti] && r[ti].tpl && r[ti].score === top.score; ti++) tied.push(r[ti]);
+      var allSame = tied.length > 1 && tied.every(function (e) {
+        var fa = e.facts || {}, fb = top.facts || {};
+        /* a classified procedure is required; levels may legitimately be
+           empty for a joint or SI injection, but then the TYPE must agree */
+        return !!fa.procedureType && fa.procedureType === fb.procedureType && fa.side === fb.side && fa.approach === fb.approach &&
+          sameRegion(fa.region, fb.region) && sameLevels(fa.levels || [], fb.levels || []);
+      });
+      if (allSame) {
+        var chosen = tied.slice().sort(function (a, b) {
+          var sa = (a.substance || templateSubstance(a.tpl)).score, sb = (b.substance || templateSubstance(b.tpl)).score;
+          return sb - sa || a.index - b.index;
+        })[0];
+        if (chosen && chosen !== top) { r.splice(r.indexOf(chosen), 1); r.unshift(chosen); top = chosen; second = r[1]; }
+        deadHeat = false; equivalentTie = true;
+      }
+    }
     /* 2026-08-06 — "the template auto matching just is not that good" (owner).
        MEASURED by QA against the text his SCHEDULE actually carries, rather
        than against well-formed strings: 24 of 27 real reasons REFUSED, and in
@@ -1043,7 +1129,7 @@
        is an operative note — so "(X vs X)" becomes something a doctor can act
        on. */
     var tieNames = deadHeat && r[1] && r[1].tpl ? (' (' + tieLabel(top, r[1]) + ' vs ' + tieLabel(r[1], top) + ')') : '';
-    return { tpl:confident ? top.tpl : null, candidate:top.tpl, confident:confident, reason:deadHeat?('two '+(S(top.tplClass)||'same-class')+' templates tie on score'+tieNames+' — the level or side is not decisive, so it was not auto-applied; pick one under Template'):(classExact?'procedure class':(confident?'keyword margin':'ambiguous')), score:top.score, margin:margin, tie:deadHeat, ranked:r };
+    return { tpl:confident ? top.tpl : null, candidate:top.tpl, confident:confident, reason:deadHeat?('two '+(S(top.tplClass)||'same-class')+' templates tie on score'+tieNames+' — the level or side is not decisive, so it was not auto-applied; pick one under Template'):(equivalentTie?('equivalent templates (same procedure, side and levels) — used "'+S(top.tpl&&top.tpl.name).slice(0,40)+'"; the other copy is one click away under Template'):(classExact?'procedure class':(confident?'keyword margin':'ambiguous'))), score:top.score, margin:margin, tie:deadHeat, equivalentTie:equivalentTie, ranked:r };
   }
 
   function dobKey(v) {

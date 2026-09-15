@@ -61,7 +61,7 @@ const vm = require('vm');
   /* Both halves must be PRESENT before their order means anything: indexOf
      returns -1 for a deleted call, and -1 is less than every real index, so a
      build that dropped the validation entirely would have passed this pin. */
-  const validateAt = generation.indexOf('_mlsValidateStructuredNoteResult(result,generationDraftTuning);');
+  const validateAt = generation.indexOf('_mlsValidateStructuredNoteResult(result,generationDraftTuning,generationTemplateRun);');
   const canonicalAt = generation.indexOf('currentSoap=_reorderNoteForStyle(result.note');
   assert(validateAt >= 0, 'generation no longer validates its structured result at all');
   assert(canonicalAt >= 0, 'generation no longer assigns the canonical note - the ordering pin below would be vacuous');

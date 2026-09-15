@@ -36,7 +36,7 @@ function extractFunction(source, marker) {
 let checks = 0;
 for (const file of shells) {
   const source = fs.readFileSync(path.join(root, file), 'utf8');
-  assert(source.includes("generationStyle==='soap'?_mlsAthenaCanonicalFromStandardNote(result.note):_mlsValidateAthenaNote("),
+  assert(source.includes("effectiveGenStyle==='soap'?_mlsAthenaCanonicalFromStandardNote(result.note):_mlsValidateAthenaNote("),
     file + ': fixed-format generation does not validate the displayed note first');
   checks += 1;
   const sandbox = { stripSignatureBlock: text => String(text), _autoDraftStripCarried: text => String(text) };
