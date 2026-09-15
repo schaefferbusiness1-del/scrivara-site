@@ -152,7 +152,7 @@ const scheduleDate = '2026-08-25';
       'successful short-circuit does not return an exact appointment-bound receipt');
     assert(background.includes('reasonCodes: []') &&
       background.includes('diag: searchOpenDiag((sched && sched.diag) || null)') &&
-      background.includes("diag: searchOpenDiag({ appointmentNavigationProven: false })"),
+      background.includes("diag: searchOpenDiag(Object.assign({}, (sched && sched.diag) || {}, __navDiag, { appointmentNavigationProven: false }))") /* navproof-diag-1.0.0 (3.0.136): the refusal carries the opener diag and closed counts */,
       'final exact-open refusals do not expose the bounded already-open reason codes and booleans');
 
     console.log('PASS already-open exact appointment: route/meta encounter, patient id, appointment hydration, single visit date, and same-frame banner identity all gate the zero-navigation short-circuit');

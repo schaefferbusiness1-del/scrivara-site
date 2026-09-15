@@ -17,7 +17,7 @@ for (const field of ['findReason:', 'via:', 'candidates:', 'sessionLikelyExpired
   assert(block.includes(field), 'chart-open failure bridge dropped ' + field);
 }
 assert(block.includes('.test(code) ? code :'), 'failure reason/route are not restricted to a closed vocabulary');
-assert(block.includes("['scanned', 'scrollers', 'topScore', 'inputCount', 'numericFieldsRefused', 'apptIdMatches', 'rowDobKnown']"),
+assert(block.includes("['scanned', 'scrollers', 'topScore', 'inputCount', 'numericFieldsRefused', 'apptIdMatches', 'rowDobKnown',") && block.includes("'navChangedFrames', 'eaSkipped', 'eaNoCand', 'eaCand', 'eaTimeout', 'eaMatches', 'eaRejVia', 'eaRejName', 'eaRejDob', 'eaRejEncish', 'eaRejDate'") /* navproof-diag-1.0.0 (3.0.136) */,
   'bounded structural counters are not explicitly whitelisted');
 assert(!/Object\.assign\([^\n]*openedSafe|\.\.\.opened|chartPatient|chartDob|chartMrn|rowDob\s*:/.test(block),
   'failure evidence copied a patient identifier or the unbounded worker result');

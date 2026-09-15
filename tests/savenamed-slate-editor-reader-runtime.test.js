@@ -10,7 +10,8 @@ const background = fs.readFileSync(path.join(root, 'background.js'), 'utf8');
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
 // 3.0.134: restorehome-1.1.0 (the restore retries the date navigation while the week strip has no day tabs yet); native persistence remains verified.
 // 3.0.135: qpstrip-2.0.0 (a hidden athenaOne tab gets its own unfocused work window; dead solo/host lease fields deleted); native persistence remains verified.
-assert.strictEqual(manifest.version, '3.0.135', 'regression must exercise the 3.0.135 candidate');
+// 3.0.136: navproof-diag-1.0.0 (the appointment-navigation refusal carries the opener diag and closed rejection counts); native persistence remains verified.
+assert.strictEqual(manifest.version, '3.0.136', 'regression must exercise the 3.0.136 candidate');
 const coreSha = (manifest.version_name.match(/core-sha256:([0-9a-f]{64})/) || [])[1];
 assert(coreSha, 'candidate manifest is missing its core hash');
 const computedCoreSha = execFileSync(process.execPath, [path.join(root, 'scripts', 'extension-core-digest.js')], { encoding: 'utf8' }).trim();

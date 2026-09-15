@@ -10132,7 +10132,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
     };
     const chartExpired = () => chartResponseSent || Date.now() >= chartRequestGuard.deadline;
     const chartFailDeadline = (stage) => chartRespond({
-      ok: false, reason: 'chart-deadline-exceeded',
+      ok: false, reason: 'chart-deadline-exceeded', stage: String(stage || 'the read').replace(/[^a-z0-9 ()-]/gi, '').slice(0, 60), /* readstage-1.0.0 (3.0.136) */
       error: 'The Athena chart read reached its absolute deadline during ' + (stage || 'the read') + '. No retry or fallback was dispatched after the timeout.'
     });
     const chartSettle = async (promise, ceilingMs) => {
@@ -10160,12 +10160,14 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
       await mlsSleepW(Math.min(left, wanted));
       return wanted <= left && !chartExpired();
     };
-    chartDeadlineTimer = setTimeout(() => { chartFailDeadline('the read'); }, Math.max(0, chartRequestGuard.deadline - Date.now()));
+    var __chartStage = 'request start'; /* readstage-1.0.0 (3.0.136): the last step the read reached, for the absolute-timer refusal */
+    chartDeadlineTimer = setTimeout(() => { chartFailDeadline('the read after ' + __chartStage); }, Math.max(0, chartRequestGuard.deadline - Date.now()));
     (async () => {
       try {
         if (chartExpired()) { chartFailDeadline('request start'); return; }
         const allSettled = await chartSettle(chrome.tabs.query({}), 10000);
         if (!allSettled || !allSettled.ok) { chartFailDeadline('Athena tab selection'); return; }
+        __chartStage = 'tab selection';
         const all = allSettled.value || [];
         const want = String(msg.patient || '').trim();
         const wantDob = String(msg.patientDob || '').trim();
@@ -10390,6 +10392,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
         let bootstrapReadyEarly = false;
         while (!chartExpired() && Date.now() - T0 < BUDGET_MS) {
           polls++;
+          __chartStage = 'identity poll ' + polls;
           /* v1.63: 15s -> 20s. A heavy-but-alive chart load could eat two 15s injection
              timeouts and trigger a false automatic-recovery path (v1.61 live
              finding). 2 x 20s + sleep still fits the 52s budget. */
@@ -10495,6 +10498,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
           if (!(await chartWait(bootstrapReadyEarly ? 600 : (polls < 3 ? 1200 : 2400)))) { chartFailDeadline('clinical chart readiness'); return; } /* v2.9.40 speed: faster early polls, same acceptance + budgets */
         }
         if (chartExpired()) { chartFailDeadline('clinical chart readiness'); return; }
+        __chartStage = 'identity settled after ' + polls + ' polls';
         const V59 = (chrome.runtime.getManifest && chrome.runtime.getManifest().version) || '';
         const restoreFocus = async () => {
           if (!fgByUs || !self.__mlsFgFocusApp || chartExpired()) return false;
@@ -10552,6 +10556,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
         const __identDoneAt = Date.now(); /* v2.9.27 stage timing: identity loop ended, text read begins */
         let results = [];
         {
+          __chartStage = 'text read';
           const tx = await chartExec({ target: { tabId: tab.id, allFrames: true }, func: () => {
             const PER_FRAME_CAP = 160000; /* hc-1.3 (3.0.40): the owner measured 103,039 chars of textContent on one athena surface - a >90k frame was marked truncated, excluded from the merge, and forced complete:false FOREVER on exactly the richest charts. */
             let u = ''; try { u = location.href; } catch (e0) {}
@@ -16227,6 +16232,7 @@ function mlsExactIdentityPair(expected, observed) {
               if (sched && sched.opened) {
                 var appointmentNavigationProven = !bootstrapIdentity;
                 var appointmentNavigationFrameIds = [];
+                var __navDiag = { navChangedFrames: 0, eaSkipped: 0, eaNoCand: 0, eaCand: 0, eaTimeout: 0, eaMatches: 0, eaRejVia: 0, eaRejName: 0, eaRejDob: 0, eaRejEncish: 0, eaRejDate: 0 }; /* navproof-diag-1.0.0 (3.0.136): counts only */
                 var encounterAcceptedReceipt = false; /* enc-accept-3.0.97 */
                 if (bootstrapIdentity && sched.diag && sched.diag.apptIdBound === true) {
                   var proofUntil = Math.min(openGuard.deadline, Date.now() + 12000);
@@ -16237,6 +16243,7 @@ function mlsExactIdentityPair(expected, observed) {
                     var navigationDelta = mlsAppointmentNavigationDelta(frozenApptId, beforeAppointmentFrames, afterFramesSettled.value || []);
                     appointmentNavigationProven = navigationDelta.matched === true;
                     appointmentNavigationFrameIds = navigationDelta.changedFrameIds || [];
+                    __navDiag.navChangedFrames = appointmentNavigationFrameIds.length;
                   }
                   /* enc-accept-3.0.97 (fix c): a CHECKED-IN row's click lands on the encounter/intake
                      surface (or navigates nothing when the encounter is already open), so the URL
@@ -16256,6 +16263,7 @@ function mlsExactIdentityPair(expected, observed) {
                       var eaWantDate = '';
                       var eaDm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(frozenScheduleDate || ''));
                       if (eaDm) eaWantDate = String(+eaDm[2]) + '/' + String(+eaDm[3]) + '/' + eaDm[1];
+                      if (!(eaWantDob && eaWantDate && (msg.name || ''))) __navDiag.eaSkipped = 1;
                       if (eaWantDob && eaWantDate && (msg.name || '')) {
                         var eaFramesSettled = await settleOpen(chrome.webNavigation.getAllFrames({ tabId: tab.id }));
                         var eaAll = (eaFramesSettled && eaFramesSettled.ok && eaFramesSettled.value) || [];
@@ -16263,9 +16271,11 @@ function mlsExactIdentityPair(expected, observed) {
                         (beforeAppointmentFrames || []).forEach(function (fr) { if (fr && typeof fr.frameId === 'number') eaBeforeById[fr.frameId] = String(fr.url || ''); });
                         var eaChanged = eaAll.filter(function (fr) { return fr && typeof fr.frameId === 'number' && (!(fr.frameId in eaBeforeById) || eaBeforeById[fr.frameId] !== String(fr.url || '')); });
                         var eaCand = (eaChanged.length ? eaChanged : eaAll).map(function (fr) { return fr.frameId; }).filter(function (fid) { return typeof fid === 'number' && fid >= 0; }).slice(0, 12);
+                        __navDiag.eaCand = eaCand.length; if (!eaCand.length) __navDiag.eaNoCand = 1;
                         if (eaCand.length) {
                           var eaIdX = await execOpen({ target: { tabId: tab.id, frameIds: eaCand }, func: mlsReadChartIdentity }, 15000);
                           var eaSurX = (eaIdX && eaIdX.timeout) ? { timeout: true } : await execOpen({ target: { tabId: tab.id, frameIds: eaCand }, func: mlsEncounterAcceptanceReaderFn }, 15000);
+                          if (!(eaIdX && !eaIdX.timeout && eaSurX && !eaSurX.timeout)) __navDiag.eaTimeout = 1;
                           if (eaIdX && !eaIdX.timeout && eaSurX && !eaSurX.timeout) {
                             var eaSurById = {};
                             (eaSurX.r || []).forEach(function (en) { if (en && typeof en.frameId === 'number' && en.result) eaSurById[en.frameId] = en.result; });
@@ -16273,15 +16283,15 @@ function mlsExactIdentityPair(expected, observed) {
                             (eaIdX.r || []).forEach(function (en) {
                               var idr = en && en.result; var sur = (en && typeof en.frameId === 'number') ? eaSurById[en.frameId] : null;
                               if (!idr || !sur) return;
-                              if (!/^(?:banner|shadow-labels|shadow-banner)$/.test(String(idr.via || ''))) return;
-                              if (!eaNameOk(idr.name, msg.name || '')) return;
+                              if (!/^(?:banner|shadow-labels|shadow-banner)$/.test(String(idr.via || ''))) { __navDiag.eaRejVia++; return; }
+                              if (!eaNameOk(idr.name, msg.name || '')) { __navDiag.eaRejName++; return; }
                               var eaGotDob = eaDobKey(idr.dob);
-                              if (!eaGotDob || eaGotDob !== eaWantDob) return;
-                              if (sur.encish !== true) return;
-                              if ((sur.dates || []).indexOf(eaWantDate) < 0) return;
+                              if (!eaGotDob || eaGotDob !== eaWantDob) { __navDiag.eaRejDob++; return; }
+                              if (sur.encish !== true) { __navDiag.eaRejEncish++; return; }
+                              if ((sur.dates || []).indexOf(eaWantDate) < 0) { __navDiag.eaRejDate++; return; }
                               eaMatches.push(en.frameId);
                             });
-                            eaMatches = eaMatches.filter(function (v, i, a) { return a.indexOf(v) === i; });
+                            eaMatches = eaMatches.filter(function (v, i, a) { return a.indexOf(v) === i; }); __navDiag.eaMatches = eaMatches.length;
                             if (eaMatches.length === 1) {
                               appointmentNavigationProven = true;
                               appointmentNavigationFrameIds = [eaMatches[0]];
@@ -16296,7 +16306,7 @@ function mlsExactIdentityPair(expected, observed) {
                     } catch (eEncAccept) {}
                   }
                   if (!appointmentNavigationProven) {
-                    sendResponse({ ok: false, opened: false, reason: 'appointment-navigation-unverified', error: 'Athena did not prove navigation from the exact appointment row. Nothing was read.', diag: searchOpenDiag({ appointmentNavigationProven: false }) }); return;
+                    sendResponse({ ok: false, opened: false, reason: 'appointment-navigation-unverified', error: 'Athena did not prove navigation from the exact appointment row. Nothing was read.', diag: searchOpenDiag(Object.assign({}, (sched && sched.diag) || {}, __navDiag, { appointmentNavigationProven: false })) }); return;
                   }
                 }
                 try { self.__mlsOpenPref = 'schedule'; } catch (e0) {}

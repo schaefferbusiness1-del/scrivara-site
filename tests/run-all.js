@@ -1440,6 +1440,7 @@ const tests = [
   'contfix-30126-runtime.test.js',
   'bannernames-30127-runtime.test.js',
   'qpstrip-30135-runtime.test.js',
+  'navproof-diag-30136-runtime.test.js',
   'visit-reader-minimal-deadline-contract.test.js',
   'visit-request-correlation-runtime.test.js',
   'cohort-request-correlation-runtime.test.js',
