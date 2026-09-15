@@ -15913,19 +15913,19 @@ function mlsExactIdentityPair(expected, observed) {
         if(!rowName){var names=cells.filter(function(x){return !/[0-9]/.test(x)&&mlsExactNameKey(x)===mlsExactNameKey(name);});if(names.length===1)rowName=names[0];}
         var dates=[];(di.length===1?[cells[di[0]]]:cells).forEach(function(x){var k=mlsExactDobKey(x);if(k&&dates.indexOf(k)<0)dates.push(k);});
         var __dobHit=dates.length===1&&!!mlsExactDobKey(dob)&&dates[0]===mlsExactDobKey(dob), __nameHit=!!rowName&&!!mlsExactNameKey(name)&&mlsExactNameKey(rowName)===mlsExactNameKey(name); /* finddiag-1.0.0 (3.0.137) */
-        return {ok:dates.length===1&&mlsExactIdentityPair({name:name,dob:dob},{name:rowName,dob:dates[0]}).ok,dob:dates.length===1?dates[0]:'',dobHit:__dobHit,nameHit:__nameHit,alt:/\(|\blegal\b|\bpreferred\b/i.test(cells.join(' ')),mrnHit:!!wantMrn&&cells.some(function(x){return mrnCellMatches(x,wantMrn);}),dobVeto:dates.length===1&&!!mlsExactDobKey(dob)&&dates[0]!==mlsExactDobKey(dob)}; /* findmrn-1.0.0 (3.0.149): the row's MRN evidence and its DOB veto */
+        return {rowName:rowName /* findbydob-1.1.0 (3.0.154): stays inside the driver; only the shape code below leaves */,ok:dates.length===1&&mlsExactIdentityPair({name:name,dob:dob},{name:rowName,dob:dates[0]}).ok,dob:dates.length===1?dates[0]:'',dobHit:__dobHit,nameHit:__nameHit,alt:/\(|\blegal\b|\bpreferred\b/i.test(cells.join(' ')),mrnHit:!!wantMrn&&cells.some(function(x){return mrnCellMatches(x,wantMrn);}),dobVeto:dates.length===1&&!!mlsExactDobKey(dob)&&dates[0]!==mlsExactDobKey(dob)}; /* findmrn-1.0.0 (3.0.149): the row's MRN evidence and its DOB veto */
       }
       var exact = [], prefix = [], pool = [], mrnNarrowed = false;
-      var __fd = { findRows: 0, findDobHit: 0, findNameHit: 0, findDobOnly: 0, findAltRows: 0, findMrnHit: 0 }; var mrnPool = []; /* findmrn-1.0.0 (3.0.149) */ /* finddiag-1.0.0 (3.0.137): counts only, never a name or DOB */
+      var __fd = { findRows: 0, findDobHit: 0, findNameHit: 0, findDobOnly: 0, findAltRows: 0, findMrnHit: 0 }; var mrnPool = []; var __dobShapes = []; function __shapeCode(req, row) { /* findbydob-1.1.0 (3.0.154): a closed code, never a name */ function toks(s) { var r = String(s || '').toLowerCase(); try { r = r.normalize('NFKD').replace(/[\u0300-\u036f]/g, ''); } catch (e0) {} var ps = r.split(','); if (ps.length === 2) r = ps[1] + ' ' + ps[0]; return r.replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(function (t) { return t && !/^(mr|mrs|ms|miss|dr|prof|jr|sr|ii|iii|iv)$/.test(t); }); } var a = toks(req), b = toks(row); if (!a.length || !b.length) return 'n' + a.length + b.length; var af = a[0], al = a[a.length - 1], bf = b[0], bl = b[b.length - 1]; var c = 'n'; if (mlsExactNameKey(req) && mlsExactNameKey(req) === mlsExactNameKey(row)) c = 'e'; else if (af === bl && al === bf) c = 's'; else if (al === bl) c = 'l' + ((af.indexOf(bf) === 0 || bf.indexOf(af) === 0) ? 'p' : 'x'); else if (af === bf) c = 'f' + ((b.indexOf(al) >= 0 || a.indexOf(bl) >= 0) ? 'h' : 'x'); else if (a.every(function (t) { return b.indexOf(t) >= 0; })) c = 'c'; else if (b.every(function (t) { return a.indexOf(t) >= 0; })) c = 'r'; return c + Math.min(9, a.length) + Math.min(9, b.length); } /* findmrn-1.0.0 (3.0.149) */ /* finddiag-1.0.0 (3.0.137): counts only, never a name or DOB */
       for (var c=0;c<chartAs.length;c++) {
         var tr=chartAs[c].closest ? chartAs[c].closest('tr') : null;
         if(!tr) continue;
         var evidence=exactResultRow(tr);
-        __fd.findRows++; if(evidence.dobHit)__fd.findDobHit++; if(evidence.nameHit)__fd.findNameHit++; if(evidence.dobHit&&!evidence.nameHit)__fd.findDobOnly++; if(evidence.dobHit&&evidence.alt)__fd.findAltRows++;
+        __fd.findRows++; if(byDob&&evidence.dobHit&&__dobShapes.length<4)__dobShapes.push(__shapeCode(name,evidence.rowName)); if(evidence.dobHit)__fd.findDobHit++; if(evidence.nameHit)__fd.findNameHit++; if(evidence.dobHit&&!evidence.nameHit)__fd.findDobOnly++; if(evidence.dobHit&&evidence.alt)__fd.findAltRows++;
         if(evidence.ok) pool.push({a:chartAs[c],dob:evidence.dob,mrnMatched:false}); else if(evidence.mrnHit&&!evidence.dobVeto){__fd.findMrnHit++; mrnPool.push({a:chartAs[c],dob:evidence.dob,mrnMatched:true});} /* findmrn-1.0.0 */
       }
       if(pool.length===0&&mrnPool.length===1){pool=mrnPool;mrnNarrowed=true;} /* findmrn-1.0.0 (3.0.149): the owner's rule - an exact MRN with no contradicting DOB identifies the row when the printed name does not; two MRN rows stay refused */
-      if(pool.length!==1) return {opened:false,attempted:false,reason:pool.length?'ambiguous':'no-name-match',count:pool.length,tier:'exact-name-dob',diag:__fd};
+      if(byDob)__fd.findByDobShape=__dobShapes.join('-'); /* findbydob-1.1.0 */ if(pool.length!==1) return {opened:false,attempted:false,reason:pool.length?'ambiguous':'no-name-match',count:pool.length,tier:'exact-name-dob',diag:__fd};
       /* rowreverify-1.0.0 (3.0.117, measured live 2026-09-11): the result list
          RE-ORDERS between the read that chose a row and the click that opens it,
          so the chart that opened was a different person's and the app-side merge
@@ -16541,7 +16541,7 @@ function mlsExactIdentityPair(expected, observed) {
                 if (fxd.timeout) { failOpenDeadline('find-by-dob open'); return; }
                 var frd = (fxd && fxd.r && fxd.r[0] && fxd.r[0].result) || null;
                 if (frd && (frd.opened || /^(ambiguous|dob-mismatch)$/.test(frd.reason || ''))) findRes = frd;
-                else { try { findRes.diag = Object.assign({}, findRes.diag || {}, { findRetries: 5, findByDob: 1, findByDobReason: String((frd && frd.reason) || '') }); } catch (eFrd) {} }
+                else { try { findRes.diag = Object.assign({}, findRes.diag || {}, { findRetries: 5, findByDob: 1, findByDobReason: String((frd && frd.reason) || ''), findByDobShape: String((frd && frd.diag && frd.diag.findByDobShape) || ''), dobFindRows: Number(frd && frd.diag && frd.diag.findRows) || 0, dobFindDobHit: Number(frd && frd.diag && frd.diag.findDobHit) || 0, dobFindNameHit: Number(frd && frd.diag && frd.diag.findNameHit) || 0, dobFindAltRows: Number(frd && frd.diag && frd.diag.findAltRows) || 0 }); } catch (eFrd) {} }
               }
               if (findRes && findRes.opened) {
                 try { self.__mlsOpenPref = 'findpatient'; } catch (e0) {}

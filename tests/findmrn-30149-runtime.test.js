@@ -23,7 +23,7 @@ ok(driver.includes("else if(evidence.mrnHit&&!evidence.dobVeto){__fd.findMrnHit+
 ok(driver.includes("if(pool.length===0&&mrnPool.length===1){pool=mrnPool;mrnNarrowed=true;}"), 'exactly one MRN row is accepted only when the exact pair found nobody');
 ok(driver.includes("if(_rvEv.ok||(pool[0].mrnMatched===true&&_rvEv.mrnHit&&!_rvEv.dobVeto))_rvRows.push(_rvAs[_rvI]);"), 'the re-read accepts the same evidence');
 ok(driver.includes("findMrnHit: 0 }"), 'the counter exists');
-ok(ct.includes("'findRetries' /* compound3-1.0.0 (3.0.139) */, 'findMrnHit' /* findmrn-1.0.0 (3.0.149) */, 'findByDob' /* findbydob-1.0.0 (3.0.153) */]"), 'content.js allowlists findMrnHit as a count');
+ok(ct.includes("'findRetries' /* compound3-1.0.0 (3.0.139) */, 'findMrnHit' /* findmrn-1.0.0 (3.0.149) */, 'findByDob' /* findbydob-1.0.0 (3.0.153) */"), 'content.js allowlists findMrnHit as a count');
 ok(bg.includes("['findRows', 'findDobHit', 'findNameHit', 'findDobOnly', 'findAltRows', 'findMrnHit', 'findTokens', 'findRetries'].forEach(function (k) { if (__p.diag[k] == null && __fr.diag[k] != null) __p.diag[k] = __fr.diag[k]; });"), 'every refusal carries the Find counts (legsdiag-1.1.0)');
 
 /* the real evidence function */

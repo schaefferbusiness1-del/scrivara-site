@@ -35,7 +35,7 @@ const banner={name:'John ONeill',dob:'01/02/1960',mrn:'222222',via:'banner'};
 eq(decision(banner,null,expected.name,expected.dob,expected.mrn).matched,true,'already open accepts stale caller MRN');
 eq(decision(banner,{candidates:[{...banner,mrn:'333333'}]},expected.name,expected.dob,expected.mrn).matched,false,'distinct live same-pair candidates refuse');
 eq(decision(banner,{candidates:[banner]},expected.name,expected.dob,expected.mrn).matched,true,'same live ID duplicate rendering is not two patients');
-const find="var wantMrn='';function mrnCellMatches(){return false;}\n"+slice('      function exactResultRow(row)', '      /* rowreverify-1.0.0'); /* findmrn-1.0.0 (3.0.149): the evidence also reads the driver's wantMrn/mrnCellMatches; this harness pins the name+DOB pair with no MRN requested */
+const find="var wantMrn='';var byDob=false;function mrnCellMatches(){return false;}\n"+slice('      function exactResultRow(row)', '      /* rowreverify-1.0.0'); /* findmrn-1.0.0 (3.0.149): the evidence also reads the driver's wantMrn/mrnCellMatches; this harness pins the name+DOB pair with no MRN requested */
 function search(rows){
  const clicks=[];
  const headers=['Last Name','First Name','DOB'];

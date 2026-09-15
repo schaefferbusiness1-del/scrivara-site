@@ -20,7 +20,7 @@ ok(bg.includes("'client/findpatient.esp?filtertype=' + (byDob ? 'DOB' : 'NAME') 
 eq(bg.split('setVal(inp, findText)').length - 1, 1, 'the fill uses the same text'); eq(bg.split('inpChk.value === findText').length - 1, 1, 'and the fill check');
 ok(!bg.includes('setVal(inp, searchStr)'), 'no stale fill with the name in dob mode');
 ok(ct.includes("'findByDob' /* findbydob-1.0.0 (3.0.153) */"), 'content.js allowlists findByDob as a count');
-ok(ct.includes("['legFind', 'legSched', 'legOrder', 'findByDobReason' /* findbydob-1.0.0 (3.0.153) */]"), 'content.js carries the DOB-search outcome code');
+ok(ct.includes("['legFind', 'legSched', 'legOrder', 'findByDobReason' /* findbydob-1.0.0 (3.0.153) */"), 'content.js carries the DOB-search outcome code');
 /* the driver's own DOB formatting */
 const drvStart = bg.indexOf('  async function mlsFindPatientOpenDriverFn(');
 const keyStart = bg.indexOf('function mlsExactDobKey(value) {', drvStart);
@@ -34,10 +34,34 @@ eq(toUs(keyFn, '12/25/1962'), '12/25/1962', 'a US date of birth searches unchang
 eq(toUs(keyFn, '1962-3-4'), '03/04/1962', 'a loose ISO date pads');
 eq(toUs(keyFn, ''), '', 'no date of birth, no search text (the ladder never asks without one)');
 
+/* findbydob-1.1.0 (3.0.154): the by-DOB rows' shapes travel as closed codes, never names */
+ok(bg.includes("return {rowName:rowName /* findbydob-1.1.0 (3.0.154): stays inside the driver; only the shape code below leaves */,ok:dates.length===1&&mlsExactIdentityPair("), 'the row name stays inside the driver');
+ok(bg.includes("if(byDob&&evidence.dobHit&&__dobShapes.length<4)__dobShapes.push(__shapeCode(name,evidence.rowName));"), 'DOB-hit rows are coded, at most four');
+ok(bg.includes("if(byDob)__fd.findByDobShape=__dobShapes.join('-'); /* findbydob-1.1.0 */ if(pool.length!==1) return {opened:false,attempted:false,reason:pool.length?'ambiguous':'no-name-match',count:pool.length,tier:'exact-name-dob',diag:__fd};"), 'the codes ride the unchanged refusal');
+ok(bg.includes("findByDobShape: String((frd && frd.diag && frd.diag.findByDobShape) || ''), dobFindRows: Number(frd && frd.diag && frd.diag.findRows) || 0, dobFindDobHit: Number(frd && frd.diag && frd.diag.findDobHit) || 0, dobFindNameHit: Number(frd && frd.diag && frd.diag.findNameHit) || 0, dobFindAltRows: Number(frd && frd.diag && frd.diag.findAltRows) || 0 }"), 'the ladder carries the by-DOB counts and codes');
+ok(ct.includes("'dobFindRows', 'dobFindDobHit', 'dobFindNameHit', 'dobFindAltRows' /* findbydob-1.1.0 (3.0.154) */"), 'content.js allowlists the by-DOB counts');
+ok(ct.includes("'findByDobShape' /* findbydob-1.1.0 (3.0.154) */"), 'content.js carries the shape code through the closed sanitizer');
+const shStart = bg.indexOf('function __shapeCode(req, row) {'); const shEndTok = "return c + Math.min(9, a.length) + Math.min(9, b.length); }"; const shEnd = bg.indexOf(shEndTok, shStart);
+ok(shStart > 0 && shEnd > shStart, 'shape coder present');
+const nameKeyStart = bg.indexOf('function mlsExactNameKey(value) {');
+const shape = new Function(bg.slice(nameKeyStart, bg.indexOf('\n}', nameKeyStart) + 2) + '\n' + bg.slice(shStart, shEnd + shEndTok.length) + '\nreturn __shapeCode;')();
+eq(shape('Maria Souza', 'Maria Souza'), 'e22', 'exact');
+eq(shape('Souza Maria', 'Maria Souza'), 's22', 'first/last swapped');
+eq(shape('Bill Souza', 'William Souza'), 'lx22', 'same last, different first');
+eq(shape('Will Souza', 'William Souza'), 'lp22', 'same last, first a prefix');
+eq(shape('Maria Souza', 'Maria Souza-Lima'), 'fh23', 'same first, the request last is one of the row tokens (a hyphen splits)');
+eq(shape('Maria Souza', 'Maria Lima'), 'fx22', 'same first, different last');
+eq(shape('Maria Souza', 'Maria de Souza Lima'), 'fh24', 'same first, the request last is one of the row tokens');
+eq(shape('Maria Lima', 'Maria de Souza Lima'), 'e24', 'the exact key is first+last, so this row would have PASSED the gate');
+eq(shape('Souza Lima Maria', 'Maria de Souza Lima'), 'c34', 'request tokens all inside the row');
+eq(shape('Ana Souza', 'Rui Lima'), 'n22', 'nothing shared');
+eq(shape('Souza, Maria', 'Maria Souza'), 'e22', 'a comma request is read as Last, First');
+ok(!/[A-Z]/.test(shape('Maria Souza', 'Rui Lima')) && shape('Maria Souza', 'Rui Lima').length <= 4, 'the code carries no letters of any name');
+
 /* the ladder block */
 const s = bg.indexOf("              /* findbydob-1.0.0 (3.0.153): when every name shape answered no-results");
 ok(s > 0, 'ladder block present');
-const e = bg.indexOf("findByDobReason: String((frd && frd.reason) || '') }); } catch (eFrd) {} }", s);
+const e = bg.indexOf("dobFindAltRows: Number(frd && frd.diag && frd.diag.findAltRows) || 0 }); } catch (eFrd) {} }", s); ok(e > s, 'ladder seam present');
 const close = bg.indexOf('\n              }', e);
 const block = bg.slice(s, close + '\n              }'.length).replace(/\r/g, '');
 ok(bg.indexOf('findparticle-1.0.0 (3.0.151): a surname carrying') < s, 'the DOB shape comes after the particle shapes');

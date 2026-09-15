@@ -39,7 +39,7 @@ r = run({ ok: false, reason: 'y' }, { findRes: { opened: true }, sched: { opened
 eq(r.diag.legFind, 'opened', 'an opened leg says opened'); eq(r.diag.legSched, 'refused', 'a refusal without a reason says refused');
 
 /* content.js: the closed sanitizer, exactly those keys */
-ok(ct.includes("['legFind', 'legSched', 'legOrder', 'findByDobReason' /* findbydob-1.0.0 (3.0.153) */].forEach(function (key) { var v = String(openedDiag[key] == null ? '' : openedDiag[key]).toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 40); if (v) safeDiag[key] = v; });"), 'content.js copies the leg codes (and the 3.0.153 DOB-search code) through a closed sanitizer');
+ok(ct.includes("['legFind', 'legSched', 'legOrder', 'findByDobReason' /* findbydob-1.0.0 (3.0.153) */, 'findByDobShape' /* findbydob-1.1.0 (3.0.154) */].forEach(function (key) { var v = String(openedDiag[key] == null ? '' : openedDiag[key]).toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 40); if (v) safeDiag[key] = v; });"), 'content.js copies the leg codes (and the 3.0.153 DOB-search code) through a closed sanitizer');
 const sani = (v) => String(v == null ? '' : v).toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 40);
 eq(sani('No-Results'), 'no-results', 'lowercased'); eq(sani('Jane Doe 01/02/1950 #123'), 'janedoe01021950123', 'letters and digits only survive, no separators');
 eq(sani('a'.repeat(60)).length, 40, 'bounded');
