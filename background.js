@@ -15425,7 +15425,7 @@ function mlsExactIdentityPair(expected, observed) {
         // on scrollHeight/clientHeight (layout-only) and cap the candidate set.
         function findScrollers() {
           var out = [];
-          var cands = [].slice.call(document.querySelectorAll('[class*="ScheduleColumn_schedule-column"],[class*="schedule"],[class*="calendar"],main,section')).slice(0, 400);
+          var cands = [].slice.call(document.querySelectorAll('[class~="appointments"],[class*="ScheduleColumn_schedule-column"],[class*="schedule"],[class*="calendar"],main,section')).slice(0, 400); /* rowscroll-1.0.0 (3.0.143): the classic day grid scrolls in div.appointments */
           for (var i = 0; i < cands.length && out.length < 3; i++) {
             var el = cands[i];
             try {
@@ -15450,6 +15450,7 @@ function mlsExactIdentityPair(expected, observed) {
             var h2 = requireAppointmentId === true ? (apptIdRow() || { el: null, sc: 0, scanned: 0 }) : scanOnce(); if (h2.scanned > scannedTotal) scannedTotal = h2.scanned;
             if (h2.ambiguous) return { phase: 'open', opened: false, candidates: h2.matches || 2, reason: 'appointment-id-ambiguous', diag: { frame: location.hostname, scanned: scannedTotal, scrolledTo: y, topScore: h2.sc, apptIdBound: false, apptIdMatches: h2.matches || 2 } };
             if (h2.el) return await clickRebound(h2, y);
+            if (y + step > maxH) { /* rowscroll-1.0.0 (3.0.143): athena's classic day grid lazy-loads the rest of a long list ~1 s after it is scrolled to its end (measured); wait once at the bottom and extend the sweep if the list grew */ await (function (ms) { var __hsAt = Date.now() + Math.max(0, Number(ms || 0)); return new Promise(function (r) { /* mls-hs-1.0.0: hidden tab => timers throttled to 1/s then 1/min; yield through a MessageChannel (not a timer) until the wall clock passes. */ if (typeof document === 'undefined' || !document.hidden) { setTimeout(r, Math.max(0, __hsAt - Date.now())); return; } var __ch = null; try { __ch = new MessageChannel(); } catch (e) { __ch = null; } if (!__ch) { setTimeout(r, Math.max(0, __hsAt - Date.now())); return; } __ch.port1.onmessage = function () { if (Date.now() >= __hsAt) { try { __ch.port1.onmessage = null; __ch.port1.close(); __ch.port2.close(); } catch (e2) {} r(); return; } if (!document.hidden) { try { __ch.port1.onmessage = null; __ch.port1.close(); __ch.port2.close(); } catch (e3) {} setTimeout(r, Math.max(0, __hsAt - Date.now())); return; } try { __ch.port2.postMessage(0); } catch (e4) { setTimeout(r, Math.max(0, __hsAt - Date.now())); } }; __ch.port2.postMessage(0); }); })(1200); try { var __nh = sc0.scrollHeight; if (__nh > maxH + 60) maxH = __nh; } catch (eNh) {} }
           }
           if (openAllowed()) try { sc0.scrollTop = orig; } catch (e) {}
         }
