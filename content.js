@@ -566,7 +566,7 @@
                'navChangedFrames', 'eaSkipped', 'eaNoCand', 'eaCand', 'eaTimeout', 'eaMatches', 'eaRejVia', 'eaRejName', 'eaRejDob', 'eaRejEncish', 'eaRejDate' /* navproof-diag-1.0.0 (3.0.136) */,
                'findRows', 'findDobHit', 'findNameHit', 'findDobOnly', 'findAltRows', 'findTokens', 'findPunct', 'findComma' /* finddiag-1.0.0 (3.0.137) */,
                'eaChanged', 'eaDatelessChanged' /* navaccept-1.0.0 (3.0.137) */,
-               'findRetries' /* compound3-1.0.0 (3.0.139) */, 'findMrnHit' /* findmrn-1.0.0 (3.0.149) */, 'findByDob' /* findbydob-1.0.0 (3.0.153) */, 'dobFindRows', 'dobFindDobHit', 'dobFindNameHit', 'dobFindAltRows' /* findbydob-1.1.0 (3.0.154) */, 'findUsedRows', 'findResultsTotal' /* findbydob-2.0.0 (3.0.157) */, 'dobFindUsedRows', 'dobFindResultsTotal' /* findbydob-2.1.0 (3.0.158) */].forEach(function (key) {
+               'findRetries' /* compound3-1.0.0 (3.0.139) */, 'findMrnHit' /* findmrn-1.0.0 (3.0.149) */, 'findByDob' /* findbydob-1.0.0 (3.0.153) */, 'dobFindRows', 'dobFindDobHit', 'dobFindNameHit', 'dobFindAltRows' /* findbydob-1.1.0 (3.0.154) */, 'findUsedRows', 'findResultsTotal' /* findbydob-2.0.0 (3.0.157) */, 'dobFindUsedRows', 'dobFindResultsTotal' /* findbydob-2.1.0 (3.0.158) */, 'legSchedScanned', 'legSchedScrollers', 'legSchedTopScore', 'legSchedLnameInDoc', 'legSchedFnameInDoc', 'legSchedListRows', 'legSchedDocLen', 'legSchedPathCode' /* schedscandiag-1.0.0 (3.0.160) */].forEach(function (key) {
                 var value = Number(openedDiag[key]); if (isFinite(value)) safeDiag[key] = value;
               });
               ['rowRebinds', 'scheduleRegrounds'].forEach(function (key) {

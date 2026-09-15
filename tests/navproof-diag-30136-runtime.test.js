@@ -97,7 +97,7 @@ ok(bg.includes("reason: findRes.reason, findReason: findRes.reason, diag: search
 {
   const i = ct.indexOf("'navChangedFrames', 'eaSkipped'");
   const j = ct.indexOf("var value = Number(openedDiag[key]); if (isFinite(value)) safeDiag[key] = value;", i);
-  ok(i > 0 && j > i && j - i < 800, 'the counts pass only as finite numbers');
+  ok(i > 0 && j > i && j - i < 1400, 'the counts pass only as finite numbers (the allowlist grew through 3.0.160)');
 }
 /* 4. readstage-1.0.0 (3.0.136): the absolute chart-read timer names the last step reached */
 ok(bg.includes("ok: false, reason: 'chart-deadline-exceeded', stage: String(stage || 'the read').replace(/[^a-z0-9 ()-]/gi, '').slice(0, 60),"), 'the deadline refusal carries a closed stage string');
