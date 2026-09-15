@@ -89,7 +89,7 @@ ok(ct.includes("'navChangedFrames', 'eaSkipped', 'eaNoCand', 'eaCand', 'eaTimeou
 ok(ct.includes("safeDiag.apptIdBound = openedDiag.apptIdBound === true;"), 'bridge carries apptIdBound as a boolean');
 ok(ct.includes("'findRows', 'findDobHit', 'findNameHit', 'findDobOnly', 'findAltRows', 'findTokens', 'findPunct', 'findComma'") && ct.includes("'eaChanged', 'eaDatelessChanged'"), 'bridge allowlist carries the 3.0.137 counts');
 /* finddiag-1.0.0 (3.0.137): the Find driver counts what it rejected, never what it saw */
-ok(bg.includes("var __fd = { findRows: 0, findDobHit: 0, findNameHit: 0, findDobOnly: 0, findAltRows: 0 };"), 'find counters declared');
+ok(bg.includes("var __fd = { findRows: 0, findDobHit: 0, findNameHit: 0, findDobOnly: 0, findAltRows: 0, findMrnHit: 0 };"), 'find counters declared (findMrnHit added by findmrn-1.0.0, 3.0.149)');
 ok(bg.includes("reason:pool.length?'ambiguous':'no-name-match',count:pool.length,tier:'exact-name-dob',diag:__fd};"), 'the no-name-match refusal carries the counts');
 ok(bg.includes("diag: { findTokens: String(name || '').split(") && bg.includes("findPunct: /") && bg.includes("findComma: String(name || '').indexOf(',') >= 0 ? 1 : 0 }"), 'the no-results refusal carries the searched term shape');
 ok(bg.includes("reason: findRes.reason, findReason: findRes.reason, diag: searchOpenDiag(Object.assign({}, findRes.diag || {}, { route: 'findpatient' })) }); return;"), 'the worker Find refusal carries the counts');

@@ -4447,13 +4447,13 @@ function mlsAthenaTeachWatcherFn(config) {
  * throttled) and athenaOne does not paint there, so a read needs the tab VISIBLE
  * somewhere without ever foregrounding it over the doctor's work.
  *   - qpEnsure(tab, senderTabId): already visible -> 'visible'. Otherwise select the
- *     tab inside its window only when that displaces nothing the doctor is looking at;
- *     else (qpstrip-2.0.0, 3.0.135) move it once into an UNFOCUSED work window of its
- *     own at the right edge of its display -> 'strip'. Still occluded -> 'limp': the
- *     read proceeds under the callers' own budgets and retries.
- *   - qpRelease(): move athena back to its original window and index, preserving
- *     whatever tab the doctor has selected - fired by end-of-run mlsAppFocusMlsTab, a
- *     120s quiet watchdog + alarms backstop (worker restarts), and before any write op.
+ *     tab inside its window only when that displaces nothing the doctor is looking at
+ *     -> 'selected'. Still occluded -> 'limp': the read proceeds on the hidden tab under
+ *     the callers' own hidden-safe budgets and retries. nowindow-1.0.0 (3.0.147, owner:
+ *     "snapping windows out is not reliable"): no window is ever created, moved, resized
+ *     or focused; the 3.0.135-3.0.146 work window is gone.
+ *   - qpRelease(): end the lease (one exact tab per pull) - fired by end-of-run
+ *     mlsAppFocusMlsTab, a 120s quiet watchdog + alarms backstop (worker restarts), the 30 s sticky hand-back after the last verb (qpsticky-1.0.0), and before any write op.
  * Quiet pulls record NO focus debt, so the guardian never yanks the doctor back to MLS.
  * The doctor's window is never moved, resized, focused or re-selected.
  * =========================================================================== */
@@ -15975,17 +15975,18 @@ function mlsExactIdentityPair(expected, observed) {
         if(!rowName){var names=cells.filter(function(x){return !/[0-9]/.test(x)&&mlsExactNameKey(x)===mlsExactNameKey(name);});if(names.length===1)rowName=names[0];}
         var dates=[];(di.length===1?[cells[di[0]]]:cells).forEach(function(x){var k=mlsExactDobKey(x);if(k&&dates.indexOf(k)<0)dates.push(k);});
         var __dobHit=dates.length===1&&!!mlsExactDobKey(dob)&&dates[0]===mlsExactDobKey(dob), __nameHit=!!rowName&&!!mlsExactNameKey(name)&&mlsExactNameKey(rowName)===mlsExactNameKey(name); /* finddiag-1.0.0 (3.0.137) */
-        return {ok:dates.length===1&&mlsExactIdentityPair({name:name,dob:dob},{name:rowName,dob:dates[0]}).ok,dob:dates.length===1?dates[0]:'',dobHit:__dobHit,nameHit:__nameHit,alt:/\(|\blegal\b|\bpreferred\b/i.test(cells.join(' '))};
+        return {ok:dates.length===1&&mlsExactIdentityPair({name:name,dob:dob},{name:rowName,dob:dates[0]}).ok,dob:dates.length===1?dates[0]:'',dobHit:__dobHit,nameHit:__nameHit,alt:/\(|\blegal\b|\bpreferred\b/i.test(cells.join(' ')),mrnHit:!!wantMrn&&cells.some(function(x){return mrnCellMatches(x,wantMrn);}),dobVeto:dates.length===1&&!!mlsExactDobKey(dob)&&dates[0]!==mlsExactDobKey(dob)}; /* findmrn-1.0.0 (3.0.149): the row's MRN evidence and its DOB veto */
       }
       var exact = [], prefix = [], pool = [], mrnNarrowed = false;
-      var __fd = { findRows: 0, findDobHit: 0, findNameHit: 0, findDobOnly: 0, findAltRows: 0 }; /* finddiag-1.0.0 (3.0.137): counts only, never a name or DOB */
+      var __fd = { findRows: 0, findDobHit: 0, findNameHit: 0, findDobOnly: 0, findAltRows: 0, findMrnHit: 0 }; var mrnPool = []; /* findmrn-1.0.0 (3.0.149) */ /* finddiag-1.0.0 (3.0.137): counts only, never a name or DOB */
       for (var c=0;c<chartAs.length;c++) {
         var tr=chartAs[c].closest ? chartAs[c].closest('tr') : null;
         if(!tr) continue;
         var evidence=exactResultRow(tr);
         __fd.findRows++; if(evidence.dobHit)__fd.findDobHit++; if(evidence.nameHit)__fd.findNameHit++; if(evidence.dobHit&&!evidence.nameHit)__fd.findDobOnly++; if(evidence.dobHit&&evidence.alt)__fd.findAltRows++;
-        if(evidence.ok) pool.push({a:chartAs[c],dob:evidence.dob,mrnMatched:false});
+        if(evidence.ok) pool.push({a:chartAs[c],dob:evidence.dob,mrnMatched:false}); else if(evidence.mrnHit&&!evidence.dobVeto){__fd.findMrnHit++; mrnPool.push({a:chartAs[c],dob:evidence.dob,mrnMatched:true});} /* findmrn-1.0.0 */
       }
+      if(pool.length===0&&mrnPool.length===1){pool=mrnPool;mrnNarrowed=true;} /* findmrn-1.0.0 (3.0.149): the owner's rule - an exact MRN with no contradicting DOB identifies the row when the printed name does not; two MRN rows stay refused */
       if(pool.length!==1) return {opened:false,attempted:false,reason:pool.length?'ambiguous':'no-name-match',count:pool.length,tier:'exact-name-dob',diag:__fd};
       /* rowreverify-1.0.0 (3.0.117, measured live 2026-09-11): the result list
          RE-ORDERS between the read that chose a row and the click that opens it,
@@ -16001,7 +16002,7 @@ function mlsExactIdentityPair(expected, observed) {
       var _rvRows = [];
       try {
         var _rvAs=Array.prototype.slice.call(best.w.document.querySelectorAll('a')).filter(function(a){return /^chart$/i.test((a.innerText||'').trim());});
-        for(var _rvI=0;_rvI<_rvAs.length;_rvI++) {var _rvTr=_rvAs[_rvI].closest ? _rvAs[_rvI].closest('tr') : null;if(_rvTr&&exactResultRow(_rvTr).ok)_rvRows.push(_rvAs[_rvI]);}
+        for(var _rvI=0;_rvI<_rvAs.length;_rvI++) {var _rvTr=_rvAs[_rvI].closest ? _rvAs[_rvI].closest('tr') : null;if(_rvTr){var _rvEv=exactResultRow(_rvTr);if(_rvEv.ok||(pool[0].mrnMatched===true&&_rvEv.mrnHit&&!_rvEv.dobVeto))_rvRows.push(_rvAs[_rvI]);}} /* findmrn-1.0.0: the re-read accepts the same evidence the choice used */
       } catch(e){_rvRows=[];}
       if (_rvRows.length !== 1) return { opened: false, attempted: false, reason: 'search-target-unverified', rowsOnReread: _rvRows.length, error: "athenaOne's search did not show this patient; nothing was opened" };
       if (!openAllowed()) return deadlineOut();
@@ -16170,7 +16171,7 @@ function mlsExactIdentityPair(expected, observed) {
         }
         sendResponse = function (payload) {
           if (responseSent) return; responseSent = true;
-          var __p = Object.assign({}, payload || {}, { requestId: openGuard.token, deadlineAt: openGuard.deadline }); if (!__p.ok) { try { var __fr = (typeof findRes !== 'undefined') ? findRes : null, __sr = (typeof sched !== 'undefined') ? sched : null; __p.diag = Object.assign({}, __p.diag || {}, { legFind: __fr ? (__fr.opened ? 'opened' : String(__fr.reason || 'refused')) : 'not-run', legSched: __sr ? (__sr.opened ? 'opened' : String(__sr.reason || 'refused')) : 'not-run', legOrder: (typeof order !== 'undefined' && Array.isArray(order)) ? order.join('-') : '' }); } catch (_eLegs) {} } /* legsdiag-1.0.0 (3.0.148): every refusal names both legs' outcomes as closed codes */ rawSendResponse(__p);
+          var __p = Object.assign({}, payload || {}, { requestId: openGuard.token, deadlineAt: openGuard.deadline }); if (!__p.ok) { try { var __fr = (typeof findRes !== 'undefined') ? findRes : null, __sr = (typeof sched !== 'undefined') ? sched : null; __p.diag = Object.assign({}, __p.diag || {}, { legFind: __fr ? (__fr.opened ? 'opened' : String(__fr.reason || 'refused')) : 'not-run', legSched: __sr ? (__sr.opened ? 'opened' : String(__sr.reason || 'refused')) : 'not-run', legOrder: (typeof order !== 'undefined' && Array.isArray(order)) ? order.join('-') : '' }); if (__fr && __fr.diag) { ['findRows', 'findDobHit', 'findNameHit', 'findDobOnly', 'findAltRows', 'findMrnHit', 'findTokens', 'findRetries'].forEach(function (k) { if (__p.diag[k] == null && __fr.diag[k] != null) __p.diag[k] = __fr.diag[k]; }); } /* legsdiag-1.1.0 (3.0.149): the Find leg's counts ride on every refusal */ } catch (_eLegs) {} } /* legsdiag-1.0.0 (3.0.148): every refusal names both legs' outcomes as closed codes */ rawSendResponse(__p);
         };
         var findGuard = Object.freeze({ value: frozenMrn, deadline: openGuard.deadline, token: openGuard.token });
         /* openterminal-1.0.0 (3.0.125): one terminal answer per open request, even if an await never settles. */

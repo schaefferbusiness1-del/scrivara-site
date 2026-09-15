@@ -241,8 +241,8 @@ function sourceContracts() {
   );
   ok(diagnostics.includes('function openCode(value) {') && diagnostics.includes('mlsStr(value, 64).toLowerCase()') && diagnostics.includes(".test(code) ? code : '';"),
     'chart-open diagnostic codes must use the current closed-vocabulary projection');
-  ok(diagnostics.includes("['scanned', 'scrollers', 'topScore', 'inputCount', 'numericFieldsRefused', 'apptIdMatches', 'rowDobKnown']"),
-    'the closed numeric chart-open diagnostic allowlist changed');
+  ok(diagnostics.includes("['scanned', 'scrollers', 'topScore', 'inputCount', 'numericFieldsRefused', 'apptIdMatches', 'rowDobKnown',"),
+    'the closed numeric chart-open diagnostic allowlist changed (3.0.136+ appends closed count keys after these seven; the head is pinned)');
   ok(diagnostics.includes('safeDiag.rowMrnMatched = openedDiag.rowMrnMatched === true;'),
     'the closed boolean MRN-match diagnostic disappeared');
   ok(diagnostics.includes('diag: safeDiag') && !diagnostics.includes('diag: openedDiag'),

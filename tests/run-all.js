@@ -1441,6 +1441,7 @@ const tests = [
   'bannernames-30127-runtime.test.js',
   'nowindow-30147-runtime.test.js',
   'legsdiag-30148-runtime.test.js',
+  'findmrn-30149-runtime.test.js',
   'navproof-diag-30136-runtime.test.js',
   'shadowbanner-30138-runtime.test.js',
   'metabind-30139-runtime.test.js',
