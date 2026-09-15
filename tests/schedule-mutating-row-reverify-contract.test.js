@@ -1869,6 +1869,9 @@ function plain(value) { return JSON.parse(JSON.stringify(value)); }
         if (o.diag) {
           delete o.diag.unwalkedRows; delete o.diag.schedDateScope;
           delete o.diag.schedDateAmbiguous; delete o.diag.emptyProof; delete o.diag.emptyStable;
+          /* legacysettle-1.0.0 (3.0.140): additive read-only diagnostics (the settle looks, first/final row
+             counts and the headings-only section census) - the accept/reject behaviour is pinned unchanged. */
+          delete o.diag.legacySettleLooks; delete o.diag.legacyRowsFirst; delete o.diag.legacyRowsFinal; delete o.diag.legacySettled; delete o.diag.legacySections;
         }
         return o;
       };

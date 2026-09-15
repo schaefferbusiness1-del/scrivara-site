@@ -9409,6 +9409,18 @@ async function mlsSchedDomInline(doc, CFG){
        and keep every unresolved non-slot row in candidate accounting so an
        ambiguous roster fails closed instead of silently importing a subset. */
     try{
+      /* legacysettle-1.0.0 (3.0.140): the classic day grid appends its provider/department sections after the
+         date navigation; reading once mid-load imported half a day. Wait until the row count holds across two
+         looks (bounded, hidden-safe, same action guard), and record what the grid printed (headings only). */
+      try {
+        var _lsCount = function () { try { return doc.querySelectorAll('[class~="filled-appointment-row"]').length; } catch (_eLsC) { return 0; } };
+        var _lsPrev = -1, _lsNow = _lsCount(), _lsFirst = _lsNow, _lsLooks = 0;
+        while (_lsLooks < 4 && _lsNow !== _lsPrev && __scheduleActionAllowed()) { _lsPrev = _lsNow; if (!(await __scheduleActionSleep(700))) break; _lsLooks++; _lsNow = _lsCount(); }
+        out.diag.legacySettleLooks = _lsLooks; out.diag.legacyRowsFirst = _lsFirst; out.diag.legacyRowsFinal = _lsNow; out.diag.legacySettled = (_lsNow === _lsPrev);
+        var _lsList = doc.querySelector('[class~="appointments-container"]'), _lsSections = [], _lsCur = null;
+        if (_lsList) { [].slice.call(_lsList.children).forEach(function (c) { var cls = String(c.className || ''); if (/appointment-header/.test(cls)) { _lsCur = { h: String(c.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 30), n: 0 }; if (_lsSections.length < 12) _lsSections.push(_lsCur); } else if (/filled-appointment-row/.test(cls) && _lsCur) { _lsCur.n++; } }); }
+        out.diag.legacySections = _lsSections;
+      } catch (_eLs) {}
       var _legacyGridListsL=[].slice.call(doc.querySelectorAll('[class~="appointments-container"]'));
       var _legacyGridRowsL=[].slice.call(doc.querySelectorAll('[class~="filled-appointment-row"]'));
       if(_legacyGridListsL.length&&_legacyGridRowsL.length){
@@ -10041,7 +10053,7 @@ if(out.appts.length||_legacyUnresolvedCountL)return out;
         } catch (__eAC) {}
         var __receipt = {
           bandNormalize: (__dd && __dd.bandNormalize) || null, /* bandnormalize-1.0.0 (3.0.117): PHI-free - counts and flags only */
-          reader: { strategy: String(__dd.strategy || ''), via: String(__dd.via || ''), apptCount: Number(__dd.apptCount || 0), providerCount: Number(__dd.providerCount || 0), tables: Number(__dd.tables || 0), rowsScanned: Number(__dd.rowsScanned || 0), scrolled: !!__dd.scrolled, sectionHeaders: Number(__dd.sectionHeaders || 0), sectionTagged: Number(__dd.sectionTagged || 0), stackedTagged: Number(__dd.stackedTagged || 0), columnTagged: Number(__dd.columnTagged || 0), headingRows: Number(__dd.headingRows || 0), coordErr: String(__dd.coordErr || '').slice(0, 60) }, /* readerdiag-1.0.0: PHI-free reader trace */
+          reader: { strategy: String(__dd.strategy || ''), via: String(__dd.via || ''), apptCount: Number(__dd.apptCount || 0), providerCount: Number(__dd.providerCount || 0), tables: Number(__dd.tables || 0), rowsScanned: Number(__dd.rowsScanned || 0), scrolled: !!__dd.scrolled, sectionHeaders: Number(__dd.sectionHeaders || 0), sectionTagged: Number(__dd.sectionTagged || 0), stackedTagged: Number(__dd.stackedTagged || 0), columnTagged: Number(__dd.columnTagged || 0), headingRows: Number(__dd.headingRows || 0), coordErr: String(__dd.coordErr || '').slice(0, 60), settleLooks: Number(__dd.legacySettleLooks || 0), rowsFirst: Number(__dd.legacyRowsFirst || 0), rowsFinal: Number(__dd.legacyRowsFinal || 0), settled: __dd.legacySettled !== false, sections: (Array.isArray(__dd.legacySections) ? __dd.legacySections : []).slice(0, 12).map(function (s) { return { h: String(s && s.h || '').slice(0, 30), n: Number(s && s.n || 0) }; }) }, /* readerdiag-1.0.0: PHI-free reader trace; legacysettle-1.0.0 (3.0.140) */
           sessionProof: __sessionProof, staleRisk: __staleRisk, liveSessionProven: !!__live.proven, dataAgeMs: __dataAgeMs, scheduleVerified: true, requestId: __schedRequestId, complete: !!__complete, authoritativeEmpty: !!__authoritativeEmpty,
           expectedCount: __expectedCount, candidateCount: __candidateCount, parsedCount: __parsedCount, unverifiableRows: __unverifiableRows, unverifiableRowCount: __unverifiableRowCount, provenNonClinicalCount: __provenNonClinical,
           countStrategy: __countStrategy,

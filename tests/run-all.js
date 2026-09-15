@@ -1442,6 +1442,8 @@ const tests = [
   'qpstrip-30135-runtime.test.js',
   'navproof-diag-30136-runtime.test.js',
   'shadowbanner-30138-runtime.test.js',
+  'metabind-30139-runtime.test.js',
+  'legacysettle-30140-runtime.test.js',
   'visit-reader-minimal-deadline-contract.test.js',
   'visit-request-correlation-runtime.test.js',
   'cohort-request-correlation-runtime.test.js',
