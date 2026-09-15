@@ -42,14 +42,16 @@ async function run(opts) {
   let r = await run({ visible: true, active: true });
   eq(r.verdict, 'visible', 'a tab already on screen is used as is'); eq(r.calls.update, 0, 'nothing selected'); eq(r.calls.windows, 0, 'no window API');
   eq(r.QP.athenaTabId, 77, 'the lease pins the tab'); eq(r.QP.active, true, 'and is active');
+  /* nofront-1.0.0 (3.0.150, owner: "it keeps jumping me to athena"): a hidden tab is never selected, whatever the focus state */
   r = await run({ visible: false, active: false, yank: false });
-  eq(r.verdict, 'selected', 'a hidden tab in an unfocused window is selected in place'); eq(r.calls.update, 1, 'one selection'); eq(r.calls.windows, 0, 'no window API');
-  eq(r.last && r.last.v, 'selected', 'verdict recorded');
+  eq(r.verdict, 'limp', 'a hidden tab in an unfocused window is read where it is'); eq(r.calls.update, 0, 'never selected'); eq(r.calls.windows, 0, 'no window API');
+  eq(r.last && r.last.v, 'limp', 'verdict recorded');
   r = await run({ visible: false, active: false, yank: true });
   eq(r.verdict, 'limp', 'a tab whose selection would displace the doctor is read where it is'); eq(r.calls.update, 0, 'never selected'); eq(r.calls.windows, 0, 'no window API');
   eq(r.last && r.last.v, 'limp', 'verdict recorded');
-  r = await run({ visible: false, active: false, yank: false, visibleAfterSelect: false });
-  eq(r.verdict, 'limp', 'a selection that still leaves the tab hidden is honest'); eq(r.calls.windows, 0, 'no window API');
+  ok(!eb.includes('tabs.update') && !eb.includes("'selected'"), 'ensureBody carries no selection at all');
+  const front = fnBlock(bg, '  async function __mlsFrontAthenaForRead(appTabId) {');
+  ok(front.length < 600 && front.includes('return null;') && !front.includes('tabs.update') && !front.includes('windows.update'), 'the read-time fronting function is a null stub (nofront-1.0.0)');
   r = await run({ visible: true, sleeping: true });
   eq(r.verdict, 'sleeping', 'a discarded tab answers sleeping before anything else');
   console.log('PASS nowindow-30147-runtime: ' + checks + ' checks');

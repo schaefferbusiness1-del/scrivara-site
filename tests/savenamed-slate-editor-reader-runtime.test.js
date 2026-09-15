@@ -24,7 +24,8 @@ const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'u
 // 3.0.147: nowindow-1.0.0 (the quiet-pull work window is deleted: no window is created, moved, resized or focused; a hidden athenaOne tab is read where it is, selected in place only when that displaces nothing); native persistence remains verified.
 // 3.0.148: legsdiag-1.0.0 (every refused chart-open answer names both legs' outcomes as closed codes: legFind, legSched, legOrder); native persistence remains verified.
 // 3.0.149: findmrn-1.0.0 (on athena's Find results, exactly one row carrying the requested MRN with no contradicting DOB is the patient when no row passes the exact pair) + legsdiag-1.1.0 (refusals carry the Find counts) + nowindow-1.0.1 (module header comment); native persistence remains verified.
-assert.strictEqual(manifest.version, '3.0.149', 'regression must exercise the 3.0.149 candidate');
+// 3.0.150: nofront-1.0.0 (reads never activate the athena tab or focus its window: the fronting function is a null stub and ensureBody never selects a tab); native persistence remains verified.
+assert.strictEqual(manifest.version, '3.0.150', 'regression must exercise the 3.0.150 candidate');
 const coreSha = (manifest.version_name.match(/core-sha256:([0-9a-f]{64})/) || [])[1];
 assert(coreSha, 'candidate manifest is missing its core hash');
 const computedCoreSha = execFileSync(process.execPath, [path.join(root, 'scripts', 'extension-core-digest.js')], { encoding: 'utf8' }).trim();

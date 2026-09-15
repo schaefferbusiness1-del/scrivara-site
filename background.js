@@ -4523,17 +4523,8 @@ function mlsAthenaTeachWatcherFn(config) {
     QP.active = true;
     persist();
     if (await tabVisible(tab.id)) return 'visible'; /* already on screen (incl. doctor parked on athena) */
-    /* nowindow-1.0.0 (3.0.147): select the tab inside ITS OWN window only when that displaces nothing the doctor is
-       looking at (the rule since v2.9.35); otherwise the read proceeds on the hidden tab ('limp') under the callers'
-       hidden-safe budgets. No window is created, moved, resized or focused - ever. */
-    try {
-      var t2 = await chrome.tabs.get(tab.id);
-      var yank = !t2.active && (await mlsReadFocusWouldYank(tab.id));
-      if (!t2.active && !yank) {
-        await chrome.tabs.update(tab.id, { active: true }); await qpSleep(400);
-        if (await tabVisible(tab.id)) { try { self.__mlsQpLastVerdict = { v: 'selected', at: Date.now(), tabId: tab.id }; } catch (eQv) {} return 'selected'; }
-      }
-    } catch (e) {}
+    /* nofront-1.0.0 (3.0.150): a hidden tab is read hidden. No selection, no activation, no focus - the doctor
+       decides what is on screen. The read proceeds under the callers' hidden-safe budgets ('limp'). */
     try { self.__mlsQpLastVerdict = { v: 'limp', at: Date.now(), tabId: tab.id }; } catch (eQv2) {}
     return 'limp';
   }
@@ -14719,64 +14710,10 @@ function mlsExactIdentityPair(expected, observed) {
   self.__mlsFrontAthenaForRead = __mlsFrontAthenaForRead; /* mdx-2.0.0: write-probe presence port (hoisted declaration) */
   self.__mlsDeferRestoreAfterRead = __mlsDeferRestoreAfterRead; /* qol-2.3: the probe path restores through the same batch-scoped defer (hoisted) */
   async function __mlsFrontAthenaForRead(appTabId) {
-    try {
-      /* mdx-2.1.0: ActionV2 may supply one exact candidate tab plus the focus
-         state returned for the preceding candidate. Keep the public one-arg
-         history-read contract unchanged; optional arguments only prevent a
-         multi-tab write probe from fronting one arbitrary Athena tab while it
-         inspects a different, still-occluded tab. */
-      var __exactAthenaTabRequested = arguments.length > 1;
-      var __wantedAthenaTabId = __exactAthenaTabRequested ? Number(arguments[1]) : 0;
-      var __carryFocusState = arguments.length > 2 ? arguments[2] : null;
-      /* fg-1.1: a restore may still be in flight from the previous row -
-         let it land first so this front captures the true previous state. */
-      try { if (__mlsFgRestorePending) await __mlsFgRestorePending; } catch (eRp) {}
-      try { if (!__carryFocusState && __mlsFgDeferredRestore) { var __dSlot = __mlsFgDeferredRestore; __mlsFgDeferredRestore = null; clearTimeout(__dSlot.timer); var __dSt = __dSlot.state; if (__dSt && __dSt.athTabId != null) { var __wNow = await new Promise(function (rsW) { try { chrome.windows.getLastFocused({ populate: true }, function (w) { void chrome.runtime.lastError; rsW(w || null); }); } catch (eW) { rsW(null); } }); var __stillFront = !!(__wNow && __wNow.focused === true && __wNow.id === __dSt.athWinId && (__wNow.tabs || []).some(function (t) { return t.active && t.id === __dSt.athTabId; })); if (__stillFront && (!__exactAthenaTabRequested || Number(__dSt.athTabId) === __wantedAthenaTabId)) return __dSt; if (__stillFront && __exactAthenaTabRequested) __carryFocusState = __dSt; } } } catch (eDI) {}
-      /* fg-1.1: only steal focus Chrome already owns. If the doctor is
-         outside Chrome entirely (focused:false), fronting would raise a
-         window under their typing and retry keystrokes could land in the
-         signed-in athenaOne - skip, and the row fails honestly occluded. */
-      var lastW = null;
-      try { lastW = await chrome.windows.getLastFocused({ populate: true }); } catch (eLw) {}
-      if (!lastW || lastW.focused !== true) return null;
-      if (__mlsFgDoctorMoved) return null; /* fg-1.2: they moved away this batch */
-      if (__carryFocusState) {
-        var __activeNow = (lastW.tabs || []).find(function (t) { return t && t.active; });
-        var __stillOwnCarry = lastW.id === __carryFocusState.athWinId && __activeNow && Number(__activeNow.id) === Number(__carryFocusState.athTabId);
-        var __watchingApp = __activeNow && __carryFocusState.appTabId != null && Number(__activeNow.id) === Number(__carryFocusState.appTabId);
-        if (!__stillOwnCarry && !__watchingApp) { __mlsFgDoctorMoved = true; return null; }
-      }
-      var allT = await chrome.tabs.query({});
-      var athT = null;
-      if (__exactAthenaTabRequested) {
-        if (!Number.isFinite(__wantedAthenaTabId) || __wantedAthenaTabId <= 0) return null;
-        athT = allT.find(function (t) {
-          if (!t || Number(t.id) !== __wantedAthenaTabId) return false;
-          try { return mlsAthTabHost(t) === 'athenanet.athenahealth.com' && !mlsAthIsLoginish(t); } catch (eExact) { return false; }
-        }) || null;
-      } else {
-        athT = await mlsPickAthenaTab(allT, { athenaOnly: true });
-      }
-      if (!athT || athT.id == null) return null;
-      var prevActive = allT.find(function (t) { return t.active && t.windowId === athT.windowId; });
-      var state = __carryFocusState || {
-          athTabId: athT.id,
-          athWinId: athT.windowId,
-          prevTabId: (prevActive && prevActive.id !== athT.id) ? prevActive.id : null,
-          prevWinId: lastW.id != null ? lastW.id : null,
-          appTabId: (appTabId != null ? appTabId : null)
-        };
-      /* Preserve the original return target while ownership moves from one
-         exact Athena candidate to the next. The terminal defer therefore
-         restores once, from the last candidate, to where the clinician began. */
-      state.athTabId = athT.id;
-      state.athWinId = athT.windowId;
-      await chrome.tabs.update(athT.id, { active: true });
-      try { await chrome.windows.update(athT.windowId, { focused: true }); } catch (eF) {}
-      /* let the newly visible panes begin hydrating before the read walks them */
-      await (function (ms) { var __hsAt = Date.now() + Math.max(0, Number(ms || 0)); return new Promise(function (r) { /* mls-hs-1.0.0: hidden tab => timers throttled to 1/s then 1/min; yield through a MessageChannel (not a timer) until the wall clock passes. */ if (typeof document === 'undefined' || !document.hidden) { setTimeout(r, Math.max(0, __hsAt - Date.now())); return; } var __ch = null; try { __ch = new MessageChannel(); } catch (e) { __ch = null; } if (!__ch) { setTimeout(r, Math.max(0, __hsAt - Date.now())); return; } __ch.port1.onmessage = function () { if (Date.now() >= __hsAt) { try { __ch.port1.onmessage = null; __ch.port1.close(); __ch.port2.close(); } catch (e2) {} r(); return; } if (!document.hidden) { try { __ch.port1.onmessage = null; __ch.port1.close(); __ch.port2.close(); } catch (e3) {} setTimeout(r, Math.max(0, __hsAt - Date.now())); return; } try { __ch.port2.postMessage(0); } catch (e4) { setTimeout(r, Math.max(0, __hsAt - Date.now())); } }; __ch.port2.postMessage(0); }); })(900);
-      return state;
-    } catch (eFg) { return null; }
+    /* nofront-1.0.0 (3.0.150, owner: "it keeps jumping me to athena that is not ok"): reads never activate
+       the athena tab or focus its window. The fg-1.1/1.2 body (front, hydrate, defer the restore) is deleted;
+       every caller already treats null as "read the tab where it is". */
+    return null;
   }
   function __mlsRestoreFocusAfterRead(state) {
     if (!state) return;
