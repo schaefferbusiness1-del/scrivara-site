@@ -91,7 +91,7 @@ ok(!bg.includes("if (want && ident && ident.name && (!globalNameMatches || globa
   const any = new Function('mlsExactIdentityPair', bg.slice(s, e) + '\nreturn exactPairAny;')(helpers.mlsExactIdentityPair);
   const who = { name: 'Cathy EXAMPLE', dob: '01/02/1956', altNames: ['Catherine A EXAMPLE'] };
   eq(any({ name: 'Catherine A Example', dob: '1956-01-02' }, who).matchedName, 'Catherine A EXAMPLE', 'the matched printed name is returned');
-  ok(bg.includes("chartName: (exactGlobalPair.viaAltName === true && exactGlobalPair.matchedName) ? exactGlobalPair.matchedName : ((ident && ident.name) || ''), chartNamePrinted: (ident && ident.name) || '', chartNameViaLegal: exactGlobalPair.viaAltName === true,"), 'ok response reports the matched printed name, keeps the primary, flags the legal match');
+  ok(bg.includes("chartName: (exactGlobalPair.viaAltName === true && exactGlobalPair.matchedName) ? exactGlobalPair.matchedName : ((!exactGlobalPair.ok && __apptRowDoor(ident)) ? want : ((ident && ident.name) || '')) /* apptrowdob-1.1.0: the door reports the printed schedule name it proved, like the alt-name path */, chartNamePrinted: (ident && ident.name) || '', chartNameViaLegal: exactGlobalPair.viaAltName === true,"), 'ok response reports the matched printed name, keeps the primary, flags the legal match');
 }
 /* 10. restorediag (3.0.130 + 3.0.132): the schedule-date restore refusal carries closed per-frame evidence end to end */
 {

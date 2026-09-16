@@ -38,7 +38,8 @@ const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'u
 // 3.0.161: schedground-1.0.0 (a schedule-first open grounds the tab on the pull date, softly, before its sweep)
 // 3.0.162: gohome-2.0.0 (Home keeps the CSRFPROTECT token: the top frame navigates to the tokened frameset with the dashboard as MAIN)
 // 3.0.163: apptrowdob-1.0.0 (athena's own appointment-id row + exact DOB + exact surname token proves a read identity when the printed names differ)
-assert.strictEqual(manifest.version, '3.0.163', 'regression must exercise the 3.0.163 candidate');
+// 3.0.164: apptrowdob-1.1.0 (DOB-printing frames bind when the door proved the chart; chartName reports the proven printed schedule name)
+assert.strictEqual(manifest.version, '3.0.164', 'regression must exercise the 3.0.164 candidate');
 const coreSha = (manifest.version_name.match(/core-sha256:([0-9a-f]{64})/) || [])[1];
 assert(coreSha, 'candidate manifest is missing its core hash');
 const computedCoreSha = execFileSync(process.execPath, [path.join(root, 'scripts', 'extension-core-digest.js')], { encoding: 'utf8' }).trim();

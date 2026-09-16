@@ -48,7 +48,7 @@ const bg = fs.readFileSync(path.join(root, 'background.js'), 'latin1');
 {
   const at = bg.indexOf('const frameBoundToTarget = (f) => {');
   assert(at > 0, 'frameBoundToTarget must still exist');
-  const body = bg.slice(at, at + 900);
+  const body = bg.slice(at, at + 1400); /* apptrowdob-1.1.0 (3.0.164) adds a DOB-bound door between DOOR 1 and DOOR 2 */
 
   assert(/if \(identityMatchesTarget\(frameIdentity\[f\.frameId\]\)\) return true;/.test(body),
     'DOOR 1 must be untouched - an identity read in the frame still binds it');

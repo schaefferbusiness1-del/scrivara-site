@@ -37,8 +37,8 @@ ok(gate.includes("if (wantMrn && f.mp && f.mp.length >= 4 && f.mp === String(wan
 ok(gate.indexOf('identityMatchesTarget(frameIdentity[f.frameId])') < gate.indexOf('f.mp === String(wantMrn)'), 'the banner identity door still runs first');
 function runGate(f, wantMrn) {
   const src = 'let metaBoundClinicalFrames = 0;\n' + gate + '\nreturn { bound: frameBoundToTarget(f), meta: metaBoundClinicalFrames };';
-  return new Function('f', 'want', 'wantDob', 'wantMrn', 'identityMatchesTarget', 'frameIdentity', 'frameUrlBindsAppointment', 'textHasPairStrict', 'textHasDobStrict', 'textHasMrnStrict',
-    src)(f, 'A B', '1/2/1990', wantMrn, () => false, {}, () => false, () => false, () => false, () => false);
+  return new Function('f', 'want', 'wantDob', 'wantMrn', 'identityMatchesTarget', 'frameIdentity', 'frameUrlBindsAppointment', 'textHasPairStrict', 'textHasDobStrict', 'textHasMrnStrict', '__apptRowDoor', 'ident',
+    src)(f, 'A B', '1/2/1990', wantMrn, () => false, {}, () => false, () => false, () => false, () => false, () => false /* apptrowdob-1.1.0 door closed here */, null);
 }
 let r = runGate({ frameId: 3, u: 'https://x/ax/encounter/1/exam', t: 'Assessment Plan', mp: '7833832' }, '7833832');
 eq(r.bound, true, 'a frame whose meta names the requested MRN is bound'); eq(r.meta, 1, 'and counted');

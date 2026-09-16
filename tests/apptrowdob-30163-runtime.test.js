@@ -19,6 +19,11 @@ ok(bg.includes("identityVia: (exactGlobalPair.ok ? (exactGlobalPair.viaAltName ?
 ok(bg.includes("apptRowBound: !!(sched && sched.diag && sched.diag.apptIdBound) /* apptrowdob-1.0.0 (3.0.163) */"), 'the schedule route stamps whether athena\'s appointment-id row was the one clicked');
 ok(bg.includes("if (!(exactOpenLease && exactOpenLease.appointmentIdBound && exactOpenLease.requestId === chartRequestId && exactOpenLease.appointmentId === expectedAppointmentId && exactNameMatched && validBannerDob && bannerCandidatesAgree && routeBoundBannerSeen)) {"), 'the bootstrap (write-grade) lease still needs the exact name');
 
+/* apptrowdob-1.1.0 (3.0.164): the door completes the read */
+ok(bg.includes("if (__apptRowDoor(ident) && wantDob && textHasDobStrict(f.t, wantDob)) return true;"), 'a clinical frame printing the exact DOB binds when the door proved the chart');
+ok(bg.indexOf("if (__apptRowDoor(ident) && wantDob && textHasDobStrict(f.t, wantDob)) return true;") > bg.indexOf("if (identityMatchesTarget(frameIdentity[f.frameId])) return true;"), 'after the exact-identity frame door, before the meta and text doors');
+ok(bg.includes("((!exactGlobalPair.ok && __apptRowDoor(ident)) ? want : ((ident && ident.name) || ''))"), 'the response reports the printed schedule name the door proved (like the alt-name path), the banner name stays in chartNamePrinted');
+
 /* runtime: the door itself */
 const kn = bg.indexOf('\nfunction mlsExactNameKey(value) {', bg.indexOf("hoistfix-1.0.0 (3.0.156): the worker's ONE top-level copy"));
 const helpers = bg.slice(kn + 1, bg.indexOf('\n}', bg.indexOf('\nfunction mlsExactDobKey(value) {', kn) + 10) + 2).replace(/\r/g, '');
