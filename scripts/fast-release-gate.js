@@ -175,7 +175,7 @@ const ROOT = path.resolve(__dirname, '..');
    clinical field still refuses. Measured: the test patient's saved sidecar
    carried the up-now patient's name in its fingerprint and the reopen went
    stale over that one field. */
-const FULL_GATE_TESTS = 1035; /* 2026-09-15: the canonical registry (tests/run-all.js --plan) is 1035 after this session's registered suites; fast-release-gate-contract pins the two equal */
+const FULL_GATE_TESTS = 1036; /* 2026-09-15: the canonical registry (tests/run-all.js --plan) is 1035 after this session's registered suites; fast-release-gate-contract pins the two equal */
 const DEFAULT_BASE = 'origin/main';
 const DEFAULT_STEP_TIMEOUT_MS = 180000;
 const DEFAULT_TOTAL_TIMEOUT_MS = 300000;

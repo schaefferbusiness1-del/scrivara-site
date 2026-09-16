@@ -2591,6 +2591,7 @@ const tests = [
   'upcoming-autopull-runtime.test.js',
   'upcoming-autopull-surface-contract.test.js',
   'opnote-background-only.test.js',
+  'opnote-patient-specific-slots.test.js',
   /* NEW 2026-09-11, vanishbox-1.0.0. The Doctor visit room's transcript block
      vanished ~0.7-8s after opening a patient: the calm pass folds
      .ez3fl-transcript.mls-empty, and once the flow lane owns the top the

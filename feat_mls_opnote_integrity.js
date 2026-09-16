@@ -13,7 +13,7 @@
   'use strict';
   if (window.__mlsOpNoteIntegrity && window.__mlsOpNoteIntegrity.installed) return;
 
-  var VERSION = 'oni-2.18.3';
+  var VERSION = 'oni-2.19.0';
   var S = function (x) { return x == null ? '' : String(x); };
   var isFn = function (f) { return typeof f === 'function'; };
   var originals = {};
@@ -1642,6 +1642,49 @@
     });
     return out;
   }
+  /* opfacts-1.0.0 (2026-09-15, owner: "notes and op notes ... don't use enough
+     patient data ... hallucinate"). MEASURED on the dummy chart: the sanitizer
+     turns a template's INDICATIONS value into an [[indications]] slot, the
+     model filled it with "..., unresponsive to conservative treatment", and
+     the verified history it was handed documents NO conservative care at all
+     (zero hits for conservative / physical therapy; ibuprofen is on the med
+     list, which is not a failed trial). The template's own scrubbed sentence
+     had said "refractory to conservative management", and the operative
+     idiom supplied the rest. That is the fabrication class the owner named.
+     Three doors close it: the prompt states what a patient-specific slot may
+     carry (PATIENT-SPECIFIC SLOTS clause), the history fence says the slot is
+     WRITTEN FROM the verified history (feat_opnote_history bgonly-1.1.0), and
+     this guard REMOVES a refractory/failed-conservative-care claim the model
+     still writes when the verified history documents none. It is the drug
+     guard's kind: the value was never given, so the sentence may not assert
+     it. A template whose OWN fixed wording carries the phrase is the doctor's
+     choice and is left alone; only model-written prose is scrubbed. */
+  var TEMPLATE_JUNK_PREFIX_RX=/^[^\x00-\x7F]{1,4}(?=[A-Z]{4,})/;
+  var CONSERVATIVE_CLAIM_RX=/\b(?:refractory|unresponsive|not\s+respon(?:sive|ding)|recalcitrant|resistant|fail(?:ed|ing|ure)(?:\s+of)?|despite|after\s+failing)\b[^.;\n]{0,40}?\bconservative\b[^.;\n]{0,140}/i;
+  var CONSERVATIVE_EVIDENCE_RX=/\b(?:conservative|physical\s+therap|PT|chiropract|NSAIDs?|anti-?inflammator|home\s+exercise|activity\s+modification|medication\s+trial|refractory|unresponsive|despite|did\s+not\s+(?:help|improve|respond)|without\s+relief|no\s+relief|minimal\s+relief|failed)\b/i;
+  var CONSERVATIVE_STRIP_RX=/\s*,?\s*(?:(?:which|that)\s+(?:is|are|has\s+been|have\s+been|remains?)\s+)?(?:(?:refractory|unresponsive|not\s+respon(?:sive|ding)|recalcitrant|resistant)\s+to|despite|after\s+failing|(?:having\s+)?fail(?:ed|ing|ure)(?:\s+of)?)\s+(?:(?:all|prior|previous|multiple|appropriate|extensive|a\s+course\s+of|a\s+trial\s+of)\s+)*conservative\s+(?:treatment|management|therap(?:y|ies)|care|measures|modalities)(?:\s+(?:including|such\s+as|with|consisting\s+of)\b[^.;\n]*)?/gi;
+  function conservativeEvidence(opts,ctx){ var b=opts&&opts.mlsVerifiedHistoryBinding; return S(b&&b.context)+'\n'+S(ctx&&ctx.history); }
+  function conservativeClaimUnsupported(note,evidence,templateText){
+    var m=CONSERVATIVE_CLAIM_RX.exec(S(note));
+    if(!m) return null;
+    if(CONSERVATIVE_CLAIM_RX.test(S(templateText))) return null;   /* the doctor's own fixed wording */
+    if(CONSERVATIVE_EVIDENCE_RX.test(S(evidence))) return null;    /* documented: the model may say it */
+    return m[0];
+  }
+  function stripUnsupportedConservativeClaim(note){ return S(note).replace(CONSERVATIVE_STRIP_RX,'').replace(/[ \t]+([,.;])/g,'$1'); }
+  function guardUnsupportedConservativeClaim(result,templateText,opts,ctx){
+    try{
+      if(!result||typeof result!=='object') return result;
+      var claim=conservativeClaimUnsupported(result.note,conservativeEvidence(opts,ctx),templateText);
+      if(!claim) return result;
+      var before=S(result.note), after=stripUnsupportedConservativeClaim(before);
+      var receipt={removed:claim.slice(0,160),changed:after!==before,at:Date.now()};
+      if(after!==before) result.note=after;
+      result.indicationGuard=receipt;
+      try{ window.__mlsLastOpIndicationGuard=receipt; }catch(eIg){}
+    }catch(eGuard){}
+    return result;
+  }
   function fidelity(note, templateText) {
     var expected=headings(templateText), actual=headings(note), fixed=fixedFragments(templateText), noteNorm=normText(note), missingFixed=[], cursor=0;
     if(!S(note).trim()) return {pass:false,reason:'empty draft',expected:expected,actual:actual,missingFixed:fixed};
@@ -1844,7 +1887,9 @@
     return out;
   }
   function sanitizeTemplate(tplText) {
-    var t = S(tplText);
+    /* opfacts-1.0.0: 23 of the 98 library templates open with one to four bytes of
+       Word-binary residue in front of the title (e.g. "\u00c1OPERATIVE REPORT"). */
+    var t = S(tplText).replace(TEMPLATE_JUNK_PREFIX_RX, '');
     t = t.replace(SPLIT_TITLES, '\n$2\n');
     t = t.replace(SPLIT_RX, '\n$2');
     var lines = t.split(/\r?\n/), namePatterns=priorPatientNamePatterns(lines), identityValues=priorIdentityValues(lines), skipLines={},multilineIdentity={};
@@ -2674,13 +2719,15 @@
        place the doctor has explicitly ASKED for tighter prose, so its own
        clause below overrides the length half of this one. */
     sys+=' HOW TO PRODUCE THE NOTE — REPRODUCE, THEN FILL. Work through the SELECTED TEMPLATE from its first line to its last and reproduce every line of it, in the template\'s own order and its own words. The only text you may change is a fill field: a [[snake_case]] slot, a [BRACKETED] or [FILL: ...] token, an ALL-CAPS placeholder, or a run of underscores. Everything else — headings, boilerplate operative language, technique sentences, consent and time-out statements, complication and disposition lines, attestations — is reproduced VERBATIM. Do NOT summarize, condense, paraphrase, modernise, merge or re-order the template\'s sentences. Do NOT drop a template line because it looks routine or repetitive. Do NOT substitute your own outline for the template\'s. The finished note must be a completed copy of the doctor\'s template, not a description of the case. If a fill field has no answer in the KNOWN FACTS, the VERIFIED PATIENT HISTORY or the procedure request, leave it as an explicit [[snake_case]] placeholder and list it in "missing" — never invent a clinical fact, and never delete the sentence that contained it.';
+    /* opfacts-1.0.0: see the guard beside fidelity() for the measurement. */
+    sys+=' PATIENT-SPECIFIC SLOTS - INDICATIONS, DIAGNOSIS, HISTORY. A [[indications]], [[pre_operative_diagnosis]], [[diagnosis]] or [[history]] slot is written for THIS patient from the KNOWN FACTS, the REQUESTED PROCEDURE FACTS and the VERIFIED PATIENT HISTORY only: the documented diagnosis that the requested procedure treats, with its side and level(s); the documented symptoms and their duration; documented imaging findings; conservative measures ONLY where the history documents that they were tried and what came of them, named as documented (a medication on the current list is not a failed trial); prior injections or procedures and their documented response. Every clause must trace to a line of the verified history. When the history documents no conservative care, no imaging or no response, the sentence simply does not mention them: never write "refractory to", "unresponsive to", "failed" or "despite" conservative treatment on a chart that does not document it, and never borrow that phrase from the template. A documented diagnosis alone is a complete indication.';
 
     if(crossAdapt)sys+=' EXCEPTION — CROSS-PROCEDURE ADAPTATION: The selected template describes a DIFFERENT procedure than requested. Keep its heading names, heading order, and formatting style, but write the note for the REQUESTED procedure: the requested procedure type, anatomical region, side, level(s), and approach override any conflicting template wording, fixed boilerplate, or technique narrative.';
 
     /* One clause per mode. 'adapt' adds NOTHING, so it is provably identical to
        the behaviour that shipped before this option existed. */
     var TPL_MODE_CLAUSE={
-      strict:' TEMPLATE FIDELITY - CLOSEST: preserve the template PROSE verbatim wherever it is not a variable slot. Do not paraphrase, tighten, modernise or re-order its sentences. Fill the case-specific slots and change nothing else. If a template sentence does not apply to this case, keep it and leave its variable slot as a placeholder rather than rewriting the sentence.',
+      strict:' TEMPLATE FIDELITY - CLOSEST: preserve the template PROSE verbatim wherever it is not a variable slot. Do not paraphrase, tighten, modernise or re-order its sentences. Fill the case-specific slots and change nothing else. If a template sentence does not apply to this case, keep it and leave its variable slot as a placeholder rather than rewriting the sentence. The patient-specific slots (indications, diagnosis, history) are variable by nature and are written for this patient as instructed above.',
       guide:' TEMPLATE FIDELITY - LOOSER, AND DELIBERATELY CONCISE: treat the template prose as a guide rather than as fixed wording, and write the note TIGHTER than the template. Compress ceremonial padding and redundancy: say each clinical fact once, in the fewest words a physician colleague would need; drop filler ("it should be noted that", "at this point in time"), collapse a multi-sentence recital into one clean sentence when the facts allow, and prefer the direct clinical phrasing over a longer templated formulation. KEEP every heading, the heading order, and the section order exactly as given, and keep every clinically or medico-legally required element (consent, laterality, levels, technique specifics, complications, disposition) - concision NEVER means dropping a documented fact or a required statement. Every factual constraint above still applies without exception: never invent a fact, and never state a value that was not dictated or documented.',
       adapt:''
     };
@@ -2777,6 +2824,7 @@
        the model's own prose slots are only visible after the other fillers have
        run. Empty dateStr fills nothing. */
     first.note=fillDateSlots(fillChartSlots(fillProcedureSlots(forceFacts(first.note,facts),procedure),p,ctx,procedure),dateStr);
+    first=guardUnsupportedConservativeClaim(first,tplForModel,opts,ctx);
     var histApi=window.__mlsOpNoteHistory, histValidation=null;
     if(histApi&&histApi.installed){
       histValidation=isFn(histApi.validateBinding)?histApi.validateBinding(opts):{ok:false,reason:'history-binding-validator-unavailable'};
@@ -2818,6 +2866,7 @@
     opts.mlsOpNotePhase='repair';
     var repaired=parseResult(await window.aiCallRaw(repairSys,repairUser,key,opts));
     repaired.note=fillDateSlots(fillChartSlots(fillProcedureSlots(forceFacts(repaired.note,facts),procedure),p,ctx,procedure),dateStr);
+    repaired=guardUnsupportedConservativeClaim(repaired,tplForModel,opts,ctx);
     generationStage(ctx,'Checking side and level','Rechecking the repaired procedure facts.');
     var check2;
     if(crossAdapt){check2={pass:true,adapted:true};}
@@ -3181,6 +3230,6 @@
     if(isFn(all)&&!all.__oni){var allWrap=async function(){try{var _tpf=window.__mlsTplPrepFix;if(_tpf&&typeof _tpf.draftAll==='function')return await _tpf.draftAll();}catch(_eDA){}var rows=window._opPrep||[],st=document.getElementById('opPrepStatus'),ok=0,failed=0;for(var i=0;i<rows.length;i++){if(st)st.textContent='Drafting '+(i+1)+'/'+rows.length+' — '+rows[i].appt.name+'…';if(await window.opPrepGenerateOne(i))ok++;else failed++;}if(st)st.textContent=failed?('Drafted '+ok+' of '+rows.length+'. '+failed+' need a confirmed template or a retry.'):('✅ Drafted all '+ok+' op note'+(ok===1?'':'s')+' with template structure verified.');return {drafted:ok,failed:failed};};allWrap.__oni=true;window.opPrepGenerateAll=allWrap;}
   }
 
-  window.__mlsOpNoteIntegrity={installed:true,version:VERSION,classify:procClass,parseProcedureFacts:procedureFacts,templateCompatibility:templateCompatibility,clinicalConsistency:clinicalConsistency,rank:rank,best:best,bestFor:bestFor,matchVisitText:matchVisitText,stripNegated:stripNegated,statesNoProcedure:statesNoProcedure,headings:headings,fixedFragments:fixedFragments,fidelity:fidelity,templateConformance:templateConformance,conformanceLines:conformanceLines,fillDateSlots:fillDateSlots,noteStatesDay:noteStatesDay,parseDayParts:parseDayParts,exactNameMatch:exactNameMatch,alternativesFrom:alternativesFrom,templateSubstance:templateSubstance,scrubUnownedIdentifiers:scrubUnownedIdentifiers,forceFacts:forceFacts,fillProcedureSlots:fillProcedureSlots,reanchor:reanchor,airSections:airSections,sanitizeTemplate:sanitizeTemplate,chartProblems:chartProblems,generate:generate,bindProviderProvenance:bindProviderProvenance,finalizationContext:finalizationContext,finalizeNote:finalizeNote,preflightRow:preflightRow,preflightBatch:preflightBatch,finalizationError:finalizationError,patientAgeOn:patientAge,_historyVisitBelongsTo:historyVisitBelongsTo,_verifiedHistoryVisits:verifiedHistoryVisits,_resolveSelectedTemplate:resolveSelectedTemplate,_generationKey:generationKey,_rowGenerationCtx:rowGenerationCtx,_closeCallAdaptation:closeCallAdaptation,_providerScopeHardError:providerScopeHardError,procTitleForNote:procTitleForNote,narrativeBinding:narrativeBinding,guardNarrativeBinding:guardNarrativeBinding};
+  window.__mlsOpNoteIntegrity={installed:true,version:VERSION,classify:procClass,parseProcedureFacts:procedureFacts,templateCompatibility:templateCompatibility,clinicalConsistency:clinicalConsistency,rank:rank,best:best,bestFor:bestFor,matchVisitText:matchVisitText,stripNegated:stripNegated,statesNoProcedure:statesNoProcedure,headings:headings,fixedFragments:fixedFragments,fidelity:fidelity,templateConformance:templateConformance,conformanceLines:conformanceLines,fillDateSlots:fillDateSlots,noteStatesDay:noteStatesDay,parseDayParts:parseDayParts,exactNameMatch:exactNameMatch,alternativesFrom:alternativesFrom,templateSubstance:templateSubstance,scrubUnownedIdentifiers:scrubUnownedIdentifiers,forceFacts:forceFacts,fillProcedureSlots:fillProcedureSlots,reanchor:reanchor,airSections:airSections,sanitizeTemplate:sanitizeTemplate,conservativeClaimUnsupported:conservativeClaimUnsupported,stripUnsupportedConservativeClaim:stripUnsupportedConservativeClaim,guardUnsupportedConservativeClaim:guardUnsupportedConservativeClaim,TEMPLATE_JUNK_PREFIX_RX:TEMPLATE_JUNK_PREFIX_RX,chartProblems:chartProblems,generate:generate,bindProviderProvenance:bindProviderProvenance,finalizationContext:finalizationContext,finalizeNote:finalizeNote,preflightRow:preflightRow,preflightBatch:preflightBatch,finalizationError:finalizationError,patientAgeOn:patientAge,_historyVisitBelongsTo:historyVisitBelongsTo,_verifiedHistoryVisits:verifiedHistoryVisits,_resolveSelectedTemplate:resolveSelectedTemplate,_generationKey:generationKey,_rowGenerationCtx:rowGenerationCtx,_closeCallAdaptation:closeCallAdaptation,_providerScopeHardError:providerScopeHardError,procTitleForNote:procTitleForNote,narrativeBinding:narrativeBinding,guardNarrativeBinding:guardNarrativeBinding};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',install,{once:true});else install();
 })();

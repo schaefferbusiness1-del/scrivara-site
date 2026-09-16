@@ -333,14 +333,25 @@
        procedure data, not TODAY_TRANSCRIPT. */
     var bgBegin = 'BACKGROUND_ONLY_BEGIN';
     var bgEnd = 'BACKGROUND_ONLY_END';
+    /* bgonly-1.1.0 (opfacts-1.0.0, 2026-09-15): the 1.0.0 sentence forbade copying a
+       background problem into today's INDICATION, and the model obeyed it by writing
+       the operative idiom instead ("unresponsive to conservative treatment" on a
+       chart documenting none). The indication, the diagnosis and any history line
+       ARE background by nature; they are written FROM this block, fact by fact,
+       and the procedure sections stay fenced exactly as before. */
     var bgRule =
       'The BACKGROUND_ONLY block is not evidence of anything addressed, reviewed, examined, assessed, ' +
-      'performed, ordered, continued, or planned today. Never copy a background problem, medication, ' +
-      'allergy, imaging result or prior procedure into today\'s indication, findings, technique, procedure ' +
-      'details, specimens, complications, estimated blood loss, post-operative plan, or coding unless ' +
-      'today\'s own procedure data explicitly brings it into this operation. Background may only ' +
-      'disambiguate an explicit reference in today\'s own data; silence is not stability, review, ' +
-      'reconciliation, or continuation.';
+      'performed, ordered, continued, or planned today. It is the source for the patient-specific ' +
+      'template lines - the indication, the pre- and post-operative diagnosis and any history, ' +
+      'allergies or medications line - which are written for this exact patient from the facts ' +
+      'documented here: the diagnosis the requested procedure treats with its side and level, ' +
+      'documented symptoms and imaging, and conservative care only where a trial and its result are ' +
+      'documented; a fact not documented here is not written, and a medication on the list is not a ' +
+      'failed trial. Never copy a background problem, medication, allergy, imaging result or prior ' +
+      'procedure into today\'s findings, technique, procedure details, specimens, complications, ' +
+      'estimated blood loss, post-operative plan, or coding unless today\'s own procedure data ' +
+      'explicitly brings it into this operation. Background may only disambiguate an explicit ' +
+      'reference in today\'s own data; silence is not stability, review, reconciliation, or continuation.';
 
     var profileLimit = visits.length > 40 ? 1500 : MAX_PROFILE_CHARS;
     var snapshotLimit = visits.length > 40 ? 1000 : MAX_SNAPSHOT_CHARS;
