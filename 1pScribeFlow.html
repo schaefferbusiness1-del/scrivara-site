@@ -34511,7 +34511,11 @@ function friendlyError(err){
   if(err&&err.mlsAthenaNoteQuality) return 'The AI returned an unusable Athena note payload. Nothing was changed. Please retry.';
   if(err&&err.noAccess) return 'Your account needs access — enter an access code (Settings) or ask the owner to enable you.';
   if(err&&err.freeform) return 'This AI helper isn\'t available in the hosted server version yet. (Note generation still works.)';
-  if(/insufficient_quota|exceeded your current quota|billing/i.test(m))
+  /* quotamsg-1.0.0 (2026-09-15, measured live): the backend's ai-quota class says
+     "out of credit or has hit its quota. Add funds" - none of the three words this
+     test looked for - so the doctor read a raw 502 sentence instead of the billing
+     line. The class is the truth; the words are a fallback for older shapes. */
+  if((err&&err.mlsAi&&err.mlsAi.code==='ai-quota')||/insufficient_quota|exceeded your current quota|billing|out of credit|hit its quota|no credits? remaining/i.test(m))
     return 'Your OpenAI account needs billing/credits — add a payment method at platform.openai.com → Billing. The API is billed separately from ChatGPT.';
   if(/429|rate.?limit/i.test(m))
     return 'OpenAI is rate-limiting (too many requests) or your account is out of credit. Wait a moment, or add billing/credits at platform.openai.com — the API is billed separately from ChatGPT.';
