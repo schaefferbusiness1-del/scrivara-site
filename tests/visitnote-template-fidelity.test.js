@@ -362,7 +362,9 @@ function harness(opts) {
      the same fixtures - a port that drifted from its original would report a
      different verdict on the same draft. */
   const integritySrc = fs.readFileSync(path.join(root, 'feat_mls_opnote_integrity.js'), 'utf8');
-  const NORM = sliceBetween(integritySrc, '  function normText(x) {', '\n  /* Ordered from most specific to broadest.', 'normText');
+  /* harness moved 2026-09-15: opmatch-1.0.0 (b1271) made normText call expandCompactLevels, declared
+     just above it; the slice starts there so the shipped normText runs whole. */
+  const NORM = sliceBetween(integritySrc, '  function expandCompactLevels(text) {', '\n  /* Ordered from most specific to broadest.', 'normText');
   const HEAD = sliceBetween(integritySrc, '  function headingLabel(line) {', '\n  function headings(text) {', 'headingLabel');
   const CONF = sliceBetween(integritySrc, '  function conformanceLines(templateText){', '\n  /* The measure plus the three things', 'templateConformance');
   const shippedConformance = new Function('S', NORM + '\n' + HEAD + '\n' + CONF + '\nreturn templateConformance;')(

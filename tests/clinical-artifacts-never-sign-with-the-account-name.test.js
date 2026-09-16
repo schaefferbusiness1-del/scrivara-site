@@ -329,11 +329,12 @@ for (const m of MODULES) {
    one-line loaders. */
 {
   const connect = read('mls-connect.js');
+  /* pin moved 2026-09-15 (pre-existing red): a later lane moved the op-note prep loader onto the
+     build-tied token (?v= + window.__MLS_AV), the stronger form this test asks for below. */
   const FIXED_TOKEN = {
-    'feat_mls_dictate_letter.js': '20260711dl1c1-B177',
-    'feat_mls_opnote_prep.js': '20260730opnp180'
+    'feat_mls_dictate_letter.js': '20260711dl1c1-B177'
   };
-  const BUILD_TIED = ['feat_fullhistory_pdf.js', 'feat_mls_writeflow.js'];
+  const BUILD_TIED = ['feat_fullhistory_pdf.js', 'feat_mls_writeflow.js', 'feat_mls_opnote_prep.js'];
 
   for (const f of Object.keys(FIXED_TOKEN)) {
     const tok = new RegExp(f.replace(/\./g, '\\.') + '\\?v=([A-Za-z0-9_.-]+)').exec(connect);

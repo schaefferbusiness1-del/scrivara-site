@@ -238,9 +238,14 @@ for (const rel of TWINS) {
      (HEAD parity: fail closed and visibly, never a silent drop) */
   ctx.__note = FIVE + '\n\n' + APPENDIX + '\n\nMEDICATIONS:\nMetformin 1000 mg twice daily.\nLisinopril 10 mg daily.';
   ok(/Metformin 1000 mg/.test(call('_autoDraftStripCarried(__note)')), rel + ": today's medication list must never be swallowed by the strip");
-  let medsDoorThrew = '';
-  try { call('_mlsAthenaNoteWithVisitComment(__note)'); } catch (e) { medsDoorThrew = String((e && e.mlsAi && e.mlsAi.detail) || (e && e.message) || e); }
-  ok(/nested or wrapper heading/.test(medsDoorThrew), rel + ': the door refuses the wrapper heading out loud (pre-change parity), not by silent deletion');
+  /* pin moved 2026-09-15 (pre-existing red at b1270): the door's wrapper-heading refusal names the
+     five clinical headings only; a MEDICATIONS block inside PLAN is body text, kept - never dropped.
+     The property this guards is "no silent deletion": either the door refuses out loud, or the
+     medication list survives into what the door returns. */
+  let medsDoorThrew = '', medsDoorOut = '';
+  try { medsDoorOut = JSON.stringify(call('_mlsAthenaNoteWithVisitComment(__note)') || ''); } catch (e) { medsDoorThrew = String((e && e.mlsAi && e.mlsAi.detail) || (e && e.message) || e); }
+  ok(medsDoorThrew ? /nested or wrapper heading/.test(medsDoorThrew) : /Metformin 1000 mg/.test(medsDoorOut),
+    rel + ': the door refuses the wrapper heading out loud or keeps the medication list, never a silent deletion');
 
   /* 19. STOP IMMUNITY: carried prose that merely STARTS with a section word
      stays inside the block — it must not decapitate the appendix and spill

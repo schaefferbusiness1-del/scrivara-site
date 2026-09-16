@@ -1,5 +1,7 @@
 'use strict';
 
+/* harness hygiene 2026-09-15: the loaded module arms real timeouts; un-ref'd they kept node alive after PASS (hang-after-pass in the whole-registry sweep). */
+const unrefTimeout = (fn, ms) => { const t = setTimeout(fn, ms); if (t && typeof t.unref === 'function') t.unref(); return t; };
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
@@ -15,7 +17,7 @@ const day = '2026-07-22';
 
 const context = {
   console, Promise, Date, Math, JSON, Intl, Object, Array, String, Number, RegExp,
-  encodeURIComponent, decodeURIComponent, queueMicrotask, setTimeout, clearTimeout,
+  encodeURIComponent, decodeURIComponent, queueMicrotask, setTimeout: unrefTimeout, clearTimeout,
   setInterval: () => 1, clearInterval: () => {},
   location: { pathname: '/ScribeFlow-staging.html', origin: 'https://mlsscribe.com' },
   localStorage: {

@@ -148,8 +148,11 @@ const FULL = { payer: 'Aetna', planName: 'Choice POS II', memberId: 'W1234567801
   const end = APP.indexOf('currentNoteText();', at);
   const packet = stripComments(APP.slice(at, end));
   const keys = (packet.match(/^\s{6}([a-zA-Z]+):/gm) || []).map((k) => k.trim().replace(':', ''));
+  /* pin moved 2026-09-15 (pre-existing red): a later lane added todayTranscript so the letter can cite
+     what today's visit actually established; the same transcript already reaches the note model, so
+     the allowlist grows by that one reviewed field and nothing else. */
   const EXPECTED = ['service', 'isAppeal', 'ptLine', 'payerLine', 'provider', 'spec',
-    'dxLine', 'note', 'noteFormat', 'pctx', 'denialReason', 'denialText', 'key'];
+    'dxLine', 'note', 'noteFormat', 'todayTranscript', 'pctx', 'denialReason', 'denialText', 'key'];
   for (const k of keys) {
     assert(EXPECTED.includes(k),
       'the prior-auth packet gained an unexpected field "' + k + '". This packet is sent to a third-party ' +

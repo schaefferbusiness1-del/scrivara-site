@@ -118,12 +118,16 @@ const TRANSCRIPT = 'Adam reports right knee pain for three weeks, worse on stair
 const CONTEXT_TEXT = 'Prior right knee arthroscopy, 2019.';
 const PATIENT_NAME = 'Adam Testpatient';
 const OTHER_NAME = 'Betty Otherpatient';
+/* harness moved 2026-09-15 (pre-existing red): a later lane canonicalises the five-field Athena
+   sidecar before the success toast, and a sidecar that is four placeholders out of five is refused
+   (a calm neutral toast, not the green one). The "untouched run" must be a real success, so the
+   fixture carries one real sentence per section. */
 const canonicalNote = [
   'HPI:', 'The patient reports feeling fine today.',
-  'ROS:', "Not documented in today's transcript.",
-  'EXAM:', "Not documented in today's transcript.",
-  'ASSESSMENT:', "Not documented in today's transcript.",
-  'PLAN:', "Not documented in today's transcript."
+  'ROS:', 'Denies fever, chills or new weakness.',
+  'EXAM:', 'Alert, in no distress; gait steady.',
+  'ASSESSMENT:', 'Stable; no new findings today.',
+  'PLAN:', 'Continue the current plan; follow up in four weeks.'
 ].join('\n');
 function generatedResult() {
   return { note: canonicalNote, athena_note: canonicalNote, insuranceNote: '', coding: { em: '', icd: [], cpt: [] }, emr: {}, patient_summary: '' };
@@ -189,6 +193,12 @@ function harness(shellSource, options) {
     getGenSectionProfileOverrides() { return { families: { hpi: { profileId: 'synthetic-hpi' } } }; },
     _mlsExactScheduledClinicalAction() { return true; },
     _athenaGuardBoundEditor() { return true; },
+    /* harness moved 2026-09-15 (pre-existing red): sidecar-1.0.0 canonicalises the five-field
+       Athena note before the success toast; absent from this sandbox, the reference error read
+       as "malformed athena_note" and every success toast came out neutral. The sidecar is another
+       suite's subject; here it passes the note through. */
+    _mlsAthenaCanonicalFromStandardNote(note) { return String(note || ''); },
+    _mlsValidateAthenaNote(note) { return String(note || ''); },
     _athenaBindingForCurrentVisit() { return context.currentVisitAthenaBinding; },
     _athenaAsyncBindingStillSafe() { return true; },
     _mlsValidateStructuredNoteResult() {},

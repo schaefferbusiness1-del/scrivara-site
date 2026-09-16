@@ -63,6 +63,8 @@
    facts were read and saved, so the row and the batch still complete.
    =================================================================== */
 
+/* harness hygiene 2026-09-15: the loaded module arms real timeouts; un-ref'd they kept node alive after PASS (hang-after-pass in the whole-registry sweep). */
+const unrefTimeout = (fn, ms) => { const t = setTimeout(fn, ms); if (t && typeof t.unref === 'function') t.unref(); return t; };
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
@@ -111,7 +113,7 @@ const bootstrapResponses = new Map();
 const context = {
   console, Promise, Date, Math, JSON, Intl, Object, Array, String, Number, RegExp,
   encodeURIComponent, queueMicrotask,
-  setTimeout, clearTimeout, setInterval: () => 1, clearInterval: () => {},
+  setTimeout: unrefTimeout, clearTimeout, setInterval: () => 1, clearInterval: () => {},
   location: { pathname: '/ScribeFlow-staging.html' },
   localStorage: {
     getItem: key => store.has(key) ? store.get(key) : null,

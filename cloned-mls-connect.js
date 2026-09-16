@@ -10239,7 +10239,27 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var status = String(d.status || '');
     if (status !== 'success' && status !== 'ok') return false;
     try { recFailClear(); _recPending = null; } catch (e0) {}
-    try { openWorkspace(true); } catch (e1) {}
+    /* notefirst-1.0.1 (sweep 2026-09-15, generated-note-visible-runtime was
+       green at b1270 and red after b1275): when the flow lane paints its own
+       note card (#ez3Note, right under Generate), that is where the doctor is
+       looking - scrolling to the review workspace 2,000 px below left the note
+       ABOVE the viewport. Open the workspace without moving, bring the flow
+       note into view; only a page with no flow note scrolls to the workspace. */
+    /* The flow owner paints its note on the SAME settle event, in a listener
+       that may run after this one; decide on the next task, never before the
+       note exists. A timer, not rAF: this must work in a background tab. */
+    setTimeout(function () {
+      try {
+        var flowNote = $('ez3Note');
+        /* opening the workspace door moves the page by itself; on a page that
+           carries the flow lane's own note card the doctor stays exactly where
+           Generate was pressed (measured: the owner lands the text a beat after
+           the settle, so presence of the card decides, and the nudge into view
+           waits for that beat). */
+        if (flowNote) setTimeout(function () { try { bringIntoView(flowNote); } catch (e2) {} }, 700);
+        else openWorkspace(true);
+      } catch (e1) {}
+    }, 0);
     return true;
   }
   function onLaneGenSettled(ev) { noteGenSettled(ev && ev.detail); repaintGenSurfaces(); revealGeneratedNote(ev && ev.detail); }

@@ -28,7 +28,8 @@ const context = {
      Real timers now, clamped so a long engine deadline cannot make this suite
      slow. Callbacks are queued for real, which is the whole point - an inert
      timer is indistinguishable from a hang. */
-  setTimeout: (fn, ms) => setTimeout(fn, Math.min(Number(ms) || 0, 25)),
+  /* harness hygiene 2026-09-15: un-ref'd, so a timer the module re-arms cannot keep node alive after PASS (hang-after-pass in the whole-registry sweep) */
+  setTimeout: (fn, ms) => { const t = setTimeout(fn, Math.min(Number(ms) || 0, 25)); if (t && typeof t.unref === 'function') t.unref(); return t; },
   clearTimeout: (h) => clearTimeout(h),
   setInterval: (fn, ms) => setInterval(fn, Math.max(Math.min(Number(ms) || 0, 25), 5)),
   clearInterval: (h) => clearInterval(h),

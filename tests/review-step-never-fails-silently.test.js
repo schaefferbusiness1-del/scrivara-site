@@ -388,6 +388,9 @@ assert.ok(
       /* the deferred half re-reads the DOM; this section owns the synchronous
          guard, so the timer is captured rather than run */
       setTimeout: () => 0,
+      /* harness moved 2026-09-15 (pre-existing red): a later lane made openReviewStep ask the bundle's
+         noteTranscriptOutdated() first; this test owns the review-step failure surfacing below it. */
+      noteTranscriptOutdated: () => false, genTranscriptText: () => '', noteRecordIdentity: () => '',
       Event: function (type, init) { this.type = type; this.bubbles = !!(init && init.bubbles); }
     };
     vm.createContext(sandbox);

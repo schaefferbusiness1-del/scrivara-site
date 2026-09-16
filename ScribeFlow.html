@@ -1250,7 +1250,7 @@
      white-space:normal because .hist-main .t truncates and this sentence must
      never be the one that gets an ellipsis. */
   .hist-main .hist-refusal{font-size:12.5px;line-height:1.45;color:#9F2D2D;margin-top:5px;
-    background:#FDF3F2;border:1px solid #F0D3D0;border-radius:8px;padding:6px 9px;white-space:normal}
+    background:#FDF3F2;border:1px solid #F0D3D0;border-radius:10px;padding:6px 9px;white-space:normal}
   .hist-main .hist-refusal .cure{display:block;margin-top:3px;color:#7A5A18;font-weight:600}
   .hist-item .del{background:none;color:var(--muted);font-size:18px;padding:4px 8px;border-radius:10px}
   .hist-item .del:hover{background:#fdeced;color:var(--red)}
@@ -24105,7 +24105,7 @@ function _opFinalizerMarkup(i,result){
   var issues=result.issues||[],repairs=result.repairs||[];
   if(result.ok&&!repairs.length) return '<div id="opFinalReview_'+i+'" data-op-final-status="ready" style="display:none"></div>';
   var blocked=!result.ok,codes=issues.map(function(x){return String(x.code||'REVIEW_REQUIRED');});
-  var h='<div id="opFinalReview_'+i+'" data-op-final-status="'+(blocked?'review':'repair')+'" data-op-final-codes="'+esc(codes.join(','))+'" role="'+(blocked?'alert':'status')+'" style="margin-top:9px;border:1px solid '+(blocked?'#e0a8a4':'#ead08c')+';background:'+(blocked?'#fff4f2':'#fff9e8')+';color:'+(blocked?'#8b2525':'#76570b')+';border-radius:9px;padding:9px 11px;font-size:12.5px">';
+  var h='<div id="opFinalReview_'+i+'" data-op-final-status="'+(blocked?'review':'repair')+'" data-op-final-codes="'+esc(codes.join(','))+'" role="'+(blocked?'alert':'status')+'" style="margin-top:9px;border:1px solid '+(blocked?'#e0a8a4':'#ead08c')+';background:'+(blocked?'#fff4f2':'#fff9e8')+';color:'+(blocked?'#8b2525':'#76570b')+';border-radius:10px;padding:9px 11px;font-size:12.5px">';
   if(blocked){
     h+='<b>Review required before this note can leave MLS</b><ul style="margin:5px 0 0 18px;padding:0">';
     for(var j=0;j<issues.length;j++)h+='<li data-op-final-code="'+esc(issues[j].code||'REVIEW_REQUIRED')+'">'+esc(issues[j].message||'Review this note.')+'</li>';
@@ -48503,7 +48503,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1281';
+  window.__MLS_AV='b1282';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

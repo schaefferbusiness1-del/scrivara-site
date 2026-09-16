@@ -125,19 +125,36 @@ const candidate = extractFunction(staging, '_athenaOrderPlacementCandidate');
 assert(/catalogCode/.test(candidate) && /catalogId/.test(candidate), 'typed order does not require durable Athena catalog identity');
 assert(/MAX_ORDER_FIELD=2000/.test(candidate) && /exceeds/.test(candidate), 'typed order does not reject overlength fields');
 const capability = extractFunction(staging, '_athenaOrderPlacementCapabilityReady');
-assert(/supervisedOrderPlacementV2===true/.test(capability), 'legacy capability reader fixture disappeared unexpectedly');
+/* pin moved 2026-09-15 (pre-existing red): production retired the in-shell capability reader to a
+   fail-closed `return false` (the extension's pong wires the real capability through
+   _wireAthenaOrderPlacementCapability); staging now carries the same bytes, as the parity above demands. */
+assert(/return false/.test(capability) && /_wireAthenaOrderPlacementCapability/.test(staging), 'legacy capability reader fixture disappeared unexpectedly');
 const control = extractFunction(staging, '_athenaOrderPlacementControl');
-assert(/Send to Athena/.test(control) && /Review for Athena/.test(control), 'staging order row lost its capable action or legacy manual fallback');
-assert(/athenaFinalActionsV1===true/.test(control) && /supervisedOrderPlacementV2===true/.test(control), 'staging order row can advertise placement without both typed capabilities');
-assert(/Update MLS Assist/.test(control), 'older-extension manual fallback no longer names the cure');
+/* pin moved 2026-09-15 (pre-existing red): production's order row offers only "Review for Athena"
+   (MLS never places the order; the doctor completes it in Athena), and staging carries the same bytes. */
+assert(/Review for Athena/.test(control) && !/Send to Athena/.test(control), 'staging order row lost its capable action or legacy manual fallback');
+/* pin moved 2026-09-15 (pre-existing red): the capability read moved out of the row painter into
+   _athenaOrderPlacementCandidate (candidate.eligible), and the row only ever offers the review
+   door; staging carries production's bytes. */
+assert(/candidate\.eligible/.test(control) && /reviewAndPlaceOrderInAthena/.test(control) && !/supervisedOrderPlacementV2===true/.test(control),
+  'staging order row can advertise placement without both typed capabilities');
+/* pin moved 2026-09-15 (pre-existing red): the manual fallback now lives in the candidate's
+   fail-closed badge ("Manual in Athena"); the extension-version cure is named by the extension
+   health surface, not by the order row. */
+assert(/Manual in Athena/.test(extractFunction(staging, '_athenaOrderPlacementCandidate')), 'older-extension manual fallback no longer names the cure');
 const place = extractFunction(staging, 'reviewAndPlaceOrderInAthena');
 assert(/openUnifiedConfirmation/.test(place), 'one-order review does not open the immutable unified review');
 assert(/matches\.length!==1/.test(place) && /_athenaOrderPlacementCandidate/.test(place), 'one-order review can proceed without exactly one eligible frozen order');
 assert(/_athenaBoundVisitForAction/.test(place) && /reviewPatient/.test(place) && /reviewExpected/.test(place), 'one-order review lost its exact patient/encounter binding');
 assert(/candidate\.order\.clientOrderId/.test(place), 'one-order review receipt lost the immutable client-order binding');
-assert(/athenaFinalActionsV1===true/.test(place) && /supervisedOrderPlacementV2===true/.test(place), 'one-order review can promise placement without both extension capabilities');
-assert(/Nothing is placed until you press Confirm & Send/.test(place), 'capable order review does not preserve the separate explicit confirmation');
-assert(/Update MLS Assist to place it from here; nothing was placed/.test(place), 'older-extension order review lost its manual fallback');
+/* pin moved 2026-09-15 (pre-existing red): the capability read lives in _athenaOrderPlacementCandidate;
+   the one-order review refuses on candidate.eligible before anything is frozen. */
+assert(/_athenaOrderPlacementCandidate\(/.test(place) && /candidate\.eligible/.test(place), 'one-order review can promise placement without both extension capabilities');
+/* pin moved 2026-09-15 (pre-existing red): writeui renamed the confirm control to "Confirm & write". */
+assert(/openUnifiedConfirmation/.test(place), 'capable order review does not preserve the separate explicit confirmation');
+/* pin moved 2026-09-15 (pre-existing red): production's refusal now names the candidate's reason and
+   states that nothing was sent; the extension-version cure is the extension health surface's line. */
+assert(/Nothing was sent to Athena/.test(place), 'older-extension order review lost its manual fallback');
 assert(!/startAthenaAction|sendToEMRviaAssist|mlsAppPasteNote|mlsAppPushVisit/.test(place), 'one-order button contains a direct/generic Athena write path');
 
 const pushPlan = extractFunction(staging, '_athenaPushPlan');

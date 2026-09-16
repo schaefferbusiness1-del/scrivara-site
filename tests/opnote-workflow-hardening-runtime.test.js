@@ -65,7 +65,11 @@ async function main() {
   context.window = context;
   vm.runInNewContext(oniSource, context, { filename: 'feat_mls_opnote_integrity.js' });
   const api = context.__mlsOpNoteIntegrity;
-  assert(api && api.installed && api.version === 'oni-2.17.0', 'integrity owner did not install at oni-2.17.0');
+  /* pin moved 2026-09-15 (pre-existing red): the owner is at oni-2.18.x now; the hardening
+     contract holds from 2.17.0 up. */
+  const oniV = String((api && api.version) || '').match(/^oni-(\d+)\.(\d+)\.(\d+)$/);
+  assert(api && api.installed && oniV && (Number(oniV[1]) > 2 || (Number(oniV[1]) === 2 && Number(oniV[2]) >= 17)),
+    'integrity owner did not install at oni-2.17.0 or later (got ' + String(api && api.version) + ')');
 
   // 1. newRow must carry appointment provider/facility scope like the base _opNewRow.
   const row = context._opNewRow('Current Patient', 'Lumbar ESI', '1980-01-02', 'July 24', 'p-safe',

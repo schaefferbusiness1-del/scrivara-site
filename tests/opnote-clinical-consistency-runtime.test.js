@@ -32,6 +32,9 @@ async function main() {
     console, Promise, Date, Math, JSON, Object, String, Number, Array, RegExp, Error,
     document: { readyState: 'complete', addEventListener() {}, getElementById() { return null; } },
     getTemplates() { return templates; },
+    /* harness moved 2026-09-15: the provider-identity lane (b1244) verifies a provider name against
+       the practice's own Settings before stamping it; this suite's subject is clinical consistency. */
+    clinicalProviderName() { return 'Jane Smith, MD'; },
     getTemplateById(id) { return templates.find(t => t.id === id) || null; },
     getPatients() { return patients; },
     getKey() { return 'test-key'; },
@@ -41,7 +44,11 @@ async function main() {
   context.window = context;
   vm.runInNewContext(source, context, { filename: 'opnote-integrity.js' });
   const api = context.__mlsOpNoteIntegrity;
-  assert(api && api.version === 'oni-2.17.0', 'clinical consistency owner did not install');
+  /* pin moved 2026-09-15 (pre-existing red): the owner has moved on to oni-2.18.x (b1244/b1245 fill
+     markers, opmatch-1.0.0); the clinical-consistency contract holds from 2.17.0 up. */
+  const oniVersion = String((api && api.version) || '').match(/^oni-(\d+)\.(\d+)\.(\d+)$/);
+  assert(api && oniVersion && (Number(oniVersion[1]) > 2 || (Number(oniVersion[1]) === 2 && Number(oniVersion[2]) >= 17)),
+    'clinical consistency owner did not install (got ' + String(api && api.version) + ')');
 
   const factCases = [
     ['Left L2 TFESI', { procedureType: 'tfesi', region: 'lumbar', side: 'left', levels: ['L2'], levelCount: 1, approach: 'transforaminal' }],
@@ -93,8 +100,14 @@ async function main() {
   const sameDocFormatted = api.templateCompatibility('Left L2 TFESI', scoped, {
     provider: 'PROVIDER JANE SMITH', facility: 'North Procedure Center'
   });
-  assert.strictEqual(sameDocFormatted.pass, false, 'formatted-differently provider unexpectedly passed strict scope');
-  assert.strictEqual(api._closeCallAdaptation(sameDocFormatted, scoped, { provider: 'PROVIDER JANE SMITH', facility: 'North Procedure Center' }).adapt, true, 'same provider formatted differently did not adapt');
+  /* pin moved 2026-09-15 (provname-1.0.0): the drafter hard-stops on a provider mismatch BEFORE any
+     adaptation runs (providerScopeHardError precedes closeCallAdaptation), so "adapts" could never
+     reach the doctor; the same person printed two ways is now not a mismatch at all. */
+  assert.strictEqual(sameDocFormatted.pass, true, 'the same provider printed two ways (schedule vs template) must not read as a different person');
+  assert.strictEqual(api.templateCompatibility('Left L2 TFESI', scoped, { provider: 'John Smith, MD', facility: 'North Procedure Center' }).pass, false,
+    'a different first name is still a different person');
+  assert.strictEqual(api.templateCompatibility('Left L2 TFESI', scoped, { provider: 'Dr. J. Smith', facility: 'North Procedure Center' }).pass, false,
+    'an initial alone cannot vouch for the same person');
   assert.strictEqual(api._closeCallAdaptation(scopeConflict, scoped, { provider: 'Alex Jones, DO', facility: 'South Procedure Center' }).adapt, false, 'a genuinely different provider/facility was adapted over');
   assert.strictEqual(api._closeCallAdaptation(levelConflict, validated, {}).adapt, true, 'validated level close-call did not adapt (requested facts are re-imposed downstream)');
   const typeConflict = api.templateCompatibility('Right C6-7 interlaminar epidural steroid injection', { name: 'Lumbar TFESI', text: templateText });
@@ -128,7 +141,10 @@ async function main() {
   let calls = 0;
   context.aiCallRaw = async () => { calls++; return JSON.stringify({ note: correct, missing: [] }); };
   const ready = await context._genOpNote('Jordan Lee', '2026-07-14', 'Left L2 TFESI', templateText, {
-    patientId: 'patient-1', dob: '1984-05-12', provider: 'Jane Smith, MD', facility: 'North Procedure Center'
+    patientId: 'patient-1', dob: '1984-05-12', provider: 'Jane Smith, MD', facility: 'North Procedure Center',
+    /* harness moved 2026-09-15: the provider-identity lane (b1244) stamps a provider only when the
+       practice/appointment data verified the name; this suite's subject is clinical consistency. */
+    providerProvenance: { nameVerified: true }
   });
   assert.strictEqual(calls, 1, 'a clinically correct note made an unnecessary repair request');
   assert(ready.note.includes('PROVIDER: Jane Smith, MD'), 'chart-owned provider metadata was not stamped');
@@ -142,7 +158,10 @@ async function main() {
   context.aiCallRaw = async () => { calls++; return JSON.stringify({ note: wrong, missing: [] }); };
   await assert.rejects(
     context._genOpNote('Jordan Lee', '2026-07-14', 'Left L2 TFESI', templateText, {
-      patientId: 'patient-1', dob: '1984-05-12', provider: 'Jane Smith, MD', facility: 'North Procedure Center'
+      patientId: 'patient-1', dob: '1984-05-12', provider: 'Jane Smith, MD', facility: 'North Procedure Center',
+    /* harness moved 2026-09-15: the provider-identity lane (b1244) stamps a provider only when the
+       practice/appointment data verified the name; this suite's subject is clinical consistency. */
+    providerProvenance: { nameVerified: true }
     }),
     err => err && err.code === 'MLS_OPNOTE_CLINICAL_CONFLICT' &&
       err.details.errors.some(e => e.field === 'side') &&

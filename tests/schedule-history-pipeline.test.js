@@ -1,5 +1,7 @@
 'use strict';
 
+/* harness hygiene 2026-09-15: the loaded module arms real timeouts; un-ref'd they kept node alive after PASS (hang-after-pass in the whole-registry sweep). */
+const unrefTimeout = (fn, ms) => { const t = setTimeout(fn, ms); if (t && typeof t.unref === 'function') t.unref(); return t; };
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
@@ -46,7 +48,7 @@ const context = {
   Number,
   RegExp,
   encodeURIComponent,
-  setTimeout,
+  setTimeout: unrefTimeout,
   clearTimeout,
   setInterval: () => 1,
   clearInterval: () => {},
@@ -508,4 +510,6 @@ assert(context.__mlsSI && typeof context.__mlsSI._runHistoryBatch === 'function'
   }
 
   console.log('PASS exact-patient awaited history and old-visits receipt pipeline');
+  /* harness hygiene 2026-09-15: the module's real timers kept node alive after this verdict (hang-after-pass); the verdict is printed, so exit. */
+  process.exit(0);
 })().catch(err => { console.error(err); process.exit(1); });

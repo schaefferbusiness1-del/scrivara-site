@@ -454,7 +454,12 @@
       }
       if(!templateName)return;
       if(!currentName){errors.push({field:'provider',code:'missing_provider_scope',message:'The selected template is provider-specific, but the current provider is unresolved.'});return;}
-      if(normText(templateName)!==normText(currentName))errors.push({field:'provider',code:'mismatch_provider',message:'The selected template belongs to a different provider.'});
+      /* provname-1.0.0 (sweep 2026-09-15): the same person printed two ways
+         ("PROVIDER JANE SMITH" on a schedule, "Jane Smith, MD" on the template)
+         was a HARD provider mismatch - the draft refused before any
+         adaptation could run. Titles, credentials and initials are formatting;
+         a different person still stops here. */
+      if(!sameProviderName(templateName,currentName))errors.push({field:'provider',code:'mismatch_provider',message:'The selected template belongs to a different provider.'});
     }
     function check(kind,expected,actual){
       expected=scopeValue(expected);actual=scopeValue(actual);
@@ -3004,6 +3009,25 @@
      the identifier scrub below. It was written inline twice inside
      rowGenerationCtx; extracting it is what stops the two copies drifting. */
   function providerKey(v){return S(v).toLowerCase().replace(/\b(?:md|do|np|pa(?:-?c)?|rn|dpm|dds|dmd|phd|facs|faap|faan)\b\.?/g,' ').replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();}
+  /* provname-1.0.0: the same person, printed two ways. Credentials go through
+     providerKey; the words a schedule or a template add around a name
+     (provider, dr, doctor, physician) and single-letter initials are dropped;
+     what remains must be the same name tokens, or the shorter printing must be
+     wholly inside the longer one with at least two tokens (a first and a last
+     name). "John Smith" never becomes "Jane Smith"; "PROVIDER JANE SMITH" is
+     "Jane Smith, MD". */
+  function providerNameTokens(v){
+    var stop={provider:1,dr:1,doctor:1,physician:1,attending:1,surgeon:1};
+    return providerKey(v).split(' ').filter(function(w){return w.length>1&&!stop[w];});
+  }
+  function sameProviderName(a,b){
+    var ta=providerNameTokens(a),tb=providerNameTokens(b);
+    if(!ta.length||!tb.length)return normText(a)===normText(b);
+    var small=ta.length<=tb.length?ta:tb,big=small===ta?tb:ta;
+    if(small.length<2&&ta.length!==tb.length)return false;
+    for(var i=0;i<small.length;i++)if(big.indexOf(small[i])<0)return false;
+    return true;
+  }
   /* AN NPI IS NEVER PRINTED BESIDE A NAME IT DOES NOT BELONG TO.
      Measured on a real batch of 25 op notes: every one paired the OPERATING
      PROVIDER's name with the SIGNED-IN ACCOUNT HOLDER's NPI, because the ctx

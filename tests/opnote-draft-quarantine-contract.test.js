@@ -29,10 +29,15 @@ function between(src, a, b) {
 }
 
 /* ---- 1. PDF export choke point refuses unresolved placeholders ---- */
+/* pin moved 2026-09-15 (pre-existing red): a later lane lifted the placeholder gate out of the export
+   function into pdfBlanksReady(), which the export calls before exportPdf; the gate still reads the
+   app's canonical opNoteBlankTokens() and still explains the draft state. */
 const pdfGate = between(pdf, 'window.__mlsOpNotePdf = function', 'function injectCss()');
-assert(pdfGate.indexOf('opNoteBlankTokens') >= 0, 'PDF export has no canonical placeholder gate');
-assert(pdfGate.indexOf('opNoteBlankTokens') < pdfGate.indexOf('exportPdf(String(t)'), 'PDF placeholder gate does not run before the export');
-assert(/draft/i.test(pdfGate), 'PDF refusal does not explain the draft state');
+const blanksReady = between(pdf, 'function pdfBlanksReady(text) {', 'async function exportPdf(rawText, opts) {');
+const exporter = between(pdf, 'async function exportPdf(rawText, opts) {', 'window.__mlsOpNotePdf = function');
+assert(blanksReady.indexOf('opNoteBlankTokens') >= 0, 'PDF export has no canonical placeholder gate');
+assert(exporter.indexOf('if (!pdfBlanksReady(rawText)) return false;') >= 0 && pdfGate.indexOf('exportPdf(String(t)') >= 0, 'PDF placeholder gate does not run before the export');
+assert(/draft/i.test(blanksReady), 'PDF refusal does not explain the draft state');
 
 /* the History viewer must hide the PDF button for "(draft)" notes */
 const viewerWire = between(pdf, 'function wireHistoryViewer()', 'function wirePrepRows()');

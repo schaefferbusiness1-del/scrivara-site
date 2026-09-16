@@ -246,8 +246,10 @@ function refDefault(orders, patient) {
   };
   const prod = kOf('ScribeFlow.html'), stg = kOf('ScribeFlow-staging.html');
   const missing = prod.filter((k) => !stg.includes(k)).sort();
+  /* pin moved 2026-09-15 (pre-existing red): production later gained the autoDraftPriorV1 sync key,
+     which the retired staging shell never received; the drift is now these seven, by design. */
   assert.deepStrictEqual(missing,
-    ['facilityAddress', 'facilityName', 'googleBusinessUrl', 'noteModel', 'opFieldDefaultsUserV1', 'studio_widgets'],
+    ['autoDraftPriorV1', 'facilityAddress', 'facilityName', 'googleBusinessUrl', 'noteModel', 'opFieldDefaultsUserV1', 'studio_widgets'],
     'the production/staging PREF_SYNC_KEYS drift CHANGED. It was these six. If a key was added to ' +
     'production without staging, add it to both or update this list deliberately: this assertion exists so ' +
     'the gap is a decision rather than an accident.\n  now missing from staging: ' + missing.join(', '));

@@ -24,7 +24,9 @@ assert(connect.includes("var VERSION = 'fl-1.7.2';"), 'flow-lane honest-state ve
 assert(connect.includes('var _recSessionSeen = false;'), 'audio-session-history flag missing');
 assert(connect.includes('if (live) _recSessionSeen = true;'), 'live recording must mark the session flag');
 assert(connect.includes("else if (!text.trim()) _recSessionSeen = false;"), 'clearing the transcript must reset the session flag');
-assert(connect.includes("text.trim() && _recSessionSeen ? '\\uD83C\\uDFA4 Resume recording'"), 'Resume label no longer requires a real prior recording session');
+/* pin moved 2026-09-15 (pre-existing red): a later calm-UI lane dropped the microphone glyph from
+   the label; the property (Resume only after a real prior session) is the same line. */
+assert(connect.includes("text.trim() && _recSessionSeen ? 'Resume recording'"), 'Resume label no longer requires a real prior recording session');
 /* genvis-1.0.0 (b1189) rebuilt the flow lane around a run-state overlay and
    reflowed laneHintDefault, so this one-line ternary became a three-line one.
    The guarantee never lapsed - the literal did. Pinned as the PROPERTY: the

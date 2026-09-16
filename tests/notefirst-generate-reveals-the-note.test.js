@@ -25,16 +25,28 @@ ok(src.includes("window.removeEventListener('mls:active-patient-changed', onLane
 const s = src.indexOf('function revealGeneratedNote(detail) {');
 const e = src.indexOf('\n  }\n', s);
 const fn = src.slice(s, e + 4);
-function run(detail) {
-  const calls = { clear: 0, open: [] };
-  const ctx = { String, Object, console, recFailClear() { calls.clear++; }, openWorkspace(v) { calls.open.push(v); }, _recPending: { armed: true } };
+/* notefirst-1.0.1 (sweep 2026-09-15): generated-note-visible-runtime was green at b1270 and red after
+   b1275 - opening the review workspace moved the page 2,000 px past the flow lane's own note. Now the
+   decision is deferred one task (the flow owner paints its note on the same settle event) and: a flow
+   note on screen is brought into view where the doctor already is; only a page with no flow note opens
+   the workspace and scrolls to it. The fake setTimeout runs the deferred decision at once. */
+function run(detail, flowNoteText) {
+  const calls = { clear: 0, open: [], into: [] };
+  const flowNote = flowNoteText === undefined ? null : { id: 'ez3Note', textContent: flowNoteText };
+  const ctx = { String, Object, console, recFailClear() { calls.clear++; }, openWorkspace(v) { calls.open.push(v); },
+    bringIntoView(el) { calls.into.push(el && el.id); }, $(id) { return id === 'ez3Note' ? flowNote : null; },
+    setTimeout(fn) { fn(); return 1; }, _recPending: { armed: true } };
   vm.runInNewContext(fn + '\nglobalThis.__r = revealGeneratedNote(' + JSON.stringify(detail) + ');', ctx, { filename: 'front-lane' });
   return { result: ctx.__r, calls, pending: ctx._recPending };
 }
 const good = run({ status: 'success', runId: 7 });
 ok(good.result === true, 'a success settle reveals');
-ok(good.calls.open.length === 1 && good.calls.open[0] === true, 'the workspace is opened and the note brought into view through the lane\'s own door');
+ok(good.calls.open.length === 1 && good.calls.open[0] === true && good.calls.into.length === 0, 'with no flow note the workspace is opened and the note brought into view through the lane\'s own door');
 ok(good.calls.clear === 1 && good.pending === null, 'the stale recording verdict is cleared');
+const flow = run({ status: 'success', runId: 8 }, 'HPI: the flow lane painted this note');
+ok(flow.result === true && flow.calls.open.length === 0 && flow.calls.into.length === 1 && flow.calls.into[0] === 'ez3Note', 'with a flow note card on the page the workspace stays closed and that note is brought into view (never the workspace 2,000 px below)');
+const emptyFlow = run({ status: 'success', runId: 9 }, '   ');
+ok(emptyFlow.calls.open.length === 0 && emptyFlow.calls.into.length === 1, 'the flow card decides by presence: the owner lands its text a beat after the settle, so an empty card at decision time is still the flow page');
 const okStatus = run({ status: 'ok' });
 ok(okStatus.result === true && okStatus.calls.open.length === 1, '"ok" counts as success too');
 const failed = run({ status: 'failed', code: 'draft_quality_failed' });

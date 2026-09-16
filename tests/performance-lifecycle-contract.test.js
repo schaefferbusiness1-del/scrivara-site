@@ -50,7 +50,10 @@ assert(dock.includes("bar.querySelector('.segbtn')") && !dock.includes("qa('.seg
 const roomsStart = p1App.indexOf('<!-- ===== clunky2-rooms-1.0.0');
 const roomsEnd = p1App.indexOf('<!-- ===== end clunky2-rooms-1.0.0', roomsStart);
 const rooms = p1App.slice(roomsStart, roomsEnd);
-assert(rooms.includes("window.addEventListener(ev, schedule)"),
+/* pin moved 2026-09-15 (pre-existing red): b1268's lifecycle owner subscribes each event with a named,
+   removable handler that IS the scheduler - the reconciliation is still scheduled, never run inline. */
+assert(rooms.includes("activePatientHandler = schedule;") && rooms.includes("viewChangedHandler = schedule;") &&
+  rooms.includes("window.addEventListener('mls:active-patient-changed', activePatientHandler)"),
   'patient/view lifecycle still runs the heavy rooms reconciliation synchronously');
 
 const calmShell = read('feat_mls_calm_shell.js');

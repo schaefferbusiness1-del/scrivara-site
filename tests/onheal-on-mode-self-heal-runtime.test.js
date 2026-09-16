@@ -338,10 +338,15 @@ async function testSweepLabelTruth() {
   ok(/__stpStopped !== true/.test(fin),
     'a STOPPED row can still be labelled "queued for automatic re-check" - nothing will ever re-check it');
   /* the two byte-pinned literals other suites depend on must survive */
-  ok(SI.includes('oneQueuedForSweep ? "queued-for-automatic-recheck"'),
+  /* pins moved 2026-09-15 (pre-existing red): dnp-1.0.0 routed both sites through
+     ppAutomaticRecheckReason(), which emits the same literal only when the chart is saved AND
+     full visit notes are on; the two call sites and the literal are pinned as they now stand. */
+  ok(SI.includes('oneQueuedForSweep ? ppAutomaticRecheckReason(one)'),
     'the pinned queued-for-automatic-recheck literal was removed from the importer');
-  ok(/fpQueuedForSweep \? "queued-for-automatic-recheck"/.test(SI),
+  ok(/fpQueuedForSweep \? ppAutomaticRecheckReason\(fp\)/.test(SI),
     'the finalize-side queued-for-automatic-recheck literal was removed');
+  ok(SI.includes('pullVisitBodies===true?"queued-for-automatic-recheck":"re-checking"'),
+    'ppAutomaticRecheckReason no longer emits the literal only when both clauses are proved');
   /* the budget-exhausted branch must SAY what it did */
   ok(/receipt\.sweepSkippedForTime = sweepable\.length;/.test(SI),
     'the budget-exhausted sweep does not count the rows it skipped for time');
@@ -381,9 +386,13 @@ async function testSweepLabelTruth() {
     return Object.keys(by).map(k => by[k]);
   };
   const stopLatest = latest(s);
-  ok(s.rows.some(r => r.reason === 'queued-for-automatic-recheck'),
+  /* pin moved 2026-09-15 (pre-existing red): dnp-1.0.0 emits "queued-for-automatic-recheck" only for
+     a row whose chart was SAVED with full visit notes on; every other sweepable row says
+     "re-checking". Both are the in-loop sweep promise this test guards against surviving a Stop. */
+  const SWEEP_LABEL = /^(queued-for-automatic-recheck|re-checking)$/;
+  ok(s.rows.some(r => SWEEP_LABEL.test(String(r.reason || ''))),
     'the stopped fixture never produced the in-loop sweep label, so the correction below proves nothing');
-  eq(stopLatest.filter(r => r.reason === 'queued-for-automatic-recheck').length, 0,
+  eq(stopLatest.filter(r => SWEEP_LABEL.test(String(r.reason || ''))).length, 0,
     'a stopped pull still promised an automatic re-check that can never happen');
   eq(stopLatest.filter(r => r.pending === true).length, 0,
     'a stopped pull left a row reading pending forever');
@@ -401,8 +410,8 @@ async function testSweepLabelTruth() {
   shipCoverageReader(h2);
   await h2.api._runHistoryBatch(h2.rows, [], h2.onStatus);
   const s2 = h2.ppState();
-  ok(s2.rows.some(r => r.reason === 'queued-for-automatic-recheck'),
-    'the control never produced a queued-for-automatic-recheck row, so the Stop assertion proves nothing');
+  ok(s2.rows.some(r => SWEEP_LABEL.test(String(r.reason || ''))),
+    'the control never produced an in-loop sweep row, so the Stop assertion proves nothing');
   eq(s2.running, false, 'the un-stopped control did not close its progress panel');
 }
 

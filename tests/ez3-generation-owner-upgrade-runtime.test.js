@@ -192,6 +192,11 @@ async function main() {
     assert.deepStrictEqual(afterStale, afterStart,
       'current owner repainted from a stale prior-run settled receipt');
 
+    /* pin moved 2026-09-15 (pre-existing red): the owner also paints once on
+       mls:generation-started while its phase still reads "note" (the previous
+       note stays on screen during a re-draft, by design), and that paint was
+       being counted as a settled-note paint. Measure the settle alone. */
+    await page.evaluate(() => { window.__ez3GenerationPaints = []; });
     await page.evaluate(() => window.dispatchEvent(new CustomEvent('mls:generation-settled', {
       detail: { runId: 22, status: 'success' }
     })));
