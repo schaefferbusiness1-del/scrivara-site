@@ -242,16 +242,22 @@ assert(helpersFrom > 0 && helpersTo > helpersFrom, 'the strict identity predicat
 assert(bindFrom > helpersTo && bindTo > bindFrom, 'the briefing binding block is not below the strict identity predicates');
 assert(bindFrom > bg.indexOf('const chartReceiptStrict = {'), 'the briefing binding runs before the coverage receipt is sealed - it must sit strictly below every gate');
 assert(bindFrom > bg.indexOf('const exactGlobalIdentity = identityMatchesTarget(ident);'), 'the briefing binding cannot see the exact chart identity');
+/* hoistfix-1.0.0 (3.0.156): the exact key helpers are the worker's top-level pair now (the handler's block copies are gone) */
+const keyMark = bg.indexOf("hoistfix-1.0.0 (3.0.156): the worker's ONE top-level copy");
+const keyFrom = bg.indexOf('\nfunction mlsExactNameKey(value) {', keyMark) + 1;
+const keyTo = bg.indexOf('\n}', bg.indexOf('\nfunction mlsExactDobKey(value) {', keyFrom) + 10) + 2;
+assert(keyMark > 0 && keyFrom > keyMark && keyTo > keyFrom, 'the worker-level key pair could not be isolated');
 function runBind(o) {
   const sandbox = {
     console, String, Number, Array, Object, RegExp, Boolean, Date, Math, JSON,
     expectedAppointmentId: String(o.expectedAppointmentId || ''),
     briefingFrames: o.briefingFrames || [],
     want: String(o.want || ''), wantDob: String(o.wantDob || ''), wantMrn: String(o.wantMrn || ''),
-    exactGlobalIdentity: o.exactGlobalIdentity !== false
+    exactGlobalIdentity: o.exactGlobalIdentity !== false,
+    __apptRowStamp: null, tab: { id: 0 } /* apptrowdob-1.0.0 (3.0.163): the door stays closed in this harness */
   };
   vm.runInNewContext(
-    bg.slice(helpersFrom, helpersTo) + '\n' + bg.slice(bindFrom, bindTo) +
+    bg.slice(keyFrom, keyTo).replace(/\r/g, '') + '\n' + bg.slice(helpersFrom, helpersTo) + '\n' + bg.slice(bindFrom, bindTo) +
     '\nthis.__out = { ship: briefingShip, diag: briefingDiag };',
     sandbox, { filename: 'briefing-bind.js', timeout: 4000 }
   );

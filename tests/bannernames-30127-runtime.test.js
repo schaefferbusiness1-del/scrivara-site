@@ -60,7 +60,7 @@ function run(text) {
 }
 /* 5. the gate uses the matcher; the shadow reader collects the legal first name */
 ok(bg.includes("const exactGlobalPair = want ? exactPairAny({name:want,dob:wantDob,mrn:wantMrn}, ident || {}) : { ok: false, reason: 'no-target' };"), 'chart gate uses exactPairAny');
-ok(bg.includes("return exactPairAny({name:want,dob:wantDob,mrn:wantMrn},who).ok;"), 'frame binding uses exactPairAny');
+ok(bg.includes("return exactPairAny({name:want,dob:wantDob,mrn:wantMrn},who).ok || __apptRowDoor(who);"), 'frame binding uses exactPairAny first (apptrowdob-1.0.0, 3.0.163: or the appointment row + exact DOB + exact surname)');
 ok(bg.includes("var legalFirstS = labelVal(lines, /^legal first name$/i), altNamesS = [];"), 'shadow reader collects the legal first name');
 ok(bg.includes("var r = { name: name, dob: dob, mrn: mrn, altNames: altNamesS,"), 'shadow reader returns altNames');
 /* 6. bannernames-1.1.0 (3.0.128): the shadow reader's strategy B splits "Used Legal: Legal" into both printed names */
@@ -83,7 +83,7 @@ ok(bg.includes("var r = { name: name, dob: dob, mrn: mrn, altNames: altNamesS,")
 /* 7. the wrong-chart refusal carries PHI-free reader evidence */
 ok(bg.includes("bannerNamesPrinted: 1 + ((ident && Array.isArray(ident.altNames)) ? ident.altNames.length : 0), identVia: (ident && ident.via) || '', pairReason: exactGlobalPair.reason || '',"), 'wrong-chart refusal reports printed-name count, reader and pair reason');
 /* 8. bannernames-1.2.0 (3.0.129): the wrong-chart refusal depends only on the exact-pair verdict */
-ok(bg.includes("if (want && ident && ident.name && !exactGlobalPair.ok) {"), 'wrong-chart fires only when the exact pair (over every printed name) fails');
+ok(bg.includes("if (want && ident && ident.name && !exactGlobalPair.ok && !__apptRowDoor(ident)) {"), 'wrong-chart fires only when the exact pair (over every printed name) fails and the appointment-row door is closed');
 ok(!bg.includes("if (want && ident && ident.name && (!globalNameMatches || globalStrongMismatch)) {"), 'the primary-name-only condition is gone');
 /* 9. bannernames-1.3.0 (3.0.131): an alt-name match reports the matched printed name as chartName */
 {
