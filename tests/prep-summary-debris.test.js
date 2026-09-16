@@ -142,7 +142,7 @@ assert.ok(!/window\.|Jotter|Print Premier Ortho|id #7731709/i.test(cleaned), 'pr
 assert.match(cleaned, /• 2026-07-16 — no readable note text captured/, 'emptied visit bullet keeps its date with an honest placeholder');
 
 const mary = { name: 'Mary Moreno', dob: '1967-06-01' };
-const foreign = 'OPERATIVE REPORT Patient: Alexander, Michael Patient DOB: 1-2-1955 Physician: Matthew Schaeffer, MD';
+const foreign = 'OPERATIVE REPORT Patient: Example, Prior Case Patient DOB: 1-2-1950 Physician: Matthew Schaeffer, MD'; /* fixture identity made synthetic 2026-09-15 */
 assert.match(ep.withholdIfOtherPatient(foreign, mary), /^⚠ Withheld: this text names a different patient/,
   'another patient\'s op report must never display on this chart');
 const own = 'OPERATIVE REPORT Patient: Moreno, Mary — lumbar procedure details.';
