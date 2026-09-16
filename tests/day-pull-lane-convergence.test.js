@@ -27,6 +27,8 @@
  * Arm 2 pulls the OLD call on the SAME columnless surface, so the defect the
  * convergence fixed is reproduced here rather than described. */
 
+/* harness hygiene 2026-09-15: the loaded module arms real timeouts; un-ref'd they kept node alive after PASS (hang in the whole-registry rerun). */
+const unrefTimeout = (fn, ms) => { const t = setTimeout(fn, ms); if (t && typeof t.unref === 'function') t.unref(); return t; };
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
@@ -231,7 +233,7 @@ function createHarness(opts) {
   const rt = {
     console, Promise, Date, Math, JSON, Intl, Object, Array, String, Number, RegExp,
     encodeURIComponent, decodeURIComponent, queueMicrotask,
-    setTimeout, clearTimeout, setInterval: () => 1, clearInterval: () => {},
+    setTimeout: unrefTimeout, clearTimeout, setInterval: () => 1, clearInterval: () => {},
     CustomEvent: function CustomEvent(type, init) { this.type = type; this.detail = init && init.detail; },
     location: { pathname: '/ScribeFlow-staging.html' },
     localStorage: {

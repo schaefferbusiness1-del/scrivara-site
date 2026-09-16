@@ -78,7 +78,9 @@ assert(/max-width:900px[^}]*\{[^}]*display:block/.test(cssBlock), 'narrow screen
 //    while the device save still holds (background syncs stay quiet)
 const syncFn = html.slice(html.indexOf('function syncPrefsToServer('), html.indexOf('async function loadPrefsFromServer'));
 assert(syncFn.includes('opts.notify'), 'sync outcome reporting must be opt-in per call site');
-assert(syncFn.includes('cloud sync failed') && syncFn.includes('cloud sync unreachable'),
+/* pin moved 2026-09-15 (pre-existing red): a calm-copy lane reworded the two misses to
+   "could not sync (<status>)" and "account sync could not be confirmed"; still opt-in, still honest. */
+assert(syncFn.includes('could not sync (') && syncFn.includes('account sync could not be confirmed'),
   'explicit saves must report cloud-sync misses honestly');
 assert(html.includes('syncPrefsToServer({notify:true})'), 'the Settings Save button must opt into sync reporting');
 

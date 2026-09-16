@@ -125,8 +125,14 @@ function insideOnDemandEnsureFn(position) {
   const LOOKBEHIND = 4000;
   const behind = connect.slice(Math.max(0, position - LOOKBEHIND), position);
   const ensureIdx = behind.lastIndexOf('window.__mlsEnsure');
-  if (ensureIdx < 0) return false;
-  return /window\.__mlsEnsure[A-Za-z0-9_]*\s*=\s*function\s*\(\s*\)\s*\{/.test(behind.slice(ensureIdx));
+  if (ensureIdx >= 0 && /window\.__mlsEnsure[A-Za-z0-9_]*\s*=\s*function\s*\(\s*\)\s*\{/.test(behind.slice(ensureIdx))) return true;
+  /* detector moved 2026-09-15 (pre-existing red): the study-request loader became a loader
+     controller (srl-1.x) whose script element is created inside a local `function ensure(reason)`
+     that only an explicit door calls; the locator line precedes that function, so look AHEAD from
+     the locator to the script creation and require the on-demand ensure between them. */
+  const ahead = connect.slice(position, position + 4000);
+  const create = ahead.indexOf("createElement('script')");
+  return create >= 0 && /\bfunction ensure\s*\(/.test(ahead.slice(0, create));
 }
 
 for (const name of TRANCHE) {

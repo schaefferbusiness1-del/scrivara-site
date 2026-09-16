@@ -2,6 +2,10 @@
 
 /* harness hygiene 2026-09-15: the loaded module arms real timeouts; un-ref'd they kept node alive after PASS (hang-after-pass in the whole-registry sweep). */
 const unrefTimeout = (fn, ms) => { const t = setTimeout(fn, ms); if (t && typeof t.unref === 'function') t.unref(); return t; };
+/* RED until the verdict line at the bottom flips it: this suite awaits module promises that, on
+   pristine b1270 as well, never settle in this harness, and an event loop that simply drains would
+   otherwise exit 0 with no verdict printed (a-suite-can-pass-without-running). */
+process.exitCode = 1;
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
@@ -510,6 +514,8 @@ assert(context.__mlsSI && typeof context.__mlsSI._runHistoryBatch === 'function'
   }
 
   console.log('PASS exact-patient awaited history and old-visits receipt pipeline');
-  /* harness hygiene 2026-09-15: the module's real timers kept node alive after this verdict (hang-after-pass); the verdict is printed, so exit. */
+  /* harness hygiene 2026-09-15: the verdict is printed, so exit 0 explicitly - see the exitCode=1
+     default at the top of this file: a run that drains its event loop before reaching this line
+     (an awaited module promise that never settles) must read as RED, never as a silent pass. */
   process.exit(0);
 })().catch(err => { console.error(err); process.exit(1); });

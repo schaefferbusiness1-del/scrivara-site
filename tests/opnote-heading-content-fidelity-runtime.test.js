@@ -56,6 +56,9 @@ async function main() {
     document: { readyState: 'complete', addEventListener() {}, getElementById() { return null; } },
     getTemplates() { return []; },
     getPatients() { return patients; },
+    /* harness moved 2026-09-15 (pre-existing red): the provider-identity lane (b1244) stamps the
+       physician only when Settings verified the name; the fixture's physician is "Dr. Test". */
+    clinicalProviderName() { return 'Dr. Test'; },
     getKey() { return ''; },
     toast() {},
     aiCallRaw() {
@@ -109,10 +112,10 @@ async function main() {
   // 5) oni-2.5.0 sanitizeTemplate: a PAST NOTE uploaded as a template (one flat
   //    paragraph carrying the prior patient) becomes a line-structured,
   //    prior-patient-free template; the doctor's technique wording survives.
-  const BLOB = 'OPERATIVE REPORT  Patient: Brown, David  Patient DOB: 6-14-1941  Physician: Matthew Schaeffer, MD  Date of Operation: 10-16-2025  Type of Anesthesia: Local with 1% lidocaine  Procedure: Bilateral L3 and L4 medial branch blocks (mbbs) and L5 dorsal ramus blocks  Preoperative Diagnosis: Facet syndrome, lumbar spondylosis  Postoperative Diagnosis: Same  History: 75 year old male with L4/5, L5/S1 zygapophysial (facet) joint pain. See clinic notes for details.  Procedure: Written and verbal consent were obtained. The risks of the procedure were discussed, including infection.';
+  const BLOB = 'OPERATIVE REPORT  Patient: Example, Prior  Patient DOB: 1-2-1950  Physician: Matthew Schaeffer, MD  Date of Operation: 10-16-2025  Type of Anesthesia: Local with 1% lidocaine  Procedure: Bilateral L3 and L4 medial branch blocks (mbbs) and L5 dorsal ramus blocks  Preoperative Diagnosis: Facet syndrome, lumbar spondylosis  Postoperative Diagnosis: Same  History: 75 year old male with L4/5, L5/S1 zygapophysial (facet) joint pain. See clinic notes for details.  Procedure: Written and verbal consent were obtained. The risks of the procedure were discussed, including infection.';
   const clean = api.sanitizeTemplate(BLOB);
-  assert(!clean.includes('Brown, David'), 'prior patient name survived template sanitizing');
-  assert(!clean.includes('6-14-1941'), 'prior patient DOB survived template sanitizing');
+  assert(!clean.includes('Example, Prior'), 'prior patient name survived template sanitizing');
+  assert(!clean.includes('1-2-1950'), 'prior patient DOB survived template sanitizing');
   assert(!clean.includes('10-16-2025'), 'prior operation date survived template sanitizing');
   assert(!clean.includes('75 year old male'), 'prior patient history survived template sanitizing');
   assert(clean.includes('Type of Anesthesia: Local with 1% lidocaine'), 'the doctor’s standard technique wording was lost');
@@ -132,7 +135,7 @@ async function main() {
   aiQueue.push(JSON.stringify({ note: blobFaithful, missing: [] }) === '' ? '' : blobFaithful);
   aiCalls = 0;
   const fromBlob = await api.generate('Qa Alpha', '2026-07-17', 'Bilateral L3/L4 medial branch blocks', BLOB, { dob: '1970-01-15', patientId: 'p1' });
-  assert(!fromBlob.note.includes('Brown, David'), 'prior patient name reached the generated note');
+  assert(!fromBlob.note.includes('Example, Prior'), 'prior patient name reached the generated note');
   assert(fromBlob.note.includes('Patient: Qa Alpha'), 'current patient was not stamped onto the note');
   assert(fromBlob.note.includes('Written and verbal consent were obtained'), 'technique narrative lost in generation');
   assert(fromBlob.note.includes('\n\n'), 'blob-template draft came back as one blob');

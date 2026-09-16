@@ -997,8 +997,10 @@ function statusSanitizationContract() {
     name: 'Synthetic Patient', k: 'synthetic|p1', pid: 'p1', ok: true,
     reason: '', dn: 'unread:' + raw, dnd: '2026-08-23'
   }] });
-  ok(html.includes('saved') && html.includes('today’s note not read this time'),
-    'a day-note refusal is not rendered as a separate chart-saved status');
+  /* pin moved 2026-09-15 (pre-existing red): the mapper spells the apostrophe ASCII (same class as
+     CLUNKY 71); either spelling is the same sentence. */
+  ok(html.includes('saved') && /(?:today|that day)[’']s note not read this time/.test(html),
+    'a day-note refusal is not rendered as a separate chart-saved status'); /* the fixture's day is not today, so fd-1.0.0 says "that day's" */
   ok(!/visit-bodies-incomplete|no-bound-clinical-detail|stable-source-keys-incomplete/.test(html),
     'day-note status/tooltip leaked raw scoped-reader internals');
   ok(!html.includes('chart saved — visit notes incomplete'),

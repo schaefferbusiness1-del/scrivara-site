@@ -133,7 +133,9 @@ assert(bridgeAt > disableAt, 'the buttons must be disabled BEFORE the execute cr
    pinning the old `refuseAction(...); return;` here would have demanded back
    the very shape that let a refusal fall through. The per-site return check
    above is what enforces termination now. */
-assert(/if \(!actionToken\) \{ return refuseAction\(action, opts, 'Athena did not return a one-use confirmation token\. Nothing was changed\.'\); \}/.test(wf),
+/* pin moved 2026-09-15 (pre-existing red): a calm-copy lane reworded the refusal to "its one-time
+   confirmation"; the guard and its fail-closed return are unchanged. */
+assert(/if \(!actionToken\) \{ return refuseAction\(action, opts, 'Athena did not return (?:a one-use confirmation token|its one-time confirmation)\. Nothing was changed\.'\); \}/.test(wf),
   'missing one-use token no longer fails closed');
 
 // 5. execute carries mode:'execute' + the same token + locked identity on both fields
