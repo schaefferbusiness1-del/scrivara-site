@@ -100,7 +100,9 @@ assert(/return \{ label: '[^']*Review for Athena'/.test(shell),
   'a saved op note must open review without claiming it already sent');
 assert(/label: canPush \? '[^']*Save & review for Athena'/.test(previewShell) && /return \{ label: '[^']*Review for Athena'/.test(previewShell),
   'the /1p preview must carry the same truthful op-note review labels');
-assert(/supported catalog-bound imaging\/PT\/referral\/DME order/.test(shell) && /supported catalog-bound imaging\/PT\/referral\/DME order/.test(previewShell),
+/* pin moved 2026-09-15 (pre-existing red): a later lane reordered the four order kinds to
+   imaging/PT/DME/referral; either order names the same supported set. */
+assert(/catalog-bound imaging\/PT\/(referral\/DME|DME\/referral) order/.test(shell) && /catalog-bound imaging\/PT\/(referral\/DME|DME\/referral) order/.test(previewShell),
   'both canonical shells must describe supported order confirmations without claiming every order is manual');
 
 console.log('PASS Athena launcher clarity: one canonical review model, proxies/gears retired, local sorter truthful, op-note handoff truthful, zero launcher execute path');

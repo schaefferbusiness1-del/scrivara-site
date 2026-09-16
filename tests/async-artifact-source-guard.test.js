@@ -55,7 +55,9 @@ assertGuardContract('autoPopulateCustomWidgets', 'autoWidgetResultStillSafe');
 
 assert(sources.runRedFlagScan.includes('JSON.stringify([editor,note,tr,pctx])'));
 assert(sources.generateDifferentials.includes('JSON.stringify([editor,note,tr,cc,pctx])'));
-assert(sources.generateHandout.includes('JSON.stringify([editor,currentDxStr,note,target,stored])'));
+/* pin moved 2026-09-15 (pre-existing red): a later lane added today's transcript to the handout's
+   source fingerprint (the guard is now stricter, not weaker). */
+assert(sources.generateHandout.includes('JSON.stringify([editor,currentDxStr,note,todayTranscript,target,stored])'));
 assert(sources.generateIME.includes('JSON.stringify([editor,note,transcript,pctx,prefs])'));
 assert(sources.generateRecommendations.includes('JSON.stringify([editor,codingLine,note,trans,pctx])'));
 assert(sources.runCustomWidget.includes('JSON.stringify([editor,liveWidget,payload,priorOutput,priorState])'));

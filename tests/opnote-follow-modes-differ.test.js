@@ -184,11 +184,14 @@ ok(!!modeSrc && modeSrc.includes("window.uns('opNoteTemplateMode')"),
 
 /* --- the gate: normText + headingLabel/headings/fixedFragments/fidelity --- */
 const iNorm = lineStarting('  function normText(x) {', 'normText()');
+/* harness moved 2026-09-15: opmatch-1.0.0 (b1271) made normText call expandCompactLevels,
+   declared just above it; the gate slice starts there so the shipped normText runs whole. */
+const iExpand = lineStarting('  function expandCompactLevels(text) {', 'expandCompactLevels()');
 const iClasses = lineStarting('  var CLASSES', 'the CLASSES table (end of normText)');
 const iHead = lineStarting('  function headingLabel(line) {', 'headingLabel()');
 const iParse = lineStarting('  function parseResult(raw)', 'parseResult() (end of fidelity)');
 const GATE_SRC = (iNorm >= 0 && iClasses > iNorm && iHead >= 0 && iParse > iHead)
-  ? L.slice(iNorm, iClasses).join('\n') + '\n' + L.slice(iHead, iParse).join('\n')
+  ? L.slice((iExpand >= 0 && iExpand < iNorm) ? iExpand : iNorm, iClasses).join('\n') + '\n' + L.slice(iHead, iParse).join('\n')
   : '';
 const S = function (x) { return x == null ? '' : String(x); };
 let gate = null;

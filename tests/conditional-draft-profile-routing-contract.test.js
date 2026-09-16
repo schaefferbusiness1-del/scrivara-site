@@ -194,7 +194,9 @@ for (const section of sections) {
 }
 for (const shell of shells) {
   assert.match(shell, /autoRoute/, 'generation shell does not reference automatic profile routing');
-  assert.match(shell, /if\(typeof _dt\.autoRoute==='function'\)/,
+  /* pin moved 2026-09-15 (pre-existing red): a later lane guards the same call with
+     opts.draftTuningResolved!==true first; the automatic routing call is unchanged. */
+  assert.match(shell, /typeof _dt\.autoRoute==='function'\)\{/,
     'generation shell still limits automatic routing to structured SOAP');
   assert.match(shell, /_routeOptions\.families\[_draftFamily\]=_effectiveDraftTuning\|\|\{\}/,
     'generation shell does not route the active non-SOAP family');

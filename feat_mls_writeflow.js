@@ -6603,11 +6603,15 @@
      day from the backend first - bounded to 4 s, merged (never truncating the
      month), and on any failure it falls through to exactly the old path. */
   function wfbindRefreshDay(day) {
+    /* calfresh-1.0.1 (sweep 2026-09-15): with no backend session there is
+       nothing to refresh, so answer `false` SYNCHRONOUSLY - a promise here
+       pushed the whole press (nav, confirm, pull) a microtask later, which is
+       what 1p-writeflow-bind-cure measures as "the press sent nothing". */
+    if (typeof window.bkBase !== 'function' || typeof window.bkToken !== 'function' || !window.bkToken()) return false;
     return new Promise(function (resolve) {
       var done = false;
       function finish(v) { if (!done) { done = true; resolve(v); } }
       try {
-        if (typeof window.bkBase !== 'function' || typeof window.bkToken !== 'function' || !window.bkToken()) return finish(false);
         var ctrl = (typeof AbortController === 'function') ? new AbortController() : null;
         setTimeout(function () { try { if (ctrl && !done) ctrl.abort(); } catch (e) {} finish(false); }, 4000);
         fetch(window.bkBase() + '/api/appointments?date=' + encodeURIComponent(day), { headers: { Authorization: 'Bearer ' + window.bkToken() }, cache: 'no-store', signal: ctrl ? ctrl.signal : undefined })
@@ -6629,7 +6633,9 @@
     if (refreshed !== true) {
       var dayKey0 = wfdxDayKey(day);
       if (!dayKey0) return false;
-      wfbindRefreshDay(dayKey0).then(function () { wfbindRun(state, day, btn, true); }, function () { wfbindRun(state, day, btn, true); });
+      var refreshing = wfbindRefreshDay(dayKey0);
+      if (refreshing === false) return wfbindRun(state, day, btn, true); /* calfresh-1.0.1: nothing to refresh, press runs now */
+      refreshing.then(function () { wfbindRun(state, day, btn, true); }, function () { wfbindRun(state, day, btn, true); });
       return true;
     }
     if (state.running) { unifiedStatus(state, 'Finish the current Athena check or action before matching this visit. No schedule check started and nothing was sent.', ''); return false; }

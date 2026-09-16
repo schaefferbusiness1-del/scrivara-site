@@ -106,7 +106,10 @@ const flowStart = source.indexOf(' * __mlsEz3Flow');
 const flowIife = source.indexOf('(function () {', flowStart);
 assert(flowStart >= 0 && flowIife > flowStart, 'the Easy flow owner is missing');
 
-const flowBody = source.slice(flowIife, flowIife + 60000);
+/* pin window moved 2026-09-15 (pre-existing red): the flow owner grew past 60,000 characters, so
+   the single-mounted-lane guard sat outside the fixed window; read to the IIFE's own close. */
+const flowClose = source.indexOf('\n})();', flowIife);
+const flowBody = source.slice(flowIife, flowClose > flowIife ? flowClose : flowIife + 60000);
 assert(/var VERSION = 'fl-1\.7\.\d+'/.test(flowBody),
   'the Easy flow owner is not active (expected a live fl-1.7.x VERSION)');
 assert(!flowBody.includes("version: 'retired-b432'"),

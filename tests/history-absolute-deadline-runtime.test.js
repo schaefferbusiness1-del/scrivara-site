@@ -292,6 +292,10 @@ async function testStarvedPageTimerBatchResetsBusy() {
   context.postMessage = () => {};
   vm.runInNewContext(importerSource, context, { filename: 'schedule-history-deadline.js', timeout: 1000 });
   const rows = patients.map(patient => ({ patient_external_id: patient.id, _mlsTargetPatientId: patient.id, _mlsTargetDob: patient.dob, name: patient.name, dob: patient.dob }));
+  /* pin moved 2026-09-15 (pre-existing red): the upcoming-days lane arms ONE page timer at module
+     load (upBoot -> upArm), which is not the history deadline path this test guards; count only the
+     page timers armed by the batches themselves. */
+  const bootPageTimers = pageTimerCalls;
   const first = await context.__mlsSI._runHistoryBatch(rows, [], () => {});
   assert.strictEqual(first.complete, false);
   assert.strictEqual(first.timedOut, true);
@@ -303,7 +307,7 @@ async function testStarvedPageTimerBatchResetsBusy() {
   const second = await context.__mlsSI._runHistoryBatch([rows[0]], [], () => {});
   assert.notStrictEqual(second.reason, 'history-batch-busy', 'deadline did not reset the managed batch busy state');
   assert.strictEqual(second.timedOut, true);
-  assert.strictEqual(pageTimerCalls, 0, 'starved page timers were used even though the Worker deadline was available');
+  assert.strictEqual(pageTimerCalls, bootPageTimers, 'starved page timers were used even though the Worker deadline was available');
   assert.strictEqual(context.__mlsSI._deadlineScheduler.workerBacked(), true);
 }
 

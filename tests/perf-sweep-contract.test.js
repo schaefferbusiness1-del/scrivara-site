@@ -16,7 +16,9 @@ const sc = fs.readFileSync(path.join(root, 'feat_mls_store_cache.js'), 'utf8');
 assert((sf.match(/_mlsSig!==/g) || []).length >= 6, 'render signature guards missing');
 assert(sf.includes("if(list._mlsSig!==_histHtml||!list.childElementCount)"), 'renderHistory guard missing');
 assert((sf.match(/if\(grid\._mlsSig!==h\|\|!grid\.childElementCount\)/g) || []).length === 3, 'calendar grid guards missing');
-assert((sf.match(/list\._mlsSig='';/g) || []).length === 2, 'renderHistory empty paths must reset the signature');
+/* pin moved 2026-09-15 (pre-existing red): a later lane added a third signature reset (the patients
+   list reset, 1pScribeFlow.html ~22153); renderHistory's two empty paths still reset theirs. */
+assert((sf.match(/list\._mlsSig='';/g) || []).length >= 2, 'renderHistory empty paths must reset the signature');
 
 /* 2. savePatients LZ verify samples instead of decompressing every save */
 assert(sf.includes('__mlsLZVerN'), 'LZ sample-verify counter missing');

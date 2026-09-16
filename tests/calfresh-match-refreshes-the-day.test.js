@@ -23,7 +23,10 @@ function ok(c, m) { checks++; assert.ok(c, m); }
 
 /* wiring pins */
 ok(src.includes('function wfbindRun(state, day, btn, refreshed) {'), 'wfbindRun takes the refreshed flag');
-ok(src.includes("wfbindRefreshDay(dayKey0).then(function () { wfbindRun(state, day, btn, true); }, function () { wfbindRun(state, day, btn, true); });"), 'the press refreshes once, then runs for real on success OR failure');
+ok(src.includes("refreshing.then(function () { wfbindRun(state, day, btn, true); }, function () { wfbindRun(state, day, btn, true); });"), 'the press refreshes once, then runs for real on success OR failure');
+/* calfresh-1.0.1: with no backend session the refresh answers false synchronously and the press runs at once (1p-writeflow-bind-cure measures the nav in the same tick) */
+ok(src.includes("if (refreshing === false) return wfbindRun(state, day, btn, true);"), 'with nothing to refresh the press runs in the same tick');
+ok(src.includes("if (typeof window.bkBase !== 'function' || typeof window.bkToken !== 'function' || !window.bkToken()) return false;\n    return new Promise(function (resolve) {"), 'the refresh returns false, not a promise, when it cannot fetch');
 const runAt = src.indexOf('function wfbindRun(state, day, btn, refreshed) {');
 const refreshAt = src.indexOf('if (refreshed !== true) {', runAt);
 const alreadyAt = src.indexOf('var already = wfbindResolvedOpts(state, day);', runAt);

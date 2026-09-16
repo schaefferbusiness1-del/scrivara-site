@@ -50,7 +50,9 @@ assert(/if \(r === true\) api\.preserved\+\+;/.test(connect),
   'api.preserved must count only real preservations');
 assert(/forceFreshVisitForNewPatient\(_preserveRefused\)/.test(connect),
   'the switch wrapper resets without telling the reset that the save was refused');
-assert(/window\.newVisit\(keepRecovery \? \{ preserveRecovery: true \} : \{\}\)/.test(connect),
+/* pin moved 2026-09-15 (pre-existing red since visitowner-1.0.0 reshaped the call): the reset now passes
+   { patientSwitchReset: true } plus preserveRecovery when the save was refused - the same property. */
+assert(/var resetOptions = \{ patientSwitchReset: true \};\s*if \(keepRecovery\) resetOptions\.preserveRecovery = true;\s*window\.newVisit\(resetOptions\);/.test(connect),
   'the reset does not preserve the recovery slot when the save was refused');
 
 /* the box must still be cleared - not clearing it bleeds one patient's

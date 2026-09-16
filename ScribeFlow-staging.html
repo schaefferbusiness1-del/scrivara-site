@@ -4885,7 +4885,7 @@ function renderSignupAgreementManifest(m){
   if(info){
     info.textContent=m
       ? (m.syntheticTestFixture?'Local synthetic-test documents: ':'Current server-approved documents: ')+'Terms effective '+terms.effectiveAt.slice(0,10)+' and Privacy Notice effective '+privacy.effectiveAt.slice(0,10)+'. Open both links before confirming.'
-      : 'Account creation is held because a current server-approved agreement manifest is unavailable.';
+      : 'Account creation is held because the current Terms and Privacy Notice could not be loaded. Check your connection, then press Create account again.';
   }
   syncSignupAssentState();
 }
@@ -4893,7 +4893,7 @@ async function loadSignupAgreementManifest(options){
   options=options||{};
   const seq=++_signupManifestRequest;
   const info=document.getElementById('authSignupDocs');
-  if(info&&!options.quiet) info.textContent='Checking the current server-approved agreement manifest…';
+  if(info&&!options.quiet) info.textContent='Checking the current Terms and Privacy Notice…';
   try{
     const root=backendMode()?bkBase():'';
     const r=await fetch(root+SIGNUP_AGREEMENT_MANIFEST_PATH,{method:'GET',cache:'no-store',credentials:backendMode()?'omit':'same-origin',referrerPolicy:'no-referrer',headers:{'Accept':'application/json'}});
@@ -24609,6 +24609,6 @@ function _ptGroupSort(mode){
 })();
 </script>
 
-<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b1280';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
+<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b1281';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
 </body>
 </html>
