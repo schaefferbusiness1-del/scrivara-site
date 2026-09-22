@@ -18985,7 +18985,10 @@ async function suChangePassword(btn){
     var r=await fetch(bkBase()+'/api/me/password',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({currentPassword:cur,newPassword:nw})});
     var d=await r.json().catch(function(){return{};});
     if(!r.ok){ set(d.error||'Could not update your password.','#b4231e'); return; }
-    set('✓ Password updated. Use it next time you sign in.','#1c7a43');
+    /* sessrevoke-1.0.0: a password change ends every earlier session on the
+       server; the response carries this device's fresh one. */
+    try{ if(d&&typeof d.token==='string'&&d.token&&typeof setBkToken==='function') setBkToken(d.token); }catch(eTok){}
+    set('✓ Password updated. Other signed-in devices will need to sign in again.','#1c7a43');
     ['suPwCurrent','suPwNew','suPwConfirm'].forEach(function(id){ var el=document.getElementById(id); if(el) el.value=''; });
     try{ toast('Password updated.','ok'); }catch(e){}
   }catch(e){ set('Network error — try again.','#b4231e'); }
@@ -19078,7 +19081,10 @@ async function changeMyPassword(btn){
     const r=await fetch(bkBase()+'/api/me/password',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({currentPassword:cur,newPassword:nw})});
     const d=await r.json().catch(()=>({}));
     if(!r.ok){ set(d.error||'Could not update your password.','#b4231e'); return; }
-    set('✓ Password updated. Use your new password next time you sign in.','#1c7a43');
+    /* sessrevoke-1.0.0: a password change ends every earlier session on the
+       server; the response carries this device's fresh one. */
+    try{ if(d&&typeof d.token==='string'&&d.token&&typeof setBkToken==='function') setBkToken(d.token); }catch(eTok){}
+    set('✓ Password updated. Other signed-in devices will need to sign in again.','#1c7a43');
     ['pwCurrent','pwNew','pwConfirm'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
     try{ toast('Password updated.','ok'); }catch(e){}
   }catch(e){ set('Network error — try again.','#b4231e'); }
