@@ -2833,7 +2833,7 @@
          nothing here, so it was Closely by another name. Its one licence, stated
          narrowly so it cannot become a summary (the owner's 2026-08-31
          complaint): change a template sentence only where THIS case differs. */
-      adapt:' TEMPLATE FIDELITY - BALANCED: this overrides the verbatim rule above in one respect only. Where a template sentence does not match THIS case (a side, level, approach, count or technique detail that differs, or a step not performed this time), change only the words that differ so the sentence is true for this patient; every other word of it stays the doctor\'s own. Never shorten, summarize, merge or drop a template sentence, and keep every number and negation it carries unless the case documents otherwise. Keep every heading and the heading order exactly.'
+      adapt:' TEMPLATE FIDELITY - BALANCED: this overrides the verbatim rule above in one respect only. Where a template sentence does not match THIS case (a side, level, approach, count or technique detail that differs, or a step not performed this time), change only the words that differ so the sentence is true for this patient; every other word of it stays the doctor\'s own. Never shorten, summarize, merge or drop a template sentence, and keep every number and negation it carries unless the case documents otherwise. Where the case does not document a value, keep the template\'s placeholder for it; never invent a fact. Keep every heading and the heading order exactly.'
     };
     if(TPL_MODE_CLAUSE[tplMode])sys+=TPL_MODE_CLAUSE[tplMode];
     if(ctx&&typeof ctx==='object')ctx.__mlsTplMode=tplMode;   /* for the receipt */

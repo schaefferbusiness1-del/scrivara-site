@@ -395,6 +395,17 @@
      every blank). A [[key]] surfaces as its prettified label; the same label
      replaces both token forms. */
   function keyToLabel(k) { return S(k).toLowerCase().replace(/_/g, ' ').trim(); }
+  /* opui-1.0.0: DISPLAY ONLY. The label above stays the identity of the blank
+     (value maps and both token forms key on it); this is what the doctor
+     reads. A humanised key read "Ebl", "Preop dx", "Dose mg" right under a
+     note line that says ESTIMATED BLOOD LOSS. */
+  var LABEL_WORDS = { ebl: 'estimated blood loss', dx: 'diagnosis', preop: 'pre-op', postop: 'post-op', 'pre op': 'pre-op', 'post op': 'post-op',
+    fluoro: 'fluoroscopy', mg: '(mg)', ml: '(mL)', mcg: '(mcg)', cc: '(cc)', sec: '(sec)', secs: '(sec)', min: '(min)', mins: '(min)', lvl: 'level', inj: 'injection', anes: 'anesthesia' };
+  function displayLabel(label) {
+    var out = S(label).replace(/\b(pre op|post op|[a-z]+)\b/g, function (w) { return Object.prototype.hasOwnProperty.call(LABEL_WORDS, w) ? LABEL_WORDS[w] : w; });
+    out = out.replace(/\s+/g, ' ').trim();
+    return out.charAt(0).toUpperCase() + out.slice(1);
+  }
   function labelToKey(l) { return S(l).toLowerCase().trim().replace(/\s+/g, '_'); }
   /* onf-2.5.0 (owner report): templates from real past notes carry ANONYMOUS
      blanks — "___" runs and "[not dictated]" markers. The formatted view
@@ -1771,7 +1782,7 @@
       }
       var fieldHtml = '<div class="onf-field"' +
         (win ? (' data-onf-at="' + win.start + '" data-onf-len="' + (win.end - win.start) + '"') : '') +
-        '><label class="' + (cur ? 'onf-has' : '') + '">' + esc(label.charAt(0).toUpperCase() + label.slice(1)) + tag + ctxHtml + ctrl + '</label>' +
+        '><label class="' + (cur ? 'onf-has' : '') + '">' + esc(displayLabel(label)) + tag + ctxHtml + ctrl + '</label>' +
         (acts.length ? ('<div class="onf-field-actions">' + acts.join('') + '</div>') : '') + '</div>';
       /* silent-fill kinds: filled + not awaiting the doctor. A value that is
          itself an unresolved placeholder can never count as filled. */
@@ -1810,7 +1821,7 @@
        loses a feature. "Save to History" stays literal so the ledger keeps
        naming this button; only the changing half is spliced. */
     var saveTail = saveBlanks
-      ? (' — ' + saveBlanks + (saveBlanks === 1 ? ' blank stays as a placeholder' : ' blanks stay as placeholders'))
+      ? (' — ' + saveBlanks + (saveBlanks === 1 ? ' blank left to fill later' : ' blanks left to fill later'))
       : ' — complete';
     var saveNote = 'saves to this patient’s History only — never sent to Athena'
       + (suggested ? ('; saving also confirms the ' + suggested + ' suggested value' + (suggested === 1 ? '' : 's') + ' above') : '');

@@ -942,6 +942,9 @@
      part that survives if any future rule overflows the card again. */
   #opPrepModal.opr-room{ align-items:flex-start !important; justify-content:flex-start !important; }
   #opPrepModal.opr-room > .modal{ margin:0 !important; }
+  /* opui-1.0.0: and the same phone rule inset this full-screen room by 10px
+     and capped it at 92vh; the room is the whole screen on every width. */
+  #opPrepModal.opr-room > .modal{ max-width:none !important; max-height:100dvh !important; overflow:hidden !important; }
   /* b940 (owner live report: "couldn't get back out"): a 14x23px corner ✕ was
      the ONLY exit of a full-screen takeover. Exits must be FINDABLE: a real
      Back button leads the header, and the ✕ grows to a ~44px target. */
@@ -1011,6 +1014,15 @@
      scrolling. Embedded, this card is plain flow content and the PANEL owns the
      scrolling, so height/display/overflow must all be handed back. */
   #oprPanelTpls #templatesModal .modal{ max-width:none!important; width:auto; height:auto; max-height:none; display:block; overflow:visible; box-shadow:none; border:0; border-radius:0; padding:0 0 20px; background:transparent; }
+  /* opui-1.0.0: the phone .modal rule in feat_mls_redesign.js is !important
+     (max-height:92vh, overflow-y:auto, margin:10px), so on a phone the embedded
+     card became a SECOND scroller inside the panel and opened 1,946px down.
+     The panel owns scrolling here, on every width. */
+  #oprPanelTpls #templatesModal .modal{ max-height:none!important; overflow:visible!important; margin:0!important; }
+  #templatesModal .tpl-ctx-op{ display:none; }
+  #oprPanelTpls #templatesModal .tpl-ctx-op{ display:block; }
+  #oprPanelTpls #templatesModal h3 .tpl-ctx-op{ display:inline; }
+  #oprPanelTpls #templatesModal .tpl-ctx-visit{ display:none; }
   #oprPanelTpls #templatesModal .modal-x{ display:none; }
   @media (max-width:900px){
     #oprPanelProcs{ grid-template-columns:1fr; grid-template-rows:auto minmax(0,1fr); }
@@ -5918,10 +5930,16 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 <div class="modal-bg" id="templatesModal" role="dialog" aria-modal="true" aria-label="Templates">
   <div class="modal" style="max-width:960px">
     <button class="modal-x" onclick="closeTemplates()">×</button>
-    <h3>📄 Templates <span style="font-weight:400;font-size:14px;color:var(--muted)">(optional output formatting)</span></h3>
-    <p class="note">Import a blank template/form (PDF or image). When enabled, MLS formats the generated note to match the template's structure and fields. Templates are stored locally on this device. On by default; when off, generation is unchanged.</p>
+    <!-- opui-1.0.0: this ONE node is also the op-note room's Templates tab.
+         There, "optional output formatting" and the visit-note switches read as
+         if they controlled op notes; they do not. Each context gets its own
+         words (CSS in the op-note room block picks which is shown). -->
+    <h3><span class="tpl-ctx-visit">📄 Templates <span style="font-weight:400;font-size:14px;color:var(--muted)">(optional output formatting)</span></span><span class="tpl-ctx-op">📄 Op-note templates</span></h3>
+    <p class="note tpl-ctx-visit">Import a blank template/form (PDF or image). When enabled, MLS formats the generated note to match the template's structure and fields. Templates are stored locally on this device. On by default; when off, generation is unchanged.</p>
+    <p class="note tpl-ctx-op">Each op note is drafted from the template that matches its procedure. Upload, edit, or add standard lines here. How closely drafts follow them is set on the Procedures tab.</p>
 
     <div class="field" style="margin-top:4px">
+      <div class="tpl-ctx-op" style="font-weight:700;font-size:13px;margin:0 0 6px">Visit-note formatting <span style="font-weight:400;color:var(--muted)">— these two switches do not change op notes</span></div>
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
         <input type="checkbox" id="tplUseToggle" onchange="onTplToggleChange()" style="width:auto;margin:0">
         <span>Use templates when generating</span>
@@ -29304,7 +29322,16 @@ function renderHistory(){
      governs the list and its count. */
   const matchedTotal=ordered.length;
   const cntEl=document.getElementById('histCount'); if(cntEl) cntEl.textContent = (q||fv) ? (ordered.length+' of '+total+' match') : (matchedTotal+' visit'+(matchedTotal===1?'':'s'));
-  if(!ordered.length){ empty.style.display='block'; list.innerHTML=''; list._mlsSig=''; empty.innerHTML='<span class="big">🔎</span>No visits match your search. <a href="#" onclick="var s=document.getElementById(\'histSearch\');if(s)s.value=\'\';var f=document.getElementById(\'histFilter\');if(f)f.value=\'\';renderHistory();return false;" style="color:#204034;font-weight:700">Clear search</a>'; return; }
+  /* opui-1.0.0: say what actually narrowed the list. With only the Op notes
+     filter picked and no search typed, "No visits match your search" named a
+     search nobody ran, and nothing led to drafting the op note that is missing. */
+  if(!ordered.length){ empty.style.display='block'; list.innerHTML=''; list._mlsSig='';
+    const _clr='<a href="#" onclick="var s=document.getElementById(\'histSearch\');if(s)s.value=\'\';var f=document.getElementById(\'histFilter\');if(f)f.value=\'\';renderHistory();return false;" style="color:#204034;font-weight:700">';
+    const _who=ap?' for this patient':'';
+    if(!q&&fv==='opnote') empty.innerHTML='<span class="big">💉</span>No op notes'+_who+' yet. '+(ap?'<button type="button" class="btn-ghost hist-empty-op" onclick="openOpPrepForPatient()" style="margin:0 8px">💉 Draft op note</button>':'')+_clr+'Show all visits</a>';
+    else if(!q&&fv){ const _fl=({signed:'signed visits',unsigned:'unsigned visits',draft:'drafts',imports:'chart imports'})[fv]||'visits of that kind'; empty.innerHTML='<span class="big">🔎</span>No '+_fl+_who+'. '+_clr+'Show all visits</a>'; }
+    else empty.innerHTML='<span class="big">🔎</span>No visits match your search. '+_clr+'Clear search</a>';
+    return; }
   empty.style.display='none';
   /* b377 perf: bound the DOM like renderPatients does (PT_CAP). A chart with
      hundreds of visits rendered every row on every pass; search still runs
@@ -52245,6 +52272,8 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
    ends - so it stays up for as long as the run left something to retry, and
    goes when there is nothing left to say. */
 #opPrepModal[data-mls-opnotes-state]:not([data-mlsopn-run]) #tpfLedger{ display:none !important; }
+/* opui-1.0.0: a finished run keeps its ledger (for Retry) but not its Stop. */
+#opPrepModal[data-mlsopn-run="done"] #tpfStop{ display:none !important; }
 
 /* ---- the RIGHT PANE, one surface at a time ---- */
 /* LIST / EMPTY: no editor on screen at all, and the pane says what to do. */
@@ -52749,7 +52778,7 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
   var selKey = '';               /* immutable appointment-row identity */
   var detOpen = false, tplOpen = false;
   var query = '';
-  var lastDay = '';
+  var lastDay = '', lastView = '';
 
   function S(v) { return v == null ? '' : String(v); }
   function el(id) { try { return document.getElementById(id); } catch (e) { return null; } }
@@ -52822,9 +52851,14 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     try { if (typeof window._opContextDay === 'function') k = okKey(window._opContextDay()); } catch (e) { k = ''; }
     return k || todayKey();
   }
+  /* opui-1.0.0: 'This patient' shows ONE date. openOpPrepForPatient never
+     sets _opPrepDay, so the header kept the day the room last showed (Tue)
+     while the note under it was Wed's visit, and the arrows stepped from the
+     wrong day. In patient mode the patient's own visit date wins. */
   function currentDay() {
     var k = '';
-    try { k = okKey(window._opPrepDay); } catch (e) { k = ''; }
+    if (patientMode()) { try { k = okKey(rows()[0] && rows()[0].dateKey); } catch (e0) { k = ''; } }
+    if (!k) { try { k = okKey(window._opPrepDay); } catch (e) { k = ''; } }
     if (!k) { try { k = okKey(rows()[0] && rows()[0].dateKey); } catch (e2) { k = ''; } }
     return k || contextDay();
   }
@@ -53066,7 +53100,9 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
       var b = blanksLeft(row);
       /* The word "blank" is the fill module's own, and the `why` is what the
          doctor reads on the note; the chip carries the count. */
-      if (b) return st3('review', b + ' to fill', 'Needs ' + b + ' more detail' + (b === 1 ? '' : 's'),
+      /* opui-1.0.0: one word, "blank". The note's chip reads full + ' - ' +
+         why, and it said "Needs 3 more details - 3 blanks still to fill". */
+      if (b) return st3('review', b + ' to fill', 'Not finished',
         b + ' blank' + (b === 1 ? '' : 's') + ' still to fill');
       if (filedRecord(row)) return st3('filed', 'In the chart', 'Saved to the chart', '');
       return st3('ready', 'Drafted', 'Drafted, not yet in the chart', '');
@@ -53769,6 +53805,7 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
   }
   function runDayPrimary() {
     var st = dayState(), i;
+    if (st === 'stop') { var sb = el('tpfStop'); if (sb) sb.click(); setTimeout(refresh, 250); return; }
     if (st === 'review') { i = firstOfKind('review'); if (i >= 0) openNote(i); return; }
     if (st === 'save') {
       var sa = bulkSave();
@@ -53842,7 +53879,7 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     }
     var b2 = blanksLeft(row);
     if (b2) {
-      return { label: '📝 Fill ' + b2 + ' field' + (b2 === 1 ? '' : 's'),
+      return { label: '📝 Fill ' + b2 + ' blank' + (b2 === 1 ? '' : 's'),
         run: function () {
           var box = null;
           try { box = card && card.querySelector('.onf-fillbox'); } catch (e) {}
@@ -54248,6 +54285,19 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
        variable while the input kept its text also left the two disagreeing:
        the box read "smi" and every row was shown. */
     if (day !== lastDay) { lastDay = day; if (!patientMode()) { clearSelection(); } topOfRoom(); }
+    /* opui-1.0.0: a run's closing line ("Done: 4 drafted - 2 failed", Retry)
+       belongs to the view it ran in. Moving to one patient, or to another day,
+       with no run on left the old day's line under the new header. */
+    var viewNow = (patientMode() ? 'p|' : 'd|') + day;
+    if (viewNow !== lastView) {
+      var hadView = !!lastView; lastView = viewNow;
+      var runningNow = false;
+      try { runningNow = !!(window.__mlsTplPrepFix && window.__mlsTplPrepFix.isDrafting && window.__mlsTplPrepFix.isDrafting()); } catch (eRn) { runningNow = false; }
+      if (hadView && !runningNow) {
+        try { var stOld = el('opPrepStatus'); if (stOld) stOld.textContent = ''; } catch (eSo) {}
+        try { var rfOld = el('opPrepRetryFailedBtn'); if (rfOld && rfOld.parentNode) rfOld.parentNode.removeChild(rfOld); } catch (eRf) {}
+      }
+    }
     if (patientMode()) { sel = 0; selKey = rowsRef.length ? rowKey(rowsRef[0], 0) : ''; }
     else alignSelection(rowsRef);
 
@@ -54335,7 +54385,7 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
       if (query) bits.push(shownIdx.length + ' shown');
       if (t.ready) bits.push(t.ready + ' drafted');
       if (t.filed + t.saved) bits.push((t.filed + t.saved) + ' in the chart');
-      if (t.review) bits.push(t.review + ' to finish');
+      if (t.review) bits.push(t.review + ' with blanks to fill');
       if (t.held) bits.push(t.held + ' no op note needed');
       count.textContent = r.length ? bits.join(' · ') : '';
     }
@@ -54349,11 +54399,14 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     }
 
     /* ---- the ONE day-level secondary action ----
-       In 'draft' and 'stop' the shell's own Draft-all button IS the action, so
-       this one steps aside rather than competing with it. */
+       In 'draft' the shell's own Draft-all button IS the action, so this one
+       steps aside. In 'stop' it is the run's Stop (opui-1.0.0). */
     var go = el('mlsOpDayGo');
     if (go) {
-      if (r.length && dayState() === 'review') {
+      if (r.length && dayState() === 'stop') {
+        go.hidden = false;
+        go.textContent = '⏹ Stop drafting';
+      } else if (r.length && dayState() === 'review') {
         go.hidden = false;
         go.textContent = '👁 Review ' + t.review + ' note' + (t.review === 1 ? '' : 's');
       } else if (r.length && dayState() === 'save') {
@@ -54408,9 +54461,13 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
       var need = t.queued + t.failed;
       var want = hold
         ? HOLD_LBL
-        : (need ? ('✨ Draft all ' + need + ' op note' + (need === 1 ? '' : 's')) : home);
+        : (need ? (need === 1 ? '✨ Draft 1 op note' : ('✨ Draft all ' + need + ' op notes')) : home);
       if (S(gen.textContent) !== want) gen.textContent = want;
-      var showGen = !patientMode() && st !== 'templates' && (need > 0 || t.drafting > 0);
+      /* opui-1.0.0: hidden WHILE a run is on. It used to stay up reading
+         "Draft all op notes" and answer a press with "already running - use
+         Stop first", while the only Stop was a small button in the log. The
+         day button (#mlsOpDayGo) is the Stop now. */
+      var showGen = !patientMode() && st !== 'templates' && need > 0 && !t.drafting;
       if (showGen) { if (gen.getAttribute('data-mlsopn-hide')) { gen.removeAttribute('data-mlsopn-hide'); gen.style.display = ''; } }
       else { gen.setAttribute('data-mlsopn-hide', '1'); gen.style.display = 'none'; }
       /* PRESSABLE IS ASSERTED, NOT ASSUMED (owner, 2026-08-31: "why is this
@@ -68073,6 +68130,7 @@ html #profUnpulledPull .mlsactip-pop{ display:none !important; }
    this rule keeps the preview surface exactly what it was. */
 body.mls-public-preview #histSchedFollowBtn,
 body.mls-public-preview #histOpNoteBtn{ display:none !important; }
+body.mls-public-preview #histEmpty .hist-empty-op{ display:none !important; }
 @media (max-width:560px){ #historySubnav .hxs-pill{ flex:1 1 auto; text-align:center; } }
 </style>
 <script>

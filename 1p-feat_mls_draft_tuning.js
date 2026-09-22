@@ -1538,6 +1538,24 @@
     sel.setAttribute('data-key', ex.key);
     sel.value = value || ex.choices[0][0];
   }
+  /* opui-1.0.0: ONE SETTING, ONE NAME. Op notes are drafted from the Op Note
+     Room's template library and this select mirrors the Room's own control,
+     which says Closely / Balanced / Adapt to case. Settings said Strict /
+     Follow template / Guide only, and described guide as "headings and layout
+     may change" while the Room (and the generator) keep every heading. The
+     values are unchanged; only what the doctor reads is the Room's. */
+  var OPNOTE_MODE_CHOICES = [['strict', 'Closely — keeps your wording, fills only what varies'],
+    ['adapt', 'Balanced (recommended) — keeps your structure, adapts the wording'],
+    ['guide', 'Adapt to case — keeps every heading, writes tighter prose']];
+  var VISIT_MODE_CHOICES = [['strict', 'Strict — keep its headings, order, and standard wording'], ['adapt', 'Follow template (recommended) — keep its structure'], ['guide', 'Guide only — headings and layout may change']];
+  function opnoteLibraryCount() {
+    try { return typeof window.getTemplates === 'function' ? (window.getTemplates() || []).length : 0; } catch (e) { return 0; }
+  }
+  function opnoteModeHelp(mode) {
+    if (mode === 'strict') return 'Closely keeps your template\'s wording and fills only what varies for this patient.';
+    if (mode === 'guide') return 'Adapt to case keeps every heading and its order, and writes the prose more tightly in its own words.';
+    return 'Balanced is recommended. It keeps your template\'s structure and headings and adapts the wording to the case.';
+  }
   function templateModeHelp(mode, hasTemplate) {
     if (!hasTemplate) return 'Add or import a template before choosing how closely MLS should follow it.';
     if (mode === 'strict') return 'Strict keeps the template\'s headings, order, and standard wording, while leaving unsupported clinical facts unfilled.';
@@ -1559,11 +1577,15 @@
     var modeSelect = q('mlsDtSectionTemplate');
     var mode = String((modeSelect && modeSelect.value) || (selected && selected.templateMode) || SECTION_TEMPLATE_DEFAULT);
     var modeHelp = q('mlsDtTemplateModeHelp');
+    /* opui-1.0.0: an op note's template is the one the Room matched from the
+       op-note library, not this saved format's text, so "add a template first"
+       was false with templates loaded. */
+    var hasTpl = id === 'opnote' ? (opnoteLibraryCount() > 0 || !!templateText) : !!templateText;
     if (modeSelect) {
-      modeSelect.disabled = !templateText;
-      modeSelect.setAttribute('aria-disabled', templateText ? 'false' : 'true');
+      modeSelect.disabled = !hasTpl;
+      modeSelect.setAttribute('aria-disabled', hasTpl ? 'false' : 'true');
     }
-    if (modeHelp) modeHelp.textContent = templateModeHelp(mode, !!templateText);
+    if (modeHelp) modeHelp.textContent = (id === 'opnote' && hasTpl) ? opnoteModeHelp(mode) : templateModeHelp(mode, hasTpl);
     var label = FAMILY_LABELS[id] || 'Selected output';
     if (!selected) {
       summary.textContent = label + ' uses its saved account defaults. No reusable format is selected for this output.';
@@ -1644,7 +1666,9 @@
        tests/opnote-follow-modes-differ and must not gain a second read). This
        control now DISPLAYS that authority, so Settings can no longer show a
        mode the drafts are not using. */
+    template.innerHTML = optionHtml(id === 'opnote' ? OPNOTE_MODE_CHOICES : VISIT_MODE_CHOICES);
     if (id === 'opnote') template.value = opnoteRoomTemplateMode();
+    else template.value = templateMode || SECTION_TEMPLATE_DEFAULT;
     paintProfileButtons(profiles);
     paintEffectiveSummary();
   }

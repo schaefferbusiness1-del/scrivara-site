@@ -71,7 +71,11 @@ function makeElement(id) {
     classList: { toggle(name, on) { attrs[`class:${name}`] = !!on; } },
     setAttribute(name, value) { attrs[name] = String(value); },
     removeAttribute(name) { delete attrs[name]; if (name === 'href') this.href = ''; },
-    getAttribute(name) { return Object.prototype.hasOwnProperty.call(attrs, name) ? attrs[name] : null; }
+    getAttribute(name) { return Object.prototype.hasOwnProperty.call(attrs, name) ? attrs[name] : null; },
+    /* signin-1.0.0: a failed load appends a "Try again" button to the notice */
+    children: [],
+    appendChild(child) { this.children.push(child); return child; },
+    addEventListener(type, fn) { (this.listeners = this.listeners || {})[type] = fn; }
   };
 }
 
@@ -83,7 +87,7 @@ function harness(options = {}) {
   const context = {
     console, Date, URL, Object, JSON, Number, Array, String, RegExp, Error,
     location: { href: options.href || 'https://app.example.test/ScribeFlow.html' },
-    document: { baseURI: options.href || 'https://app.example.test/ScribeFlow.html', getElementById(id) { return elements[id] || null; } },
+    document: { baseURI: options.href || 'https://app.example.test/ScribeFlow.html', getElementById(id) { return elements[id] || null; }, createElement(tag) { const el = makeElement(''); el.tagName = String(tag).toUpperCase(); el.style = {}; return el; } },
     backendMode() { return options.backend !== false; },
     bkBase() { return 'https://api.example.test'; },
     fetch: async () => {
@@ -228,6 +232,14 @@ function sha256(value) { return crypto.createHash('sha256').update(value).digest
   assert.strictEqual(await missing.api.load(), null, 'missing manifest did not fail closed');
   assert.strictEqual(missing.elements.authSignupAssentFields.disabled, true, 'missing manifest left assent controls enabled');
   assert.strictEqual(missing.elements.authBtn.disabled, true, 'missing manifest left signup activation enabled');
+  /* signin-1.0.0: the held notice no longer says "press Create account again"
+     beside a disabled button; it carries its own Try again, which re-fetches. */
+  const retry = missing.elements.authSignupDocs.children.find(c => c.id === 'authSignupRetry');
+  assert(retry && retry.textContent === 'Try again', 'a failed manifest load offers no Try again');
+  assert.doesNotMatch(missing.elements.authSignupDocs.textContent, /press Create account again/, 'the notice still points at a disabled button');
+  missing.queue.push({ body: validManifest() });
+  await retry.listeners.click();
+  assert.strictEqual(missing.queue.length, 0, 'Try again did not re-fetch the manifest');
 
   const unchecked = harness();
   unchecked.queue.push({ body: validManifest() });

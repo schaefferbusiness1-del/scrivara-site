@@ -95,6 +95,7 @@ function runCalOpenDay(sfSrc, appts) {
     extractLine(sfSrc, 'function _calStatusColor(s){'),
     extractLine(sfSrc, 'function _calLabelOf(a){'),
     extractLine(sfSrc, 'function _calDateOf(a){'),
+    extractLine(sfSrc, 'function _calIdJs(id){'),   /* calid-1.0.0: quotes ids in handlers */
     extractLine(sfSrc, 'function esc(s){'),
     extractBlock(sfSrc, 'function calOpenDay(key){')
   ].join('\n');

@@ -2682,7 +2682,15 @@ const tests = [
   'signin-error-honesty-runtime.test.js',
   /* calid-1.0.0 / calnav-1.0.0 (b1290): Day/Week/Month appointments open by
      click and Enter, the arrows keep one day on screen, Week counts the week. */
-  'calendar-one-day-and-keyboard-runtime.test.js'
+  'calendar-one-day-and-keyboard-runtime.test.js',
+  /* opui-1.0.0 (b1291): the op-note room says one thing - Stop replaces Draft
+     all while a run is on, "This patient" shows one date, the Templates tab is
+     about op notes and opens at its top on a phone, Settings uses the room's
+     mode names, History's Op notes filter names itself. */
+  'opnote-room-says-one-thing-runtime.test.js',
+  /* refitfit-1.0.0 (b1291): the surgeon page reports a re-fit that did not
+     follow the picked template as such, and shows the note's own template. */
+  'opnotes-refit-refusal-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

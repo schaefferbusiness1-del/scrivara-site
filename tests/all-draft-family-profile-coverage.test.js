@@ -54,7 +54,16 @@ for (const id of api.familyIds) {
   assert.ok(chosen && chosen.id === 'causal_' + id, `${id} could not save a custom format`);
   const payload = api.forFamily(id, { profileId: chosen.id });
   assert.strictEqual(payload.profileId, chosen.id, `${id} did not select its saved format`);
-  assert.match(payload.templateText, new RegExp(id.toUpperCase()), `${id} template did not reach payload`);
+  if (id === 'opnote') {
+    /* opmode-1.0.0 (b1289): an op note has ONE template - the one the op-note
+       room matched for the procedure, which travels in the user message. A
+       saved format's outline sent beside it was a second, conflicting
+       template (confirmed on captured /api/complete bodies), and the backend
+       now ignores it for op notes. Its rule and comments still travel. */
+    assert.strictEqual(payload.templateText, '', 'opnote sent a second template beside the room-matched one');
+  } else {
+    assert.match(payload.templateText, new RegExp(id.toUpperCase()), `${id} template did not reach payload`);
+  }
   assert.strictEqual(payload.profileWhen, 'red flag documented', `${id} conditional rule did not reach payload`);
   assert.match(payload.instructions, /Use this format only when its rule is supported/, `${id} AI comments did not reach payload`);
   assert.match(api.promptBlock(id, { profileId: chosen.id }), new RegExp(id.toUpperCase() + ' saved-template handling'), `${id} prompt omitted template handling`);

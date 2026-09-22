@@ -435,6 +435,15 @@ async function opnRefit() {
       opnShow('refitMsg', true);
       return;
     }
+    /* refitfit-1.0.0: the server refuses a rewrite that does not follow the
+       picked template's headings, and keeps the note as it was. Its message
+       names what was missing; "did not go through" would send the surgeon to
+       retry something that did go through and was judged. */
+    if (r.status === 422 && d && d.error && d.error.code === 'OPNOTE_REFIT_NOT_FITTED') {
+      opnSay('refitMsg', String(d.error.message || 'That rewrite did not follow the template, so your note is exactly as it was.'), true);
+      opnShow('refitMsg', true);
+      return;
+    }
     if (r.status === 409) { opnSay('refitMsg', 'Someone else changed this note. Reload the page to see the newest one.', true); opnShow('refitMsg', true); return; }
     if (!r.ok || !d || !d.job) { opnSay('refitMsg', 'That did not go through. Try again in a moment.', true); opnShow('refitMsg', true); return; }
     var body = opnEl('opnNote');
@@ -455,7 +464,8 @@ async function opnRefit() {
 
 /* Put it back only restores the WORDS. It does not undo the rewrite on the
    server; pressing Save after it is what makes the old wording the stored note
-   again, and the sentence says so. */
+   again (and, since refitfit-1.0.0, puts the old template label back), and
+   the sentence says so. */
 function opnRefitUndo() {
   var body = opnEl('opnNote');
   if (!body || !opnUndoText) return;

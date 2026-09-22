@@ -523,7 +523,9 @@ ok(typeof canonicalCount === 'function', 'and it runs');
   console.log('        footer: "' + txt + '"');
   ok(!/looks right/i.test(txt), 'the footer no longer puts a verdict in the doctor’s mouth', txt);
   ok(/^Save to History/.test(txt), 'it names the action first', txt);
-  ok(/stays? as (a )?placeholders?/.test(txt),
+  /* opui-1.0.0: one word for one idea - the room calls them blanks, so the
+     footer says "N blanks left to fill later" rather than "placeholders". */
+  ok(/blanks? left to fill later/.test(txt),
     'and says what happens to what is still empty, instead of "(4 blanks left)"', txt);
   ok(footerNumber(txt) === canonicalCount(ta.value),
     'THE FOOTER NUMBER EQUALS THE CANONICAL BLANK COUNT of the note on screen',

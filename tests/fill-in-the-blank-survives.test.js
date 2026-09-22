@@ -79,8 +79,15 @@ const adaptClause = (clauseBlock.match(/adapt:'([^']*)'/) || [, ''])[1];
 
 ok(strictClause.length > 0 && guideClause.length > 0,
   'C: strict and guide contribute real clauses');
-ok(adaptClause === '',
-  'C: the DEFAULT mode contributes nothing, so the blank mechanism it has always\n        used is untouched for anyone who never opens the control');
+/* opmode-1.0.0 (b1289): Balanced is a real mode now - it used to add nothing,
+   which made it identical to Closely (confirmed on captured prompts). What must
+   hold is what this file protects: it keeps placeholders and never licenses a
+   guess. The clause text is read up to its first escaped quote, which is past
+   both requirements. */
+const adaptFull = (clauseBlock.match(/adapt:'((?:[^'\\]|\\.)*)'/) || [, ''])[1];
+ok(adaptFull.length > 0 && /placeholder/i.test(adaptFull) && /never invent a fact/i.test(adaptFull),
+  'C: the DEFAULT (Balanced) clause keeps placeholders and restates the anti-fabrication rule',
+  adaptFull.slice(0, 200));
 
 /* The strict clause is the dangerous one: "preserve the prose verbatim" could be
    read as "do not insert placeholders". It must positively require them. */
