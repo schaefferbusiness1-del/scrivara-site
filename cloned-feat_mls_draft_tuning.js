@@ -940,11 +940,24 @@
       merged.sectionMode = selected.sectionMode;
       merged.templateMode = selected.templateMode;
       merged.templateText = selected.templateText;
+      /* opmode-1.0.0. An operative note's follow mode is the one the doctor
+         chose in the op-note room (Closely / Balanced / Adapt to case), stored
+         under 'opNoteTemplateMode' and mirrored by Settings. The wire value was
+         the saved profile's instead - 'strict' in all three modes, measured on
+         the captured /api/complete bodies - so the backend never learned the
+         choice. Its template is the one the room picked for the procedure and
+         travels in the user message; the profile's template is not a second
+         one. */
+      if (id === 'opnote') {
+        merged.templateMode = opnoteRoomTemplateMode();
+        merged.templateText = '';
+      }
       /* Section instructions were historically profile-owned; generic draft
          families retain their account-level comment and add the selected
          format's comments so old settings remain effective. */
       merged.instructions = cleanText([merged.instructions, selected.instructions].filter(Boolean).join(' | '), MAX_INSTRUCTIONS);
     }
+    if (id === 'opnote') merged.templateMode = opnoteRoomTemplateMode();   /* opmode-1.0.0: profile or not */
     merged.schemaVersion = 1;
     merged.family = id;
     return merged;

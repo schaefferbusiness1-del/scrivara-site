@@ -1090,7 +1090,13 @@
             if (/operative|op[ -]?note|procedure note|injection/i.test(b) && b.indexOf('STRICT DICTATION RULE') < 0) {
               try {
                 var o = JSON.parse(b);
-                if (o && typeof o.system === 'string') {
+                /* opmode-1.0.0: not for family 'opnote'. Both op-note generators
+                   define their own blank - [[snake_case]] plus a "missing" entry,
+                   which the Fields box and the status count read - and carry the
+                   same never-invent rule (and the backend route contract, rule 4).
+                   A second syntax here left [FILL: ...] tokens in notes that the
+                   room then counted as zero blanks. */
+                if (o && typeof o.system === 'string' && o.family !== 'opnote') {
                   o.system += FILL_RULES;
                   var init2 = {}; for (var k in init) init2[k] = init[k];
                   init2.body = JSON.stringify(o);

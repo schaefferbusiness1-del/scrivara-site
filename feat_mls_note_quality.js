@@ -240,7 +240,14 @@
         '. Honour the subtype thresholds above rather than a generic length target.');
     }
 
-    parts.push(FORBIDDEN_LAW);
+    /* opmode-1.0.0: a caller whose lane REQUIRES one held-for-physician marker
+       (the op-note template lane: [[snake_case]] + a "missing" entry, read by
+       the Fields box) names it, and that one marker is exempted - the rule
+       otherwise told the model never to emit the blank it was told to emit. */
+    var held = opts.heldSlotSyntax ? String(opts.heldSlotSyntax).replace(/[\r\n]+/g, ' ').slice(0, 40) : '';
+    parts.push(held
+      ? FORBIDDEN_LAW.replace(/^NEVER EMIT: unfilled placeholders of any syntax/, 'NEVER EMIT: unfilled placeholders of any syntax other than the required ' + held + ' held-for-physician marker (which must also be listed in "missing")')
+      : FORBIDDEN_LAW);
     parts.push(PRECEDENCE);
 
     /* Regeneration pass: the findings are quoted back verbatim, and the pass

@@ -24929,7 +24929,10 @@ function _opGuardProcedureDate(dateStr, out){
     var repaired='Date of procedure: '+String(dateStr).trim()+'\n'+note;
     try{ window.__mlsOpDateGuard={at:Date.now(),added:String(dateStr).trim()}; }catch(e){}
     try{ console.warn('[mls] op-note date guard: the draft carried no date of procedure; inserted '+String(dateStr).trim()+'.'); }catch(e2){}
-    return {note:repaired, missing:out.missing, dateGuard:{added:String(dateStr).trim()}};
+    /* opmode-1.0.0: keep the generator's receipt fields (templateMode,
+       templateConformance, reconstructed, ...) - a fresh object dropped them,
+       so "Style used" and the rebuilt-from-template flag were wrong. */
+    return Object.assign({}, out, {note:repaired, missing:out.missing, dateGuard:{added:String(dateStr).trim()}});
   }catch(e){ return out; }
 }
 
@@ -25080,7 +25083,8 @@ function _opGuardDrugBlanks(tplText, out){
       try{ window.__mlsOpDrugGuard={at:Date.now(),violated:violated.map(function(f){return f.key;})}; }catch(e){}
       try{ console.warn('[mls] op-note drug guard: '+violated.length+' drug field(s) were resolved by the model instead of left blank — re-blanked: '+violated.map(function(f){return f.label;}).join(', ')); }catch(e2){}
     }
-    return {note:note, missing:missing, drugGuard:{violated:violated.map(function(f){return f.key;})}};
+    /* opmode-1.0.0: same as the date guard - the metadata travels with the note. */
+    return Object.assign({}, out, {note:note, missing:missing, drugGuard:{violated:violated.map(function(f){return f.key;})}});
   }catch(e){ return out; }
 }
 /* Fill the [[key]] placeholders in a patient's note with the values typed, and remember

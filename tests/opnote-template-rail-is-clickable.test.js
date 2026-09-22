@@ -354,17 +354,25 @@ ok(/opNoteTemplateMode/.test(GEN),
   'the generator READS the stored mode (a preference nothing reads is a fake feature)');
 ok(/TPL_MODE_CLAUSE/.test(GEN) && /sys\+=TPL_MODE_CLAUSE\[tplMode\]/.test(GEN),
   'THE MODE APPENDS A REAL CLAUSE TO THE LIVE SYSTEM PROMPT');
-ok(/adapt:''/.test(GEN),
-  'the DEFAULT mode adds no clause, so it is provably identical to prior behaviour',
-  'this is what makes the change safe for someone who never opens the control');
+/* opmode-1.0.0 (2026-09-22): Balanced USED to add no clause, which made it
+   Closely under another name while the room promised "adapts the wording"
+   (measured: identical captured requests). It now carries its own narrow
+   clause - change only the words THIS case contradicts - and the gate grades
+   each mode inside fidelity() itself instead of a blanket 'guide' waiver
+   (which had passed an emptied CONSENT section). */
+ok(/adapt:' TEMPLATE FIDELITY - BALANCED:/.test(GEN) && /change only the words that differ/.test(GEN),
+  'Balanced carries its own narrow clause (the room promises it adapts the wording)');
 
 /* the half that a prompt-only implementation would have got wrong */
-ok(/tplMode==='guide'[\s\S]{0,220}fixed template wording/.test(GEN),
-  'THE GATE IS RELAXED TO MATCH THE LOOSER MODE',
+ok(/var REWORD_FLOOR=\{adapt:0\.7,guide:0\.15\}/.test(GEN) && /function fidelity\(note, templateText, mode\)/.test(GEN) &&
+   /fidelity\(first\.note,tplForModel,tplMode\)/.test(GEN) && /fidelity\(repaired\.note,tplForModel,tplMode\)/.test(GEN),
+  'THE GATE GRADES THE CHOSEN MODE',
   'fidelity() fails on changed fixed wording, so a prompt-only looser mode would have\n' +
   '        silently killed every draft in that mode instead of loosening anything');
-ok(/reworded:true/.test(GEN),
-  'the relaxation is recorded on the result rather than hidden');
+ok(/reworded:reworded/.test(GEN) && /adapted:!!reworded\.length/.test(GEN),
+  'the rewording is recorded on the result rather than hidden');
+ok(!/tplMode==='guide'&&check&&!check\.pass/.test(GEN),
+  'no blanket waiver: a guide draft that empties a section or drops a negation still fails');
 
 /* guardrails that must survive every mode */
 ok(/Never invent a fact/.test(GEN),

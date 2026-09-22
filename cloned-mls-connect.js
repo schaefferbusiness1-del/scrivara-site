@@ -44089,7 +44089,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
              "SELECTED TEMPLATE", so a marker test would have skipped the one
              argument that must keep it. */
           var a0=arguments[0];
-          if(typeof a0==='string' && /operative note|op[- ]?note|procedure note|operative report|injection procedure|op\b.*note/i.test(a0) && a0.indexOf('[MLS QUALITY DIRECTIVE]')<0){
+          /* opmode-1.0.0: not on the template lane. Its "state the dose (e.g.
+             80 mg triamcinolone)" examples and its [VOLUME]/[MEDICATION] blanks
+             contradict that lane's drug rule and its [[snake_case]] + "missing"
+             blank, which the Fields box reads (measured in the captured prompt). */
+          var tplLane=false; try{ tplLane=!!(arguments[3]&&arguments[3].mlsTemplateFidelity===true); }catch(eTl){}
+          if(!tplLane && typeof a0==='string' && /operative note|op[- ]?note|procedure note|operative report|injection procedure|op\b.*note/i.test(a0) && a0.indexOf('[MLS QUALITY DIRECTIVE]')<0){
             arguments[0]=a0+Q;
           }
         }catch(e){}
@@ -44331,12 +44336,15 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     return OPNOTE_WANTED.test(sys);
   }
 
-  function augment(sys){
+  function augment(sys,tplLane){
     try{
       if(!wantsOpNoteContract(sys)) return sys;
       var q=window.__mlsNoteQuality;
       if(!q||typeof q.contractFor!=='function') return sys;
-      var tail='\n\n'+q.contractFor('operative-procedure-note',{});
+      /* opmode-1.0.0: on the template lane an unfilled value is a [[snake_case]]
+         slot listed in "missing" (the Fields box reads it); the contract's
+         NEVER-EMIT-placeholders line must not forbid that one marker. */
+      var tail='\n\n'+q.contractFor('operative-procedure-note',tplLane?{heldSlotSyntax:'[[snake_case]]'}:{});
       if((sys.length+tail.length)>SYS_LIMIT){ dropped.opnoteDropped++; return sys; }
       dropped.applied++;
       return sys+tail;
@@ -44363,11 +44371,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         if(typeof a0==='string' && a0 && wantsOpNoteContract(a0) && !window.__mlsNoteQuality &&
            typeof window.__mlsNoteQualityEnsure==='function'){
           return window.__mlsNoteQualityEnsure().then(function(){
-            try{ if(typeof args[0]==='string' && args[0]) args[0]=augment(args[0]); }catch(e2){}
+            try{ if(typeof args[0]==='string' && args[0]) args[0]=augment(args[0],!!(args[3]&&args[3].mlsTemplateFidelity===true)); }catch(e2){}
             return orig.apply(self,args);
           },function(){ return orig.apply(self,args); });
         }
-        if(typeof a0==='string' && a0) args[0]=augment(a0);
+        if(typeof a0==='string' && a0) args[0]=augment(a0,!!(args[3]&&args[3].mlsTemplateFidelity===true));
       }catch(e){}
       return orig.apply(self,args);
     };

@@ -28,14 +28,18 @@ const oni = fs.readFileSync(path.join(root, 'feat_mls_opnote_integrity.js'), 'ut
 const app = fs.readFileSync(path.join(root, 'ScribeFlow.html'), 'utf8');
 
 /* 1 - one variable feeds prompt, both fidelity passes, reanchor, repair */
-assert(oni.includes('var tplForModel=S(tplText).slice(0,12000);'),
+/* opmode-1.0.0: the slice is 24k (a 13k template lost its last four
+   sections at 12k) and ends on a line boundary; it is still computed once. */
+assert(oni.includes('var TPL_MODEL_MAX=24000;') && oni.includes('var tplForModel=S(tplText);') &&
+  oni.includes("tplForModel=tplForModel.slice(0,cutAt>0?cutAt:TPL_MODEL_MAX)") &&
+  (oni.match(/var tplForModel=/g) || []).length === 1,
   'the model-visible template slice must be computed once');
 assert(oni.includes("COPY ITS STRUCTURE AND FIXED WORDING:\\n'+tplForModel"),
   'the prompt must use the single slice');
-assert(oni.includes('fidelity(first.note,tplForModel)'),
-  'first fidelity pass must grade against what the model saw');
-assert(oni.includes('fidelity(repaired.note,tplForModel)'),
-  'repair fidelity pass must grade against what the model saw');
+assert(oni.includes('fidelity(first.note,tplForModel,tplMode)'),
+  'first fidelity pass must grade against what the model saw, in the chosen mode');
+assert(oni.includes('fidelity(repaired.note,tplForModel,tplMode)'),
+  'repair fidelity pass must grade against what the model saw, in the chosen mode');
 assert(oni.includes('reanchor(repaired.note,tplForModel,facts)'),
   'reanchor must rebuild from what the model saw');
 assert(!/fidelity\([^)]*,tplText\)/.test(oni),

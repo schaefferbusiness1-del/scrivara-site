@@ -605,7 +605,31 @@
         levelsVia='full-note';
       }
     }
+    var sideDx=diagnosisSideConflict(note,requested.side);
+    if(sideDx)errors.push(sideDx);
     return {pass:!errors.length,errors:errors,requested:requested,actual:actual,levelsVia:levelsVia};
+  }
+  /* opmode-1.0.0 (2026-09-22). MEASURED end to end with a stubbed model: a
+     draft for a requested LEFT L5-S1 procedure that said "PREOPERATIVE
+     DIAGNOSIS: Right L4-L5 lumbar radiculopathy" and "INDICATIONS: Right ..."
+     passed - procedureEvidence() reads the title and procedure headings only,
+     and a template filed for the other side is adapted, not refused (owner,
+     oni-2.13.0), so its side survived in the patient-specific lines. For a
+     one-sided request, a diagnosis or indication line that names ONLY the
+     other side is a side conflict. A line naming both sides ("left greater
+     than right") or neither is left alone, and levels are not judged here: a
+     diagnosis may rightly name more spine than the procedure treats. */
+  function diagnosisSideConflict(note,side){
+    side=S(side);
+    if(side!=='left'&&side!=='right')return null;
+    var other=side==='left'?'right':'left', cur='', lines=S(note).split(/\r?\n/);
+    for(var i=0;i<lines.length;i++){
+      var h=headingLabel(lines[i]); if(h)cur=h;
+      if(!/diagnos|indication/.test(cur))continue;
+      var said=sideOf(h?S(lines[i]).slice(S(lines[i]).indexOf(':')+1):lines[i]);
+      if(said===other)return {field:'side',code:'mismatch_side_diagnosis',message:'The '+(/indication/.test(cur)?'indication':'diagnosis')+' names the '+other+' side, but the '+side+' side was requested.'};
+    }
+    return null;
   }
   /* cross-procedure adapted mode keeps ONLY the requested-fact safety net —
      the wrong-procedure template's fixed wording and field lists no longer
@@ -866,6 +890,14 @@
       var tf = compat.template || {};
       if (pf.levels && pf.levels.length && tf.levels && tf.levels.length && sameLevels(pf.levels, tf.levels)) score += 30;
       if (pf.side && tf.side && pf.side === tf.side) score += 10;
+      /* opmode-1.0.0: the bonus above had no mirror, so a template filed for
+         the OTHER side cost nothing: "Right L4-L5 TFESI" picked "TF-L4L5-left"
+         over its right-sided sibling (measured on a practice-style library).
+         A contradicting side or level set now costs more than the matching
+         bonuses earn, so the same-side template wins when one exists; when it
+         is the only candidate it is still picked and adapted (oni-2.13.0). */
+      if (pf.side && tf.side && pf.side !== tf.side) score -= 40;
+      if (pf.levels && pf.levels.length && tf.levels && tf.levels.length && !sameLevels(pf.levels, tf.levels)) score -= 20;
       return { tpl:t, score:score, procClass:pc, tplClass:tc, compatible:compat.pass, conflicts:compat.errors, index:index, facts:tf };
     });
     return demoteSameNameStubs(scored).sort(function (a, b) { return b.score - a.score || a.index - b.index; });
@@ -1621,9 +1653,13 @@
     return out;
   }
   function fixedFragments(text) {
-    var out=[];
+    return fixedWithHeading(text).map(function(x){ return x.frag; });
+  }
+  function fixedWithHeading(text) {
+    var out=[], cur='';
     S(text).split(/\r?\n/).forEach(function(line){
       var h=headingLabel(line), literal=S(line), fullLiteral=literal;
+      if(h)cur=h;
       if(h){var colon=literal.indexOf(':');if(colon<0)return;literal=literal.slice(colon+1);}
       var masked=literal
         .replace(/\[\[[^\]]+\]\]/g,'\u0000').replace(/\[(?:FILL\s*:?\s*)?[^\]]+\]/gi,'\u0000')
@@ -1636,11 +1672,57 @@
            e.g. "COMPLICATIONS: None." must not silently become a different
            statement merely because it contains only one word. Bind that short
            value to its heading so another incidental "none" cannot satisfy it. */
-        if(words.length>=5 || n.length>=36)out.push(n);
-        else if(h&&n&&masked.indexOf('\u0000')<0)out.push(normText(fullLiteral));
+        if(words.length>=5 || n.length>=36)out.push({h:cur,frag:n});
+        else if(h&&n&&masked.indexOf('\u0000')<0)out.push({h:cur,frag:normText(fullLiteral),bound:true});
       });
     });
     return out;
+  }
+  /* opmode-1.0.0 (2026-09-22). THE GATE NOW GRADES THE MODE THE DOCTOR CHOSE.
+     MEASURED with the real app and a stubbed model: every fixed line had to
+     appear verbatim in every mode, so a Balanced draft that changed one word
+     for this case failed, was "repaired", and was finally rebuilt from the
+     template word for word - Balanced was Closely with extra round trips. And
+     'guide' was waved through on ANY wording failure, including an emptied
+     CONSENT section and "COMPLICATIONS: None." turned into an invented
+     complication.
+     Now: headings and their order are exact in every mode (unchanged). A
+     fixed template line must appear verbatim in Closely; in Balanced and Adapt
+     to case it may be reworded, but only inside its own section, keeping every
+     number and every negation it carries, and keeping enough of its words
+     (Balanced 70% - the doctor's sentence with the case's words changed;
+     Adapt to case 15% - his content in tighter prose, where a real paraphrase
+     keeps few of the template's words and the numbers, negations and a
+     non-empty section are what protect the note). A line whose section is
+     empty, or whose numbers or negations are gone, is missing in every mode. */
+  var REWORD_FLOOR={adapt:0.7,guide:0.15};
+  var NEGATION_RX=/\b(?:no|not|none|without|denies|denied|negative|nor|never)\b/g;
+  var WEAK_WORD_RX=/^(?:the|and|was|were|with|this|that|then|from|into|over|under|using|after|before|for|each|there|their|which|while|also|been|have|has|had|are|its|patient|procedure)$/;
+  function contentWords(n){ return S(n).split(/\s+/).filter(function(w){ return w.length>=3&&!/^\d/.test(w)&&!WEAK_WORD_RX.test(w); }); }
+  function sectionBodies(text){
+    var out={}, cur='';
+    S(text).split(/\r?\n/).forEach(function(line){
+      var h=headingLabel(line), body=S(line);
+      if(h){ cur=h; var c=body.indexOf(':'); body=c>=0?body.slice(c+1):''; }
+      out[cur]=(out[cur]||'')+' '+body;
+    });
+    Object.keys(out).forEach(function(k){ out[k]=normText(out[k]); });
+    return out;
+  }
+  function rewordKept(frag, body, floor){
+    body=S(body).trim(); if(!body) return false;
+    var wordsIn={}; body.split(/\s+/).forEach(function(w){ if(w) wordsIn[w]=1; });
+    var nums=S(frag).match(/\d+(?:\.\d+)?/g)||[];
+    for(var i=0;i<nums.length;i++) if(!new RegExp('(^|[^0-9.])'+nums[i].replace('.','\\.')+'(?![0-9])').test(body)) return false;
+    var negs=S(frag).match(NEGATION_RX)||[];
+    for(var j=0;j<negs.length;j++) if(!wordsIn[negs[j]]) return false;
+    /* Counted as words the case may change, not as a ratio: a short line has
+       few words ("bilateral lumbar mbb at l4 and l5" has three), and one
+       legitimate case word (Bilateral -> Left) is already a third of it. At
+       least one word may always change; beyond that the mode's share. */
+    var cw=contentWords(frag); if(!cw.length) return true;
+    var miss=0; for(var k=0;k<cw.length;k++) if(!wordsIn[cw[k]]) miss++;
+    return miss<=Math.max(1,Math.floor(cw.length*(1-floor)));
   }
   /* opfacts-1.0.0 (2026-09-15, owner: "notes and op notes ... don't use enough
      patient data ... hallucinate"). MEASURED on the dummy chart: the sanitizer
@@ -1685,14 +1767,20 @@
     }catch(eGuard){}
     return result;
   }
-  function fidelity(note, templateText) {
-    var expected=headings(templateText), actual=headings(note), fixed=fixedFragments(templateText), noteNorm=normText(note), missingFixed=[], cursor=0;
-    if(!S(note).trim()) return {pass:false,reason:'empty draft',expected:expected,actual:actual,missingFixed:fixed};
+  function fidelity(note, templateText, mode) {
+    var expected=headings(templateText), actual=headings(note), fixedH=fixedWithHeading(templateText), fixed=fixedH.map(function(x){return x.frag;}), noteNorm=normText(note), missingFixed=[], reworded=[], cursor=0;
+    var floor=REWORD_FLOOR[S(mode)]||0, bodies=floor?sectionBodies(note):null;
+    if(!S(note).trim()) return {pass:false,reason:'empty draft',expected:expected,actual:actual,missingFixed:fixed,mode:S(mode||'strict')};
     var same=expected.length===actual.length;
     if(same){ for(var i=0;i<expected.length;i++) if(expected[i]!==actual[i]) {same=false;break;} }
-    for(var j=0;j<fixed.length;j++){var at=noteNorm.indexOf(fixed[j],cursor);if(at<0)missingFixed.push(fixed[j]);else cursor=at+fixed[j].length;}
+    for(var j=0;j<fixed.length;j++){
+      var at=noteNorm.indexOf(fixed[j],cursor);
+      if(at>=0){ cursor=at+fixed[j].length; continue; }
+      if(floor&&rewordKept(fixedH[j].bound?fixed[j].replace(fixedH[j].h,''):fixed[j], bodies[fixedH[j].h], floor)){ reworded.push(fixed[j]); continue; }
+      missingFixed.push(fixed[j]);
+    }
     var pass=same&&!missingFixed.length;
-    return {pass:pass,reason:!same?'heading set/order changed':(missingFixed.length?'fixed template wording changed':'exact template structure and fixed wording'),expected:expected,actual:actual,fixed:fixed,missingFixed:missingFixed};
+    return {pass:pass,reason:!same?'heading set/order changed':(missingFixed.length?'fixed template wording changed':(reworded.length?'template structure kept; '+reworded.length+' line'+(reworded.length===1?'':'s')+' reworded as the mode allows':'exact template structure and fixed wording')),expected:expected,actual:actual,fixed:fixed,missingFixed:missingFixed,reworded:reworded,mode:S(mode||'strict'),adapted:!!reworded.length};
   }
   function parseResult(raw) {
     var s=S(raw).replace(/^```json\s*/i,'').replace(/```\s*$/,'').trim(), obj=null;
@@ -2684,8 +2772,15 @@
        diagnostic naming truncation). ONE variable now feeds the prompt, both
        fidelity passes, reanchor, and the repair prompt; clinicalConsistency
        keeps the full text (it reads declared facts, not structure). */
-    var tplForModel=S(tplText).slice(0,12000);
-    var tplTruncated=S(tplText).length>12000;
+    /* opmode-1.0.0: MEASURED on a 13,116-character template - its MEDICATIONS,
+       COMPLICATIONS, DISPOSITION and ATTESTATION sections started at 12,861, so
+       the model never saw them and the rebuilt note ended mid-sentence. The
+       route accepts far longer user text; the slice is 24k and ends on a line
+       boundary so no sentence is ever cut in half. */
+    var TPL_MODEL_MAX=24000;
+    var tplForModel=S(tplText);
+    var tplTruncated=tplForModel.length>TPL_MODEL_MAX;
+    if(tplTruncated){ var cutAt=tplForModel.lastIndexOf('\n',TPL_MODEL_MAX); tplForModel=tplForModel.slice(0,cutAt>0?cutAt:TPL_MODEL_MAX); }
     generationStage(ctx,'Applying provider defaults','Applying only explicit provider identity and validated provider scope.');
     name=S(p.name||name);ctx.patient=name;ctx.name=name;ctx.patientId=S(p.id);ctx.patientVerified=true;ctx.dob=S(p.dob);ctx.sex=S(p.sex||p.gender);ctx.mrn=S(p.mrn);ctx.procedureDate=S(dateStr);ctx.dateStr=S(dateStr);
     /* Age belongs to the encounter day, never to the wall clock and never to a
@@ -2718,7 +2813,12 @@
        default and adds no mode clause of its own; the 'guide' mode is the one
        place the doctor has explicitly ASKED for tighter prose, so its own
        clause below overrides the length half of this one. */
-    sys+=' HOW TO PRODUCE THE NOTE — REPRODUCE, THEN FILL. Work through the SELECTED TEMPLATE from its first line to its last and reproduce every line of it, in the template\'s own order and its own words. The only text you may change is a fill field: a [[snake_case]] slot, a [BRACKETED] or [FILL: ...] token, an ALL-CAPS placeholder, or a run of underscores. Everything else — headings, boilerplate operative language, technique sentences, consent and time-out statements, complication and disposition lines, attestations — is reproduced VERBATIM. Do NOT summarize, condense, paraphrase, modernise, merge or re-order the template\'s sentences. Do NOT drop a template line because it looks routine or repetitive. Do NOT substitute your own outline for the template\'s. The finished note must be a completed copy of the doctor\'s template, not a description of the case. If a fill field has no answer in the KNOWN FACTS, the VERIFIED PATIENT HISTORY or the procedure request, leave it as an explicit [[snake_case]] placeholder and list it in "missing" — never invent a clinical fact, and never delete the sentence that contained it.';
+    /* opmode-1.0.0: stated for the mode the doctor chose. In 'guide' this
+       verbatim clause used to sit in front of "write the note TIGHTER than the
+       template" and the model got both orders at once; guide now gets only the
+       fill-field rule, and its own clause below says what to keep. */
+    if(tplMode!=='guide')sys+=' HOW TO PRODUCE THE NOTE — REPRODUCE, THEN FILL. Work through the SELECTED TEMPLATE from its first line to its last and reproduce every line of it, in the template\'s own order and its own words. The only text you may change is a fill field: a [[snake_case]] slot, a [BRACKETED] or [FILL: ...] token, an ALL-CAPS placeholder, or a run of underscores. Everything else — headings, boilerplate operative language, technique sentences, consent and time-out statements, complication and disposition lines, attestations — is reproduced VERBATIM. Do NOT summarize, condense, paraphrase, modernise, merge or re-order the template\'s sentences. Do NOT drop a template line because it looks routine or repetitive. Do NOT substitute your own outline for the template\'s. The finished note must be a completed copy of the doctor\'s template, not a description of the case. If a fill field has no answer in the KNOWN FACTS, the VERIFIED PATIENT HISTORY or the procedure request, leave it as an explicit [[snake_case]] placeholder and list it in "missing" — never invent a clinical fact, and never delete the sentence that contained it.';
+    else sys+=' FILL FIELDS. A [[snake_case]] slot, a [BRACKETED] or [FILL: ...] token, an ALL-CAPS placeholder or a run of underscores is filled from the KNOWN FACTS, the VERIFIED PATIENT HISTORY or the procedure request; if it has no answer there, leave it as an explicit [[snake_case]] placeholder and list it in "missing" - never invent a clinical fact.';
     /* opfacts-1.0.0: see the guard beside fidelity() for the measurement. */
     sys+=' PATIENT-SPECIFIC SLOTS - INDICATIONS, DIAGNOSIS, HISTORY. A [[indications]], [[pre_operative_diagnosis]], [[diagnosis]] or [[history]] slot is written for THIS patient from the KNOWN FACTS, the REQUESTED PROCEDURE FACTS and the VERIFIED PATIENT HISTORY only: the documented diagnosis that the requested procedure treats, with its side and level(s); the documented symptoms and their duration; documented imaging findings; conservative measures ONLY where the history documents that they were tried and what came of them, named as documented (a medication on the current list is not a failed trial); prior injections or procedures and their documented response. Every clause must trace to a line of the verified history. When the history documents no conservative care, no imaging or no response, the sentence simply does not mention them: never write "refractory to", "unresponsive to", "failed" or "despite" conservative treatment on a chart that does not document it, and never borrow that phrase from the template. A documented diagnosis alone is a complete indication.';
 
@@ -2729,7 +2829,11 @@
     var TPL_MODE_CLAUSE={
       strict:' TEMPLATE FIDELITY - CLOSEST: preserve the template PROSE verbatim wherever it is not a variable slot. Do not paraphrase, tighten, modernise or re-order its sentences. Fill the case-specific slots and change nothing else. If a template sentence does not apply to this case, keep it and leave its variable slot as a placeholder rather than rewriting the sentence. The patient-specific slots (indications, diagnosis, history) are variable by nature and are written for this patient as instructed above.',
       guide:' TEMPLATE FIDELITY - LOOSER, AND DELIBERATELY CONCISE: treat the template prose as a guide rather than as fixed wording, and write the note TIGHTER than the template. Compress ceremonial padding and redundancy: say each clinical fact once, in the fewest words a physician colleague would need; drop filler ("it should be noted that", "at this point in time"), collapse a multi-sentence recital into one clean sentence when the facts allow, and prefer the direct clinical phrasing over a longer templated formulation. KEEP every heading, the heading order, and the section order exactly as given, and keep every clinically or medico-legally required element (consent, laterality, levels, technique specifics, complications, disposition) - concision NEVER means dropping a documented fact or a required statement. Every factual constraint above still applies without exception: never invent a fact, and never state a value that was not dictated or documented.',
-      adapt:''
+      /* opmode-1.0.0: Balanced said "adapts the wording" in the room and added
+         nothing here, so it was Closely by another name. Its one licence, stated
+         narrowly so it cannot become a summary (the owner's 2026-08-31
+         complaint): change a template sentence only where THIS case differs. */
+      adapt:' TEMPLATE FIDELITY - BALANCED: this overrides the verbatim rule above in one respect only. Where a template sentence does not match THIS case (a side, level, approach, count or technique detail that differs, or a step not performed this time), change only the words that differ so the sentence is true for this patient; every other word of it stays the doctor\'s own. Never shorten, summarize, merge or drop a template sentence, and keep every number and negation it carries unless the case documents otherwise. Keep every heading and the heading order exactly.'
     };
     if(TPL_MODE_CLAUSE[tplMode])sys+=TPL_MODE_CLAUSE[tplMode];
     if(ctx&&typeof ctx==='object')ctx.__mlsTplMode=tplMode;   /* for the receipt */
@@ -2831,7 +2935,7 @@
       if(!histValidation||!histValidation.ok){var ve=new Error('Op-note generation stopped because the exact patient or verified history changed while the draft was being created.');ve.code='MLS_OPNOTE_IDENTITY';ve.reason=histValidation&&histValidation.reason||'history-binding-invalid';throw ve;}
     }
     generationStage(ctx,'Checking side and level','Comparing procedure type, region, side, exact levels, level count, and approach.');
-    var check=fidelity(first.note,tplForModel), clinical=clinicalConsistency(first.note,procedure,selectedTpl||{text:tplText},ctx);
+    var check=fidelity(first.note,tplForModel,tplMode), clinical=clinicalConsistency(first.note,procedure,selectedTpl||{text:tplText},ctx);
     if(crossAdapt){check={pass:true,adapted:true,details:check};clinical=adaptedClinical(clinical);}
     /* 2026-07-29: the looser mode is allowed to change template WORDING, and
        fidelity() fails on changed fixed fragments - so a prompt-only version of
@@ -2839,9 +2943,9 @@
        heading check is deliberately NOT relaxed: the clause promises headings and
        order are kept, so if they changed that is a real failure and must still be
        caught. Wording-only relaxation, and it is recorded on the result. */
-    else if(tplMode==='guide'&&check&&!check.pass&&/fixed template wording/.test(String(check.reason||''))){
-      check={pass:true,adapted:true,reworded:true,details:check};
-    }
+    /* opmode-1.0.0: the blanket 'guide' waiver that stood here is gone - it
+       passed an emptied CONSENT section and an invented complication. The
+       mode now lives inside fidelity() itself, line by line. */
     generationStage(ctx,'Checking required fields','Checking required, optional, and prohibited template language.');
     generationStage(ctx,'Running final consistency check','Verifying clinical facts and exact template structure together.');
     /* THE MEASURE IS TAKEN ON THE NOTE THE DOCTOR WILL READ — after the
@@ -2860,9 +2964,13 @@
     if(!stillExact||S(stillExact.id)!==S(p.id)){var pe=new Error('Op-note repair stopped because the patient changed during generation.');pe.code='MLS_OPNOTE_IDENTITY';throw pe;}
     var repairSys=crossAdapt
       ?('Repair the draft so it preserves every requested clinical fact for the REQUESTED procedure. Output the same JSON shape only. The procedure must remain exactly: '+S(procedure)+'. Never change procedure type, anatomical region, side, exact level(s), number of levels, or approach; correct the draft wherever it conflicts with the requested procedure. Keep the current heading structure and formatting. Do not invent clinical facts.')
-      :('Repair the draft so it follows the selected template exactly AND preserves every requested clinical fact. Output the same JSON shape only. The output heading labels and heading order must exactly equal this list: '+check.expected.join(' | ')+'. The procedure must remain exactly: '+S(procedure)+'. Never change procedure type, anatomical region, side, exact level(s), number of levels, or approach. Remove added headings, restore missing headings, restore the template order, and copy every fixed template sentence verbatim and in the same sequence. Do not invent clinical facts.');
+      :('Repair the draft so it follows the selected template exactly AND preserves every requested clinical fact. Output the same JSON shape only. The output heading labels and heading order must exactly equal this list: '+check.expected.join(' | ')+'. The procedure must remain exactly: '+S(procedure)+'. Never change procedure type, anatomical region, side, exact level(s), number of levels, or approach. Remove added headings, restore missing headings, restore the template order, and '+(tplMode==='strict'
+        ?'copy every fixed template sentence verbatim and in the same sequence.'
+        /* opmode-1.0.0: the repair keeps the doctor's mode; it used to demand
+           verbatim copying in every mode, the opposite of Adapt to case. */
+        :'restore every template sentence listed as missing, in the same sequence, keeping its numbers and negations.'+S(TPL_MODE_CLAUSE[tplMode]))+' Do not invent clinical facts.');
     var frozenHistory=histBinding&&S(histBinding.context);
-    var repairUser='SELECTED TEMPLATE:\n'+tplForModel+'\n\nDRAFT TO REPAIR:\n'+S(first.note).slice(0,14000)+(frozenHistory?'\n\n'+frozenHistory:'')+'\n\nORIGINAL PATIENT/PROCEDURE CONTEXT:\n'+user.slice(0,10000);
+    var repairUser='SELECTED TEMPLATE:\n'+tplForModel+'\n\nDRAFT TO REPAIR:\n'+S(first.note).slice(0,TPL_MODEL_MAX+6000)+(frozenHistory?'\n\n'+frozenHistory:'')+'\n\nORIGINAL PATIENT/PROCEDURE CONTEXT:\n'+user.slice(0,10000);
     opts.mlsOpNotePhase='repair';
     var repaired=parseResult(await window.aiCallRaw(repairSys,repairUser,key,opts));
     repaired.note=fillDateSlots(fillChartSlots(fillProcedureSlots(forceFacts(repaired.note,facts),procedure),p,ctx,procedure),dateStr);
@@ -2871,7 +2979,7 @@
     var check2;
     if(crossAdapt){check2={pass:true,adapted:true};}
     else{
-      check2=fidelity(repaired.note,tplForModel);
+      check2=fidelity(repaired.note,tplForModel,tplMode);
       if(!check2.pass){
         /* 2026-07-30 - RECONSTRUCTION MUST BE VISIBLE.
            reanchor() rebuilds the note from the TEMPLATE plus known facts when
@@ -2891,7 +2999,7 @@
         try{ window.__mlsLastOpReconstructed=true; }catch(eRc){}
         try{ repaired.reconstructed=true; }catch(eRc2){}
         repaired.note=fillDateSlots(fillChartSlots(fillProcedureSlots(reanchor(repaired.note,tplForModel,facts),procedure),p,ctx,procedure),dateStr);check2=fidelity(repaired.note,tplForModel);}
-      if(!check2.pass){window.__mlsLastOpFidelityError='Draft stopped because it did not preserve the selected template.'+(tplTruncated?' Note: this template is longer than the '+12000+'-character limit and was truncated for drafting - shortening it will help.':'')+' Nothing was saved; retry or confirm the template.';var fe=new Error(window.__mlsLastOpFidelityError);fe.code='MLS_OPNOTE_TEMPLATE_FIDELITY';fe.details=check2;throw fe;}
+      if(!check2.pass){window.__mlsLastOpFidelityError='Draft stopped because it did not preserve the selected template.'+(tplTruncated?' Note: this template is longer than the '+TPL_MODEL_MAX+'-character limit and was truncated for drafting - shortening it will help.':'')+' Nothing was saved; retry or confirm the template.';var fe=new Error(window.__mlsLastOpFidelityError);fe.code='MLS_OPNOTE_TEMPLATE_FIDELITY';fe.details=check2;throw fe;}
     }
     generationStage(ctx,'Checking required fields','Rechecking required and prohibited template fields.');
     var clinical2=clinicalConsistency(repaired.note,procedure,selectedTpl||{text:tplText},ctx);

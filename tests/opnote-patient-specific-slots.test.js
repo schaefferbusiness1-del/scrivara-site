@@ -75,7 +75,8 @@ function lineStarting(prefix, label) {
   return i;
 }
 const gStart = lineStarting('  var TEMPLATE_JUNK_PREFIX_RX=', 'the junk-prefix regex');
-const gEnd = lineStarting('  function fidelity(note, templateText) {', 'fidelity()');
+/* opmode-1.0.0: fidelity() now takes the follow mode as a third argument. */
+const gEnd = lineStarting('  function fidelity(note, templateText, mode) {', 'fidelity()');
 const S = (x) => (x == null ? '' : String(x));
 const guard = new Function('S', 'window', oni.slice(gStart, gEnd) +
   '\nreturn {claim:conservativeClaimUnsupported,strip:stripUnsupportedConservativeClaim,guard:guardUnsupportedConservativeClaim,junk:TEMPLATE_JUNK_PREFIX_RX};')(S, {});
@@ -119,7 +120,7 @@ ok(!legacy.indicationGuard, 'the legacy ctx.history evidence path is not read');
 /* the guard is wired on BOTH model passes of the installed generator */
 ok(oni.includes('first=guardUnsupportedConservativeClaim(first,tplForModel,opts,ctx);'), 'the guard is not wired after the first draft');
 ok(oni.includes('repaired=guardUnsupportedConservativeClaim(repaired,tplForModel,opts,ctx);'), 'the guard is not wired after the repair pass');
-ok(oni.indexOf('first=guardUnsupportedConservativeClaim') < oni.indexOf('var check=fidelity(first.note,tplForModel)'), 'the guard must run before fidelity grades the first draft');
+ok(oni.indexOf('first=guardUnsupportedConservativeClaim') < oni.indexOf('var check=fidelity(first.note,tplForModel'), 'the guard must run before fidelity grades the first draft');
 
 /* ---- 4. Word-binary residue before the title ---------------------------- */
 eq('ÁOPERATIVE REPORT\nPatient: ______'.replace(guard.junk, ''), 'OPERATIVE REPORT\nPatient: ______', 'one residue byte before the title is not stripped');

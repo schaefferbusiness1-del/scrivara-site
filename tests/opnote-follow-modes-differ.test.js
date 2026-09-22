@@ -23,16 +23,19 @@
      - the relaxation predicate is evaluated over every mode x every failure
 
    FIVE PROOFS
-     1. each mode yields a DIFFERENT system prompt, and 'adapt' is BYTE-IDENTICAL
-        to the pre-option prompt (the safety property for anyone who never opens
-        the control)
+     1. each mode yields a DIFFERENT system prompt. opmode-1.0.0 (2026-09-22):
+        'adapt' (Balanced) used to add NOTHING and so was Closely by another
+        name while the room promised "adapts the wording"; it now carries its
+        own narrow clause
      2. the clauses do not contradict the base prompt: the looser clause still
         promises to KEEP every heading and the heading order, because the gate's
         heading check is deliberately NOT relaxed - a clause that licensed
         heading edits would refuse every draft in that mode
      3. no mode weakens the anti-fabrication guards
-     4. the gate relaxation is SCOPED: only 'guide', only the fixed-wording
-        failure, never a heading failure, and it is recorded on the result
+     4. the gate grades the CHOSEN mode inside fidelity(): headings exact in
+        every mode; fixed wording verbatim in strict; reworded only within its
+        own section, numbers and negations kept, in adapt (70% of words) and
+        guide (15%); never a blanket waiver
      5. every stored value resolves to the right mode; junk falls back to 'adapt'
 
    PLUS PART 0: proof this is the LIVE builder and not one of the repo's dead
@@ -202,22 +205,12 @@ if (GATE_SRC) {
 ok(!!gate && typeof gate.fidelity === 'function',
   'lifted the LIVE deterministic gate (fidelity + heading/fragment harvest)');
 
-/* --- the relaxation predicate and its body --- */
-const iRelax = lineContaining("else if(tplMode==='guide'", 'the gate-relaxation branch');
-const relaxLine = iRelax >= 0 ? L[iRelax].trim() : '';
-const relaxCond = relaxLine.replace(/^else if\(/, '').replace(/\)\{$/, '');
-const relaxPredicate = relaxCond
-  ? new Function('tplMode', 'check', 'return !!(' + relaxCond + ');')
-  : function () { return false; };
-const relaxBodyLine = iRelax >= 0 ? L[iRelax + 1] : '';
-const applyRelax = relaxBodyLine
-  ? new Function('check', relaxBodyLine + '\nreturn check;')
-  : function (c) { return c; };
-ok(/^tplMode==='guide'&&check&&!check\.pass&&\/fixed template wording\/\.test\(String\(check\.reason\|\|''\)\)$/.test(relaxCond),
-  'lifted the LIVE relaxation predicate (feat_mls_opnote_integrity.js:' + (iRelax + 1) + ')',
-  JSON.stringify(relaxCond));
-ok(/^check=\{pass:true,adapted:true,reworded:true,details:check\};$/.test(relaxBodyLine.trim()),
-  'lifted the LIVE relaxation body', JSON.stringify(relaxBodyLine.trim()));
+/* opmode-1.0.0: there is no separate relaxation branch any more - the gate
+   takes the mode itself. Prove the blanket waiver is gone. */
+ok(!SRC.includes("else if(tplMode==='guide'&&check&&!check.pass"),
+  'no blanket guide waiver remains beside the gate');
+ok(SRC.includes('fidelity(first.note,tplForModel,tplMode)') && SRC.includes('fidelity(repaired.note,tplForModel,tplMode)'),
+  'both model passes are graded in the chosen mode');
 
 /* ==================================================================
    PROOF 1 - EACH MODE PRODUCES A DIFFERENT SYSTEM PROMPT
@@ -232,13 +225,12 @@ ok(Object.keys(CLAUSES).length === 3 && MODES.every(m => typeof CLAUSES[m] === '
 const PROMPT = {};
 MODES.concat(['junk']).forEach(m => { PROMPT[m] = compose(BASE, m, CLAUSES); });
 
-ok(CLAUSES.adapt === '',
-  'SAFETY PROPERTY: the DEFAULT mode contributes an EMPTY clause');
-ok(PROMPT.adapt === BASE && PROMPT.adapt.length === BASE.length,
-  'so the adapt prompt is BYTE-IDENTICAL to the prompt that shipped before the option\n        existed - a user who never touches the control gets literally the old behaviour',
-  'adapt=' + PROMPT.adapt.length + ' base=' + BASE.length);
+ok(CLAUSES.adapt.trim().length > 0 && /BALANCED/.test(CLAUSES.adapt),
+  'Balanced contributes its OWN clause (' + CLAUSES.adapt.length + ' chars) - the room promises it adapts the wording');
+ok(/change only the words that differ/.test(CLAUSES.adapt) && /Never shorten, summarize, merge or drop a template sentence/.test(CLAUSES.adapt),
+  'and its licence is narrow: only the words this case contradicts, never a summary (the owner\'s 2026-08-31 complaint)');
 ok(PROMPT.junk === BASE,
-  'and an unrecognised mode string also composes to the untouched base prompt');
+  'an unrecognised mode string composes to the untouched base prompt');
 
 ok(CLAUSES.strict.trim().length > 0, 'strict contributes a NON-EMPTY clause (' + CLAUSES.strict.length + ' chars)');
 ok(CLAUSES.guide.trim().length > 0, 'guide contributes a NON-EMPTY clause (' + CLAUSES.guide.length + ' chars)');
@@ -251,8 +243,8 @@ pairs.forEach(([a, b]) => {
     'prompt(' + a + ') != prompt(' + b + ') - and not merely by whitespace',
     a + '=' + PROMPT[a].length + ' ' + b + '=' + PROMPT[b].length);
 });
-ok(PROMPT.strict.length > PROMPT.adapt.length && PROMPT.guide.length > PROMPT.adapt.length,
-  'both non-default modes strictly LENGTHEN the instruction they send',
+ok(MODES.every(m => PROMPT[m].length > BASE.length),
+  'every mode LENGTHENS the instruction it sends with its own clause',
   'strict=' + PROMPT.strict.length + ' adapt=' + PROMPT.adapt.length + ' guide=' + PROMPT.guide.length);
 MODES.forEach(m => {
   ok(PROMPT[m].indexOf(BASE) === 0,
@@ -395,94 +387,48 @@ ok(CHECK.heading.pass === false && CHECK.heading.reason === 'heading set/order c
 ok(CHECK.both.pass === false && CHECK.both.reason === 'heading set/order changed',
   'a draft that changed BOTH reports the HEADING reason - the heading failure dominates');
 
-/* the full matrix: mode x failure */
+/* the full matrix: mode x draft, graded by the SHIPPED fidelity() in that mode */
+const CASE = {
+  clean: TPL,
+  reworded: REWORDED,
+  heading: DRAFT.heading,
+  both: DRAFT.both,
+  /* the case differs from the template: a left block, not bilateral */
+  caseword: TPL.replace('Bilateral lumbar medial branch block', 'Left lumbar medial branch block'),
+  /* a required section emptied */
+  emptied: TPL.replace('DISPOSITION: The patient was observed and discharged to home in stable condition.', 'DISPOSITION:'),
+  /* a negation turned into an invented complication */
+  complication: TPL.replace('COMPLICATIONS: None.', 'COMPLICATIONS: Transient vasovagal episode.'),
+};
 const EXPECT = {
-  'strict|clean': false, 'strict|reworded': false, 'strict|heading': false, 'strict|both': false,
-  'adapt|clean': false, 'adapt|reworded': false, 'adapt|heading': false, 'adapt|both': false,
-  'guide|clean': false, 'guide|reworded': true, 'guide|heading': false, 'guide|both': false,
-  'junk|clean': false, 'junk|reworded': false, 'junk|heading': false, 'junk|both': false
+  strict:   { clean: true, reworded: false, heading: false, both: false, caseword: false, emptied: false, complication: false },
+  adapt:    { clean: true, reworded: false, heading: false, both: false, caseword: true,  emptied: false, complication: false },
+  guide:    { clean: true, reworded: true,  heading: false, both: false, caseword: true,  emptied: false, complication: false },
 };
 let matrixWrong = [];
-Object.keys(EXPECT).forEach(k => {
-  const [m, d] = k.split('|');
-  const got = relaxPredicate(m, CHECK[d]);
-  if (got !== EXPECT[k]) matrixWrong.push(k + ' expected ' + EXPECT[k] + ' got ' + got);
-});
+Object.keys(EXPECT).forEach(m => Object.keys(EXPECT[m]).forEach(d => {
+  const got = gate ? gate.fidelity(CASE[d], TPL, m).pass : null;
+  if (got !== EXPECT[m][d]) matrixWrong.push(m + '|' + d + ' expected ' + EXPECT[m][d] + ' got ' + got);
+}));
 ok(matrixWrong.length === 0,
-  'THE 16-CELL MATRIX IS EXACT: the relaxation fires in exactly ONE cell (guide + reworded)',
+  'THE 21-CELL MATRIX IS EXACT: strict = verbatim; Balanced = the doctor\'s sentences with this case\'s words;\n' +
+  '        Adapt to case = tighter prose; and in EVERY mode a heading change, an emptied section and a\n' +
+  '        dropped negation fail',
   'wrong cells: ' + JSON.stringify(matrixWrong));
-ok(relaxPredicate('guide', CHECK.reworded) === true,
-  'guide + fixed-wording failure -> RELAXED (this is the whole point of the mode)');
-ok(relaxPredicate('guide', CHECK.heading) === false,
-  'guide + HEADING failure -> STILL REFUSED, because the clause promised headings would be kept');
-ok(relaxPredicate('guide', CHECK.both) === false,
-  'guide + wording AND heading changed -> STILL REFUSED (a wording change cannot smuggle a\n        heading change past the gate)');
-ok(relaxPredicate('strict', CHECK.reworded) === false && relaxPredicate('adapt', CHECK.reworded) === false,
-  'neither strict nor adapt gets ANY relaxation');
-ok(relaxPredicate('guide', CHECK.clean) === false,
-  'and an already-passing check is never re-labelled as relaxed');
-ok(relaxPredicate('guide', null) === false && relaxPredicate('guide', undefined) === false,
-  'a missing check object cannot be relaxed into a pass');
-ok(relaxPredicate('guide', { pass: false, reason: '' }) === false &&
-   relaxPredicate('guide', { pass: false }) === false,
-  'and neither can a failure with an empty or absent reason');
-
-/* the relaxation RECORDS itself rather than hiding */
-const relaxed = applyRelax(CHECK.reworded);
-ok(relaxed.pass === true && relaxed.adapted === true && relaxed.reworded === true,
-  'the relaxed result is flagged adapted + reworded, not silently marked clean');
-ok(relaxed.details && relaxed.details.pass === false &&
-   /fixed template wording/.test(relaxed.details.reason) &&
-   relaxed.details.missingFixed.length === CHECK.reworded.missingFixed.length,
-  'and the ORIGINAL failing check survives on .details, including every lost fragment',
-  'details.reason=' + (relaxed.details && relaxed.details.reason) +
-  ' missingFixed=' + (relaxed.details && relaxed.details.missingFixed.length));
+ok(gate && gate.fidelity(CASE.caseword, TPL, 'adapt').reworded.length === 1 && gate.fidelity(CASE.caseword, TPL, 'adapt').adapted === true,
+  'a reworded line is RECORDED on the result (reworded[], adapted), never silently marked clean');
+ok(gate && gate.fidelity(CASE.clean, TPL, 'guide').adapted === false,
+  'an untouched draft is not labelled as adapted in any mode');
+ok(gate && gate.fidelity('', TPL, 'guide').reason === 'empty draft' && gate.fidelity('', TPL, 'guide').pass === false,
+  'an EMPTY draft fails in every mode');
+ok(gate && gate.fidelity(CASE.reworded, TPL).pass === false,
+  'with no mode given the gate is strict (the reconstruction path and old callers)');
 ok(SRC.includes('first.templateMode=tplMode') && SRC.includes('first.templateFidelity=check'),
-  'and the success path records BOTH the mode and the (relaxed) fidelity object on the result\n        (feat_mls_opnote_integrity.js:1134)');
-
-/* the relaxation cannot double-apply: it is the else of the crossAdapt branch */
-const iCross = lineContaining('if(crossAdapt){check={pass:true,adapted:true,details:check};', 'the crossAdapt gate branch');
-if (iCross >= 0 && iRelax > iCross) {
-  const region = L.slice(iCross, iRelax + 1).join('\n').replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\s+/g, ' ').trim();
-  ok(/^if\(crossAdapt\)\{.*\} else if\(tplMode==='guide'/.test(region),
-    'the relaxation is the ELSE of the cross-procedure branch, so at most one relaxation applies',
-    region.slice(0, 120));
-}
-
-/* the relaxation exists at exactly one place, and nowhere near the heading check */
-const tplModeSites = [];
-L.forEach((l, i) => { if (/tplMode/.test(l)) tplModeSites.push(i + 1); });
-/* 2026-08-31, opnfid-1.0.0: SIX, and the sixth is a record, not a relaxation.
-   The REPAIRED result now stamps templateMode alongside its fidelity object,
-   exactly as the first-pass result already did - before this, a draft that
-   needed the repair round-trip came back with no mode on it and the room's
-   receipt could not name the style that produced the note in front of the
-   doctor. The count is a tripwire against a SECOND relaxation site, and it
-   still is one: any seventh mention fails here, and the two assertions below
-   (the repair pass is mode-blind, and the relaxation is the else of the
-   crossAdapt branch) independently pin where a relaxation may live. */
-ok(tplModeSites.length === 6,
-  'tplMode appears at exactly 6 sites - read, append, ctx stamp, gate relaxation, first-pass result record, repaired result record',
-  'sites: ' + JSON.stringify(tplModeSites));
-const iCheck2 = lineStarting('    var check2;', 'the repair-pass check');
-const iFidThrow = L.findIndex((l, i) => i > iCheck2 && l.includes('MLS_OPNOTE_TEMPLATE_FIDELITY'));
-ok(iCheck2 > 0 && iFidThrow > iCheck2 && !L.slice(iCheck2, iFidThrow + 1).some(l => /tplMode/.test(l)),
-  'the REPAIR pass is mode-blind: no mode can relax the second, final fidelity gate',
-  'repair region lines ' + (iCheck2 + 1) + '-' + (iFidThrow + 1));
-/* the relaxation discriminates on gate-owned reason strings - enumerate them all */
+  'the success path records BOTH the mode and the fidelity object on the result');
 const REASONS = ['empty draft', 'heading set/order changed', 'fixed template wording changed',
   'exact template structure and fixed wording'];
-const srcReasons = REASONS.filter(r => SRC.includes("'" + r + "'"));
-ok(srcReasons.length === 4,
-  'all four gate reason strings are gate-owned literals in the shipped source',
-  'found: ' + JSON.stringify(srcReasons));
-const matched = REASONS.filter(r => /fixed template wording/.test(r));
-ok(matched.length === 1 && matched[0] === 'fixed template wording changed',
-  'and the relaxation regex matches exactly ONE of the four - it cannot catch a heading,\n        an empty draft, or a pass',
-  'matched: ' + JSON.stringify(matched));
-ok(gate && gate.fidelity('', TPL).reason === 'empty draft' &&
-   relaxPredicate('guide', gate.fidelity('', TPL)) === false,
-  'an EMPTY draft is not relaxable in any mode either');
+ok(REASONS.every(r => SRC.includes("'" + r + "'")),
+  'all four gate reason strings are gate-owned literals in the shipped source');
 
 /* ==================================================================
    PROOF 5 - THE REAL MODE READER, AGAINST A STUBBED localStorage
@@ -550,23 +496,16 @@ ok(readerKeys.indexOf("'strict'") >= 0 && readerKeys.indexOf("'guide'") >= 0 && 
    ================================================================== */
 section('PART 6 - non-vacuity (each proof is broken on a copy and must flip)');
 
-const fakeClauses = { strict: CLAUSES.strict, guide: CLAUSES.guide, adapt: ' SOMETHING' };
-ok(compose(BASE, 'adapt', fakeClauses) !== BASE,
-  'if adapt gained a clause, the byte-identity proof WOULD fail (so it is not vacuous)');
+const noAdapt = { strict: CLAUSES.strict, guide: CLAUSES.guide, adapt: '' };
+ok(compose(BASE, 'adapt', noAdapt) === BASE,
+  'if Balanced lost its clause, the Balanced-has-a-clause proof WOULD fail (not vacuous)');
 
 const stubClauses = { strict: '', guide: '', adapt: '' };
 ok(compose(BASE, 'strict', stubClauses) === compose(BASE, 'guide', stubClauses),
   'if the clauses were emptied, the "prompts differ" proof WOULD fail (not vacuous)');
 
-const wideCond = relaxCond.replace("tplMode==='guide'", 'true');
-const widePredicate = new Function('tplMode', 'check', 'return !!(' + wideCond + ');');
-ok(widePredicate('strict', CHECK.reworded) === true,
-  'if the mode guard were dropped, the scoping proof WOULD fail (not vacuous)');
-
-const anyReason = relaxCond.replace('/fixed template wording/', '/changed/');
-const loosePredicate = new Function('tplMode', 'check', 'return !!(' + anyReason + ');');
-ok(loosePredicate('guide', CHECK.heading) === true,
-  'if the reason filter were widened, the heading-failure proof WOULD fail (not vacuous)');
+ok(gate.fidelity(CASE.reworded, TPL, 'adapt').pass === false && gate.fidelity(CASE.reworded, TPL, 'guide').pass === true,
+  'the floors discriminate: the same paraphrase passes Adapt to case and fails Balanced');
 
 ok(gate.fidelity(TPL.replace('usual sterile fashion', 'standard sterile manner'), TPL).pass === false,
   'the gate is genuinely sensitive: a two-word change inside template boilerplate fails it',
@@ -605,8 +544,7 @@ console.log('  note  this suite proves the PROMPT BYTES differ and the GATE diff
 /* ========================================================================== */
 console.log('\n' + (failures === 0
   ? 'PASS  opnote-follow-modes-differ: ' + checks + ' checks. The three follow modes are REAL - ' +
-    'adapt is byte-identical to the pre-option prompt, strict and guide send distinct ' +
-    'non-empty clauses, no mode weakens the anti-fabrication guards, and the gate ' +
-    'relaxation fires in exactly one of 16 matrix cells.'
+    'each sends its own non-empty clause, no mode weakens the anti-fabrication guards, and the ' +
+    'gate grades the chosen mode exactly over a 21-cell matrix.'
   : 'FAIL  opnote-follow-modes-differ: ' + failures + ' of ' + checks + ' checks failed.'));
 process.exit(failures === 0 ? 0 : 1);

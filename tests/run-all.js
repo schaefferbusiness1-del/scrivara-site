@@ -2671,7 +2671,11 @@ const tests = [
   /* opheld-1.0.0 (b1288): on /ScribeFlow.html a visit that needs no op note
      is not an unfinished op note (no "Review N notes" on a day with nothing to
      draft), and a real Draft-all run skips it instead of failing it. */
-  'opnote-held-visits-are-not-unfinished-runtime.test.js'
+  'opnote-held-visits-are-not-unfinished-runtime.test.js',
+  /* opmode-1.0.0 (b1289): on /ScribeFlow.html the op-note follow mode the
+     doctor picks (Closely / Balanced / Adapt to case) is the mode on the wire,
+     each mode sends its own clause, and the receipt names the mode that ran. */
+  'opnote-follow-mode-reaches-the-request-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
