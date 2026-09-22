@@ -120,7 +120,10 @@ const PREEXISTING = {
                   //          1p-mls-connect.js 1, cloned-mls-connect.js 1, and
                   //          0 in every 1p-feat_*.js and cloned-feat_*.js.
   '#6B756E': 1,   // "b756"
-  '#B07636': 69,  // "b076" — +3 on 2026-08-06 (the 3.0.45 candidate's
+  '#B07636': 65,  // "b076" — -4 on 2026-09-22: feat_mls_month_pull.js (loaded by no
+                  //          shell) was deleted with the other dead modules;
+                  //          those were its 4 occurrences. Earlier:
+                  //          +3 on 2026-08-06 (the 3.0.45 candidate's
                   //          mls-popup.css copy; delta verified to be exactly 3
                   //          and confined to extension-candidates/3.0.45)
                   //          +3 on 2026-08-02 (the 3.0.40 candidate's
