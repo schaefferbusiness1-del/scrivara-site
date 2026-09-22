@@ -190,7 +190,7 @@ function init(){
 function confirmAppt(){
   var btn=document.getElementById('confirmBtn'); btn.disabled=true; btn.textContent='Confirming…';
   mlsSensitiveFetch(BACKEND_URL + '/api/appointments/public/' + encodeURIComponent(ptoken) + '/confirm', { method:'POST' })
-    .then(function(r){ return r.json(); })
+    .then(function(r){ return r.json().catch(function(){ return {}; }); })
     .then(function(j){
       if(j && j.ok){ document.getElementById('confirmWrap').classList.add('hide'); document.getElementById('confirmedMsg').classList.remove('hide'); var p=document.getElementById('statusPill'); p.className='pill conf'; p.textContent='Confirmed'; }
       else { showErr('Could not confirm. Please try again.'); btn.disabled=false; btn.textContent="Confirm I'll be there"; }
@@ -228,7 +228,7 @@ function cancelAppt(){
   }
   _cancelArmedAt = 0; _cancelBusy = true;
   mlsSensitiveFetch(BACKEND_URL + '/api/appointments/public/' + encodeURIComponent(ptoken) + '/cancel', { method:'POST' })
-    .then(function(r){ return r.json(); })
+    .then(function(r){ return r.json().catch(function(){ return {}; }); })
     .then(function(j){ _cancelBusy = false; if(j && j.ok){ show('cancelled'); } else { showErr('Could not cancel. Please ' + callOffice() + '.'); } })
     .catch(function(){ _cancelBusy = false; showErr("We couldn't reach the office. Check your connection and try again, or " + callOffice() + '.'); });
 }

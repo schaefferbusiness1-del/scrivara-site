@@ -105,6 +105,12 @@
     <p class="sub">The link may have expired or been turned off. Please contact the office for an appointment.</p>
   </div>
 
+  <div id="trouble" class="card hide">
+    <h1>We couldn't reach the office</h1>
+    <p class="sub">This is a connection problem, not a problem with your link. Please try again in a moment.</p>
+    <button id="troubleRetry" class="btn" type="button">Try again</button>
+  </div>
+
   <!-- Form -->
   <div id="formCard" class="card hide">
     <span class="pill">Online booking</span>
@@ -170,17 +176,28 @@ var BACKEND_URL = 'https://scrivara-backend.onrender.com';
 var token = (window.__mlsSensitiveUrl && window.__mlsSensitiveUrl.query.token) || '';
 
 function show(id){
-  ['loading','reopen','inactive','formCard','done'].forEach(function(x){
+  ['loading','reopen','inactive','trouble','formCard','done'].forEach(function(x){
     document.getElementById(x).classList.toggle('hide', x !== id);
   });
 }
 
 function init(){
   if(!token){ show('reopen'); return; }
+  show('loading');
+  /* Only the server saying 404 means the link is dead. A cold start, a gateway
+     error, a rate limit or a dropped connection used to land on "This booking
+     link isn't active", and the patient went elsewhere. The token is held in
+     memory (it is stripped from the address bar), so Try again works. */
   mlsSensitiveFetch(BACKEND_URL + '/api/schedule/public/' + encodeURIComponent(token))
-    .then(function(r){ return r.ok ? r.json() : Promise.reject(); })
-    .then(function(j){
-      if(!j || !j.ok){ show('inactive'); return; }
+    .then(function(r){
+      if(r.status === 404) return { inactive: true };
+      if(!r.ok) return { trouble: true };
+      return r.json().then(function(j){ return { j: j }; }, function(){ return { trouble: true }; });
+    }, function(){ return { trouble: true }; })
+    .then(function(res){
+      if(res.trouble){ show('trouble'); return; }
+      var j = res.j;
+      if(res.inactive || !j || !j.ok){ show('inactive'); return; }
       var practice=j.practice||{};
       if(practice.name){ document.getElementById('practiceBrand').textContent=practice.name; document.title='Book with '+practice.name; }
       var google=document.getElementById('googleBusinessBtn');
@@ -199,7 +216,7 @@ function init(){
       if(hint){ hint.textContent = openDaysMsg(true); }
       show('formCard');
     })
-    .catch(function(){ show('inactive'); });
+    .catch(function(){ show('trouble'); });
 }
 
 var selectedSlot = '';
@@ -279,9 +296,18 @@ function submitBooking(ev){
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
   })
-    .then(function(r){ return r.json().then(function(j){ return { ok: r.ok, j: j }; }); })
+    .then(function(r){
+      /* A rate-limit or gateway answer is plain text, not JSON. Parsing it used
+         to throw into the "check your connection" branch below. */
+      return r.json().catch(function(){ return {}; }).then(function(j){ return { ok: r.ok, status: r.status, j: j }; });
+    })
     .then(function(res){
       if(res.ok && res.j && res.j.ok){ show('done'); }
+      else if(res.status === 429){
+        errBox.textContent = 'Too many tries in a short time. Please wait a minute and try again, or call the office.';
+        errBox.classList.remove('hide');
+        btn.disabled = false; btn.textContent = 'Request appointment';
+      }
       else {
         /* 2026-07-23: the server's actionable reason ("That time was just
            booked. Please pick another open time.") used to be swallowed into
@@ -302,6 +328,7 @@ function submitBooking(ev){
   return false;
 }
 
+document.getElementById('troubleRetry').addEventListener('click', init);
 init();
 </script>
 </body>

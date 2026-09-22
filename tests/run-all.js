@@ -2663,7 +2663,11 @@ const tests = [
      service-worker wake keeps its own last activity and is released by the
      waking alarm, instead of re-arming a fresh 2 minutes forever. Runs the
      shipped worker block against a fake chrome, alarm-before-storage order. */
-  'extension-quiet-lease-expires-after-suspension-runtime.test.js'
+  'extension-quiet-lease-expires-after-suspension-runtime.test.js',
+  /* A public booking link is dead only on a 404. A 502, rate limit or dropped
+     connection on load shows Try again instead of "this link isn't active",
+     and a plain-text 429 on submit says to wait. Real Chrome, stubbed backend. */
+  'public-booking-transient-failure-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

@@ -360,9 +360,17 @@
     var btn=$('submitBtn'); btn.disabled=true; btn.textContent='Sending…';
     mlsSensitiveFetch(BACKEND_URL+'/api/intake/public/'+encodeURIComponent(token)+'/submit',{
       method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({data:data})
-    }).then(function(r){ return r.json().then(function(j){ return {ok:r.ok, j:j}; }); })
+    }).then(function(r){
+      /* A rate-limit or gateway answer is plain text; parsing it used to throw
+         into the "connection issue" branch below. */
+      return r.json().catch(function(){ return {}; }).then(function(j){ return {ok:r.ok, status:r.status, j:j}; });
+    })
       .then(function(res){
         if(res.ok && res.j && res.j.ok){ show('done'); }
+        else if(res.status===429){
+          btn.disabled=false; btn.textContent='Submit to my care team';
+          $('formErr').textContent='Too many tries in a short time. Your answers are still here; wait a minute and submit again, '+contactLine();
+        }
         else {
           try{ if(res.j&&res.j.error) console.warn('[intake] submission declined:',res.j.error); }catch(e){}
           btn.disabled=false; btn.textContent='Submit to my care team';
