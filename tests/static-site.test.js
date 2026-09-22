@@ -18,6 +18,9 @@ const skipDirs = new Set(['.git', 'node_modules', 'tests']);
 const skipPaths = new Set([
   path.join(root, 'mobile', 'android', 'app', 'src', 'main', 'assets', 'public'),
   path.join(root, 'mobile', 'ios', 'App', 'App', 'public'),
+  /* Archived design mockups (never published; docs/ is excluded). They keep
+     their original root-relative asset links for reference only. */
+  path.join(root, 'docs', 'archive'),
 ]);
 
 function walk(dir, out = []) {

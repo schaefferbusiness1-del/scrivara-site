@@ -202,21 +202,6 @@ const RETIRED_ASSETS = [
 ];
 
 const RETIRED_HTML = [
-  '_compare.html',
-  '_dz_aistudio.html',
-  '_dz_analysis.html',
-  '_dz_calendar.html',
-  '_dz_help.html',
-  '_dz_history.html',
-  '_dz_legal.html',
-  '_dz_login.html',
-  '_dz_orders.html',
-  '_dz_patients.html',
-  '_dz_recs.html',
-  '_dz_settings.html',
-  '_dz_team.html',
-  '_dz_visit.html',
-  '_ps_preview.html',
   'AuthPilot.html',
   'easy-book.html',
   'index-staging.html',
