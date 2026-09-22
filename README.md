@@ -1,7 +1,9 @@
-# scrivara-site
+# MLS Scribe: website, app and extension
 
-The MLS Scribe website, clinician app and MLS Assist Chrome extension, served
-from GitHub Pages at mlsscribe.com.
+The MLS Scribe website, the clinician app (live at
+https://mlsscribe.com/ScribeFlow.html) and the MLS Assist Chrome extension,
+served from GitHub Pages at mlsscribe.com. (The repository keeps its older
+name, scrivara-site; the product is MLS Scribe.)
 
 ## Where things live
 
