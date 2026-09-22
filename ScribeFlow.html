@@ -5419,9 +5419,9 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <p class="set-head">🔌 MLS Assist extension</p>
       <p class="set-desc">The Chrome extension that connects MLS to athenaOne — schedule pulls, chart history, and the note writeback all ride through it.</p>
       <div class="field">
-        <p class="note" style="margin:0 0 8px">Current version: <b id="extDlVersion">3.0.112</b> · requires Chrome 116+</p>
+        <p class="note" style="margin:0 0 8px">Current version: <b id="extDlVersion">3.0.113</b> · requires Chrome 116+</p>
         <a class="btn-primary" id="extStoreBtn" href="https://chromewebstore.google.com/detail/mls-assist/mpeidpagiccfdehcgfanlkibpafhogfg" target="_blank" rel="noopener noreferrer" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px;margin:0 8px 8px 0">🧩 Open MLS Assist in the Chrome Web Store</a>
-        <a class="btn-ghost" id="extDlBtn" href="MLS_Assist_v3.0.112.bin" download="MLS_Assist_v3.0.112.zip" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇️ Download MLS Assist v<span id="extDlVersionBtn">3.0.112</span> (.zip)</a>
+        <a class="btn-ghost" id="extDlBtn" href="MLS_Assist_v3.0.113.bin" download="MLS_Assist_v3.0.113.zip" style="display:inline-block;text-decoration:none;font-size:14px;padding:9px 15px">⬇️ Download MLS Assist v<span id="extDlVersionBtn">3.0.113</span> (.zip)</a>
         <p class="note" style="margin:10px 0 6px"><b>Easiest:</b> install from the Chrome Web Store with the first button — Chrome keeps it updated. The direct download is the second option (exact pinned version).</p>
         <details style="margin:8px 0 0"><summary style="cursor:pointer;font-weight:600">Direct-download setup or update — four steps</summary>
           <ol style="margin:8px 0 0 18px;padding:0;font-size:12.5px;color:#204034;line-height:1.6">
@@ -5433,8 +5433,8 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <p class="note" style="margin:6px 0 0">Your practice IT can do this for you. The illustrated guide and exact digest are at <a href="get-extension.html" target="_blank" rel="noopener">mlsscribe.com/get-extension</a>.</p>
         </details>
         <details style="margin:10px 0 0">
-          <summary style="cursor:pointer;font-weight:600">What changed in this update (v<span id="extDlVersionNotes">3.0.112</span>)</summary>
-          <p class="note" id="extDlNotes" style="margin:6px 0 0">v3.0.112 - MLS Assist writes reviewed note sections and saves drafts in athenaOne. Signing, orders and billing stay with the clinician. This release closes older action paths at the extension bridge, worker and chart driver while preserving patient identity checks, trusted confirmation and read-back verification. Includes the section-paint wait and encounter Save support from v3.0.111. Requires Chrome 116+.</p>
+          <summary style="cursor:pointer;font-weight:600">What changed in this update (v<span id="extDlVersionNotes">3.0.113</span>)</summary>
+          <p class="note" id="extDlNotes" style="margin:6px 0 0">v3.0.113 - Reliability release. After a pull ends, the Athena tab MLS was working in is handed back within about two minutes even when Chrome suspends the extension, so later reads no longer stay bound to that tab. A tab you pinned for MLS is honoured correctly after Chrome restarts the extension. Idle background checks on athenaOne tabs are removed, and a slow review-page read no longer leaves listeners behind. The toolbar button now opens your MLS tab. Includes everything in v3.0.113. Requires Chrome 116+.</p>
         </details>
       </div>
     </div>
@@ -11411,6 +11411,11 @@ function sfQueueFirstVisitNotesChoice(promptEpoch,promptAccount,ready){
   function inspect(){
     sfVisitNotesFirstChoiceTimer=0;
     if(!valid()){ finish(false); return; }
+    /* samplechoice-1.0.0: the public sample workspace is "Not connected to
+       Athena" by construction, so asking which Athena visit history to pull
+       (and then the setup prompts behind it) was the first thing a visitor
+       saw, about a feature that is switched off. */
+    try{ if(window.__MLS_PUBLIC_PREVIEW&&window.__MLS_PUBLIC_PREVIEW.enabled===true){ finish(false); return; } }catch(ePreview){}
     if(document.hidden){ later(500); return; }
     visibleAttempts++;
     var hosted=false; try{ hosted=typeof backendMode==='function'&&backendMode(); }catch(e2){}
@@ -48164,7 +48169,7 @@ function _ptGroupSort(mode){
 }
 
 </script>
-<script src="public-preview-runtime.js?v=20260802pv713"></script>
+<script src="public-preview-runtime.js?v=20260922pv714"></script>
 <script>
 /* ===== MLS Unified Patient Card — connectedness cohesion (merges context bar + #patientBar) =====
    Supersedes the original Active-Patient Context Bar. Renders ONE polished patient card under the
@@ -48509,7 +48514,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1284';
+  window.__MLS_AV='b1285';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
@@ -63216,14 +63221,21 @@ html body .toast.warn{
   border-left:4px solid #F3CE86 !important;
 }
 
-/* --- 15 / 97: a banner sits ABOVE the dock's reserved band, never on it. */
+/* --- 15 / 97: a banner sits ABOVE the dock's reserved band, never on it.
+   bannerpos-1.0.0: the update notice is created centred with inline
+   left:50% + translateX(-50%) + width:calc(100vw - 28px). Re-anchoring left
+   and right without cancelling that transform and width put the bar half off
+   the left edge of the screen (measured x=-475 at 1385px), text hidden. The
+   quota chip is an in-flow (position:relative) strip at the top of the app,
+   so bottom/left/right offsets only displaced it; it is no longer listed. */
 html body #mlsUpgradeReadyNotice,
-html body #mlsSignInPrompt,
-html body #mlsQuotaChip{
+html body #mlsSignInPrompt{
   bottom:calc(var(--mls-dock-clear-bottom, 0px) + 14px) !important;
   left:calc(var(--mls-dock-clear-left, 0px) + 14px) !important;
   right:calc(var(--mls-dock-clear-right, 0px) + 14px) !important;
   max-width:calc(100vw - var(--mls-dock-clear-left, 0px) - var(--mls-dock-clear-right, 0px) - 28px) !important;
+  width:auto !important;
+  transform:none !important;
 }
 
 /* --- 81: a promotion stands down while a dialog or a menu is open. */

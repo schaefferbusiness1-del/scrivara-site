@@ -2658,7 +2658,12 @@ const tests = [
      shell's ranker and generator at runtime, so a shell-only fix ships to
      nobody). Added by b1244 without a run-all.js registration; registered
      here so the gate's own completeness check does not flag it as missing. */
-  'opnote-body-is-the-note.test.js'
+  'opnote-body-is-the-note.test.js',
+  /* qpidle-1.0.0 (MLS Assist 3.0.113): a quiet-work lease restored after a
+     service-worker wake keeps its own last activity and is released by the
+     waking alarm, instead of re-arming a fresh 2 minutes forever. Runs the
+     shipped worker block against a fake chrome, alarm-before-storage order. */
+  'extension-quiet-lease-expires-after-suspension-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

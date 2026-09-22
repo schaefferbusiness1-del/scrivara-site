@@ -3836,9 +3836,17 @@ function mlsAthenaTeachWatcherFn(config) {
   var QP_PENDING_RELEASE_MS = 1500;
   var QP_RESTORE_WAIT_MS = 8000;
 
+  /* qpidle-1.0.0: lastUse is persisted (throttled) with the lease. A worker
+     that slept restored the lease with lastUse = now, so every alarm wake
+     re-armed a fresh 120 s and a lease whose run had ended was never released
+     - it kept overriding the tab pin and binding captures to its tab. */
+  var qpPersistedUseAt = 0;
   function qpTouch() {
     QP.lastUse = Date.now();
-    if (QP.active) { try { chrome.alarms.create('mlsQpWatch', { delayInMinutes: 1 }); } catch (e) {} }
+    if (QP.active) {
+      try { chrome.alarms.create('mlsQpWatch', { delayInMinutes: 1 }); } catch (e) {}
+      if (QP.lastUse - qpPersistedUseAt > 15000) { qpPersistedUseAt = QP.lastUse; persist(); }
+    }
   }
   self.__mlsQpTouch = qpTouch;
 
@@ -3846,7 +3854,7 @@ function mlsAthenaTeachWatcherFn(config) {
     try {
       chrome.storage.session.set({ mlsQpState: QP.active ? {
         winId: QP.winId, athenaTabId: QP.athenaTabId, orig: QP.orig, soloWin: QP.soloWin,
-        athOrig: QP.athOrig, hostWinId: QP.hostWinId, hostOrig: QP.hostOrig, strip: QP.strip || null, at: Date.now() } : null });
+        athOrig: QP.athOrig, hostWinId: QP.hostWinId, hostOrig: QP.hostOrig, strip: QP.strip || null, lastUse: QP.lastUse || Date.now(), at: Date.now() } : null });
     } catch (e) {}
   }
 
@@ -4037,13 +4045,20 @@ function mlsAthenaTeachWatcherFn(config) {
   try {
     chrome.alarms.onAlarm.addListener(function (a) {
       if (!a || a.name !== 'mlsQpWatch') return;
-      if (QP.active && QP.lastUse && (Date.now() - QP.lastUse) > QP_QUIET_MS && !qpChartBusy()) qpRelease('alarm');
-      else if (QP.active) { try { chrome.alarms.create('mlsQpWatch', { delayInMinutes: 1 }); } catch (e) {} }
+      /* the waking alarm can arrive before the stored lease is adopted below */
+      qpAdopted.then(function () {
+        if (QP.active && QP.lastUse && (Date.now() - QP.lastUse) > QP_QUIET_MS && !qpChartBusy()) qpRelease('alarm');
+        else if (QP.active) { try { chrome.alarms.create('mlsQpWatch', { delayInMinutes: 1 }); } catch (e) {} }
+      });
     });
   } catch (e) {}
   /* adopt state across service-worker restarts so the layout is never stranded */
+  var qpAdoptedDone;
+  var qpAdopted = new Promise(function (res) { qpAdoptedDone = res; });
+  setTimeout(function () { qpAdoptedDone(); }, 3000);
   try {
     chrome.storage.session.get(['mlsQpState'], function (st) {
+      try { setTimeout(qpAdoptedDone, 0); } catch (eQad) { qpAdoptedDone(); }
       /* qpx-3075 layer 2: the worker SLEEPS through tab closures, so a stored
          lease may name a tab that no longer exists - validate before adopting;
          a missing tab discards the lease and clears the store. */
@@ -4060,7 +4075,9 @@ function mlsAthenaTeachWatcherFn(config) {
         if (!s || QP.active) return;
         QP.active = true; QP.winId = s.winId; QP.athenaTabId = s.athenaTabId; QP.orig = s.orig || null;
         QP.soloWin = !!s.soloWin; QP.athOrig = s.athOrig || null; QP.hostWinId = s.hostWinId; QP.hostOrig = s.hostOrig || null; QP.strip = s.strip || null;
-        QP.lastUse = Date.now(); qpTouch();
+        /* the lease's own last activity, not the moment this worker woke */
+        QP.lastUse = Number(s.lastUse || s.at) || Date.now();
+        try { chrome.alarms.create('mlsQpWatch', { delayInMinutes: 1 }); } catch (eQa) {}
       } catch (e) {}
     });
   } catch (e) {}
@@ -6167,6 +6184,7 @@ async function mlsPickAthenaTab(all, opts) {
        surfaces 'signed out' - NEVER re-auth, never silently fall back to some
        other tab the user didn't choose. A CLOSED pinned tab auto-unpins (also
        handled by onRemoved). */
+    try { await (self.__mlsAthPinReady || Promise.resolve()); } catch (ePr) {}
     var pin = self.__mlsAthPin;
     if (pin && pin.tabId != null) {
       var pt = null; try { pt = await chrome.tabs.get(pin.tabId); } catch (eP) { pt = null; }
@@ -6291,7 +6309,14 @@ async function mlsPickExplicitUserCaptureTab(all, opts) {
  * picker shows 'signed out' - NEVER re-auth. Exact child-frame timeout/login
  * evidence clears the pin. Survives SW restarts (storage.session). */
 self.__mlsAthPin = self.__mlsAthPin || { tabId: null, at: 0 };
-try { chrome.storage.session.get(['mlsAthPin'], function (st) { try { var p = st && st.mlsAthPin; if (p && p.tabId != null && self.__mlsAthPin.tabId == null) self.__mlsAthPin = p; } catch (e) {} }); } catch (e) {}
+/* pinready-1.0.0: the stored pin loads asynchronously. A waking alarm, a tab
+   closure or a read handled before it landed saw "no pin": the 5-minute pin
+   watch cleared itself, a closed pinned tab was missed, and the picker fell
+   back to a tab the user did not choose. Readers await this first. */
+self.__mlsAthPinReady = new Promise(function (done) {
+  setTimeout(done, 3000);
+  try { chrome.storage.session.get(['mlsAthPin'], function (st) { try { var p = st && st.mlsAthPin; if (p && p.tabId != null && self.__mlsAthPin.tabId == null) self.__mlsAthPin = p; } catch (e) {} done(); }); } catch (e) { done(); }
+});
 function mlsPinSet(tabId) {
   self.__mlsAthPin = { tabId: (tabId == null ? null : tabId), at: Date.now() };
   try { chrome.storage.session.set({ mlsAthPin: self.__mlsAthPin }); } catch (e) {}
@@ -6319,12 +6344,13 @@ async function mlsPinInfo() {
   } catch (e) {}
   return out;
 }
-try { chrome.tabs.onRemoved.addListener(function (tid) { try { if (self.__mlsAthPin && self.__mlsAthPin.tabId === tid) mlsPinSet(null); } catch (e) {} }); } catch (e) {}
+try { chrome.tabs.onRemoved.addListener(function (tid) { self.__mlsAthPinReady.then(function () { try { if (self.__mlsAthPin && self.__mlsAthPin.tabId === tid) mlsPinSet(null); } catch (e) {} }); }); } catch (e) {}
 try {
   chrome.alarms.onAlarm.addListener(function (a) {
     if (!a || a.name !== 'mlsPinWatch') return;
     (async function () {
       try {
+        await self.__mlsAthPinReady;
         var pin = self.__mlsAthPin;
         if (!pin || pin.tabId == null) { try { chrome.alarms.clear('mlsPinWatch'); } catch (e) {} return; }
         var t = null; try { t = await chrome.tabs.get(pin.tabId); } catch (e) { t = null; }
@@ -7999,7 +8025,7 @@ if (!found) {
           try {
             tab = await chrome.tabs.create({ url, active: false });
             await new Promise((res) => {
-              let done = false; const to = setTimeout(() => { if (!done) { done = true; res(); } }, 20000);
+              let done = false; const to = setTimeout(() => { if (!done) { done = true; chrome.tabs.onUpdated.removeListener(li); res(); } }, 20000);
               const li = (id, info) => { if (id === tab.id && info && info.status === 'complete' && !done) { done = true; clearTimeout(to); chrome.tabs.onUpdated.removeListener(li); res(); } };
               chrome.tabs.onUpdated.addListener(li);
             });

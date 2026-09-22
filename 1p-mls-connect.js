@@ -52657,6 +52657,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   var deferAsset=window.__mlsDeferAsset||window.requestIdleCallback||function(fn){return setTimeout(fn,900);};
   var A='feat_mls_avatar.js',SRC='1p-feat_mls_avatar.js',OWNER_V='av-5.7.0',MIC_V='p1-mic-1.0.0';
   var V='p1-avatar-loader-1.0.0',KEY='__mlsP1AvatarLoader',SEQ='__mlsP1AvatarLoaderSequence';
+  /* avpreview-1.0.0: the avatar module deliberately skips the public sample
+     workspace (installed:false, skipped:'public-synthetic-preview'). Loading it
+     there only produced an owner shape this loader calls malformed, which
+     raised an "Update ready - reload" banner that no reload could clear, plus
+     a check-in strip stuck on "getting ready". The sample has no avatar. */
+  if(window.__MLS_PUBLIC_PREVIEW&&window.__MLS_PUBLIC_PREVIEW.enabled===true)return;
   var prior=window[KEY];
   function preview(){return !!(window.__MLS_P1_PREVIEW&&window.__MLS_P1_PREVIEW.enabled===true);}
   function controllerShape(value){return !!(value&&value.installed===true&&value.asset===A&&

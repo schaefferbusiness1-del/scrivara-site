@@ -1519,7 +1519,13 @@
 (function () {
   /* csr-1.1: a same-world re-injection must not start a second eternal 600ms ready() poll. */
   try { if (window.__mlsAutopilotInit) return; window.__mlsAutopilotInit = 1; } catch (eFlagAp) { return; }
-  function ready() { const p = document.getElementById('mls-assist-panel'); if (!p) return setTimeout(ready, 600); init(p); }
+  /* legacyidle-1.0.0: on athenaOne the legacy panel is never built (see
+     __mlsLegacyAssistSuppressed above), so this poll ran every 600 ms for the
+     life of every Athena tab. Skip it there, and give up after ~2 minutes
+     anywhere the panel never appears. */
+  try { if (window.__mlsLegacyAssistSuppressed) return; } catch (eSupAp) {}
+  let readyTries = 0;
+  function ready() { const p = document.getElementById('mls-assist-panel'); if (!p) { if (++readyTries > 200) return; return setTimeout(ready, 600); } init(p); }
   ready();
   function init(panel) {
     const body = panel.querySelector('.body'); if (!body || panel.__apInit || panel.getAttribute('data-mls-ap-init') === '1') return; panel.__apInit = true; try { panel.setAttribute('data-mls-ap-init', '1'); } catch (eApMark) {} /* csr-1.1: the expando is world-scoped, so a fresh world re-initing a surviving orphan-era panel appended a SECOND Autopilot section; the DOM attribute is world-neutral. */
@@ -2023,10 +2029,14 @@
       }
     } catch (e) {}
   }
-  // panel is injected on demand; find the button when it appears (idempotent)
+  // panel is injected on demand; find the button when it appears (idempotent).
+  // legacyidle-1.0.0: not on athenaOne, where the legacy panel is never built -
+  // there this observer ran relabel() on every DOM mutation of the EMR.
   try {
-    var mo = new MutationObserver(function () { relabel(); });
-    mo.observe(document.documentElement, { childList: true, subtree: true });
+    if (!window.__mlsLegacyAssistSuppressed) {
+      var mo = new MutationObserver(function () { relabel(); });
+      mo.observe(document.documentElement, { childList: true, subtree: true });
+    }
   } catch (e) {}
   relabel();
 

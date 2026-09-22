@@ -36,14 +36,24 @@ $('save').addEventListener('click', () => {
   });
 });
 
+/* openmls-1.0.0: this button asked the current tab to open an in-page MLS
+   panel. The athenaOne overlay was retired by the owner (2026-07-24) and the
+   legacy panel is suppressed there, so on the doctor's EMR it ALWAYS failed
+   ("Can't open here"). The MLS app is where every pull, review and write is
+   driven: focus the open MLS tab, or open one. */
+const MLS_APP_URL = 'https://mlsscribe.com/ScribeFlow.html';
 const _ot = document.getElementById('openTab');
 if (_ot) _ot.addEventListener('click', () => {
-  chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
-    const t = tabs[0]; if (!t) return;
-    chrome.tabs.sendMessage(t.id, { type: 'mlsOpenPanel' }, () => {
-      if (chrome.runtime.lastError) { $('ok').textContent = 'Can\u2019t open here - try a normal web page or your EMR.'; }
-      else { $('ok').textContent = '\u2713 Opened on this tab'; setTimeout(() => window.close(), 600); }
-    });
+  chrome.tabs.query({ url: ['https://mlsscribe.com/*', 'https://www.mlsscribe.com/*'] }, tabs => {
+    const app = (tabs || []).find(t => /\/(ScribeFlow\.html|1p|cloned)/.test(String(t.url || ''))) || (tabs || [])[0];
+    const done = () => { if (chrome.runtime.lastError) { $('ok').textContent = 'Could not open MLS - open mlsscribe.com in a tab.'; return; } window.close(); };
+    if (app) {
+      chrome.tabs.update(app.id, { active: true }, () => {
+        try { chrome.windows.update(app.windowId, { focused: true }, done); } catch (e) { done(); }
+      });
+    } else {
+      chrome.tabs.create({ url: MLS_APP_URL }, done);
+    }
   });
 });
 

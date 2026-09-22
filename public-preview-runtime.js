@@ -330,7 +330,12 @@
          overlap at 2320x1287). body padding cannot move FIXED chrome; the dock
          itself lifts while the strip exists. 74 = 18 + 50 strip + 6 gap. */
       'body.mls-public-preview #mlsDock{bottom:74px;}' +
-      '@media(max-width:680px){body.mls-public-preview{padding-bottom:104px!important;}body.mls-public-preview #mlsDock{bottom:112px;}#mlsPublicPreviewStrip{align-items:flex-start;flex-wrap:wrap;padding:8px 10px;gap:6px 9px;}#mlsPublicPreviewStrip .mls-preview-copy{flex-basis:100%;font-size:12px;}#mlsPublicPreviewStrip .mls-preview-actions{width:100%;}#mlsPublicPreviewStrip button{flex:1 1 0;}}';
+      /* pvdock-1.0.0 (measured at 390x844): on a phone the strip wraps to
+         ~117px and a later dock rule of equal specificity won, leaving the
+         dock at bottom:8px - entirely UNDER the strip, so the sample could not
+         be navigated. The phone lift now uses the strip's measured height
+         (--mls-preview-strip-h, set in mountStrip) and cannot be outranked. */
+      '@media(max-width:680px){body.mls-public-preview{padding-bottom:calc(var(--mls-preview-strip-h, 112px) + 84px)!important;}html body.mls-public-preview #mlsDock{bottom:calc(var(--mls-preview-strip-h, 112px) + 10px)!important;}#mlsPublicPreviewStrip{align-items:flex-start;flex-wrap:wrap;padding:8px 10px;gap:6px 9px;}#mlsPublicPreviewStrip .mls-preview-copy{flex-basis:100%;font-size:12px;}#mlsPublicPreviewStrip .mls-preview-actions{width:100%;}#mlsPublicPreviewStrip button{flex:1 1 0;}}';
     (document.head || document.documentElement).appendChild(style);
   }
 
@@ -377,7 +382,13 @@
     var reset = document.createElement('button'); reset.type = 'button'; reset.textContent = 'Reset sample'; reset.addEventListener('click', resetPreview);
     var exit = document.createElement('button'); exit.type = 'button'; exit.textContent = 'Exit preview'; exit.addEventListener('click', exitPreview);
     actions.appendChild(reset); actions.appendChild(exit); strip.appendChild(copy); strip.appendChild(actions);
-    document.body.appendChild(strip); return strip;
+    document.body.appendChild(strip);
+    function syncStripHeight() {
+      try { document.documentElement.style.setProperty('--mls-preview-strip-h', Math.ceil(strip.getBoundingClientRect().height) + 'px'); } catch (e) {}
+    }
+    syncStripHeight();
+    try { if (typeof ResizeObserver === 'function') new ResizeObserver(syncStripHeight).observe(strip); else window.addEventListener('resize', syncStripHeight); } catch (e2) {}
+    return strip;
   }
 
   var dangerousWords = /(?:\brecord(?:ing)?\b|\bdictat(?:e|ion)\b|\bvoice\b|\bmicrophone\b|\bmic\b|\bcall\b|\bgenerate\b|\bafter[ -]visit summary\b|\bsend\b|\bsign\b|\bsave\b|\bdelete\b|\bremove\b|\binvite\b|\bemail\b|\bfax\b|\bmessage\b|\bbook\b|\bschedule\b|\bcancel\b|\bwrite(?:back)?\b|\bsubmit\b|\bupload\b|\bimport\b|\bexport\b|\bdownload\b|\bpull\b|\bretry failed\b|\bverify\b|\bathena\b|\bconnect\b|\bpair\b|\bcheck[ -]?in\b|\broom\b|\bapprove\b|\bconfirm\b|\bredeem\b|\bpurchase\b|\bsubscribe\b|\blog ?out\b|\bnew patient\b|\badd patient\b)/i;

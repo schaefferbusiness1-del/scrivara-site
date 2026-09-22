@@ -1,5 +1,5 @@
 {
-  "version": "3.0.112",
+  "version": "3.0.113",
   "minChrome": 116,
-  "notes": "v3.0.112 - MLS Assist writes reviewed note sections and saves drafts in athenaOne. Signing, orders and billing stay with the clinician. This release closes older action paths at the extension bridge, worker and chart driver while preserving patient identity checks, trusted confirmation and read-back verification. Includes the section-paint wait and encounter Save support from v3.0.111. Requires Chrome 116+."
+  "notes": "v3.0.113 - Reliability release. After a pull ends, the Athena tab MLS was working in is handed back within about two minutes even when Chrome suspends the extension, so later reads no longer stay bound to that tab. A tab you pinned for MLS is honoured correctly after Chrome restarts the extension. Idle background checks on athenaOne tabs are removed, and a slow review-page read no longer leaves listeners behind. The toolbar button now opens your MLS tab. Includes everything in v3.0.113. Requires Chrome 116+."
 }

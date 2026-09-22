@@ -2,8 +2,8 @@
   "manifest_version": 3,
   "minimum_chrome_version": "116",
   "name": "MLS Assist",
-  "version": "3.0.112",
-  "version_name": "3.0.112+core-sha256:acbf4014b1f286b4289730de4108ee27d9e929d65d3f1377e999510f6c4d993d",
+  "version": "3.0.113",
+  "version_name": "3.0.113+core-sha256:b7c88b1a34ba57fe68af75cd94153954f7950717373abedc546e2b0e2bd6649c",
   "description": "Clinician companion for MLS Scribe and athenaOne. Reads only when requested, drafts notes, and requires review.",
   "permissions": [
     "storage",

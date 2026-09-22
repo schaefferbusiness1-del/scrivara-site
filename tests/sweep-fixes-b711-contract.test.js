@@ -25,14 +25,17 @@ const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
 /* 1 - the dock clears the strip, in preview mode only, both breakpoints */
 assert(preview.includes('body.mls-public-preview #mlsDock{bottom:74px;}'),
   'the dock must lift above the 50px preview strip on desktop');
-assert(preview.includes('body.mls-public-preview #mlsDock{bottom:112px;}'),
+/* pvdock-1.0.0: the phone lift follows the strip's measured height and is !important -
+   the flat bottom:112px lost to a later equal-specificity dock rule (dock under the strip). */
+assert(preview.includes('html body.mls-public-preview #mlsDock{bottom:calc(var(--mls-preview-strip-h, 112px) + 10px)!important;}'),
   'the dock must lift above the wrapped strip on phone');
+assert(preview.includes("setProperty('--mls-preview-strip-h'"), 'the strip must publish its measured height');
 /* the fix must actually be served: the frozen token moved in BOTH loaders.
  * Dated shape, never bNNN: the build bump rewrites bNNN tokens in
  * ScribeFlow.html but not sw.js, and forked the two at b712. */
-assert(app.includes('public-preview-runtime.js?v=20260802pv713'),
+assert(app.includes('public-preview-runtime.js?v=20260922pv714'),
   'the page must load the fixed preview runtime');
-assert(sw.includes('/public-preview-runtime.js?v=20260802pv713'),
+assert(sw.includes('/public-preview-runtime.js?v=20260922pv714'),
   'the service worker precache must fetch the fixed preview runtime');
 assert(!app.includes('public-preview-runtime.js?v=b497') && !sw.includes('public-preview-runtime.js?v=b497'),
   'the retired preview-runtime cache token must be unreachable');
