@@ -2675,7 +2675,14 @@ const tests = [
   /* opmode-1.0.0 (b1289): on /ScribeFlow.html the op-note follow mode the
      doctor picks (Closely / Balanced / Adapt to case) is the mode on the wire,
      each mode sends its own clause, and the receipt names the mode that ran. */
-  'opnote-follow-mode-reaches-the-request-runtime.test.js'
+  'opnote-follow-mode-reaches-the-request-runtime.test.js',
+  /* signin-1.0.0 (b1290): a 429/5xx sign-in is not "wrong password", one
+     request per sign-in, an offline forgot-password says nothing was sent,
+     the reset card has a way back, a failed Terms load can be retried. */
+  'signin-error-honesty-runtime.test.js',
+  /* calid-1.0.0 / calnav-1.0.0 (b1290): Day/Week/Month appointments open by
+     click and Enter, the arrows keep one day on screen, Week counts the week. */
+  'calendar-one-day-and-keyboard-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

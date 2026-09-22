@@ -547,10 +547,22 @@
       return out;
     },
     counts: function (opt) { return { scoped: Cal.rows(opt).length, all: Cal.rows(Object.assign({}, opt, { all: true })).length }; },
-    providers: function (date) {
+    /* calnav-1.0.0: a Week or Month roster counted each provider's ALL-TIME
+       total ("Dr. Example 7" on a week showing 1 appointment) beside a
+       "Default schedule" count for the range on screen. The chips now count
+       the same range: one day, the week's dates, or the month. */
+    providers: function (sel) {
+      var date = (typeof sel === 'string') ? sel : null;
       if (date && appointmentCensusOwnsDay(date)) return [];
+      function countOf(p) {
+        if (date) return p.byDate[date] || 0;
+        var n = 0, d;
+        if (sel && typeof sel === 'object' && sel.dates) { for (d in sel.dates) if (sel.dates[d]) n += (p.byDate[d] || 0); return n; }
+        if (sel && typeof sel === 'object' && sel.month) { for (d in p.byDate) if (String(d).slice(0, 7) === sel.month) n += (p.byDate[d] || 0); return n; }
+        return p.total;
+      }
       var out = [], k;
-      for (k in Cal._provIdx) { var p = Cal._provIdx[k]; out.push({ pk: p.pk, label: p.label, count: date ? (p.byDate[date] || 0) : p.total }); }
+      for (k in Cal._provIdx) { var p = Cal._provIdx[k]; out.push({ pk: p.pk, label: p.label, count: countOf(p) }); }
       out.sort(function (a, b) { return b.count - a.count || a.label.localeCompare(b.label); });
       return out;
     }
@@ -680,7 +692,7 @@
     if (!visible || !wrap || !wrap.parentNode) { if (ros) ros.style.display = 'none'; return; }
     var opt = unitOpt();
     var censusOwned = !!(opt.mode === 'day' && opt.date && appointmentCensusOwnsDay(opt.date));
-    var provs = Cal.providers(opt.mode === 'day' ? opt.date : null);
+    var provs = Cal.providers(opt.mode === 'day' ? opt.date : opt);
     var scope = (opt.mode === 'day' && opt.date) ? effectiveScopeForDay(opt.date) : Cal.getScope();
     if (censusOwned && scope.pk) {
       /* A saved provider filter cannot adjudicate rows whose Athena source did

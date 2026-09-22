@@ -1232,6 +1232,7 @@
   .auth-err{display:none;font-size:13.5px;color:var(--red);background:#fdeced;border:1px solid #f6cccd;
     border-radius:10px;padding:9px 12px;margin-bottom:12px}
   .auth-err.show{display:block}
+  .auth-err.auth-ok{color:#12744a;background:#eefaf3;border-color:#bfe6cf}
   .local-note{font-size:12.5px;color:var(--muted);background:var(--soft);border:1px solid var(--line);
     border-radius:10px;padding:10px 13px;margin-top:16px;line-height:1.5}
   /* history */
@@ -2803,7 +2804,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <button type="button" class="auth-tab" id="tabSignup" role="tab" aria-selected="false" onclick="switchAuth('signup')">Sign up</button>
     </div>
 
-    <div class="auth-err" id="authErr"></div>
+    <div class="auth-err" id="authErr" role="alert" aria-live="assertive"></div>
 
     <div class="field">
       <label for="authEmail">Email</label>
@@ -2855,7 +2856,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         <input type="email" id="forgotEmail" placeholder="you@clinic.com" autocomplete="username">
       </div>
       <button class="btn-ghost" style="width:100%" id="forgotBtn" onclick="doForgot()">Send reset link</button>
-      <div class="auth-err" id="forgotMsg" style="margin-top:10px"></div>
+      <div class="auth-err" id="forgotMsg" style="margin-top:10px" role="status" aria-live="polite"></div>
     </div>
 
     <!-- clunky2-signin-1.0.0 (CLUNKY 139): the sign-in screen ended on a
@@ -2870,7 +2871,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
   <div class="auth-card" id="resetCard" style="display:none">
     <div class="auth-logo"><div class="mark" style="background:none"><svg viewBox="0 0 56 56" width="46" height="46" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="svMarkR" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3B7C5A"/><stop offset="1" stop-color="#2E6A4B"/></linearGradient></defs><rect x="0" y="0" width="56" height="56" rx="15" fill="#204034"/><path d="M11 30 H20 L24 19 L30 39 L35 25 L39 30 H46" fill="none" stroke="#8FD8BE" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="46" cy="30" r="3.2" fill="#8FD8BE"/></svg></div> MLS</div>
     <p class="auth-sub">Set a new password</p>
-    <div class="auth-err" id="resetErr"></div>
+    <div class="auth-err" id="resetErr" role="alert" aria-live="assertive"></div>
     <div class="field">
       <label for="resetPass">New password</label>
       <input type="password" id="resetPass" placeholder="••••••••" autocomplete="new-password" minlength="8">
@@ -2881,6 +2882,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     </div>
     <button class="btn-primary" id="resetBtn" style="width:100%" onclick="doResetPassword()">Update password</button>
     <p class="local-note">🔒 Choose a password of at least 8 characters. You'll log in with it next.</p>
+    <p class="local-note" style="margin-top:8px"><a href="#" id="resetBackLink" onclick="resetBackToLogin(false);return false;">‹ Back to log in</a> · <a href="#" id="resetNewLink" onclick="resetBackToLogin(true);return false;">Request a new link</a></p>
   </div>
 
   <!-- Two-factor code card, shown when login returns twofa_required -->
@@ -7089,7 +7091,16 @@ function renderSignupAgreementManifest(m){
   if(info){
     info.textContent=m
       ? (m.syntheticTestFixture?'Local synthetic-test documents: ':'Current server-approved documents: ')+'Terms effective '+terms.effectiveAt.slice(0,10)+' and Privacy Notice effective '+privacy.effectiveAt.slice(0,10)+'. Open both links before confirming.'
-      : 'Account creation is held because the current Terms and Privacy Notice could not be loaded. Check your connection, then press Create account again.';
+      : 'Account creation is held because the current Terms and Privacy Notice could not be loaded. Check your connection, then try again.';
+    /* signin-1.0.0: the old text said "press Create account again" beside a
+       disabled Create account button, and Enter did not re-fetch. */
+    if(!m){
+      const again=document.createElement('button');
+      again.type='button'; again.id='authSignupRetry'; again.className='btn-ghost'; again.textContent='Try again';
+      again.style.cssText='margin-left:8px;font-size:12.5px;padding:3px 10px';
+      again.addEventListener('click',function(){ loadSignupAgreementManifest(); });
+      info.appendChild(again);
+    }
   }
   syncSignupAssentState();
 }
@@ -7203,6 +7214,7 @@ function switchAuth(mode){
   }catch(_){}
   document.getElementById('authConfirmField').style.display=mode==='signup'?'block':'none';
   const authBtn=document.getElementById('authBtn'); authBtn.textContent=mode==='signup'?'Create account':'Log in';
+  authBtn.setAttribute('aria-label',mode==='signup'?'Create your account':'Log in to your account');
   const pass=document.getElementById('authPass');
   pass.setAttribute('autocomplete',mode==='signup'?'new-password':'current-password');
   if(mode==='signup') pass.setAttribute('minlength','8'); else pass.removeAttribute('minlength');
@@ -7239,20 +7251,27 @@ async function doForgot(){
   const btn=document.getElementById('forgotBtn');
   const orig=btn?btn.textContent:'';
   if(btn){ btn.disabled=true; btn.textContent='Sending…'; }
+  /* signin-1.0.0: the answer stays NEUTRAL about whether the account exists -
+     but a request that never reached the server, or that it refused for load
+     (429/5xx), sent nothing, and saying "a reset link is on its way" there
+     left the doctor waiting for an email that could never come. */
+  let sent=false, why='';
   try{
-    // Neutral response regardless of outcome — no account enumeration.
     try{
-      await fetch(bkBase()+'/api/auth/forgot',{
+      const r=await fetch(bkBase()+'/api/auth/forgot',{
         method:'POST',
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify({email})
       });
-    }catch(e){/* even on network error we show the neutral message */}
+      why=_authServerTrouble(r,'');
+      sent=!why;
+    }catch(e){ why='Could not reach the MLS server, so no reset link was sent. Check your connection and try again.'; }
   } finally {
     if(btn){ btn.disabled=false; btn.textContent=orig; }
   }
   if(msg){
-    msg.textContent='If that email is registered, a reset link is on its way. Check your inbox (and spam).';
+    msg.textContent=sent?'If that email is registered, a reset link is on its way. Check your inbox (and spam).':(why.indexOf('no reset link')>=0?why:why+' No reset link was sent.');
+    msg.classList.toggle('auth-ok',sent);
     msg.classList.add('show');
   }
 }
@@ -7270,6 +7289,18 @@ function showResetScreen(token){
   if(cards[0]) cards[0].style.display='none';
   const rc=document.getElementById('resetCard');
   if(rc) rc.style.display='block';
+}
+/* signin-1.0.0: the reset card hid the login card and offered only "Update
+   password" - after an expired link or a 429/502 there was no way out but a
+   reload (and an installed app has no reload button). */
+function resetBackToLogin(requestNew){
+  resetToken='';
+  const rc=document.getElementById('resetCard'); if(rc) rc.style.display='none';
+  const authScreen=document.getElementById('authScreen');
+  const cards=authScreen?authScreen.querySelectorAll('.auth-card'):[];
+  if(cards[0]) cards[0].style.display='';
+  switchAuth('login');
+  if(requestNew&&typeof showForgot==='function') showForgot();
 }
 async function doResetPassword(){
   const errEl=document.getElementById('resetErr');
@@ -7294,7 +7325,7 @@ async function doResetPassword(){
       });
     }catch(netErr){ showErr('Could not reach the MLS server. Try again.'); return; }
     try{ data=await res.json(); }catch(e){ data={}; }
-    if(!res.ok){ showErr((data&&(data.error||data.message))||('Could not reset password ('+res.status+').')); return; }
+    if(!res.ok){ const trouble=_authServerTrouble(res,''); showErr(trouble||(data&&(data.error||data.message))||('Could not reset password ('+res.status+').')); return; }
     // Success: the URL was already scrubbed before boot; clear in-memory state.
     resetToken='';
     const rc=document.getElementById('resetCard');
@@ -7309,7 +7340,33 @@ async function doResetPassword(){
   }
 }
 
+/* signin-1.0.0: ONE SIGN-IN AT A TIME. Enter in the email/password fields
+   called doAuth() with the first request still out: two requests, and the
+   second call captured the busy label ("Logging in...") as its "original" and
+   restored it, so the button read "Logging in..." forever next to the error.
+   The lock is a plain variable, not a property of doAuth: the busy-spinner
+   module swaps window.doAuth for a wrapper during a click, so a flag set on
+   "doAuth" landed on the wrapper and the next Enter never saw it. */
 async function doAuth(){
+  if(_authInFlight) return;
+  _authInFlight=true;
+  try{ return await _doAuthOnce(); }
+  finally{ _authInFlight=false; }
+}
+var _authInFlight=false;
+/* A 429 or a 5xx never checked the password, so it must not say it was wrong
+   (and must not send the doctor to Forgot password). */
+function _authServerTrouble(res, what){
+  if(!res) return '';
+  if(res.status===429){
+    let ra=0; try{ ra=parseInt(res.headers.get('Retry-After')||'',10)||0; }catch(e){}
+    const mins=ra>0?Math.max(1,Math.ceil(ra/60)):0;
+    return 'Too many attempts from this network. '+(what?what+' was not checked. ':'')+'Wait '+(mins?mins+' minute'+(mins===1?'':'s'):'a few minutes')+', then try again.';
+  }
+  if(res.status>=500) return 'The MLS server is having trouble right now'+(what?' - '+what.toLowerCase()+' was not checked':'')+'. Try again in a minute.';
+  return '';
+}
+async function _doAuthOnce(){
   hideAuthErr();
   const email=document.getElementById('authEmail').value.trim().toLowerCase();
   const pass=document.getElementById('authPass').value;
@@ -7327,7 +7384,7 @@ async function doAuth(){
   // HOSTED BACKEND MODE → server-side auth via Bearer token (no local accounts).
   if(backendMode()){
     const btn=document.getElementById('authBtn');
-    const origLabel=btn?btn.textContent:'';
+    const origLabel=authMode==='signup'?'Create account':'Log in';
     if(btn){ btn.disabled=true; btn.textContent=authMode==='signup'?'Creating…':'Logging in…'; }
     try{
       const path=authMode==='signup'?'/api/auth/register':'/api/auth/login';
@@ -7352,6 +7409,8 @@ async function doAuth(){
       }
       try{ data=await res.json(); }catch(e){ data={}; }
       if(!res.ok){
+        const trouble=_authServerTrouble(res, authMode==='login'?'Your password':'');
+        if(trouble){ showAuthErr(trouble); return; }
         showAuthErr(authMode==='login'
           ? "We couldn't sign you in with that email and password. Confirm that you're using the email registered to your MLS account, or use Forgot password to reset it. For security, this message doesn't confirm whether an account exists."
           : ((data&&(data.error||data.message))||('Account creation failed ('+res.status+').')));
@@ -7536,7 +7595,14 @@ function cancelTwofa(){
   const cards=authScreen.querySelectorAll('.auth-card');
   if(cards[0]) cards[0].style.display='block';
 }
+let _twofaInFlight=false;
 async function doTwofaLogin(){
+  if(_twofaInFlight) return;
+  _twofaInFlight=true;
+  try{ return await _doTwofaLoginOnce(); }
+  finally{ _twofaInFlight=false; }
+}
+async function _doTwofaLoginOnce(){
   const err=document.getElementById('twofaErr');
   const showErr=m=>{ if(err){ err.textContent=m; err.classList.add('show'); } };
   if(err) err.classList.remove('show');
@@ -7562,6 +7628,7 @@ async function doTwofaLogin(){
       return;
     }
     try{ data=await res.json(); }catch(e){ data={}; }
+    if(!res.ok){ const trouble=_authServerTrouble(res,'Your code'); if(trouble){ showErr(trouble); return; } }
     if(!res.ok || !data.token){
       showErr((data&&(data.error||data.message))||'That code didn\'t work — try again.');
       return;
@@ -16751,11 +16818,19 @@ function _calResetForSession(account,epoch){
   return true;
 }
 function _calPad(n){ return (n<10?'0':'')+n; }
-function _calShiftRef(deltaDays){ var d=new Date(_calRefDate+'T12:00'); d.setDate(d.getDate()+deltaDays); _calRefDate=d.getFullYear()+'-'+_calPad(d.getMonth()+1)+'-'+_calPad(d.getDate()); }
+/* calnav-1.0.0: ONE DAY ON SCREEN. Day/Week moved _calRefDate, Month moved
+   _calYear/_calMonth, and a clicked day set _calSelDay - three sources of
+   truth. So after the arrows Day view kept the clicked day's "3 appointments
+   scheduled" beside an empty grid, leaving Day on Oct 1 opened September, and
+   leaving October's Month opened Sep 22. Every move now keeps all three
+   together. */
+function _calSyncFromRef(){ var d=new Date(_calRefDate+'T12:00'); if(!isNaN(d.getTime())){ _calYear=d.getFullYear(); _calMonth=d.getMonth(); } try{ window._calSelDay=_calRefDate; }catch(e){} }
+function _calShiftRef(deltaDays){ var d=new Date(_calRefDate+'T12:00'); d.setDate(d.getDate()+deltaDays); _calRefDate=d.getFullYear()+'-'+_calPad(d.getMonth()+1)+'-'+_calPad(d.getDate()); _calSyncFromRef(); }
+function _calMonthMoved(){ _calRefDate=_calYear+'-'+_calPad(_calMonth+1)+'-01'; try{ window._calSelDay=null; }catch(e){} }
 function _calInit(){ if(_calYear==null){ var k=(typeof _acctTodayKey==='function'?_acctTodayKey():''); var p=String(k||'').split('-'); var n=new Date(); _calYear=(p.length===3?parseInt(p[0],10):n.getFullYear()); _calMonth=(p.length===3?parseInt(p[1],10)-1:n.getMonth()); } }
-function calToday(){ var k=(typeof _acctTodayKey==='function'?_acctTodayKey():''); var p=String(k||'').split('-'); var n=new Date(); _calYear=(p.length===3?parseInt(p[0],10):n.getFullYear()); _calMonth=(p.length===3?parseInt(p[1],10)-1:n.getMonth()); _calRefDate=(p.length===3?k:(n.getFullYear()+'-'+_calPad(n.getMonth()+1)+'-'+_calPad(n.getDate()))); var panel=document.getElementById('calDayPanel'); if(panel) panel.style.display='none'; renderCalendar(); /* caldata-1.0.0: Day view is its own agenda - see calSetMode (CLUNKY 33) */ }
-function calPrev(){ _calInit(); if(_calMode==='month'){ _calMonth--; if(_calMonth<0){ _calMonth=11; _calYear--; } } else if(_calMode==='week'){ _calShiftRef(-7); } else { _calShiftRef(-1); } renderCalendar(); /* caldata-1.0.0: Day view is its own agenda - see calSetMode (CLUNKY 33) */ }
-function calNext(){ _calInit(); if(_calMode==='month'){ _calMonth++; if(_calMonth>11){ _calMonth=0; _calYear++; } } else if(_calMode==='week'){ _calShiftRef(7); } else { _calShiftRef(1); } renderCalendar(); /* caldata-1.0.0: Day view is its own agenda - see calSetMode (CLUNKY 33) */ }
+function calToday(){ var k=(typeof _acctTodayKey==='function'?_acctTodayKey():''); var p=String(k||'').split('-'); var n=new Date(); _calYear=(p.length===3?parseInt(p[0],10):n.getFullYear()); _calMonth=(p.length===3?parseInt(p[1],10)-1:n.getMonth()); _calRefDate=(p.length===3?k:(n.getFullYear()+'-'+_calPad(n.getMonth()+1)+'-'+_calPad(n.getDate()))); try{ window._calSelDay=_calRefDate; }catch(eSel){} var panel=document.getElementById('calDayPanel'); if(panel) panel.style.display='none'; renderCalendar(); /* caldata-1.0.0: Day view is its own agenda - see calSetMode (CLUNKY 33) */ }
+function calPrev(){ _calInit(); if(_calMode==='month'){ _calMonth--; if(_calMonth<0){ _calMonth=11; _calYear--; } _calMonthMoved(); } else if(_calMode==='week'){ _calShiftRef(-7); } else { _calShiftRef(-1); } renderCalendar(); /* caldata-1.0.0: Day view is its own agenda - see calSetMode (CLUNKY 33) */ }
+function calNext(){ _calInit(); if(_calMode==='month'){ _calMonth++; if(_calMonth>11){ _calMonth=0; _calYear++; } _calMonthMoved(); } else if(_calMode==='week'){ _calShiftRef(7); } else { _calShiftRef(1); } renderCalendar(); /* caldata-1.0.0: Day view is its own agenda - see calSetMode (CLUNKY 33) */ }
 function calSetMode(m){ _calMode=m; var jump=document.getElementById('calJump'); if(jump) jump.style.display=(m==='month')?'':'none'; var pn=document.getElementById('calDayPanel'); /* caldata-1.0.0 (CLUNKY 33): Day view used to open the right-hand day panel on
      top of its own hour timeline, so every patient was on screen twice - the
      timeline block AND a panel row with "Details" - beside a third copy in the
@@ -16766,6 +16841,13 @@ function calSetMode(m){ _calMode=m; var jump=document.getElementById('calJump');
      thing a MONTH cell opens. Every action survives on the timeline chip
      (calApptPeek: Start visit, Pull chart, Details, Draft op note). */
   if(pn) pn.style.display='none'; renderCalendar(); }
+/* calid-1.0.0: an appointment id written into an inline handler is a JS
+   literal. Numeric database ids went in bare and worked; the sample
+   workspace's ids ('preview-appt-01') - and any non-numeric id - were
+   evaluated as arithmetic (preview - appt - 01), threw ReferenceError, and
+   no appointment could be opened from Day, Week or Month. Numbers stay
+   bare, so every numeric comparison downstream is unchanged. */
+function _calIdJs(id){ var s=String(id==null?'':id); return /^\d+$/.test(s)?s:"'"+s.replace(/[^A-Za-z0-9_.:-]/g,'')+"'"; }
 function _calStatusColor(s){ s=s||''; if(s==='completed') return {bg:'#e7f6ee',fg:'#11643f'}; if(s==='cancelled'||s==='no_show') return {bg:'#fdeaea',fg:'#a12c2c'}; if(s==='checked_in'||s==='arrived') return {bg:'#fff4e0',fg:'#9a6b00'}; if(s==='roomed') return {bg:'#e8eefc',fg:'#2E6A4B'}; return {bg:'#eef4fc',fg:'#2E6A4B'}; }
 function _calLabelOf(a){ return a.name||a.label||a.patient||a.title||'Appointment'; }
 function _calDateOf(a){ return a.appt_date || String(a.start_at||'').slice(0,10); }
@@ -16943,6 +17025,36 @@ function _calFilterVal(){
   if(pf){ if((_calProviders&&_calProviders.length)||(window._calApptProviders&&window._calApptProviders.length)){ pf.style.display=''; if(pf.options.length<=1){ pf.innerHTML='<option value="">Default schedule</option>'+(_calProviders||[]).map(function(p){ return '<option value="'+p.id+'">'+esc(p.name||('Provider '+p.id))+'</option>'; }).join('')+((window._calApptProviders||[]).filter(function(q){ return q&&q.provider_key&&!q.doctor_user_id; }).map(function(q){ return '<option value="pk:'+esc(q.provider_key)+'">'+esc(q.label||q.provider_key)+' ('+(q.count||0)+')</option>'; }).join('')); pf.value=pfVal; } } else { pf.style.display='none'; } }
   return pfVal;
 }
+/* calnav-1.0.0: KEYBOARD REACH. Every Day/Week/Month target (appointment
+   blocks, chips, day cells, day-panel rows) is a <div onclick> with no tabindex
+   or role, so Tab skipped the whole grid and a keyboard user could open no
+   appointment and no day. Grid targets become focusable buttons, and Enter or
+   Space activates the same onclick. Two containers are observed, nothing else.
+   The click-to-book time grid (_calGridClick) is a pointer-only background that
+   holds the appointment blocks; it is never a button, or it would nest every
+   block inside one control (and the sample workspace would block the whole
+   grid as a booking control). Keyboard booking stays on "+ New appointment". */
+(function(){
+  function mark(root){
+    try{ root.querySelectorAll('[onclick]').forEach(function(el){
+      var tg=el.tagName; if(tg==='BUTTON'||tg==='A'||tg==='INPUT'||tg==='SELECT'||tg==='TEXTAREA') return;
+      if(/^\s*_calGridClick\(/.test(el.getAttribute('onclick')||'')||el.querySelector('[onclick]')) return;
+      if(!el.hasAttribute('tabindex')) el.setAttribute('tabindex','0');
+      if(!el.hasAttribute('role')) el.setAttribute('role','button');
+    }); }catch(e){}
+  }
+  document.addEventListener('keydown',function(e){
+    if(e.key!=='Enter'&&e.key!==' ') return;
+    var t=e.target; if(!t||!t.closest||!t.closest('#calGrid,#calDayPanel')) return;
+    if(t.getAttribute('role')==='button'&&t.hasAttribute('onclick')&&t.tagName!=='BUTTON'){ e.preventDefault(); t.click(); }
+  },true);
+  var obs=null;
+  function start(){
+    try{ obs=new MutationObserver(function(ms){ for(var i=0;i<ms.length;i++){ if(ms[i].target&&ms[i].target.nodeType===1) mark(ms[i].target); } }); }catch(e){ return; }
+    ['calGrid','calDayPanel'].forEach(function(id){ var el=document.getElementById(id); if(el){ mark(el); obs.observe(el,{childList:true,subtree:true}); } });
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',start); else start();
+})();
 function renderCalendar(){
   _calInit();
   if(!_calRefDate){ _calRefDate=(typeof _acctTodayKey==='function'?_acctTodayKey():''); if(!_calRefDate){ var _n=new Date(); _calRefDate=_n.getFullYear()+'-'+_calPad(_n.getMonth()+1)+'-'+_calPad(_n.getDate()); } }
@@ -17317,7 +17429,7 @@ function _calRenderWeek(){
        the surname was sliced mid-glyph on a clipped second line. Name first,
        clock compacted, ONE line that ellipsizes honestly; the hour gutter on
        the left already states the time, and the title carries both in full. */
-    timed.forEach(function(p){ var a=p[0], b=p[1]; var top=(b.mins-rng.startMin)*pxPerMin; var hgt=Math.max(15, b.dur*pxPerMin-2); var c=_calStatusColor(a.status); var tmFull=_calFmtHr(b.mins); h+='<div data-appt="1" draggable="true" ondragstart="calDragStart(event,'+a.id+')" onclick="event.stopPropagation();calChipOpen('+a.id+',\''+key+'\')" title="'+esc(_calLabelOf(a)+' - '+tmFull+' - click for details, drag to reschedule')+'" style="position:absolute;left:2px;right:2px;top:'+top+'px;height:'+hgt+'px;background:'+c.bg+';color:'+c.fg+';border-left:2px solid '+c.fg+';border-radius:10px;padding:1px 4px;font-size:10px;line-height:1.25;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;cursor:pointer">'+esc(_calShortWho(_calLabelOf(a)))+' <span style="opacity:.72">'+esc(_calCompactTime(tmFull))+'</span></div>'; });
+    timed.forEach(function(p){ var a=p[0], b=p[1]; var top=(b.mins-rng.startMin)*pxPerMin; var hgt=Math.max(15, b.dur*pxPerMin-2); var c=_calStatusColor(a.status); var tmFull=_calFmtHr(b.mins); h+='<div data-appt="1" draggable="true" ondragstart="calDragStart(event,'+_calIdJs(a.id)+')" onclick="event.stopPropagation();calChipOpen('+_calIdJs(a.id)+',\''+key+'\')" title="'+esc(_calLabelOf(a)+' - '+tmFull+' - click for details, drag to reschedule')+'" style="position:absolute;left:2px;right:2px;top:'+top+'px;height:'+hgt+'px;background:'+c.bg+';color:'+c.fg+';border-left:2px solid '+c.fg+';border-radius:10px;padding:1px 4px;font-size:10px;line-height:1.25;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;cursor:pointer">'+esc(_calShortWho(_calLabelOf(a)))+' <span style="opacity:.72">'+esc(_calCompactTime(tmFull))+'</span></div>'; });
     if(untimed.length){ h+='<div onclick="calOpenDay(\''+key+'\')" title="'+untimed.length+' with no set time" style="position:absolute;left:2px;right:2px;bottom:2px;font-size:10px;color:#2E6A4B;background:#eef4fc;border-radius:10px;padding:1px 4px;cursor:pointer;text-align:center">'+untimed.length+' no-time</div>'; }
     h+='</div>';
   });
@@ -17336,11 +17448,11 @@ function _calRenderDay(){
   var rng=_calHourRange(ap); var pxPerMin=0.95; var totalH=(rng.endMin-rng.startMin)*pxPerMin;
   var h='';
   if(!ap.length){ h+='<div class="mini" style="color:var(--muted);margin-bottom:8px">No appointments yet — click any time below to book one.</div>'; }
-  if(untimed.length){ h+='<div style="margin-bottom:8px"><span class="mini" style="color:var(--muted);margin-right:6px">No set time:</span>'; untimed.forEach(function(a){ var c=_calStatusColor(a.status); h+='<span onclick="calOpenDay(\''+key+'\');setTimeout(function(){calApptInfo('+a.id+');},60)" style="display:inline-block;margin:0 6px 6px 0;border-radius:10px;padding:5px 10px;background:'+c.bg+';color:'+c.fg+';font-size:12px;cursor:pointer">'+esc(_calLabelOf(a))+'</span>'; }); h+='</div>'; }
+  if(untimed.length){ h+='<div style="margin-bottom:8px"><span class="mini" style="color:var(--muted);margin-right:6px">No set time:</span>'; untimed.forEach(function(a){ var c=_calStatusColor(a.status); h+='<span onclick="calOpenDay(\''+key+'\');setTimeout(function(){calApptInfo('+_calIdJs(a.id)+');},60)" style="display:inline-block;margin:0 6px 6px 0;border-radius:10px;padding:5px 10px;background:'+c.bg+';color:'+c.fg+';font-size:12px;cursor:pointer">'+esc(_calLabelOf(a))+'</span>'; }); h+='</div>'; }
   h+='<div onclick="_calGridClick(event,\''+key+'\','+rng.startMin+','+pxPerMin+')" title="Click an empty time to book an appointment here" style="position:relative;height:'+totalH+'px;border:1px solid var(--line);border-radius:10px;background:var(--card);overflow:hidden;cursor:pointer">';
   for(var t=rng.startMin; t<=rng.endMin; t+=60){ var top=(t-rng.startMin)*pxPerMin; h+='<div style="position:absolute;left:54px;right:0;top:'+top+'px;border-top:1px solid var(--line)"></div><div style="position:absolute;left:6px;top:'+(top-7)+'px;font-size:11px;color:var(--muted)">'+_calFmtHr(t)+'</div>'; }
   for(var t2=rng.startMin+30; t2<rng.endMin; t2+=60){ var top2=(t2-rng.startMin)*pxPerMin; h+='<div style="position:absolute;left:54px;right:0;top:'+top2+'px;border-top:1px dashed #F4F2EC"></div>'; }
-  timed.forEach(function(p){ var a=p[0], b=p[1]; var top=(b.mins-rng.startMin)*pxPerMin; var hgt=Math.max(24, b.dur*pxPerMin-3); var c=_calStatusColor(a.status); h+='<div data-appt="1" onclick="calApptPeek('+a.id+',event)" title="Click for a quick preview" style="position:absolute;left:54px;right:8px;top:'+top+'px;height:'+hgt+'px;background:'+c.bg+';color:'+c.fg+';border-left:3px solid '+c.fg+';border-radius:10px;padding:3px 9px;font-size:12.5px;overflow:hidden;cursor:pointer;box-shadow:0 1px 3px rgba(20,33,28,.08)"><b>'+_calFmtHr(b.mins)+'</b> '+esc(_calLabelOf(a))+(a.reason?' <span style="opacity:.82">· '+esc(a.reason)+'</span>':'')+'</div>'; });
+  timed.forEach(function(p){ var a=p[0], b=p[1]; var top=(b.mins-rng.startMin)*pxPerMin; var hgt=Math.max(24, b.dur*pxPerMin-3); var c=_calStatusColor(a.status); h+='<div data-appt="1" onclick="calApptPeek('+_calIdJs(a.id)+',event)" title="Click for a quick preview" style="position:absolute;left:54px;right:8px;top:'+top+'px;height:'+hgt+'px;background:'+c.bg+';color:'+c.fg+';border-left:3px solid '+c.fg+';border-radius:10px;padding:3px 9px;font-size:12.5px;overflow:hidden;cursor:pointer;box-shadow:0 1px 3px rgba(20,33,28,.08)"><b>'+_calFmtHr(b.mins)+'</b> '+esc(_calLabelOf(a))+(a.reason?' <span style="opacity:.82">· '+esc(a.reason)+'</span>':'')+'</div>'; });
   h+='</div>'; if(grid._mlsSig!==h||!grid.childElementCount){ grid.innerHTML=h; grid._mlsSig=h; }
 }
 function _calRenderMonth(){
@@ -17370,7 +17482,7 @@ function _calRenderMonth(){
     h+='<div style="display:flex;justify-content:space-between;align-items:center"><span style="font-weight:'+((isToday||isSel)?'800':'600')+';font-size:13px;color:'+((isToday||isSel)?'#2E6A4B':'var(--ink)')+'">'+day+'</span>'+(ap.length?'<span style="font-size:10px;color:var(--muted);background:#f0f4f9;border-radius:999px;padding:0 6px">'+ap.length+'</span>':'')+'</div>';
     /* caldata-1.0.0: name first, clock compacted, FULL name and time kept in
        the title so hovering still states both in full (CLUNKY 34). */
-    ap.slice(0,5).forEach(function(a){ var c=_calStatusColor(a.status); var tmFull=_fmtApptTime(a.start_at); var tm=_calCompactTime(tmFull); h+='<div draggable="true" onclick="calApptPeek('+a.id+',event)" ondragstart="calDragStart(event,'+a.id+')" title="'+esc(_calLabelOf(a)+(tmFull?(' - '+tmFull):'')+' - click for a quick preview, drag to reschedule')+'" style="font-size:11px;margin-top:3px;padding:2px 6px;border-radius:10px;background:'+c.bg+';color:'+c.fg+';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer">'+esc(_calShortWho(_calLabelOf(a)))+(tm?' <span style="opacity:.72">'+esc(tm)+'</span>':'')+'</div>'; });
+    ap.slice(0,5).forEach(function(a){ var c=_calStatusColor(a.status); var tmFull=_fmtApptTime(a.start_at); var tm=_calCompactTime(tmFull); h+='<div draggable="true" onclick="calApptPeek('+_calIdJs(a.id)+',event)" ondragstart="calDragStart(event,'+_calIdJs(a.id)+')" title="'+esc(_calLabelOf(a)+(tmFull?(' - '+tmFull):'')+' - click for a quick preview, drag to reschedule')+'" style="font-size:11px;margin-top:3px;padding:2px 6px;border-radius:10px;background:'+c.bg+';color:'+c.fg+';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer">'+esc(_calShortWho(_calLabelOf(a)))+(tm?' <span style="opacity:.72">'+esc(tm)+'</span>':'')+'</div>'; });
     if(ap.length>5) h+='<div onclick="event.stopPropagation();calOpenDay(\''+key+'\')" title="See all '+ap.length+' appointments this day" style="font-size:11px;color:#2E6A4B;font-weight:700;margin-top:2px;cursor:pointer">+'+(ap.length-5)+' more →</div>';
     h+='</div>';
   }
@@ -17400,7 +17512,7 @@ function calApptPeek(id, ev){
     +'<div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap">'
       +'<button onclick="calStartVisit('+id+');var p=document.getElementById(\'calApptPeek\');if(p)p.remove();" style="background:#2E6A4B;color:#fff;border:0;border-radius:10px;padding:7px 12px;font-size:12.5px;font-weight:800;cursor:pointer">🎙️ Start visit</button>'
       +'<button onclick="calPullChartFor('+id+',this)" data-mls-pullverb="this-patient" aria-label="Pull this patient&#39;s chart" style="background:#EAF1EE;color:#204034;border:1px solid #cfe0f5;border-radius:10px;padding:7px 12px;font-size:12.5px;font-weight:700;cursor:pointer;min-height:40px">📥 Pull this patient&#39;s chart</button>'
-      +'<button onclick="calOpenDay(\''+date+'\');setTimeout(function(){calApptInfo('+id+');},70);var p=document.getElementById(\'calApptPeek\');if(p)p.remove();" style="background:#EAF1EE;color:#204034;border:1px solid #cfe0f5;border-radius:10px;padding:7px 12px;font-size:12.5px;font-weight:700;cursor:pointer">Details ›</button>'
+      +'<button onclick="calOpenDay(\''+date+'\');setTimeout(function(){calApptInfo('+_calIdJs(id)+');},70);var p=document.getElementById(\'calApptPeek\');if(p)p.remove();" style="background:#EAF1EE;color:#204034;border:1px solid #cfe0f5;border-radius:10px;padding:7px 12px;font-size:12.5px;font-weight:700;cursor:pointer">Details ›</button>'
       +'<button onclick="calDraftOpNoteFor('+id+')" style="background:#EAF1EE;color:#204034;border:1px solid #cfe0f5;border-radius:10px;padding:7px 12px;font-size:12.5px;font-weight:700;cursor:pointer">📝 Draft op note</button>'
     +'</div>';
   document.body.appendChild(pop);
@@ -17421,7 +17533,7 @@ function calOpenDay(key){
   if(!ap.length){ h+='<div class="mini" style="color:var(--muted);margin-top:8px">No appointments this day.</div>'; }
   else { ap.forEach(function(a){ var c=_calStatusColor(a.status); var tm=_fmtApptTime(a.start_at);
     h+='<div style="border:1px solid var(--line);border-radius:10px;margin-top:6px;background:var(--card)">';
-    h+='<div onclick="calApptInfo('+a.id+')" title="Click for patient details + reschedule" style="display:flex;gap:8px;align-items:center;padding:7px 10px;cursor:pointer"><span style="font-weight:600;min-width:50px">'+((tm&&!a.time_unknown)?tm:'<span style="color:var(--muted);font-size:11px">time not recorded</span>')+'</span><span style="flex:1">'+esc(_calLabelOf(a))+'</span><span style="font-size:11px;padding:1px 8px;border-radius:10px;background:'+c.bg+';color:'+c.fg+'">'+esc(String(a.status||'booked').replace(/_/g,' '))+'</span><span style="font-size:11px;color:#2E6A4B;font-weight:600">Details ›</span></div>';
+    h+='<div onclick="calApptInfo('+_calIdJs(a.id)+')" title="Click for patient details + reschedule" style="display:flex;gap:8px;align-items:center;padding:7px 10px;cursor:pointer"><span style="font-weight:600;min-width:50px">'+((tm&&!a.time_unknown)?tm:'<span style="color:var(--muted);font-size:11px">time not recorded</span>')+'</span><span style="flex:1">'+esc(_calLabelOf(a))+'</span><span style="font-size:11px;padding:1px 8px;border-radius:10px;background:'+c.bg+';color:'+c.fg+'">'+esc(String(a.status||'booked').replace(/_/g,' '))+'</span><span style="font-size:11px;color:#2E6A4B;font-weight:600">Details ›</span></div>';
     h+='<div id="calApptEdit_'+a.id+'"></div></div>';
   }); }
   // Add an appointment directly on this day.
@@ -17611,7 +17723,7 @@ function calApptInfo(id){
   h+='<button class="btn-ghost" style="font-size:12px;padding:6px 11px;min-height:40px" onclick="calPullChartFor('+id+',this)" data-mls-pullverb="this-patient" aria-label="Pull this patient&#39;s chart" title="Reads this appointment&#39;s patient in your signed-in athenaOne tab and fills in their problems, medications, allergies and past visits. Nothing is written to athena.">📥 Pull this patient&#39;s chart</button>';
   h+='<button class="btn-ghost" style="font-size:12px;padding:6px 11px;color:#a12c2c" onclick="calCancelAppt('+id+')">Cancel appt</button>';
   h+='<button class="btn-ghost" style="font-size:12px;padding:6px 11px;color:#fff;background:#c0392b;border-color:#c0392b" onclick="calDeleteAppt('+id+')">🗑 Delete</button>';
-  h+='<button class="btn-ghost" style="font-size:12px;padding:6px 11px" onclick="calApptInfo('+id+')">Close</button>';
+  h+='<button class="btn-ghost" style="font-size:12px;padding:6px 11px" onclick="calApptInfo('+_calIdJs(id)+')">Close</button>';
   h+='<span id="calE_msg_'+id+'" class="mini" style="color:var(--muted);width:100%"></span></div></div>';
   box.innerHTML=h;
 }
@@ -17934,7 +18046,7 @@ async function _renderWaitingRoom(){
     var nm=(typeof _calLabelOf==='function'?_calLabelOf(a):(a.name||'Patient'));
     var tm=_fmtApptTime(a.start_at);
     var st=(a.status==='roomed')?'in a room':'checked in';
-    return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid #cdeed9;flex-wrap:wrap"><span style="font-weight:600;flex:1;min-width:120px">🟢 '+esc(nm)+'</span><span style="font-size:12px;color:#127a55">'+st+(tm?(' · '+tm):'')+(a.reason?(' · '+esc(String(a.reason).slice(0,40))):'')+'</span><button class="btn-green" style="font-size:13px;padding:7px 13px" onclick="calStartVisit('+a.id+')">🎙️ Start visit</button></div>';
+    return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid #cdeed9;flex-wrap:wrap"><span style="font-weight:600;flex:1;min-width:120px">🟢 '+esc(nm)+'</span><span style="font-size:12px;color:#127a55">'+st+(tm?(' · '+tm):'')+(a.reason?(' · '+esc(String(a.reason).slice(0,40))):'')+'</span><button class="btn-green" style="font-size:13px;padding:7px 13px" onclick="calStartVisit('+_calIdJs(a.id)+')">🎙️ Start visit</button></div>';
   }).join('');
   bar.innerHTML='<div style="background:#eefaf3;border:1px solid #cdeed9;border-radius:10px;padding:12px 14px"><div style="font-weight:700;color:#127a55;font-size:14px;margin-bottom:2px">🟢 In your waiting room ('+waiting.length+')</div>'+rows+'</div>';
   bar.style.display='block';
@@ -19179,10 +19291,10 @@ function renderBoard(appts){
     h+='</div>';
     h+='<div style="font-size:12.5px;color:var(--muted);margin-top:3px">'+esc(a.doctor_user_id?_docName(a.doctor_user_id):(String(a.provider||'')||'Unassigned'))+(a.reason?(' · '+esc(a.reason)):'')+(a.phone?(' · '+esc(a.phone)):'')+'</div>';
     h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:7px">';
-    if(a.status!=='checked_in'&&a.status!=='completed'&&a.status!=='cancelled') h+='<button class="btn-ghost" style="font-size:12px;padding:4px 9px" onclick="apptUpdate('+a.id+',{status:\'checked_in\'},this)">✔ Check in</button>';
-    if(a.status!=='completed'&&a.status!=='cancelled') h+='<button class="btn-ghost" style="font-size:12px;padding:4px 9px" onclick="apptRoom('+a.id+')">🚪 Room</button>';
-    if(a.status!=='completed'&&a.status!=='cancelled') h+='<button class="btn-ghost" style="font-size:12px;padding:4px 9px" onclick="apptUpdate('+a.id+',{status:\'completed\'},this)">✅ Done</button>';
-    if(a.status!=='cancelled') h+='<button class="btn-ghost" style="font-size:12px;padding:4px 9px;color:#c0392b" onclick="apptUpdate('+a.id+',{status:\'cancelled\'},this)">✕ Cancel</button>';
+    if(a.status!=='checked_in'&&a.status!=='completed'&&a.status!=='cancelled') h+='<button class="btn-ghost" style="font-size:12px;padding:4px 9px" onclick="apptUpdate('+_calIdJs(a.id)+',{status:\'checked_in\'},this)">✔ Check in</button>';
+    if(a.status!=='completed'&&a.status!=='cancelled') h+='<button class="btn-ghost" style="font-size:12px;padding:4px 9px" onclick="apptRoom('+_calIdJs(a.id)+')">🚪 Room</button>';
+    if(a.status!=='completed'&&a.status!=='cancelled') h+='<button class="btn-ghost" style="font-size:12px;padding:4px 9px" onclick="apptUpdate('+_calIdJs(a.id)+',{status:\'completed\'},this)">✅ Done</button>';
+    if(a.status!=='cancelled') h+='<button class="btn-ghost" style="font-size:12px;padding:4px 9px;color:#c0392b" onclick="apptUpdate('+_calIdJs(a.id)+',{status:\'cancelled\'},this)">✕ Cancel</button>';
     h+='</div></div>';
   });
   h+='<div style="border-top:1px dashed #cfe2f8;margin-top:10px;padding-top:10px">';

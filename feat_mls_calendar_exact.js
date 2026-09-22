@@ -426,8 +426,21 @@
     el.style.setProperty("left", left + "px");
     el.style.setProperty("width", w + "px");
     el.style.setProperty("right", "auto");
+    /* calnav-1.0.0: remember the renderer's own inline padding/size before the
+       first shrink and put THAT back (data-cx-pad; data-cx-orig means "hide me"). Removing them left every unshrunk block
+       with padding 0 - the first character sat under the 3px rounded border
+       ("(8:10 AM") and a wrapped phone line was clipped. */
+    if (!el.hasAttribute("data-cx-pad")) {
+      el.setAttribute("data-cx-pad", JSON.stringify([el.style.getPropertyValue("padding"), el.style.getPropertyValue("font-size"), el.style.getPropertyValue("line-height")]));
+    }
     if (shrink) { el.style.setProperty("padding", "1px 3px"); el.style.setProperty("font-size", "9px"); el.style.setProperty("line-height", "1.1"); }
-    else { el.style.removeProperty("padding"); el.style.removeProperty("font-size"); el.style.removeProperty("line-height"); }
+    else {
+      var orig = ["", "", ""];
+      try { orig = JSON.parse(el.getAttribute("data-cx-pad")) || orig; } catch (eO) {}
+      ["padding", "font-size", "line-height"].forEach(function (prop, k) {
+        if (orig[k]) el.style.setProperty(prop, orig[k]); else el.style.removeProperty(prop);
+      });
+    }
   }
   function addMoreChip(host, left, w, top, height, n) {
     try {
