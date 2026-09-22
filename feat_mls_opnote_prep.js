@@ -466,11 +466,18 @@
       var p = isFn(window._opResolvePatient) ? window._opResolvePatient(row.appt && row.appt.name, row.appt && row.appt.dob, row.patientId) : null;
       if (!p || !trim(p.id)) return false;
       var proc = trim(row.proc || (row.appt && row.appt.reason));
+      /* Same procedure on a DIFFERENT day is a different note: a repeat
+         injection two weeks later must not resume the first one's draft. The
+         cc carries the day as "Mon D, YYYY — " (_opCcDate); a draft whose cc
+         names some other day is skipped. A cc with no day stays eligible. */
+      var dayTxt = '';
+      try { dayTxt = isFn(window._opCcDate) ? S(window._opCcDate(row)).replace(/\s*\u2014\s*$/, '') : ''; } catch (eDay) { dayTxt = ''; }
       var ns = window.getNotes() || [], best = null;
       for (var i = 0; i < ns.length; i++) {
         var n = ns[i];
         if (!n || S(n.patientId) !== S(p.id) || !n.isDraft || S(n.kind) !== 'opnote') continue;
         if (proc && S(n.cc).indexOf(proc) < 0) continue;   // different procedure = different note
+        if (dayTxt && S(n.cc).indexOf(dayTxt) < 0 && /\b[A-Z][a-z]{2} \d{1,2}, \d{4}\b/.test(S(n.cc))) continue;
         if (!best || (+n.updated || 0) > (+best.updated || 0)) best = n;
       }
       if (!best) return false;

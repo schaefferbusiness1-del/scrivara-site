@@ -1192,6 +1192,7 @@
     },
     triage: triage,
     triageAll: triageAll,
+    terminalSkipReasons: function () { triageAll(); return terminalSkipReasons(window._opPrep || []); },
     needsIndexes: needsIndexes,
     matchRow: matchRow,
     matchAll: matchAll,

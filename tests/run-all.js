@@ -2667,7 +2667,11 @@ const tests = [
   /* A public booking link is dead only on a 404. A 502, rate limit or dropped
      connection on load shows Try again instead of "this link isn't active",
      and a plain-text 429 on submit says to wait. Real Chrome, stubbed backend. */
-  'public-booking-transient-failure-runtime.test.js'
+  'public-booking-transient-failure-runtime.test.js',
+  /* opheld-1.0.0 (b1288): on /ScribeFlow.html a visit that needs no op note
+     is not an unfinished op note (no "Review N notes" on a day with nothing to
+     draft), and a real Draft-all run skips it instead of failing it. */
+  'opnote-held-visits-are-not-unfinished-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

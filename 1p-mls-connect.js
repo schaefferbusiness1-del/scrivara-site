@@ -19746,6 +19746,25 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         });
       }
     } catch (eOI) {}
+    /* ONE SKIP LIST, WHOEVER PRESSED. The room's Draft-all button reaches this
+       runner through onGenAllCapture, which bypasses the day-brain's
+       opPrepGenerateAll wrapper - the only caller that passed terminalSkips. So
+       a real click sent held visits (not a procedure, cancelled, no-show) into
+       the run, the per-row gate refused them, and the receipt called them
+       "failed - the note service gave no reason" with "Retry failed (N)". A
+       caller that gives no skips now gets the day-brain's own. */
+    if (!(runOpts && runOpts.terminalSkips)) {
+      try {
+        var brainS = window.__mlsOpNoteDayBrain;
+        if (brainS && brainS.installed && isFn(brainS.terminalSkipReasons)) {
+          var derived = brainS.terminalSkipReasons() || {};
+          Object.keys(derived).forEach(function (k) {
+            var nD = Number(k), rD = S(derived[k]).trim();
+            if (nD >= 0 && nD < rows.length && Math.floor(nD) === nD && rD) terminalSkips[nD] = rD.slice(0, 180);
+          });
+        }
+      } catch (eDS) {}
+    }
     if (!rows.length) { toast("No patients loaded \u2014 pick a day or month first.", "err"); return; }
     if ((!hasOnlyIdx || onlyIdx.length) && !tplList().length) { toast("Upload your op-note templates first (\uD83D\uDCC4 Templates).", "err"); return; }
     if (rows.length > 40 && (!hasOnlyIdx || onlyIdx.length)) {

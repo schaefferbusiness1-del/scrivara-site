@@ -51435,6 +51435,21 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
       finally {
         inside = false;
         if (modal) modal.classList.remove(BUSY);
+        /* RE-ATTACH THE DAY'S DRAFTS AFTER THE REBUILD. The op-note prep
+           wrapper adopts autosaved drafts right after openOpPrep returns - but
+           this deferral returns BEFORE the rows exist, so adoption ran on the
+           old day's rows and the rebuilt ones came back as "No note yet": the
+           room offered "Draft all" again and drafting minted duplicates in
+           History. Adoption is idempotent (a row that already carries its
+           _noteId is left alone), so running it here is safe in either wrap
+           order. */
+        try {
+          var prepA = window.__mlsOpNotePrep, hitA = false;
+          if (prepA && typeof prepA.adoptExistingDraft === 'function') {
+            (window._opPrep || []).forEach(function (rowA) { if (prepA.adoptExistingDraft(rowA)) hitA = true; });
+            if (hitA && typeof window.opPrepRender === 'function') window.opPrepRender();
+          }
+        } catch (eAdopt) {}
         /* 1.1.0: a module that wraps openOpPrep DURING this pass (the room and
            the Fields box both install late) would otherwise sit outside the
            yield until the next human wake. Re-adopting here means the SECOND
@@ -52538,6 +52553,12 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
 #opPrepModal #opdbFold{
   min-height:40px; padding:8px 14px; box-sizing:border-box; border-radius:var(--r-pill,999px);
 }
+/* ONE SET OF DAY NUMBERS. Inside the 4.0.0 room the rail's count line already
+   carries what the day-brain panel says ("N need an op note", "N not a
+   procedure"), and the panel painted once and never updated: it said "5 need
+   an op note" beside "5 drafted", called the listed patients "other", and its
+   "Show all N scheduled" changed nothing because the rail lists every row. */
+#opPrepModal[data-mls-opnotes-state] #opdbBar{ display:none !important; }
 
 /* ---- the rail becomes the top strip, and never disappears ----
    MEASURED at 768x1024 with the list capped alone: the strip came to 511px of
@@ -52561,6 +52582,16 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     position:sticky; top:0; z-index:2; background:var(--card);
     margin:0 0 6px; padding:0 0 4px;
   }
+  /* ONE SCROLLER, AS THIS BLOCK INTENDS. opfollow-1.0.0 later made #mlsOpnRail
+     a flex:1 scroller of its own and docked the "How drafts follow your
+     template" card (~182px) under it, inside this capped strip. MEASURED at
+     390x844: the inner list got 74px under a 199-212px sticky day board, so 0
+     of the day's rows and not even the day's primary could be tapped. The
+     strip is the only scroller again, the template card sits after the list,
+     and the day board scrolls with the rows because a 200px sticky header
+     cannot share a 34vh strip with them. */
+  #opPrepModal[data-mls-opnotes-state] #oprDayRail > #mlsOpnRail{ flex:0 0 auto; overflow:visible; min-height:0; }
+  #opPrepModal[data-mls-opnotes-state] #mlsOpDay{ position:static; }
   /* THE ROOM'S ✕ IS ABSOLUTELY POSITIONED AT THE TOP RIGHT OF THE CARD
      (`#opPrepModal.opr-room .modal-x{ top:10px; right:12px }`, ~44px), and
      below 900px the rail's FIRST ROW is the top of that card. MEASURED at
@@ -52880,6 +52911,7 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
      `why` is unchanged and still the whole reason: it goes on the row's title
      and accessible name, and onto the note's own state chip. */
   function st3(k, label, full, why) { return { k: k, label: label, full: full, why: S(why) }; }
+  var HELD_CHIP = { 'not-a-procedure': 'Not a procedure', 'cancelled': 'Cancelled', 'no-show': 'No-show', 'never-arrived': 'Not seen' };
   /* ONE STATUS PER ROW PER PAINT. Owner, 2026-08-18: "when clicking around fast
      when drafting, things get clunky and slow."
      MEASURED: statusCompute() ran THREE times for every row of every paint —
@@ -52901,7 +52933,12 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     if (led === 'run') return st3('drafting', 'Drafting', 'Drafting…', '');
     var t = row && row._opdbTriage;
     if (t && t.verdict === 'done') return st3('saved', 'In the chart', 'Already in the chart', oneLine(t.why));
-    if (t && t.verdict === 'held') return st3('review', 'Not drafted', 'Not drafted', oneLine(t.why));
+    /* HELD IS NOT UNFINISHED. A visit the day-brain held (not a procedure,
+       cancelled, no-show, never seen) needs no op note. As 'review' it counted
+       as "to finish" and drove a "Review N notes" primary while the pane beside
+       it said there was nothing to draft. It has its own state now; the card's
+       explicit "Draft it anyway" is unchanged. */
+    if (t && t.verdict === 'held') return st3('held', HELD_CHIP[S(t.code)] || 'No op note', 'No op note needed', oneLine(t.why));
     var err = S(row && (row._genErr || row._lastDraftErr));
     /* THE ROW BEATS A STALE LEDGER ROW. The ledger is per-RUN state and it is
        not cleared between runs, so a row that failed at 09:00 and was drafted
@@ -52926,7 +52963,7 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     return st3('queued', 'No note yet', 'No note yet', '');
   }
   function tally() {
-    var r = rows(), out = { queued: 0, drafting: 0, ready: 0, review: 0, failed: 0, saved: 0, filed: 0, n: r.length }, i;
+    var r = rows(), out = { queued: 0, drafting: 0, ready: 0, review: 0, failed: 0, saved: 0, filed: 0, held: 0, n: r.length }, i;
     for (i = 0; i < r.length; i++) out[statusOf(r[i], i).k]++;
     return out;
   }
@@ -54178,11 +54215,12 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
       var bits = [];
       bits.push(r.length + ' patient' + (r.length === 1 ? '' : 's'));
       var need0 = t.queued + t.failed;
-      if (need0) bits.push(need0 + ' need a note');
+      if (need0) bits.push(need0 + (need0 === 1 ? ' needs' : ' need') + ' a note');
       if (query) bits.push(shownIdx.length + ' shown');
       if (t.ready) bits.push(t.ready + ' drafted');
       if (t.filed + t.saved) bits.push((t.filed + t.saved) + ' in the chart');
       if (t.review) bits.push(t.review + ' to finish');
+      if (t.held) bits.push(t.held + ' no op note needed');
       count.textContent = r.length ? bits.join(' · ') : '';
     }
     var search = el('mlsOpnSearch');
@@ -54408,9 +54446,14 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
         pickH.textContent = 'Nothing scheduled on ' + dayShort(day);
         pickP.textContent = 'Use ‹ and › on the left to find the day you operated, or pull it from Athena.';
       } else {
-        pickH.textContent = 'Pick a patient on the left';
+        /* Below 900px the rail is the strip ABOVE this pane, not beside it. */
+        var railAbove = false;
+        try { railAbove = window.innerWidth <= 900; } catch (eW) { railAbove = false; }
+        pickH.textContent = (t.held && t.held === r.length) ? ('No op notes needed on ' + dayShort(day)) : (railAbove ? 'Pick a patient above' : 'Pick a patient on the left');
         var need2 = t.queued + t.failed;
-        pickP.textContent = need2
+        pickP.textContent = (t.held && t.held === r.length)
+          ? ('None of these ' + r.length + ' visit' + (r.length === 1 ? ' is' : 's is') + ' a procedure. Open a patient to draft one anyway.')
+          : need2
           ? ('Their note opens here, ready to read and edit. Or press “Draft all ' + need2 +
              ' op note' + (need2 === 1 ? '' : 's') + '” to do the whole day in one go.')
           : 'Their note opens here, ready to read and edit. Every patient scheduled on this day is already listed.';
