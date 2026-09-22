@@ -2811,11 +2811,11 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     </div>
     <div class="field">
       <label for="authPass">Password</label>
-      <input type="password" id="authPass" placeholder="••••••••" autocomplete="current-password">
+      <input type="password" id="authPass" placeholder="Your password" autocomplete="current-password">
     </div>
     <div class="field" id="authConfirmField" style="display:none">
       <label for="authPass2">Confirm password</label>
-      <input type="password" id="authPass2" placeholder="••••••••" autocomplete="new-password" minlength="8">
+      <input type="password" id="authPass2" placeholder="At least 8 characters" autocomplete="new-password" minlength="8">
     </div>
     <p class="local-note" id="authPasswordStandard" style="display:none;margin-top:-4px">🔒 Use at least 8 characters.</p>
 
@@ -48520,7 +48520,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1286';
+  window.__MLS_AV='b1287';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
@@ -63210,6 +63210,18 @@ html #mlsRightNow[data-mls-clunky-hasnav="1"] .note{ display:none !important; }
      empty the update bar explains why it cannot reload and still labels its
      button "Reload update", which cannot work; the button now says what it
      does. -->
+<style id="mlsSignedOutChromeCss">
+/* signedout-chrome-1.0.0: the sign-in page showed three in-app controls -
+   the screen-density chip ("Normal"), the date pill and the Activity tray -
+   none of which does anything before sign-in. While the app screen is
+   hidden they are too. (A browser without :has() keeps them, as before.) */
+body:has(#appScreen[style*="display:none"]) #mslChip,
+body:has(#appScreen[style*="display: none"]) #mslChip,
+body:has(#appScreen[style*="display:none"]) #mslToday,
+body:has(#appScreen[style*="display: none"]) #mslToday,
+body:has(#appScreen[style*="display:none"]) #mlsTray,
+body:has(#appScreen[style*="display: none"]) #mlsTray{display:none!important;}
+</style>
 <style id="mlsClunkyNoticeCss">
 /* --- 95: severity is visible. Out-specifies body.mls-redesign .toast. */
 html body.mls-redesign #toast.toast.err,
