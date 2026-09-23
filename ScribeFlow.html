@@ -46849,6 +46849,14 @@ async function returnLegalToAttorney(){
 
 /* ============ Per-request: itemized invoice, AI questions, secure messaging ============ */
 var _legalCurrentReq=null, _legalInvoiceShown=false, _legalMsgShown=false, _legalInvItems=[];
+/* sweepfix-1.0.0 (2026-09-23): the server names why it refused a legal write
+   (a message over 8,000 characters, an invoice over 40,000) - show that
+   instead of a bare "Could not send." that leaves the doctor retrying. */
+async function _legalErrText(r, fallback){
+  var d=null; try{ d=await r.json(); }catch(e){}
+  var said=d&&typeof d.error==='string'?d.error.trim():'';
+  return (said&&said.length<=300&&/\s/.test(said))?said:fallback;
+}
 function _legalReqId(){ return (typeof currentLegalRequestId!=='undefined' && currentLegalRequestId) ? currentLegalRequestId : null; }
 function _invToday(){ try{ return new Date().toLocaleDateString(); }catch(e){ return ''; } }
 function _money2(n){ return '$'+(Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
@@ -46917,7 +46925,7 @@ async function saveLegalInvoice(){
   try{
     var r=await _legalFetchRetry(bkBase()+'/api/legal/requests/'+encodeURIComponent(id)+'/invoice',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},body:JSON.stringify({invoice:legalInvCollect()})},3);
     if(r.ok){ toast('Invoice saved.','ok'); if(_legalCurrentReq) _legalCurrentReq.invoice=legalInvCollect(); }
-    else { toast('Could not save the invoice.','err'); }
+    else { toast(await _legalErrText(r,'Could not save the invoice.'),'err'); }
   }catch(e){ toast('Could not save the invoice.','err'); }
 }
 async function downloadLegalInvoicePDF(){
@@ -46996,7 +47004,7 @@ async function sendLegalMessageDoctor(){
   var ta=document.getElementById('legalMsgInput'); var body=((ta&&ta.value)||'').trim(); if(!body) return;
   try{
     var r=await fetch(bkBase()+'/api/legal/requests/'+encodeURIComponent(id)+'/messages',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},body:JSON.stringify({body:body})});
-    if(r.ok){ if(ta) ta.value=''; loadLegalMessages(); } else { toast('Could not send.','err'); }
+    if(r.ok){ if(ta) ta.value=''; loadLegalMessages(); } else { toast(await _legalErrText(r,'Could not send.'),'err'); }
   }catch(e){ toast('Could not send.','err'); }
 }
 /* Shared thread renderer (doctor + lawyer). reloadFnName/sendFnName are global fn names. */
@@ -47015,7 +47023,7 @@ function renderLegalMessages(container, msgs, myRole, reloadFnName, sendFnName){
     });
     h+='</div>';
   }
-  h+='<div style="display:flex;gap:6px"><textarea id="legalMsgInput" rows="2" placeholder="Write a message…" style="flex:1;border:1px solid #EAF1EE;border-radius:10px;padding:7px;font-size:13px"></textarea>'
+  h+='<div style="display:flex;gap:6px"><textarea id="legalMsgInput" rows="2" maxlength="8000" placeholder="Write a message…" style="flex:1;border:1px solid #EAF1EE;border-radius:10px;padding:7px;font-size:13px"></textarea>'
     +'<button class="btn-primary" style="font-size:12.5px;padding:7px 13px" onclick="'+sendFnName+'()">Send</button></div></div>';
   container.innerHTML=h;
 }
@@ -47042,7 +47050,7 @@ async function sendLawMessageLawyer(){
   if(!_lawMsgReqId) return; var ta=document.getElementById('legalMsgInput'); var body=((ta&&ta.value)||'').trim(); if(!body) return;
   try{
     var r=await fetch(bkBase()+'/api/legal/requests/'+encodeURIComponent(_lawMsgReqId)+'/messages',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},body:JSON.stringify({body:body})});
-    if(r.ok){ if(ta) ta.value=''; loadLawMessages(); } else { toast('Could not send.','err'); }
+    if(r.ok){ if(ta) ta.value=''; loadLawMessages(); } else { toast(await _legalErrText(r,'Could not send.'),'err'); }
   }catch(e){ toast('Could not send.','err'); }
 }
 
@@ -49453,7 +49461,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1322';
+  window.__MLS_AV='b1323';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
@@ -52151,6 +52159,10 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     var ic=D.createElement('span'); ic.className='ri'; ic.setAttribute('aria-hidden','true'); ic.textContent=ICON;
     var nm=D.createElement('span'); nm.className='rn'; nm.textContent=LABEL;
     row.appendChild(ic); row.appendChild(nm);
+    /* sweepfix-1.0.0 (2026-09-23): the row carries its own explainer. The
+       menu-wide tip pass runs from an observer and, on a busy machine, the
+       row could be hovered before it was reached. Same words as that pass. */
+    row.setAttribute('data-tip','Open the read-only Legal / IME draft workspace for the active patient.');
     function fire(ev){
       if(ev&&isFn(ev.preventDefault)) ev.preventDefault();
       closeMenu(menuEl());

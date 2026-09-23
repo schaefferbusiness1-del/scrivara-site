@@ -25,7 +25,9 @@ const productionAdjunctRequirements = new Map([
 ]);
 
 const freshHardcodedLoaderTags = new Map([
-  ['mls-outcome-study.js', '20260807lib7'],
+  /* sweepfix-1.0.0 (2026-09-23): a partly-read AI import offers the rows it
+     read instead of discarding them, so the loader advances with the source. */
+  ['mls-outcome-study.js', '20260923oi1'],
   /* libtag-1.1.0 (2026-09-12): the audited op-note PDF/finalization release
      advances the loader with the source so browsers cannot retain lib8. */
   ['mls-opnote-pro.js', '20260912lib9'],

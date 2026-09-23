@@ -2799,7 +2799,9 @@ const tests = [
   'booking-offered-times-and-dob-runtime.test.js',
   'intake-says-what-went-wrong-runtime.test.js',
   'patient-portal-keyboard-and-plain-messages-runtime.test.js',
-  'public-pages-fit-phones-and-say-true-names-runtime.test.js'
+  'public-pages-fit-phones-and-say-true-names-runtime.test.js',
+  'outcome-import-keeps-what-was-read.test.js',
+  'legal-refusals-say-why.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

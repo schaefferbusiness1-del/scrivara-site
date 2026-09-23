@@ -406,8 +406,28 @@
        per-template label or id must not weaken or override the selected set. */
     return templates.map(function(template){template=template||{};template.providerId=providerId;template.providerName=providerName;return template;});
   }
+  /* sweepfix-1.0.0 (2026-09-23): the cloud library stores the template
+     itself, not the device's bookkeeping. Applying a committed set replaced
+     the device copy wholesale, so after every cloud save "Restore an earlier
+     version" was empty, the created date reset, and the kind/keyword
+     proposals the doctor had already accepted or refused (autoKw/autoKind)
+     came back. Carry those device fields over by id. The "still the
+     suggestion" marks survive only while the value is unchanged. */
+  function keepDeviceFields(applied){
+    var local={};currentLocal().forEach(function(t){if(t&&t.id)local[t.id]=t;});
+    return applied.map(function(t){
+      var l=t&&t.id&&local[t.id];if(!l)return t;
+      if(!Array.isArray(t.revisions)&&Array.isArray(l.revisions)&&l.revisions.length)t.revisions=cloneTemplates(l.revisions);
+      if(!t.created&&l.created)t.created=l.created;
+      if(t.autoKw===undefined&&l.autoKw)t.autoKw=l.autoKw;
+      if(t.autoKind===undefined&&l.autoKind)t.autoKind=l.autoKind;
+      if(t.kindSuggested===undefined&&l.kindSuggested&&S(t.kind)===S(l.kind))t.kindSuggested=l.kindSuggested;
+      if(t.kwSuggested===undefined&&l.kwSuggested&&JSON.stringify(t.keywords||[])===JSON.stringify(l.keywords||[]))t.kwSuggested=l.kwSuggested;
+      return t;
+    });
+  }
   function applySet(set){
-    if(!set||!Array.isArray(set.templates))return;var applied=templatesBoundToSet(set);state.applying=true;
+    if(!set||!Array.isArray(set.templates))return;var applied=keepDeviceFields(templatesBoundToSet(set));state.applying=true;
     try{(originals.setTemplates||window.setTemplates)(applied);if(isFn(window.uns)){localStorage.setItem(window.uns('templateSetActive'),set.id);localStorage.setItem(window.uns('templateSetVersion'),S(set.version));}}
     finally{state.applying=false;}
     state.activeSetId=set.id;state.activeVersion=Number(set.version)||0;state.activeTemplates=cloneTemplates(applied);state.hydrated=true;
@@ -433,7 +453,7 @@
 
   function importBody(custom){
     custom=custom||{};var selected=setFor(custom.targetSetId!==undefined?custom.targetSetId:state.selectedSetId),pending=custom.templates||((window._tplPendingSplit||[]).filter(function(t){return t&&t.keep!==false&&S(t.text).trim();}));if(!Array.isArray(pending))pending=[];var scope=scopeFor(Object.assign({},selected||{},custom));
-    return {targetSetId:selected?selected.id:null,expectedVersion:selected?Number(selected.version):0,setName:S(custom.setName||(byId('tlSetName')&&byId('tlSetName').value)||(selected&&selected.name)||state.sourceFilenames[0]||'Imported templates').replace(/\.[^.]+$/,'').slice(0,120),scope:scope.scope,providerId:scope.providerId||'',providerName:scope.providerName||'',scopeError:scope.ok?'':scope.code,facility:custom.facility!==undefined?custom.facility:((byId('tlFacility')&&byId('tlFacility').value)||(selected&&selected.facility)||''),sourceFilenames:custom.sourceFilenames||state.sourceFilenames,templates:pending.map(function(t){return {id:t.id||'',name:t.name||'Template',text:t.text||'',keywords:t.keywords||[],procedure:t.procedure||'',providerId:scope.scope==='provider'?(scope.providerId||''):(t.providerId||''),providerName:scope.scope==='provider'?(scope.providerName||''):(t.providerName||''),facilityId:t.facilityId||'',facility:t.facility||'',requiredFields:t.requiredFields||[],optionalFields:t.optionalFields||[],prohibitedFields:t.prohibitedFields||[],validatedFacts:t.validatedFacts===true,created:Number(t.created)||Date.now()};}),removeTemplateIds:custom.removeTemplateIds||[]};
+    return {targetSetId:selected?selected.id:null,expectedVersion:selected?Number(selected.version):0,setName:S(custom.setName||(byId('tlSetName')&&byId('tlSetName').value)||(selected&&selected.name)||state.sourceFilenames[0]||'Imported templates').replace(/\.[^.]+$/,'').slice(0,120),scope:scope.scope,providerId:scope.providerId||'',providerName:scope.providerName||'',scopeError:scope.ok?'':scope.code,facility:custom.facility!==undefined?custom.facility:((byId('tlFacility')&&byId('tlFacility').value)||(selected&&selected.facility)||''),sourceFilenames:custom.sourceFilenames||state.sourceFilenames,templates:pending.map(function(t){return {id:t.id||'',name:t.name||'Template',text:t.text||'',keywords:t.keywords||[],procedure:t.procedure||'',providerId:scope.scope==='provider'?(scope.providerId||''):(t.providerId||''),providerName:scope.scope==='provider'?(scope.providerName||''):(t.providerName||''),facilityId:t.facilityId||'',facility:t.facility||'',requiredFields:t.requiredFields||[],optionalFields:t.optionalFields||[],prohibitedFields:t.prohibitedFields||[],validatedFacts:t.validatedFacts===true,kind:t.kind||'',created:Number(t.created)||Date.now()};}),removeTemplateIds:custom.removeTemplateIds||[]};
   }
 
   function countsHtml(counts){var keys=['added','updated','duplicated','rejected','unchanged','removed'];return '<div class="tl-counts">'+keys.map(function(key){return '<span class="tl-count '+(key==='rejected'?'bad':'')+'">'+key+': '+(Number(counts&&counts[key])||0)+'</span>';}).join('')+'</div>';}

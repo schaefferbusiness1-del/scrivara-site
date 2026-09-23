@@ -1287,6 +1287,16 @@
       }).then(function (resp) {
         if (resp.status === 401 || resp.status === 403) { log(redMsg('Not authorised for AI import (' + resp.status + ').'), '#ff6b6b'); return; }
         var j = resp.j;
+        /* sweepfix-1.0.0 (2026-09-23): when part of the sheet could not be read
+           even after a retry, the server answers 502 import_incomplete (ok:false)
+           and still sends the patients it did read. That was shown as "AI import
+           failed" and every row that was read was thrown away. Name the missing
+           rows and let the doctor choose: try again, or use what was read. */
+        if (j && j.incomplete && Array.isArray(j.patients) && j.patients.length) {
+          log(redMsg(esc(j.error || ('The AI could not read ' + (j.rowsNotImported || 'some') + ' spreadsheet row(s)')) + '.'), '#f5a623');
+          offerPartialImport(box, j, file);
+          return;
+        }
         if (!j || !j.ok || !Array.isArray(j.patients)) {
           log(redMsg('AI import failed' + (j && j.error ? ': ' + esc(j.error) : '') + '. Try the plain upload above (auto-detect).'), '#ff6b6b');
           return;
@@ -1298,6 +1308,24 @@
         log(redMsg('Network error contacting the AI import endpoint: ' + esc(e.message) + '. Try the plain upload above.'), '#ff6b6b');
       });
     });
+  }
+  function offerPartialImport(box, j, file) {
+    var log = box.querySelector('#ocAiLog'); if (!log) return;
+    var n = j.patients.length, row = document.createElement('div');
+    row.style.cssText = 'margin-top:8px;display:flex;gap:8px;flex-wrap:wrap';
+    var btn = function (label, primary) {
+      var b = document.createElement('button'); b.type = 'button'; b.textContent = label;
+      b.style.cssText = 'border:1px solid var(--border,#204034);border-radius:9px;padding:8px 12px;cursor:pointer;font-size:12.5px;' +
+        (primary ? 'background:#1f6f54;color:#fff' : 'background:transparent;color:inherit');
+      row.appendChild(b); return b;
+    };
+    btn('Try again', true).addEventListener('click', function () { aiImportFile(file, box); });
+    btn('Use the ' + n + ' patient' + (n === 1 ? '' : 's') + ' that were read', false).addEventListener('click', function () {
+      if (row.parentNode) row.parentNode.removeChild(row);
+      aiLog(box, 'Using the ' + n + ' patient' + (n === 1 ? '' : 's') + ' that were read. The rows above are not in this study.', '#f5a623');
+      finishAiImport(j, file.name, box);
+    });
+    log.appendChild(row); log.scrollTop = log.scrollHeight;
   }
   function readWorkbookSheets(file, cb) {
     var isCSV = /\.csv$/i.test(file.name) || file.type === 'text/csv';
@@ -1343,7 +1371,10 @@
     STATE.patients = built.studies.map(function (s) { return { name: s.name, dos: s.dos, dosDate: parseDate(s.dos) }; });
     STATE.rawRows = null; STATE.analysis = null;
     STATE.ingestInfo = { ai: true, layout: 'ai', studies: built.studies, scoreCells: built.scoreCells,
-                         saved: saved, model: resp.model || '', filename: filename, skipped: [] };
+                         saved: saved, model: resp.model || '', filename: filename,
+                         skipped: (Array.isArray(resp.notImportedRows) ? resp.notImportedRows : []).map(function (r) {
+                           return { row: (Number(r && r.index) || 0) + 1, reason: 'the AI could not read it' + (r && r.sheet ? ' (sheet ' + r.sheet + ')' : '') };
+                         }) };
     STATE.sourceName = filename;
     STATE.agg = aggregate(built.studies, c);
     aiLog(box, '<b>Done.</b> Saved ' + saved.patients + ' patient record(s)' +
@@ -1445,6 +1476,7 @@
       (info.model ? ' · model ' + esc(String(info.model)) : '') + '. ' +
       (info.saved && info.saved.patients ? '<b>' + info.saved.patients + '</b> saved as patient record(s)' +
         (info.saved.cohort ? ' in cohort “' + esc(info.saved.cohort) + '”' : '') + '.' : '') +
+      (info.skipped && info.skipped.length ? ' <span style="color:#f5a623">⚠ ' + info.skipped.length + ' spreadsheet row(s) could not be read and are not in this study.</span>' : '') +
       ' <button id="ocFillAthena" style="margin-left:6px;background:transparent;border:1px solid var(--border,#204034);color:inherit;padding:4px 9px;border-radius:8px;cursor:pointer;font-size:11.5px">＋ Fill blanks from Athena (optional)</button>' +
       '<div id="ocFillLog" style="margin-top:6px;font-size:11.5px"></div></div>';
   }

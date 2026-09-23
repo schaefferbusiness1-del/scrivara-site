@@ -662,6 +662,50 @@ function staticContracts() {
   assert(/function _tplMultiDrop[\s\S]{0,350}tplMultiFile\(\{target:\{files:fs/.test(html), 'drag/drop must use the same wrapped batch importer');
 }
 
+/* sweepfix-1.0.0 (2026-09-23): a cloud save sends each template's kind, and
+   applying the committed set keeps the device's own bookkeeping (revisions,
+   created, the answered kind/keyword proposals) - before, every save emptied
+   "Restore an earlier version" and brought the proposals back. */
+async function cloudSaveKeepsDeviceHistory() {
+  const bodies = [];
+  const strip = (t) => ({ id: t.id, name: t.name, text: t.text, keywords: t.keywords || [], ...(t.kind ? { kind: t.kind } : {}) });
+  const h = makeHarness((url, options) => {
+    if (url.includes('/api/template-sets?')) return response(200, { activeSetId: 'set-a', sets: [setSummary('set-a', 1, true)] });
+    if (url.endsWith('/api/template-sets/set-a')) return response(200, { set: { ...setSummary('set-a', 1, true), templates: [{ id: 'knee', name: 'Knee', text: 'v1', keywords: ['knee'], kind: 'soap' }] } });
+    if (url.endsWith('/api/template-imports/commit')) {
+      const body = JSON.parse(options.body); bodies.push(body);
+      /* the server keeps only the template fields (routes/templateLibrary.js cleanTemplate) */
+      return response(200, { result: { status: 'completed', version: 2, counts: { updated: 1 }, set: { ...setSummary('set-a', 2, true), templates: body.templates.map(strip) } } });
+    }
+    throw new Error(`Unexpected request ${url}`);
+  });
+  h.setHosted(true);
+  await h.api.refresh();
+  const edited = [{ id: 'knee', name: 'Knee', text: 'v2', keywords: ['knee'], kind: 'op', created: 1700000000000, autoKw: 1, autoKind: 1, kwSuggested: 1, kindSuggested: 1,
+    revisions: [{ ts: 1700000001000, name: 'Knee', keywords: ['knee'], kind: 'soap', text: 'v1' }] }];
+  h.setLocal(edited);
+  assert.strictEqual(await h.api.persistSnapshot(edited), true);
+  assert.strictEqual(bodies[0].templates[0].kind, 'op', 'the edited kind is sent to the cloud library');
+  const after = h.getLocal()[0];
+  assert.strictEqual(after.text, 'v2');
+  assert.strictEqual(after.kind, 'op', 'the kind survives the save');
+  assert.deepStrictEqual((after.revisions || []).map((r) => r.text), ['v1'], 'the earlier version can still be restored after a cloud save');
+  assert.strictEqual(after.created, 1700000000000, 'the created date is kept');
+  assert.deepStrictEqual([after.autoKw, after.autoKind, after.kwSuggested, after.kindSuggested], [1, 1, 1, 1], 'answered proposals stay answered');
+
+  /* another device changed the kind: this device's "still the suggestion" mark no longer applies */
+  h.setLocal(edited);
+  h.api.applySet({ ...setSummary('set-a', 3, true), templates: [{ id: 'knee', name: 'Knee', text: 'v3', keywords: ['knee', 'acl'], kind: 'insurance' }] });
+  const other = h.getLocal()[0];
+  assert.strictEqual(other.kind, 'insurance');
+  assert.strictEqual(other.kindSuggested, undefined, 'a kind changed elsewhere is not called the suggestion');
+  assert.strictEqual(other.kwSuggested, undefined, 'keywords changed elsewhere are not called the suggestion');
+  assert.deepStrictEqual((other.revisions || []).map((r) => r.text), ['v1'], 'history is still kept');
+
+  const imported = h.api._importBody({ templates: [{ id: 'hip', name: 'Hip', text: 'hip', kind: 'insurance' }] });
+  assert.strictEqual(imported.templates[0].kind, 'insurance', 'an import sends the kind too');
+}
+
 (async () => {
   executableDedupeRegression();
   staticContracts();
@@ -679,7 +723,8 @@ function staticContracts() {
   await inFlightCommitIsOneNonCancelableSave();
   await formSaveVisibility();
   await providerScopedSetLifecycle();
-  console.log('PASS template library runtime, isolation, preview/commit, auto-activate, conflict, retry, loader, upload, and form-save visibility contracts');
+  await cloudSaveKeepsDeviceHistory();
+  console.log('PASS template library runtime, cloud saves keep device history and kind, isolation, preview/commit, auto-activate, conflict, retry, loader, upload, and form-save visibility contracts');
 })().catch(error => {
   console.error(error);
   process.exit(1);
