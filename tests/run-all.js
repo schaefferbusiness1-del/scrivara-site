@@ -2690,7 +2690,12 @@ const tests = [
   'opnote-room-says-one-thing-runtime.test.js',
   /* refitfit-1.0.0 (b1291): the surgeon page reports a re-fit that did not
      follow the picked template as such, and shows the note's own template. */
-  'opnotes-refit-refusal-runtime.test.js'
+  'opnotes-refit-refusal-runtime.test.js',
+  /* calnav-1.1.0 / vstage-1.0.0 (b1292): no empty calendar rail track, no
+     false "Back to the calendar", the status line and the brief say which day
+     and whose appointments, the header says Calendar and Today, and the
+     paste-notes dialog title is readable. */
+  'calendar-and-chrome-say-one-thing-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

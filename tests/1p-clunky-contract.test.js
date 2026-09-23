@@ -648,7 +648,12 @@ async function runtime() {
       out.errBg = swatch('toast show err');
       out.warnBg = swatch('toast show warn');
       /* 15 / 97: the banner layer is anchored to the dock's reserved band. */
-      out.banners = ['mlsUpgradeReadyNotice', 'mlsSignInPrompt', 'mlsQuotaChip'].map((id) => {
+      /* bannerpos-1.0.0 (b1285): #mlsQuotaChip is an IN-FLOW strip at the
+         top of the app (position:relative, inserted first in #appWrap), so it
+         can never land on the dock and bottom/left/right offsets only
+         displaced it. It left the anchored banner set; the two fixed banners
+         below are still held above the dock's band. */
+      out.banners = ['mlsUpgradeReadyNotice', 'mlsSignInPrompt'].map((id) => {
         const probe = document.createElement('div');
         probe.id = id;
         probe.style.cssText = 'position:fixed;left:0;right:0;bottom:0;height:40px';
@@ -1222,7 +1227,13 @@ async function runtime() {
          a label back to a node matches the wrong one whenever two controls
          share a label, which is exactly what a duplicate-heavy panel has. */
       const CTRL = 'button,a[href],input:not([type=hidden]),select,textarea,[role=button],[role=tab],[role=menuitem]';
-      const afterEls = Array.prototype.slice.call(document.querySelectorAll('#calendarView ' + CTRL)).filter(C.visible);
+      /* calnav-1.0.0 (b1290): the grid's own day cells and appointment chips
+         are keyboard-reachable buttons now (role=button, tabindex=0). They are
+         the calendar itself, not tools "More" discloses, so they are not in
+         this count - otherwise every chip on a busy month would read as clutter
+         the disclosure added. */
+      const afterEls = Array.prototype.slice.call(document.querySelectorAll('#calendarView ' + CTRL)).filter(C.visible)
+        .filter((e) => !(e.closest && e.closest('#calGrid,#calDayPanel')));
       out.afterCtrls = afterEls.length;
       out.afterUnder40 = afterEls.filter((e) => e.getBoundingClientRect().height < 40).length;
       out.month = miniState();

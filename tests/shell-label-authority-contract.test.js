@@ -161,11 +161,12 @@ const displaySites = [
    * authorship of a control it only proxies. */
   {
     what: 'segmented view tab label',
-    line: "s.textContent = alias || controlLabel(tab).replace(/\\s*\\d+$/, '');"
+    /* calnav-1.1.0: also strips the " · " that controlLabel puts before a count */
+    line: "s.textContent = alias || controlLabel(tab).replace(/(?:\\s*\\u00b7)?\\s*\\d+$/, '');"
   },
   {
     what: 'segmented alias disclosure',
-    line: "if (alias) s.title = 'Opens \"' + controlLabel(tab).replace(/\\s*\\d+$/, '') + '\"';"
+    line: "if (alias) s.title = 'Opens \"' + controlLabel(tab).replace(/(?:\\s*\\u00b7)?\\s*\\d+$/, '') + '\"';"
   },
   {
     what: 'right-now re-render signature',

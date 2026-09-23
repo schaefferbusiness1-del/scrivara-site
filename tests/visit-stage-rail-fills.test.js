@@ -400,7 +400,10 @@ function makeHarness() {
       const long = 'Patient seen today, tolerating the plan well, no new concerns raised.';
       if (n === 1) visit.__controls = [{ label: 'Recording… Stop Visit' }];
       if (n >= 2) {
+        /* vstage-1.0.0: stageNow reads the NOTE editor, not whichever box is
+           first - Review means a note exists. */
         const ta = makeEl('textarea');
+        ta.id = 'noteBox';
         ta.value = long;
         visit.appendChild(ta);
       }
@@ -700,6 +703,23 @@ let unguardedOps = 0;
   assert.strictEqual(mk(['Resume recording'],'So'), 1, 'AFTER STOPPING the rail must STILL read Record, not fall back to Prep');
   assert.strictEqual(mk(['Generate one note'],''), 0, 'a fresh visit must still read Prep - no false advance');
   console.log('  pass  the stage never falls back to Prep once recording has happened');
+
+  /* vstage-1.0.0: pasted visit notes are TRANSCRIPT text, not a note. The rail
+     read the first visible box and said "Review" while the only primary was
+     Generate; it must say Record until a note exists. */
+  const mk2 = (labels, boxes) => new Function('qs','qsa','visible','findControl', fn + ' return stageNow;')(
+    sel => sel === '#visitView' ? {} : null,
+    () => boxes,
+    () => true,
+    opt => labels.find(l => opt.label.test(l)) ? {} : null)();
+  const pasted = 'Patient seen today for follow-up, tolerating the plan well, no new concerns.';
+  assert.strictEqual(mk2(['Generate one note'], [{ id: 'transcript', value: pasted }, { id: 'noteBox', value: '' }]), 1,
+    'pasted visit notes with no generated note must read Record, not Review');
+  assert.strictEqual(mk2(['Generate one note'], [{ id: 'transcript', value: pasted }, { id: 'noteBox', value: pasted }]), 2,
+    'a generated note reads Review');
+  assert.strictEqual(mk2(['Sign & Close'], [{ id: 'ez3flTranscript', value: pasted }, { id: 'ez3flNote', value: pasted }]), 3,
+    'the flow card\'s own note counts, and a sign control makes it Sign');
+  console.log('  pass  pasted visit text is Record, a note is Review');
 }
 
 console.log('PASS visit-stage-rail-fills: 5 stages render as complete/current/upcoming with ' +

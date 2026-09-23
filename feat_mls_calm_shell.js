@@ -922,7 +922,10 @@
      the dock through a gated tab would quietly hand out a feature the account
      is not entitled to. A destination with nothing available hides itself. */
   var DEST = [
-    { id: 'day', label: 'Day', targets: ['nav_calendar'] },
+    /* calnav-1.1.0: the dock button says Calendar (dockcal-1.0.0) and the screen
+       shows Month/Week/Day; a header titled "Day" over a Month grid was a third
+       name for one place. */
+    { id: 'day', label: 'Calendar', targets: ['nav_calendar'] },
     { id: 'patient', label: 'Patient', targets: ['nav_patients', 'nav_history'], count: 'navPtCount' },
     { id: 'visit', label: 'Visit', targets: ['nav_visit'] },
     /* `extra` enriches the segmented row WITHOUT changing where the destination
@@ -1901,7 +1904,12 @@
        Refresh is deliberately NOT here: it was what this bar used to offer, and
        it is the least useful control on the screen. */
     day: [
-      { label: /^clear$/i, within: '#calendarView', as: 'Back to the calendar', primary: true },
+      /* calnav-1.1.0: only when there IS a list or range to leave. "Show more
+         calendar tools" alone makes Clear visible, and the bar then led with
+         "Back to the calendar" while the calendar was on screen. */
+      { label: /^clear$/i, within: '#calendarView', as: 'Back to the calendar', primary: true,
+        when: function () { var p = D.getElementById('cpPanel'), f = D.getElementById('cpFrom'), t = D.getElementById('cpTo');
+          return !!(p && p.style.display !== 'none' && visible(p)) || !!(f && f.value) || !!(t && t.value); } },
       { label: /^\+?\s*new appointment$/i, as: 'New appointment' },
       { label: /^pull plan$/i, within: '#calendarView' },
       { label: /^check in to the office$/i, within: '#calendarView', as: 'Check in' },
@@ -1932,6 +1940,7 @@
      patient header would also delete it from the bar that now owns it. It is
      never used to surface something the APP gated off. */
   function findControl(spec) {
+    if (spec.when && !safe(spec.when, false)) return null;
     var ok = spec.moved ? available : visible;
     if (spec.id) {
       var el = D.getElementById(spec.id);
@@ -2049,8 +2058,10 @@
            that silently renamed a rail tab would be the shell claiming
            authorship of a control it only proxies. */
         var alias = (destDef && destDef.as) ? (destDef.as[tab.id] || '') : '';
-        s.textContent = alias || controlLabel(tab).replace(/\s*\d+$/, '');
-        if (alias) s.title = 'Opens "' + controlLabel(tab).replace(/\s*\d+$/, '') + '"';
+        /* calnav-1.1.0: controlLabel joins "Patients" and its count with " · ",
+           and stripping only the digits left the tab reading "Patients ·". */
+        s.textContent = alias || controlLabel(tab).replace(/(?:\s*\u00b7)?\s*\d+$/, '');
+        if (alias) s.title = 'Opens "' + controlLabel(tab).replace(/(?:\s*\u00b7)?\s*\d+$/, '') + '"';
         s.addEventListener('click', function () {
           tab.click();
           markViewEnter();
@@ -2565,11 +2576,22 @@
     var resumable = findControl({ label: /resume\s*recording/i, within: '#visitView' });
     if (resumable) return 1;
     var signable = findControl({ label: /^(sign|save to athena|send to athena)/i, within: '#visitView' });
-    var noteText = '';
-    var ta = qsa('textarea,[contenteditable="true"]', visit).filter(visible)[0];
-    if (ta) noteText = (ta.value || ta.textContent || '').trim();
+    /* vstage-1.0.0: READ THE NOTE, NOT THE FIRST BOX. The first visible
+       textarea is the TRANSCRIPT, so pasted visit notes (no note generated yet)
+       lit "Record done - Review now" while the only primary was Generate and
+       the flow strip below still said Record. Review means a note exists;
+       visit text without one means the Record step was reached. */
+    var boxes = qsa('textarea,[contenteditable="true"]', visit).filter(visible);
+    function textOf(ids) {
+      for (var i = 0; i < boxes.length; i++) {
+        if (ids.indexOf(boxes[i].id) >= 0) return String(boxes[i].value || boxes[i].textContent || '').trim();
+      }
+      return '';
+    }
+    var noteText = textOf(['noteBox', 'ez3flNote', 'ez3Note']);
     if (signable && noteText.length > 40) return 3;
     if (noteText.length > 40) return 2;
+    if (textOf(['transcript', 'ez3flTranscript', 'ez3Transcript']).length > 10) return 1;
     return 0;
   }
 

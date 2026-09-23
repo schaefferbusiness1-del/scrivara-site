@@ -40312,8 +40312,15 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           var use = scoped ? mine : appts;
           var seen = 0; try { if (typeof window._seenToday === "function") use.forEach(function (a) { if (window._seenToday(a)) seen++; }); } catch (e) {}
           var hh = new Date().getHours(); var greet = hh < 12 ? "Good morning" : hh < 17 ? "Good afternoon" : "Good evening";
-          var nextUp = ""; try { var srt = use.slice().sort(function (a, b) { return S(a.start_at).localeCompare(S(b.start_at)); }); var now = Date.now(); var nx = srt.filter(function (a) { return a.start_at && new Date(a.start_at).getTime() >= now - 30 * 60000; })[0]; if (nx) { var d = new Date(nx.start_at); nextUp = " Next: <b>" + esc(S(nx.name).split(" ")[0]) + "</b> at " + fmt12(("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2)) + "."; } } catch (e) {}
-          var msg = "☀️ " + greet + (me ? (", " + esc(me)) : "") + " — <b>" + use.length + "</b> appointment" + (use.length === 1 ? "" : "s") + " today" + (scoped ? "" : " <span style='opacity:.75'>(across all providers — no provider tags on today's pull yet)</span>") + (seen ? (", " + seen + " seen") : "") + "." + nextUp;
+          var nextUp = ""; try { var srt = use.slice().sort(function (a, b) { return S(a.start_at).localeCompare(S(b.start_at)); }); var now = Date.now(); var nx = srt.filter(function (a) { return a.start_at && new Date(a.start_at).getTime() >= now - 30 * 60000; })[0]; if (nx) { var d = new Date(nx.start_at); nextUp = " Next: <b>" + esc(S(nx.name)) + "</b> at " + fmt12(("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2)) + "."; } } catch (e) {}
+          /* calnav-1.1.0: a scoped brief said "2 appointments today" while the
+             Calendar and Visit said 4 - it silently counted only this doctor's.
+             Say so, with the practice total, and name the next patient in full
+             (a first name alone is ambiguous on any real schedule). */
+          var countTxt = (scoped && use.length !== appts.length)
+            ? ("<b>" + use.length + "</b> of today's " + appts.length + " appointments are yours")
+            : ("<b>" + use.length + "</b> appointment" + (use.length === 1 ? "" : "s") + " today");
+          var msg = "☀️ " + greet + (me ? (", " + esc(me)) : "") + " — " + countTxt + (scoped ? "" : " <span style='opacity:.75'>(across all providers — no provider tags on today's pull yet)</span>") + (seen ? (", " + seen + " seen") : "") + "." + nextUp;
           bar.innerHTML = '<div style="background:linear-gradient(90deg,#eef6ff,#f3fbf6);border:1px solid #d7e6fb;border-radius:12px;padding:11px 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap"><span style="font-size:13.5px;flex:1;min-width:200px">' + msg + "</span>" +
             '<button class="btn-ghost" style="font-size:12.5px;padding:6px 12px" onclick="showView(\'visit\')">\u{1F399}️ Start seeing patients</button>' +
             '<button class="btn-ghost" style="font-size:12.5px;padding:6px 12px" onclick="showView(\'calendar\')">\u{1F4C5} See schedule</button></div>';

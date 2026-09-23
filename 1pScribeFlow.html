@@ -664,6 +664,9 @@
     flex-wrap:wrap; gap:12px; border-bottom:1px solid var(--header-line);
     box-shadow:0 1px 0 rgba(0,0,0,.04),0 1px 12px rgba(15,25,45,.10);
   }
+  /* vstage-1.0.0: the "Type or paste visit notes" dialog heads its card with a
+     <header>, so this app-bar rule painted its title white on a white card. */
+  header.mls-qtp-head{ color:#1A211C; background:transparent; box-shadow:none; }
   .logo{display:flex; align-items:center; gap:11px; font-weight:650; font-size:20px; letter-spacing:-.2px}
   .logo .mark{
     width:36px;height:36px;border-radius:10px;background:rgba(255,255,255,.10);
@@ -50532,7 +50535,10 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     }
     var d = practiceToday();
     var day = '', date = '';
-    try { day = d.toLocaleDateString(undefined, { weekday: 'long' }); } catch (e) { day = ''; }
+    /* calnav-1.1.0: the pill is TODAY, whatever day the screens below show.
+       Unlabelled, it read "Tuesday Sep 22" beside a strip already on
+       Wednesday, as if it were the day being viewed. */
+    try { day = 'Today · ' + d.toLocaleDateString(undefined, { weekday: 'long' }); } catch (e) { day = ''; }
     try { date = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }); } catch (e) { date = ''; }
     var a = host.querySelector('.mslTodayDay'), b = host.querySelector('.mslTodayDate');
     if (a && a.textContent !== day) a.textContent = day;
@@ -63968,7 +63974,13 @@ html #calDayPanel button{ min-height:44px; }
     } else if (line.parentNode && line.parentNode.id === 'calSplitWrap' && line.parentNode.parentNode) {
       line.parentNode.parentNode.insertBefore(line, line.parentNode);
     }
-    var want = nums.map(function (p) { return p[1] + ' ' + p[0].toLowerCase(); }).join(' · ');
+    /* calnav-1.1.0: the counts are ONE day's (the glance card's), but under a
+       Month or Week header the line read "4 booked" with no day. Say which. */
+    var dayLbl = ((txt(card).match(/at a glance\s*(.+?)\s*booked/i) || [])[1] || '').trim();
+    var todayLbl = '';
+    try { var tk = typeof window._acctTodayKey === 'function' ? window._acctTodayKey() : ''; if (tk) todayLbl = new Date(tk + 'T12:00').toLocaleDateString([], { month: 'short', day: 'numeric' }); } catch (eT) { todayLbl = ''; }
+    var lead = dayLbl ? ((todayLbl && dayLbl === todayLbl) ? 'Today (' + dayLbl + '): ' : dayLbl + ': ') : '';
+    var want = lead + nums.map(function (p) { return p[1] + ' ' + p[0].toLowerCase(); }).join(' · ');
     if (txt(line) !== want) line.textContent = want;
     line.hidden = false;
     card.setAttribute('data-mls-clunky-folded', '1');
@@ -66283,6 +66295,11 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
    !important is needed and a later cx rebuild cannot silently win. */
 @media (min-width:981px){
   html #calendarView .cx-main{ grid-template-columns:236px minmax(0,1fr); gap:14px; }
+  /* calnav-1.1.0: while "More calendar tools" is closed every child of the
+     rail is folded, so its 236px track sat EMPTY and pushed the calendar
+     ~250px right of the bar above it. The track returns with the tools. This
+     only ever widens #calGrid (902 -> 1152px measured), never narrows it. */
+  html body.mls-cv:not(.mls-cv-open-calendar) #calendarView .cx-main{ grid-template-columns:minmax(0,1fr); }
 }
 /* --- 33: in Day view the hour timeline IS the agenda. The shared uxpack chip
    strip repeats the same six appointments directly above it (measured: every
