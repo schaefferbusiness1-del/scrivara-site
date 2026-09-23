@@ -71,6 +71,35 @@ const srv = http.createServer((q, r) => {
     }));
     assert.deepStrictEqual(gone, { health: false, std: false }, 'a deleted template leaves both lists');
 
+    /* 2b. a standard line being typed survives a background library save, and
+       repainting never stacks another click listener on the section */
+    const sl = await pg.evaluate(async () => {
+      const w = document.getElementById('mls-stdline-section'); if (!w) return null;
+      let wired = 0; const add = w.addEventListener; w.addEventListener = function (type) { if (type === 'click') wired++; return add.apply(this, arguments); };
+      const ta = w.querySelector('#mls-sl-text'); ta.focus(); ta.value = 'Half-typed line'; ta.setSelectionRange(4, 4);
+      const box = w.querySelector('.mls-sl-chk input[type=checkbox]'); if (box) box.checked = true;
+      for (let i = 0; i < 4; i++) { const l = getTemplates(); l[0].keywords = (l[0].keywords || []).concat(['k' + i]); setTemplates(l); await new Promise((r) => setTimeout(r, 30)); }
+      const t2 = w.querySelector('#mls-sl-text'), b2 = w.querySelector('.mls-sl-chk input[type=checkbox]');
+      const kept = { text: t2.value, focused: document.activeElement === t2, caret: t2.selectionStart, ticked: b2 ? b2.checked : null };
+      /* one Edit press = one render, not one per repaint so far */
+      localStorage.setItem(uns('mlsStdLines'), JSON.stringify([{ id: 'sl1', text: 'Saved line', templateIds: [], created: 1 }]));
+      t2.value = ''; setTemplates(getTemplates()); await new Promise((r) => setTimeout(r, 30));
+      let renders = 0; const mo = new MutationObserver((recs) => { recs.forEach((r) => { if (r.target === w && r.type === 'childList') renders++; }); });
+      mo.observe(w, { childList: true });
+      const ed = w.querySelector('[data-act="edit"]'); if (ed) ed.click();
+      await new Promise((r) => setTimeout(r, 30)); mo.disconnect();
+      const cancel = w.querySelector('[data-act="cancel"]'); if (cancel) cancel.click();
+      localStorage.removeItem(uns('mlsStdLines')); setTemplates(getTemplates());
+      w.addEventListener = add;
+      return { kept, editFound: !!ed, renders, wired };
+    });
+    if (sl) {
+      assert.deepStrictEqual(sl.kept, { text: 'Half-typed line', focused: true, caret: 4, ticked: sl.kept.ticked === null ? null : true }, 'a half-typed standard line, its caret and its ticks survive background saves: ' + JSON.stringify(sl));
+      assert.ok(sl.editFound, 'the seeded standard line shows an Edit button');
+      assert.strictEqual(sl.renders, 1, 'one Edit press renders the section once: ' + JSON.stringify(sl));
+      assert.strictEqual(sl.wired, 0, 'repainting never adds another click listener to the section: ' + JSON.stringify(sl));
+    }
+
     /* 3. the matching test tells the truth about an operative-report default */
     const match = await pg.evaluate(async () => {
       localStorage.setItem(uns('templateAuto'), '0');

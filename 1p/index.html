@@ -23907,12 +23907,19 @@ function _tplAnnounceChanged(){
     try{ window.dispatchEvent(new CustomEvent('mls:templates-changed')); }catch(e){}
   },0); }catch(e){ _tplChangedTimer=null; }
 }
+/* The room repaints only when what it shows changed - a template's id, name
+   or kind, or a row that pointed at a deleted one. The background keyword
+   tagger saves the library every few seconds after sign-in; a keyword-only
+   save leaves the room alone. */
+var _tplRoomSig='';
 try{ window.addEventListener('mls:templates-changed',function(){
   try{
-    var ids={}; _tplStore().forEach(function(t){ ids[String(t.id)]=1; });
-    (window._opPrep||[]).forEach(function(r){ if(r&&r.tplId&&!ids[String(r.tplId)]){ r.tplId=''; r.tplManual=false; } });
+    var ids={}, sig=[], cleared=false;
+    _tplStore().forEach(function(t){ ids[String(t.id)]=1; sig.push(String(t.id)+'|'+String(t.name||'')+'|'+String(t.kind||'')); });
+    (window._opPrep||[]).forEach(function(r){ if(r&&r.tplId&&!ids[String(r.tplId)]){ r.tplId=''; r.tplManual=false; cleared=true; } });
+    sig=sig.join('\n'); var changed=(sig!==_tplRoomSig); _tplRoomSig=sig;
     var m=document.getElementById('opPrepModal');
-    if(m&&m.classList.contains('show')&&typeof opPrepRender==='function') opPrepRender();
+    if((changed||cleared)&&m&&m.classList.contains('show')&&typeof opPrepRender==='function') opPrepRender();
   }catch(e){}
 }); }catch(e){}
 /* tpldef-1.0.0 (owner 2026-09-11): a fresh account/device has never written

@@ -349,6 +349,12 @@
         if (lab) { lab.classList.toggle('on', cb.checked); }
       });
     });
+    /* tplsync-1.0.1: the section element outlives every render (only its
+       innerHTML is replaced), so this delegate is wired ONCE. It used to be
+       added again on every render - one more dead listener per repaint, and
+       b1310 repaints on every library save. */
+    if (wrap.__mlsSlWired) { return; }
+    wrap.__mlsSlWired = true;
     wrap.addEventListener('click', function (ev) {
       var btn = ev.target.closest('[data-act]');
       if (!btn || !wrap.contains(btn)) { return; }
@@ -405,7 +411,7 @@
          Templates again showed the page-load template list (new templates
          missing, deleted ones still tickable). Re-open repaints it. */
       var existing = modal.querySelector('#' + SECTION_ID);
-      if (existing) { if (!editingId) { renderInto(existing); } return; }
+      if (existing) { repaint(existing); return; }
       var h3 = null;
       var hs = modal.querySelectorAll('h1,h2,h3');
       for (var i = 0; i < hs.length; i++) {
@@ -425,12 +431,32 @@
     } catch (e) {}
   }
 
-  /* tplsync-1.0.0: and every library change repaints it too (unless a
-     standard line is mid-edit, which keeps what the doctor is typing). */
+  /* tplsync-1.0.0: and every library change repaints it too.
+     tplsync-1.0.1: a repaint carries over what the doctor has typed and
+     ticked but not saved yet (text, caret and ticks for templates that still
+     exist). The background keyword tagger saves the library every few seconds
+     after sign-in; without this each save wiped a half-typed line. */
+  function repaint(wrap) {
+    var ta = wrap.querySelector('#mls-sl-text');
+    if (!ta) { renderInto(wrap); return; }
+    var text = ta.value, focused = document.activeElement === ta, s0 = null, s1 = null, ticked = {};
+    try { s0 = ta.selectionStart; s1 = ta.selectionEnd; } catch (e) {}
+    wrap.querySelectorAll('.mls-sl-chk input[type=checkbox]').forEach(function (cb) { ticked[cb.getAttribute('data-tid')] = cb.checked; });
+    renderInto(wrap);
+    var nt = wrap.querySelector('#mls-sl-text');
+    if (nt) { nt.value = text; }
+    wrap.querySelectorAll('.mls-sl-chk input[type=checkbox]').forEach(function (cb) {
+      var id = cb.getAttribute('data-tid');
+      if (!Object.prototype.hasOwnProperty.call(ticked, id)) { return; }
+      cb.checked = ticked[id];
+      var lab = cb.closest('.mls-sl-chk'); if (lab) { lab.classList.toggle('on', cb.checked); }
+    });
+    if (focused && nt) { try { nt.focus({ preventScroll: true }); if (s0 != null) { nt.setSelectionRange(s0, s1); } } catch (e) {} }
+  }
   function onTemplatesChanged() {
     try {
       var existing = document.getElementById(SECTION_ID);
-      if (existing && !editingId) { renderInto(existing); }
+      if (existing) { repaint(existing); }
     } catch (e) {}
   }
   try { window.addEventListener('mls:templates-changed', onTemplatesChanged); } catch (e) {}
