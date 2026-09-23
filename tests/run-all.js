@@ -2732,7 +2732,12 @@ const tests = [
      clear of the dock and stays usable on short screens, the Legal sheet no
      longer buries toasts and the sample strip, and the phone Tools menu offers
      only choices that take effect there. */
-  'tools-assistant-legal-phone-dock-runtime.test.js'
+  'tools-assistant-legal-phone-dock-runtime.test.js',
+  /* b1302: the sample asks for no API key and says why recording is off, the
+     NEXT glow is the brief's next patient and never a tab or the x, Settings
+     tabs read left, the patient bar shares the workspace column, Display
+     offers one truthfully named taskbar field, and the phone dock fills its bar. */
+  'screens-say-what-is-true-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

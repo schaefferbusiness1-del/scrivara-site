@@ -39,6 +39,20 @@
       '#appWrap.wrap:not(:has(#calendarView[style*="block"])){',
       '  max-width:min(1680px,95vw)!important;',
       '}',
+      /* colalign-1.0.0: the patient bar (#mlsCtxBar, a sibling of #appWrap)
+         kept its own 1180px centred column, so on a 1400px screen it ran
+         103-1283 over a workspace at 156-1358 - two columns, neither edge
+         shared, the bar's left end under the dock. It takes the wrapper's
+         column: the same width rule and the same dock clearance. */
+      '@media (min-width:641px){',
+      '  #appScreen>#mlsCtxBar{',
+      '    box-sizing:border-box!important;max-width:none!important;',
+      '    margin-left:calc((100% - min(1680px,95vw)) / 2)!important;',
+      '    margin-right:calc((100% - min(1680px,95vw)) / 2)!important;',
+      '  }',
+      '  body[data-mls-dock="left"] #appScreen>#mlsCtxBar{margin-left:calc((100% - min(1680px,95vw)) / 2 + 128px)!important}',
+      '  body[data-mls-dock="right"] #appScreen>#mlsCtxBar{margin-right:calc((100% - min(1680px,95vw)) / 2 + 128px)!important}',
+      '}',
 
       /* ---- wide-screen reflow aids (only kick in on big viewports; smaller',
       '       screens are untouched so nothing can break/overlap there) ---- */

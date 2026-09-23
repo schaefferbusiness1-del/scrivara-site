@@ -973,8 +973,9 @@
        has none. It now follows the selected day. The hero line and the
        banner carry one sentence because the connect bundle mirrors every hero
        change into #mlsPrfProgress; two sentences made the pair fight. */
+    /* pvfix-1.0.1: "choose a patient" stood over a patient already open. */
     var dayStatus = selectedDayCount() > 0
-      ? 'Sample schedule loaded - choose a patient to explore the workspace.'
+      ? 'Sample schedule loaded - open any sample patient to look around. Recording and sending stay off.'
       : 'No invented appointments on this sample date - use Reload sample day to add memory-only sample rows.';
     putPreviewText(document.getElementById('heroPullStatus'), dayStatus);
     putPreviewText(document.getElementById('mlsPrfProgress'), dayStatus);
@@ -985,6 +986,21 @@
       putPreviewText(next, 'Sample visit - recording off');
       markBlocked(next, 'Recording is off in the read-only sample workspace.');
     });
+    /* pvfix-1.0.1: #ez3ActiveGo, the hero for a chosen patient, sat greyed as
+       "Start Recording" with no reason on screen (the tooltip layer strips
+       titles). Only the phrase changes, in its own text node: the calm shell
+       splits "action - patient" into the identity card and the aria-label, and
+       replacing the whole text dropped the card and the patient's name. */
+    var activeGo = document.getElementById('ez3ActiveGo');
+    if (activeGo && activeGo.getAttribute('data-rec') === '1') {
+      try {
+        var walk = document.createTreeWalker(activeGo, 4 /* SHOW_TEXT */), tn;
+        while ((tn = walk.nextNode())) {
+          if (/Start Recording/i.test(tn.nodeValue)) { tn.nodeValue = tn.nodeValue.replace(/Start Recording/i, 'Recording off in the sample'); break; }
+        }
+      } catch (eGo) {}
+      markBlocked(activeGo, 'Recording is off in the read-only sample workspace.');
+    }
     var heroRecord = document.getElementById('heroRecBtn');
     if (heroRecord) {
       putPreviewText(heroRecord, 'Recording off in preview');

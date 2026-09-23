@@ -5038,6 +5038,9 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
            actually asks. -->
       <p class="note" style="background:#e6f7ef;color:var(--green-dk);border:1px solid #b8ecd3">✅ <b>Your clinic's MLS server handles AI for this account.</b> No API key is needed on this device — your key stays securely on the server. The Advanced tab shows whether that server is reachable right now.</p>
     </div>
+    <div class="field" id="sampleAiNotice" style="display:none">
+      <p class="note">This is the sample workspace: nothing here is generated, saved or sent, so no key or connection is needed. A signed-in account uses your clinic's MLS server for AI, with no key on this device.</p>
+    </div>
     <div class="field" id="redeemField" style="display:none">
       <label for="redeemInputSettings">Access code</label>
       <div class="row tight" style="gap:8px">
@@ -5281,7 +5284,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
            promoted to another lane. Deleting the block removes the field with
            it and leaves this dialog exactly as it was. -->
       <div class="field">
-        <label for="qolDockSide">Navigation bar</label>
+        <label for="qolDockSide">Taskbar (quick buttons) position</label>
         <select class="sf-select" id="qolDockSide" onchange="qolDockSideChanged(this.value)">
           <option value="bottom">Floating — bottom centre (default)</option>
           <option value="top">Floating — top centre</option>
@@ -5292,7 +5295,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
           <input type="checkbox" id="qolDockAutoHide" style="width:17px;height:17px;cursor:pointer" onchange="qolDockAutoHideChanged(this.checked)">
           <span>Auto-hide until hovered, tapped, or focused</span>
         </label>
-        <div style="font-size:12px;color:var(--muted);margin-top:4px">It keeps hovering over the page wherever you put it. Changes apply straight away.</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px">On a side it keeps clear of your work; floating, it sits over the page. Changes apply straight away.</div>
       </div>
 
       <div class="field">
@@ -10468,20 +10471,27 @@ function swOnSessionStart(email){
 /* Hide the API-key field & nudges when running in hosted backend mode. */
 function applyBackendModeUI(){
   const on=backendMode();
+  /* samplekey-1.0.0: the sample workspace blanks BACKEND_URL (it must never
+     reach the server), which read as "no backend" and asked a visitor for an
+     OpenAI API key that nothing in the sample uses. Signed-in accounts never
+     see that field; the sample says what is true instead. */
+  const sample=!!(window.__MLS_PUBLIC_PREVIEW&&window.__MLS_PUBLIC_PREVIEW.enabled===true);
+  const sampleNote=document.getElementById('sampleAiNotice');
+  if(sampleNote) sampleNote.style.display=sample?'block':'none';
   const f=document.getElementById('apiKeyField');
   const notice=document.getElementById('backendNotice');
   const intro=document.getElementById('settingsIntro');
   const keyHint=document.getElementById('keyHint');
-  if(f) f.style.display=on?'none':'block';
+  if(f) f.style.display=(on||sample)?'none':'block';
   if(notice) notice.style.display=on?'block':'none';
   const redeem=document.getElementById('redeemField');
   /* Only offer "unlock access" to an account that does not have access yet.
      Mirrors the banner gate above; bkUser is null before login, so the field
      stays hidden then, and openSettings() re-applies this on every open. */
   if(redeem) redeem.style.display=(on&&bkUser&&!bkUser.hasAccess)?'block':'none';
-  if(keyHint) keyHint.style.display=on?'none':'block';
+  if(keyHint) keyHint.style.display=(on||sample)?'none':'block';
   if(intro){
-    if(on){ intro.textContent=''; intro.style.display='none'; }
+    if(on||sample){ intro.textContent=''; intro.style.display='none'; }
     else { intro.textContent='Enter your OpenAI API key once to enable AI note generation.'; intro.style.display=''; }
   }
 }
@@ -48865,7 +48875,7 @@ function _ptGroupSort(mode){
 }
 
 </script>
-<script src="public-preview-runtime.js?v=20260923pv715"></script>
+<script src="public-preview-runtime.js?v=20260923pv717"></script>
 <script>
 /* ===== MLS Unified Patient Card — connectedness cohesion (merges context bar + #patientBar) =====
    Supersedes the original Active-Patient Context Bar. Renders ONE polished patient card under the
@@ -49214,7 +49224,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1301';
+  window.__MLS_AV='b1302';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
@@ -58329,9 +58339,15 @@ a[data-mls-next="1"]{
          sentence was a lie. Each step carries its own line instead. */
       states: [
         { steps: [
-            { sel: '#settingsModal .btn-primary', reason: 'Save what you changed' },
-            { sel: '#settingsModal .modal-x', reason: 'Nothing is waiting — close when you are done' }
-          ] }
+            /* nextglow-1.1.1: the Save button itself. '.btn-primary' alone
+               resolved the FIRST of 14 (Redeem, hidden), so Save was never
+               considered and the row always fell through to the x. */
+            { sel: '#settingsModal button[onclick^="saveSettings"]', reason: 'Save what you changed' }
+          ],
+          /* nextglow-1.1.1: with nothing to save there is no next step. The x
+             glow read "close when you are done" the moment Settings opened
+             (focus lands on the x, which reveals the tag). */
+          halt: true }
       ]
     },
     {
@@ -58436,8 +58452,24 @@ a[data-mls-next="1"]{
         { when: function () { return !!activePatientId(); },
           steps: ['#profileCard > h2 button.btn-green', '#ptPullAthenaBtn'],
           why: 'Start this patient’s visit' },
-        { steps: ['#ptList .pt-item', '#ptSearch', '#ptNewBtn'],
-          why: 'Open the patient you are about to see' }
+        /* nextglow-1.1.1: '#ptList .pt-item' lit the FIRST row - whoever
+           sorts first by name - as "the patient you are about to see". The row
+           is now the one the daily brief names as Next; with no such row the
+           search box is the honest next step. */
+        { steps: [
+            { find: function () {
+                var id = safe(function () { return el('dailyBriefBar').getAttribute('data-next-patient'); }, '');
+                if (!id) return null;
+                return safe(function () {
+                  return Array.prototype.filter.call(document.querySelectorAll('#ptList .pt-item[data-patient-id]'), function (r) {
+                    return r.getAttribute('data-patient-id') === id;
+                  })[0] || null;
+                }, null);
+              }, reason: 'Open the patient you are about to see' },
+            { sel: '#ptSearch', reason: 'Find the patient you are about to see' },
+            '#ptNewBtn'
+          ],
+          why: 'Add the patient you are about to see' }
       ]
     },
     {
@@ -58577,8 +58609,17 @@ a[data-mls-next="1"]{
     return a.length >= 2;
   }
   var UPGRADE_SEL = 'button,a[href],[role=button]';
+  /* nextglow-1.1.1: closing has no bigger twin. The Settings x's parent is
+     the whole dialog, so "close when you are done" was painted on the open
+     Account tab, then on "Watch the walkthrough". */
+  function dismisses(e) {
+    return safe(function () {
+      return e.classList.contains('modal-x') || /^\s*[\u00d7\u2715]\s*$/.test(txt(e.textContent)) ||
+        /^close\b/i.test(trimmed(e.getAttribute('aria-label') || ''));
+    }, false);
+  }
   function upgradeTarget(e) {
-    if (!e || bigEnough(e)) return e;
+    if (!e || bigEnough(e) || dismisses(e)) return e;
     var group = safe(function () { return e.parentElement; }, null);
     if (!group) return e;
     var cands = safe(function () { return group.querySelectorAll(UPGRADE_SEL); }, []);
@@ -58592,7 +58633,10 @@ a[data-mls-next="1"]{
 
   function resolveStep(step, host, rowWhy) {
     var sel = (typeof step === 'string') ? step : step.sel;
-    var e = q(sel, host) || q(sel);
+    /* nextglow-1.1.1: a step may name its target by a finder, for a row a
+       selector cannot pick (the next patient, not the first). */
+    var e = (typeof step !== 'string' && typeof step.find === 'function')
+      ? safe(step.find, null) : (q(sel, host) || q(sel));
     if (eligible(e)) return { el: upgradeTarget(e), why: (typeof step === 'string') ? rowWhy : (step.reason || rowWhy) };
     /* THE UNBLOCK HOP. The step exists and is on screen but refuses, so glow
        what makes it possible and say so. Never glow the refusing control. */
@@ -59666,6 +59710,13 @@ html[data-mls-dock-band="right"] #mlsDock{
    row: fixed basis, no shrink, so six items are six items at every width. */
 html[data-mls-dock-band="top"] #mlsDock > button,
 html[data-mls-dock-band="bottom"] #mlsDock > button{ flex:0 0 auto !important; }
+/* phdock-1.0.0: on a phone the calm shell stretches the dock edge to edge
+   (left/right 8px), and the no-grow basis above left five items in the left
+   236px of a 370px bar. Grow, still never shrink, so it fills its own width
+   and still scrolls from its start if it ever overflows. */
+@media (max-width:760px){
+  html[data-mls-dock-band="bottom"] #mlsDock > button{ flex:1 0 auto !important; }
+}
 /* Compact strip on narrow widths: the label stays (an icon-only dock is a
    guessing game) but it stops setting the item width. */
 @media (max-width:520px){
@@ -60859,6 +60910,11 @@ html body .toast[data-mls-quiet="action"].show{ transform:none !important; }
 #mlsTrayList .tl.err{ color:#8a2c24; }
 #mlsTrayList .tlEmpty{ color:var(--muted, #79837C); padding:4px; }
 @media print{ #mlsTray{ display:none !important; } }
+/* phdock-1.0.0: on a phone the chip floated 88px above the dock, over the
+   visit hero, on every screen. The phone app (feat_mls_phone_ui, mls-ph3)
+   already hides it; phone widths outside that mode now match. Notices still
+   arrive as toasts. */
+@media (max-width:640px){ #mlsTray{ display:none !important; } }
 </style>
 <script>
 /* quietnotify-1.0.0 */
@@ -62809,6 +62865,12 @@ html.mls-clunky-hdr #mslToday{ padding:4px 10px; }
        phones by the settings-clean pass); the <h3> is the dialog's accessible
        title and its sticky header, so the rail head is the one that goes. */
 html #settingsModal .mls-set-rail-head{ display:none !important; }
+/* --- 75: "Navigation layout (Top bar / Left sidebar)" switches the retired
+       rail (#mlsRdNav), which the Calm shell - the one supported navigation
+       owner - always hides: a dropdown that changed nothing, beside the
+       taskbar field that does. Hidden, not removed; setNavLayout keeps its
+       wiring for any shell that still draws that rail. */
+html body.mls-calm #settingsModal .field:has(> #navLayoutSel){ display:none !important; }
 
 /* --- 137: the sticky search row keeps its hands off the round ×.
    The settings-clean pass sets `padding:14px 0 12px !important` from
@@ -62874,14 +62936,6 @@ html #settingsModal input[type=file][disabled]{
     var primary = q('.btn-primary', row), ghost = q('.btn-ghost', row);
     if (primary && primary.style.display === 'none') primary.style.display = '';
     if (ghost && txt(ghost) === 'Done') ghost.textContent = 'Cancel';
-  }
-
-  /* ---- 75: two dropdowns, two different jobs, two different names ----- */
-  function names() {
-    var sel = el('qolDockSide');
-    var field = sel && sel.closest ? sel.closest('.field') : null;
-    var label = field ? q('label', field) : null;
-    if (label && txt(label) === 'Navigation bar') label.textContent = 'Taskbar (quick buttons) position';
   }
 
   /* ---- 82: reopening on a right-hand tab must show that tab ----------- */
@@ -62970,7 +63024,7 @@ html #settingsModal input[type=file][disabled]{
   function pass() {
     if (!open()) return;
     passes++;
-    footer(); names(); vendor(); downloads(); reasons(); revealActiveTab();
+    footer(); vendor(); downloads(); reasons(); revealActiveTab();
   }
 
   function arm() {
@@ -63119,7 +63173,7 @@ html #settingsModal #advIntegrations #mlsClunkySetVendor{ margin-top:14px; }
     if (head && /MLS Controls/i.test(txt(head))) head.textContent = '🎛️ More display options';
     var desc = q('.set-desc', rc);
     if (desc && /legacy guided-visit view/i.test(txt(desc))) {
-      desc.textContent = 'Optional extras for this browser: the voice button, how many quick-pick patients to show, birthday chips, and which MLS Assist version this browser is running.';
+      desc.textContent = 'Optional extras for this browser: the voice button, birthday chips, how many quick-pick patients to show, and how an empty day is worded.';
     }
   }
 
