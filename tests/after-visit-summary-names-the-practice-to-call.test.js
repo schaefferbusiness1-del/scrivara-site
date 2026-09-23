@@ -66,6 +66,7 @@ function lineDecl(src, needle) {
 /* ---- buildSource(), executed against the module's own helpers ---------- */
 const PRELUDE =
   lineDecl(AVS, 'function S(x)') + '\n' +
+  block(AVS, 'function noteText(n)') + '\n' +
   block(AVS, 'function listOrAbsent(') + '\n' +
   block(AVS, 'function avsPracticeName()') + '\n' +
   block(AVS, 'function avsClinicPhone()') + '\n' +

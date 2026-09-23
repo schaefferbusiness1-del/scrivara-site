@@ -132,18 +132,27 @@
     return true;
   }
 
-  // newest note that belongs to this patient and actually has text
+  /* histfix-1.0.0: the note body, wherever the record keeps it. A saved SOAP
+     note keeps it in soap (no text field), so a text-only read skipped every
+     real visit note and fell to a chart-import receipt or to "no note". */
+  function noteText(n) {
+    return S(n && n.soap).trim() || S(n && n.athenaNote).trim() || S(n && n.text).trim();
+  }
+  // newest real visit note that belongs to this patient (by id) and has text:
+  // not a draft, not a chart-import receipt
   function latestNoteFor(pt) {
     return safe(function () {
       if (!pt) return null;
       var notes = (window.getNotes && window.getNotes()) || [];
+      var isReceipt = typeof window._mlsIsChartImportNote === 'function' ? window._mlsIsChartImportNote : function () { return false; };
       var mine = notes.filter(function (n) {
-        if (!n) return false;
-        var match = (n.patientId != null && pt.id != null && String(n.patientId) === String(pt.id)) ||
-                    (n.patient && pt.name && S(n.patient).toLowerCase() === S(pt.name).toLowerCase());
-        return match && S(n.text).trim().length > 0;
+        if (!n || n.isDraft || isReceipt(n)) return false;
+        var match = n.patientId != null && pt.id != null && String(n.patientId) === String(pt.id);
+        return match && noteText(n).length > 0;
       });
-      mine.sort(function (a, b) { return S(b.updated || b.created).localeCompare(S(a.updated || a.created)); });
+      var ms = function (v) { var t = Number(v); return isFinite(t) && v !== '' && v != null ? t : (Date.parse(S(v)) || 0); };
+      var at = function (n) { return Math.max(ms(n.updated), ms(n.created)); };
+      mine.sort(function (a, b) { return at(b) - at(a); });
       return mine[0] || null;
     }, null);
   }
@@ -187,7 +196,7 @@
     lines.push('');
     lines.push('FULL VISIT NOTE (verbatim, the ONLY clinical source for findings, plan and instructions):');
     lines.push('"""');
-    lines.push(S(note && note.text).trim() || '(no visit note text available)');
+    lines.push(noteText(note) || '(no visit note text available)');
     lines.push('"""');
     return lines.join('\n');
   }
@@ -197,7 +206,7 @@
     return [
       S(note.id || note.noteId || note.visitId || note.appointmentId).trim(),
       S(note.version || note.revision || note.updated || note.created).trim(),
-      S(note.text).trim()
+      noteText(note)
     ].join('|');
   }
 

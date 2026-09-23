@@ -1889,6 +1889,13 @@
  * Each rule below out-specifies the rule it must beat (prefixing `html body`
  * adds (0,0,2)); none of them stacks a competing !important at lower
  * specificity, which is the failure mode that has cost this repo repeatedly. */
+@media (max-width:640px){
+  /* histfix-1.0.0: a saved-visit row with "Review Athena actions" squeezed
+     its title to 0px and laid the button over the status badge. The actions
+     wrap onto their own line under the text. */
+  html body #histList .hist-item{ flex-wrap:wrap; }
+  html body #histList .hist-item > .hist-main{ flex:1 1 calc(100% - 48px); }
+}
 @media (max-width:760px){
   /* Generic floor that actually reaches non-<button> controls. */
   html body a[href], html body [role="button"], html body [role="menuitem"],
@@ -5938,7 +5945,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     <p class="note" id="viewMeta"></p>
     <textarea id="viewBody" aria-label="Saved visit text" style="min-height:340px;font-size:14px" readonly></textarea>
     <div class="row">
-      <button class="btn-primary" onclick="reopenViewed()" style="flex:1">↩ Continue this draft</button>
+      <button class="btn-primary" id="viewContinueBtn" onclick="reopenViewed()" style="flex:1">↩ Continue this draft</button>
       <button class="btn-ghost" onclick="closeView()">Close</button>
     </div>
   </div>
@@ -29820,7 +29827,7 @@ function renderHistory(){
   if(sub) sub.innerHTML=ap
     ? 'Showing visits for <b>'+esc(ap.name)+'</b>'+(orphans.length?' plus '+orphans.length+' unassigned visit'+(orphans.length===1?'':'s')+' (tap “Attach” to file them here)':'')+'. '+(hosted?'Synced to your account (encrypted) for':'Saved locally for')+' <b id="histWho">'+(session?esc(session.email):'your account')+'</b>.'
     : 'Click a past visit to reopen it. Notes are '+(hosted?'synced to your account (encrypted) and cached in this browser':'saved locally in this browser')+' for <b id="histWho">'+(session?esc(session.email):'your account')+'</b>.';
-  if(!arr.length){ empty.style.display='block'; list.innerHTML=''; list._mlsSig=''; empty.innerHTML='<span class="big">📭</span>'+(ap?'No saved visits for this patient yet. Generate a note and press <b>Save to history</b>.':'No saved visits yet. Generate a note and press <b>Save to history</b>.'); return; }
+  if(!arr.length){ empty.style.display='block'; list.innerHTML=''; list._mlsSig=''; empty.innerHTML='<span class="big">📭</span>'+(ap?'No notes saved in MLS for this patient yet. Generate a note and press <b>Save to history</b>.':'No notes saved in MLS yet. Generate a note and press <b>Save to history</b>.'); return; }
   empty.style.display='none';
   let ordered=mine.concat(orphans);
   /* adhocid-1.0.0: A ROW THAT RECEIVED NEW BYTES TODAY MAY NOT HIDE UNDER AN
@@ -29839,7 +29846,12 @@ function renderHistory(){
      full-roster copy per unnamed note. Build the id map lazily, once. */
   let _plm=null; const _plistMap=()=>{ if(!_plm){ try{ _plm=__mlsPtRosterData((typeof getPatients==='function'?getPatients():[])).byId; }catch(e){ _plm=new Map(); } } return _plm; };
   const _pname=(n)=>{ let _pn=n.patient; if(!_pn||_pn==='undefined'){ try{ const _mp=_plistMap().get(n.patientId); _pn=(_mp&&_mp.name)||(ap&&ap.name)||'Visit'; }catch(e){ _pn=(ap&&ap.name)||'Visit'; } } return _pn; };
-  const total=ordered.length;
+  /* histfix-1.0.0: a chart-import receipt is data pulled FROM Athena, not a
+     visit (vt-1.1.0). It was counted as one ("7 visits"), listed under the
+     Unsigned chip, and offered "Review Athena actions" - a route that writes
+     note text INTO an Athena encounter. Receipts now live under the Chart
+     imports chip and in the collapsed summary row only. */
+  const total=(fv==='imports')?ordered.filter(n=>{ try{ return _mlsIsChartImportNote(n); }catch(e){ return false; } }).length:ordered.filter(n=>{ try{ return !_mlsIsChartImportNote(n); }catch(e){ return true; } }).length;
   /* b392 History cleanup: bulk chart pulls save one "Athena chart import"
      receipt note per patient with a fresh timestamp — after a big pull they
      buried every real visit under a wall of near-identical rows. In the
@@ -29848,8 +29860,8 @@ function renderHistory(){
   const _isImportNote=(n)=>{ try{ return typeof _mlsIsChartImportNote==='function'?_mlsIsChartImportNote(n):(String(n.cc||'')==='Athena chart import'); }catch(e){ return false; } }; /* vt-1.1.0: the ONE shared predicate */
   let _importNotes=[];
   if(fv==='imports'){ ordered=ordered.filter(_isImportNote); }
-  else if(fv){ ordered=ordered.filter(n=> fv==='opnote' ? (n.kind==='opnote') : fv==='signed' ? !!n.signed : fv==='draft' ? !!n.isDraft : fv==='unsigned' ? (!n.signed && !n.isDraft) : true ); }
-  else if(!q){ _importNotes=ordered.filter(_isImportNote); if(_importNotes.length>3){ ordered=ordered.filter(n=>!_isImportNote(n)); } else { _importNotes=[]; } }
+  else if(fv){ ordered=ordered.filter(n=> !_isImportNote(n) && (fv==='opnote' ? (n.kind==='opnote') : fv==='signed' ? !!n.signed : fv==='draft' ? !!n.isDraft : fv==='unsigned' ? (!n.signed && !n.isDraft) : true) ); }
+  else if(!q){ _importNotes=ordered.filter(_isImportNote); ordered=ordered.filter(n=>!_isImportNote(n)); }
   if(q){ ordered=ordered.filter(n=>{ const hay=String(_pname(n)||'').toLowerCase()+' \n '+__mlsHistorySearchBase(histData,n); return hay.indexOf(q)>=0; }); }
   /* ptfix-1.0.0 (b1169): ONE DENOMINATOR FOR ONE LIST. `total` is taken BEFORE
      the type filter, the chart-import collapse and the search, so the footer
@@ -29898,7 +29910,9 @@ function renderHistory(){
   var _histHtml=ordered.map(n=>{
     const d=new Date(_mlsNoteRecency(n)||Date.now());   /* adhocid-1.0.0: the LATER of created/updated */
     const dateStr=d.toLocaleDateString()+' '+d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-    const status = n.isDraft ? '<span class="badge draft">● Draft</span>'
+    const _rcpt = _isImportNote(n);
+    const status = _rcpt ? '<span class="badge" style="background:#EAF1EE;color:#204034;border-color:#cfe0d7">📥 Chart import</span>'
+                  : n.isDraft ? '<span class="badge draft">● Draft</span>'
                   : (n.signed ? '<span class="badge signed">✔ Signed</span>' : '<span class="badge draft">● Unsigned</span>');
     const kindTag = n.kind==='opnote' ? ' <span class="badge" style="background:#eef0ff;color:#2E6A4B;border-color:#EAF1EE">💉 Op note</span>' : '';
     /* b392: LLM filler phrases used to become row titles verbatim. */
@@ -29921,7 +29935,7 @@ function renderHistory(){
       ? `<button class="del" title="Attach this visit to ${esc(ap.name)}" style="color:var(--green-dk);font-size:14px;font-weight:700;width:auto;padding:4px 9px" onclick="event.stopPropagation();attachNoteToActive('${n.id}')">＋ Attach</button>`
       : '';
     // Review the saved visit's manual Athena routing plan (real notes only).
-    const pushBtn = (!n.isDraft && (n.text||n.soap)) ? `<button title="Review this saved visit's exact Athena destinations, then choose one independent, confirmation-gated action." style="background:#2E6A4B;color:#fff;border:1px solid #2E6A4B;border-radius:10px;font-size:12px;font-weight:700;width:auto;padding:5px 10px;cursor:pointer" onclick="event.stopPropagation();pushHistoryNoteToAthena('${n.id}')">Review Athena actions</button>` : '';
+    const pushBtn = (!_rcpt && !n.isDraft && (n.text||n.soap)) ? `<button title="Review this saved visit's exact Athena destinations, then choose one independent, confirmation-gated action." style="background:#2E6A4B;color:#fff;border:1px solid #2E6A4B;border-radius:10px;font-size:12px;font-weight:700;width:auto;padding:5px 10px;cursor:pointer" onclick="event.stopPropagation();pushHistoryNoteToAthena('${n.id}')">Review Athena actions</button>` : '';
     return `<div class="hist-item" role="button" tabindex="0" aria-haspopup="dialog" aria-label="Open saved visit for ${patName}: ${cc}, ${esc(dateStr)}" onclick="openNoteFromHistory('${n.id}')" onkeydown="if(event.target===this&&(event.key==='Enter'||event.key===' '||event.key==='Spacebar')){event.preventDefault();openNoteFromHistory('${n.id}')}">
       <span class="ic">${n.isDraft?'📝':(n.signed?'✅':'📄')}</span>
       <div class="hist-main">
@@ -30028,6 +30042,12 @@ function openNoteFromHistory(id){
     body+='\n\n— — — ORDERS — — —\n'+savedOrdersText(n.orders);
   }
   document.getElementById('viewBody').value=body;
+  /* histfix-1.0.0: Continue did nothing, silently, for an op note or a
+     chart-import receipt (_mlsSavedRecordCanReopen refuses both). It is shown
+     only when it can work; the meta line says where the rest are finished. */
+  try{ var _vc=document.getElementById('viewContinueBtn'), _can=_mlsSavedRecordCanReopen(n);
+    if(_vc) _vc.style.display=_can?'':'none';
+    if(!_can){ var _vm=document.getElementById('viewMeta'); if(_vm) _vm.textContent+=(typeof _mlsIsChartImportNote==='function'&&_mlsIsChartImportNote(n))?' · Chart-import receipt (read only)':(isOp?' · Open Op notes to keep working on it':''); } }catch(eVc){}
   document.getElementById('viewModal').classList.add('show');
   /* histrefuse-1.0.0: a SUCCESSFUL open is the doctor acting on the refusal -
      the sentence has been read and its first step taken, so the row stops
@@ -38956,6 +38976,9 @@ function pushHistoryNoteToAthena(id){
      placeholders never open an Athena route (the History UI already hides the
      button for drafts — this is the internal last line of defense). */
   if(n.isDraft){ _mlsHistPushRefuse(id,'This is still a draft. Complete and save it before reviewing Athena actions. Nothing changed.'); return; }
+  /* histfix-1.0.0: a chart-import receipt came FROM Athena; it is never
+     written back into an encounter note. */
+  if(typeof _mlsIsChartImportNote==='function'&&_mlsIsChartImportNote(n)){ _mlsHistPushRefuse(id,'This is a chart-import receipt - data read from Athena, not a visit note. Nothing is sent back.'); return; }
   var _phRefused=false;
   try{
     if(typeof opNoteBlankTokens==='function'){
@@ -42625,7 +42648,7 @@ async function generateChartSummary(){
   const visits=patientNotes(p.id).filter(n=>!n.isDraft && (n.soap||'').trim())
     .sort((a,b)=>(a.updated||a.created||0)-(b.updated||b.created||0));
   if(!visits.length){
-    out.textContent='No saved visits for '+p.name+' yet. Generate and save visit notes first, then run the Chart Summary.';
+    out.textContent='No MLS notes saved for '+p.name+' yet - the Chart Summary reads saved notes, not pulled Athena encounters. Generate and save a visit note first, then run it.';
     card.style.display='block'; card.scrollIntoView({behavior:'smooth',block:'nearest'});
     return;
   }
@@ -65922,12 +65945,15 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
     var groups = groupsOf(records), html = '', n = 0;
     var open = isFn(isOpen) ? isOpen : function () { return true; };
     for (var g = 0; g < groups.length; g++) {
-      var inner = '';
+      var inner = '', seen = 0;
       for (var i = 0; i < groups[g].records.length; i++) {
+        if (n < shown) seen++;
         inner += cardHtml(groups[g].records[i], { hidden: n >= shown, open: open(groups[g].records[i]) !== false });
         n++;
       }
-      html += '<div class="hx-group"><div class="hx-gh">' + esc(groups[g].label) + '</div>' + inner + '</div>';
+      /* histfix-1.0.0: a month whose every card is past the "latest" cut is
+         hidden whole - it printed a bare heading over nothing. */
+      html += '<div class="hx-group"' + (seen ? '' : ' hidden') + '><div class="hx-gh">' + esc(groups[g].label) + '</div>' + inner + '</div>';
     }
     return html;
   }
@@ -66107,11 +66133,19 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
     for (var i = 0; i < view.records.length; i++) if (view.records[i].key === key) return view.records[i];
     return null;
   }
-  function copyRecord(key, node) {
+  /* histfix-1.0.0: the only confirmation was the status line under the whole
+     list, often a screen or more below the button. The button says it. */
+  function flash(btn, msg) {
+    if (!btn) return;
+    var was = btn.getAttribute('data-hx-label') || btn.textContent;
+    btn.setAttribute('data-hx-label', was); btn.textContent = msg;
+    setTimeout(function () { if (btn.getAttribute('data-hx-label') === was) { btn.textContent = was; btn.removeAttribute('data-hx-label'); } }, 1800);
+  }
+  function copyRecord(key, node, btn) {
     var rec = recordFor(key);
     if (!rec) return false;
     var text = textBlock(rec, { source: true });
-    var done = function () { say(node, 'Visit copied.'); };
+    var done = function () { say(node, 'Visit copied.'); flash(btn, '✓ Copied'); };
     var fell = function () {
       var ta = document.createElement('textarea');
       ta.value = text; ta.setAttribute('readonly', 'readonly');
@@ -66120,6 +66154,7 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
       var okc = safe(function () { return document.execCommand('copy'); }, false);
       ta.parentNode.removeChild(ta);
       say(node, okc ? 'Visit copied.' : 'This browser would not let MLS copy it.');
+      flash(btn, okc ? '✓ Copied' : 'Copy blocked');
     };
     if (navigator.clipboard && isFn(navigator.clipboard.writeText)) {
       safe(function () { navigator.clipboard.writeText(text).then(done, fell); }, fell);
@@ -66161,7 +66196,7 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
     var allBtn = t.closest('[data-hx-all]');
     if (allBtn) { state.all = !state.all; paint(true); return; }
     var copy = t.closest('[data-hx-copy]');
-    if (copy) { copyRecord(copy.getAttribute('data-hx-copy'), node); return; }
+    if (copy) { copyRecord(copy.getAttribute('data-hx-copy'), node, copy); return; }
     var read = t.closest('[data-hx-read]');
     if (read) { readRecord(node); return; }
   }

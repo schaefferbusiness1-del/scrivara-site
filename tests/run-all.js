@@ -2754,7 +2754,12 @@ const tests = [
      day moves Month with it, Jump forgets a stale selection, hour labels are
      whole, the peek is a keyboard dialog with quoted ids, roomed patients are
      not offered Check in, and short phone Day blocks do not stack. */
-  'calendar-keeps-its-place-runtime.test.js'
+  'calendar-keeps-its-place-runtime.test.js',
+  /* histfix-1.0.0 (b1313): chart-import receipts are not visits and are never
+     written back, the AVS reads the latest real note, no empty month headings,
+     Continue only where it works, Copy confirms on its button, drafts are
+     titled, and phone rows stay readable. */
+  'history-tells-the-truth-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

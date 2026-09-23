@@ -131,7 +131,10 @@
       if (linked) return { visit: linked, inModel: true };
     }
     var nb = noteBody(note);
-    var typeGuess = S(note.cc).trim() || (nb.isOp ? "Operative note" : (note.isDraft ? "Transcript draft" : "Office visit"));
+    /* histfix-1.0.0: a transcript draft is saved with cc '—' (a placeholder,
+       not a complaint); the title read "Sep 20, 2026 · —". */
+    var cc0 = S(note.cc).trim(); if (cc0 === "—") cc0 = "";
+    var typeGuess = cc0 || (nb.isOp ? "Operative note" : (note.isDraft ? "Transcript draft" : "Office visit"));
     var base = M._normVisit({
       id: "note:" + note.id,
       date: ymd(note.updated || note.created),
