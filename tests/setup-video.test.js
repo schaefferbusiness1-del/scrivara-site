@@ -585,7 +585,8 @@ function rerunHarness(answer) {
      the opposite of 1. below: that the walkthrough asset was absent and
      deliberately un-inventoried, "which is why the video-landing commit, not
      this one, edits the inventory". This IS that commit. The recording exists
-     (howto-video/build/assemble.js, real site footage), so the file and its
+     (re-recorded 2026-09-22 from the local demo account with invented
+     patients only - no real patient data on screen), so the file and its
      single inventory line land together, in the one commit the fail-closed
      audit allows - and the two assertions invert accordingly. Nothing else in
      this suite moves: PARTS 1-7 are unchanged, the negative control in 3.
