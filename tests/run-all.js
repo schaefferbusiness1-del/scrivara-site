@@ -2787,7 +2787,12 @@ const tests = [
      another note, says a failed load is a failure (with a retry), says a
      failed open by the list, keeps typed values across a mid-save sign-in,
      and signs in on Enter. */
-  'opnotes-keeps-what-the-surgeon-typed-runtime.test.js'
+  'opnotes-keeps-what-the-surgeon-typed-runtime.test.js',
+  /* legalfix-1.0.0 (b1320): the Legal / IME workspace asks before Close,
+     Escape or another report type discards a draft (re-picking the same type
+     does nothing), says a refused file in the records card, keeps the
+     Activity chip under the sheet, and names exports without the "1p" tag. */
+  'legal-workspace-keeps-the-draft-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

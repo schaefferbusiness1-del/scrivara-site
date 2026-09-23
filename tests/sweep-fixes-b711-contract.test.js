@@ -33,9 +33,9 @@ assert(preview.includes("setProperty('--mls-preview-strip-h'"), 'the strip must 
 /* the fix must actually be served: the frozen token moved in BOTH loaders.
  * Dated shape, never bNNN: the build bump rewrites bNNN tokens in
  * ScribeFlow.html but not sw.js, and forked the two at b712. */
-assert(app.includes('public-preview-runtime.js?v=20260923pv717'),
+assert(app.includes('public-preview-runtime.js?v=20260923pv718'),
   'the page must load the fixed preview runtime');
-assert(sw.includes('/public-preview-runtime.js?v=20260923pv717'),
+assert(sw.includes('/public-preview-runtime.js?v=20260923pv718'),
   'the service worker precache must fetch the fixed preview runtime');
 assert(!app.includes('public-preview-runtime.js?v=b497') && !sw.includes('public-preview-runtime.js?v=b497'),
   'the retired preview-runtime cache token must be unreachable');

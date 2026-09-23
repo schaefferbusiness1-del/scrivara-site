@@ -1157,6 +1157,11 @@
     renderSources(); updateControls();
     if (accepted) setStatus('Reading ' + accepted + ' local file(s) in this browser. Generate stays unavailable until every reader settles.' + (refused.length ? ' ' + refused[0] : ''), refused.length > 0);
     else if (refused.length) setStatus(refused[0] + ' Nothing was uploaded.', true);
+    /* legalfix-1.0.0: setStatus writes into the Generate card, collapsed while
+       files are being added; the refusal is also said where the files are. */
+    var here = byId('mlsP1LegalSourcesMsg');
+    if (!here) { var list = byId('mlsP1LegalSources'); if (list && list.parentNode) { here = document.createElement('p'); here.id = 'mlsP1LegalSourcesMsg'; here.setAttribute('role', 'status'); here.style.cssText = 'margin:6px 0 0;font-size:13px;color:#9a3d29'; list.parentNode.insertBefore(here, list.nextSibling); } }
+    if (here) here.textContent = refused.length ? (refused[0] + (accepted ? '' : ' Nothing was uploaded.')) : '';
     pumpImports();
     return accepted;
   }
@@ -1433,9 +1438,58 @@
     return list;
   }
   /* ===== end p1-legal-counsel-order-1.0.0 ===== */
+  /* legalfix-1.0.0: a generated (and possibly doctor-edited) draft is never
+     thrown away without asking - Close, Escape and a report-type pick each
+     used to discard it silently. The question is drawn INSIDE the sheet: the
+     shell's own confirm sits far below the sheet's z-index. */
+  function hasDraft() {
+    var box = byId('mlsP1LegalDraft');
+    /* the box may be hidden behind the formatted view; its text is still the draft */
+    return !!(clean(state.draft) || (box && clean(box.value)));
+  }
+  function askInSheet(question, yesLabel) {
+    return new Promise(function (resolve) {
+      var root = byId(ROOT_ID); if (!root) { resolve(true); return; }
+      var old = byId('mlsP1LegalAsk'); if (old && old.parentNode) old.parentNode.removeChild(old);
+      var back = document.createElement('div'); back.id = 'mlsP1LegalAsk';
+      back.setAttribute('role', 'alertdialog'); back.setAttribute('aria-modal', 'true'); back.setAttribute('aria-label', question);
+      back.style.cssText = 'position:fixed;inset:0;z-index:2147483003;background:rgba(15,25,20,.45);display:flex;align-items:center;justify-content:center;padding:16px';
+      var card = document.createElement('div');
+      card.style.cssText = 'background:#fff;color:#1A211C;border-radius:14px;max-width:420px;width:100%;padding:16px 18px;box-shadow:0 18px 44px rgba(0,0,0,.3);font:500 14px/1.45 system-ui,-apple-system,sans-serif';
+      var p = document.createElement('p'); p.style.margin = '0 0 12px'; p.textContent = question; card.appendChild(p);
+      var row = document.createElement('div'); row.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap';
+      var keep = document.createElement('button'); keep.type = 'button'; keep.textContent = 'Keep the draft';
+      var go = document.createElement('button'); go.type = 'button'; go.textContent = yesLabel;
+      [keep, go].forEach(function (b) { b.style.cssText = 'min-height:40px;padding:8px 14px;border-radius:10px;font:inherit;cursor:pointer;border:1px solid #D9D6CD;background:#fff'; });
+      go.style.background = '#9a3d29'; go.style.color = '#fff'; go.style.borderColor = '#9a3d29';
+      row.appendChild(keep); row.appendChild(go); card.appendChild(row); back.appendChild(card);
+      var before = document.activeElement;
+      function done(v) {
+        document.removeEventListener('keydown', onKey, true); if (back.parentNode) back.parentNode.removeChild(back);
+        /* focus goes back to what was pressed, inside the sheet, so Escape keeps working */
+        if (!v && before && before.isConnected && isFn(before.focus)) { try { before.focus(); } catch (e) {} }
+        resolve(v);
+      }
+      function onKey(e) { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(false); } }
+      keep.addEventListener('click', function () { done(false); });
+      go.addEventListener('click', function () { done(true); });
+      document.addEventListener('keydown', onKey, true);
+      document.body.appendChild(back);
+      try { keep.focus(); } catch (e) {}
+    });
+  }
   function pickReportType(key) {
     var report = reportTypeFor(key);
     if (!report) return false;
+    if (report.key === state.reportType) return true;
+    if (hasDraft() && !pickReportType.__asked) {
+      askInSheet('Switch to ' + report.label + '? The draft on screen will be discarded.', 'Discard and switch').then(function (ok) {
+        if (!ok) return;
+        pickReportType.__asked = true;
+        try { pickReportType(key); } finally { pickReportType.__asked = false; }
+      });
+      return false;
+    }
     if (state.run || state.generating) { setStatus('Cancel the current draft run before changing the report type.', true); return false; }
     /* p1-legal-flow-2.0.0: step 2 cannot complete before step 1. Allowing it
        would publish data-mls-legal-state="report-picked" with no patient, and
@@ -2923,6 +2977,13 @@
        z-index 9330 that is its own stacking context, so it is the SHELF that
        has to ride above. */
     'body:has(> #' + ROOT_ID + ') #toast,body:has(> #' + ROOT_ID + ') #mlsTray,body:has(> #' + ROOT_ID + ') #mlsMobileNoticeShelf{z-index:2147483002 !important}',
+    /* legalfix-1.0.0: the Activity chip rides above the sheet (so "Chronology
+       copied." can be read) but sat over the sheet's left column and took the
+       clicks meant for Copy. Over the sheet it is just its dot, in the far
+       corner, and the sheet's content keeps clear of it. */
+    'body:has(> #' + ROOT_ID + ') #mlsTray{left:8px !important}',
+    'body:has(> #' + ROOT_ID + ') #mlsTrayLabel{display:none !important}',
+    '@media (min-width:641px){body:has(> #' + ROOT_ID + ') #' + ROOT_ID + ' .p1l-shell{padding-left:max(26px, calc(52px - max(0px, (100vw - 1180px) / 2)))}}',
     'body:has(> #' + ROOT_ID + ') #mlsPublicPreviewStrip{z-index:2147483001 !important}',
     'body:has(> #mlsPublicPreviewStrip) #' + ROOT_ID + ' .p1l-shell{padding-bottom:max(80px, calc(var(--mls-preview-strip-h, 0px) + 24px))}'
   ].join('\n');
@@ -3080,6 +3141,8 @@
     Array.prototype.forEach.call(node.querySelectorAll('button[data-remove-source]'), function (button) {
       button.addEventListener('click', function () { state.sources.splice(+button.getAttribute('data-remove-source'), 1); renderSources(); updateControls(); });
     });
+    /* legalfix-1.0.0: the card's one-line summary follows the list under it */
+    if (typeof renderCardSummaries === 'function') { try { renderCardSummaries(); } catch (e) {} }
   }
   /* ===== p1-legal-flow-2.0.0 renderers ===================================== */
   function chip(label, value, missingText) {
@@ -3353,7 +3416,7 @@
     on('mlsP1LegalClose', 'click', closeOverlay);
     on('mlsP1LegalCompile', 'click', compileHistory);
     on('mlsP1LegalChronCopy', 'click', function () { exportIfCurrent(chronologyText, function (text) { copyText(text, 'Chronology'); }); });
-    on('mlsP1LegalChronDownload', 'click', function () { exportIfCurrent(chronologyText, function (text) { downloadText('MLS_1p_Legal_Chronology_' + todayYmd() + '.txt', text); }); });
+    on('mlsP1LegalChronDownload', 'click', function () { exportIfCurrent(chronologyText, function (text) { downloadText('MLS_Legal_Chronology_' + todayYmd() + '.txt', text); }); });
     on('mlsP1LegalChronPrint', 'click', function () { exportIfCurrent(chronologyText, function (text) { printText('Read-only medical-legal chronology', text); }); });
     on('mlsP1LegalGenerate', 'click', function () { if (!state.model && !compileHistory()) return; generateDraft(); });
     /* legal-luna-1.0.0 (owner 2026-08-20: ask at generate time, in the legal
@@ -3377,9 +3440,13 @@
     paintModelAsk();
     on('mlsP1LegalCancel', 'click', function () { cancelGeneration('Generation canceled. Any late response is blocked; the current inputs remain editable.'); });
     on('mlsP1LegalDraftCopy', 'click', function () { exportDraft(function (text) { copyText(text, 'Draft'); }); });
-    on('mlsP1LegalDraftDownload', 'click', function () { exportDraft(function (text) { downloadText('MLS_1p_Legal_IME_DRAFT_' + todayYmd() + '.txt', text); }); });
-    on('mlsP1LegalDraftWord', 'click', function () { exportDraft(function (text) { downloadWord('MLS_1p_Legal_IME_DRAFT_' + todayYmd() + '.doc', 'IME draft — for review and edit', text); }); }); /* wdoc-1.0.0 */
-    on('mlsP1LegalDraftPrint', 'click', function () { exportDraft(function (text) { printText('Medical-Legal / IME DRAFT', text); }); });
+    /* legalfix-1.0.0: every export was named and titled an IME, whatever the
+       report, and carried the internal lane tag "1p". */
+    var draftName = function () { var r = reportTypeFor(state.reportType) || reportTypeFor('ime'); return r ? r.label : 'Legal report'; };
+    var draftFile = function (ext) { return 'MLS_Legal_' + draftName().replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '') + '_DRAFT_' + todayYmd() + ext; };
+    on('mlsP1LegalDraftDownload', 'click', function () { exportDraft(function (text) { downloadText(draftFile('.txt'), text); }); });
+    on('mlsP1LegalDraftWord', 'click', function () { exportDraft(function (text) { downloadWord(draftFile('.doc'), draftName() + ' draft — for review and edit', text); }); }); /* wdoc-1.0.0 */
+    on('mlsP1LegalDraftPrint', 'click', function () { exportDraft(function (text) { printText(draftName() + ' DRAFT', text); }); });
     var drop = byId('mlsP1LegalDrop'), input = byId('mlsP1LegalFile');
     if (drop && input) {
       drop.addEventListener('click', function () { input.click(); });
@@ -3454,7 +3521,21 @@
       go.id = 'mlsClunkyLegalLhSettings';
       go.textContent = 'Open Settings';
       go.addEventListener('click', function () {
-        lhSafe(function () { if (isFn(window.openSettings)) window.openSettings(); });
+        /* legalfix-1.0.0: Settings opened UNDER the full-screen sheet and the
+           press looked dead. The sheet steps aside while Settings is up and
+           comes back, untouched, when it closes. */
+        lhSafe(function () {
+          if (!isFn(window.openSettings)) return;
+          window.openSettings();
+          var sheet = byId(ROOT_ID), m = byId('settingsModal');
+          if (!sheet || !m || !m.classList.contains('show')) return;
+          sheet.style.visibility = 'hidden';
+          var iv = setInterval(function () {
+            var s2 = byId(ROOT_ID), m2 = byId('settingsModal');
+            if (!s2) { clearInterval(iv); return; }
+            if (!m2 || !m2.classList.contains('show')) { clearInterval(iv); s2.style.visibility = ''; }
+          }, 300);
+        });
       });
       warn.appendChild(go);
     }
@@ -3470,6 +3551,7 @@
   function onDialogKeydown(event) {
     if (!byId(ROOT_ID)) return;
     if (event.key === 'Escape') {
+      if (byId('mlsP1LegalAsk')) return;
       event.preventDefault(); event.stopPropagation(); closeOverlay(); return;
     }
     if (event.key !== 'Tab') return;
@@ -3492,7 +3574,9 @@
     if (restoreFocus && prior && isFn(prior.focus)) { try { prior.focus(); } catch (e) {} }
   }
   function closeOverlay() {
-    closeOverlayInternal(true);
+    if (!hasDraft()) { closeOverlayInternal(true); return; }
+    askInSheet('Close the Legal / IME workspace? The draft on screen will be discarded - download or copy it first to keep it.', 'Discard and close')
+      .then(function (ok) { if (ok) closeOverlayInternal(true); });
   }
   function openOverlay() {
     if (clinicalAccess() !== 'eligible') {
@@ -3564,7 +3648,7 @@
     version: VERSION,
     installToken: liveLoader.installToken,
     open: function () { return apiCurrent() ? openOverlay() : false; },
-    close: function () { if (!apiCurrent()) return false; closeOverlay(); return true; },
+    close: function () { if (!apiCurrent()) return false; closeOverlayInternal(true); return true; },
     buildModel: function (patient, binding) { return apiCurrent() ? buildModel(patient, binding) : { binding: null, items: [], providers: [], counts: {} }; },
     chronologyText: function () { return apiCurrent() ? chronologyText() : ''; },
     readLocalFile: function (file, options) { return apiCurrent() ? readLocalFile(file, options) : Promise.reject(abortError('stale-api', 'This Legal / IME preview instance is no longer current.')); },
@@ -3660,7 +3744,7 @@
       apiLive = false;
       if (autoOpenTimer) { clearTimeout(autoOpenTimer); autoOpenTimer = null; }
       queryOpenPending = false;
-      closeOverlay();
+      closeOverlayInternal(true);
       try { window.removeEventListener('mls:active-patient-changed', onPatientChange, true); } catch (e) {}
       try { window.removeEventListener('mls:session-boundary', onSessionBoundary, true); } catch (e) {}
       removeDoorHook();

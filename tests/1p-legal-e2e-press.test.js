@@ -418,8 +418,15 @@ const measured = {};
       .forEach((label) => ok(measured.narrativeDraft.indexOf(label) >= 0, 'the browser narrative omitted ' + label));
     ok(/This is an unsigned draft for clinician review\. It does not constitute a final medical-legal opinion unless verified, adopted, and signed by/.test(measured.narrativeDraft),
       'the browser narrative omitted the deterministic unsigned-provider guard');
-    /* Return to the IME type for the existing export and counsel-order proof. */
+    /* Return to the IME type for the existing export and counsel-order proof.
+       legalfix-1.0.0: a draft is on screen, so switching type asks first. */
     await page.evaluate(() => window.__lgApi.press('#mlsP1LegalReport_ime'));
+    const asked = await page.evaluate(() => {
+      const b = [...document.querySelectorAll('#mlsP1LegalAsk button')].find((x) => /Discard/.test(x.textContent));
+      if (b) b.click(); return !!b;
+    });
+    ok(asked, 'switching report type over a generated draft did not ask before discarding it');
+    await page.waitForTimeout(200);
     const gen = await page.evaluate(() => window.__lgApi.press('#mlsP1LegalGenerate'));
     eq(gen.disabled, false, 'Generate was disabled on a bound patient with a report type picked');
     eq(gen.disabledAfter, true, 'Generate stayed pressable while its own run was starting');

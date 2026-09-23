@@ -27,7 +27,9 @@ function ok(cond, msg) { assert.ok(cond, msg); checks++; }
 ok(src.includes('id="mlsP1LegalDraftWord" disabled>Download for Word<'), 'the Word button must sit in the draft actions row, disabled until a draft exists');
 ok(/\['mlsP1LegalDraftCopy', 'mlsP1LegalDraftDownload', 'mlsP1LegalDraftWord', 'mlsP1LegalDraftPrint'\]/.test(src), 'the Word button must ride the same enable/disable list as its siblings');
 ok(/on\('mlsP1LegalDraftWord', 'click', function \(\) \{ exportDraft\(/.test(src), 'the Word exit must export through the SAME exportDraft the .txt exit uses — one content path');
-ok(src.includes("'.doc', 'IME draft"), 'the download must be a .doc file');
+/* legalfix-1.0.0 (b1320): the file is named for the chosen report (it was
+   always "IME"), still a .doc */
+ok(src.includes("downloadWord(draftFile('.doc')"), 'the download must be a .doc file');
 ok(src.includes("{ type: 'application/msword' }"), 'the blob must be served as application/msword');
 ok(src.includes("['\\ufeff', html]"), 'the BOM must be the escape sequence, never a literal BOM byte in source');
 ok(!/new Blob\(\['﻿'/.test(src), 'no literal BOM byte may exist in the source (latin1/ASCII discipline)');

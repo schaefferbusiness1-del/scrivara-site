@@ -432,6 +432,10 @@
        and left "Records review summary" the one report that could not be
        chosen. Compile/Generate stay gated by their own words. */
     try { if (control.matches && control.matches('#mlsP1LegalRoot .p1l-report[data-report-type]')) return true; } catch (e2) {}
+    /* legalfix-1.0.0: a Legal card header only opens or closes its card; the
+       ids ...DiscloseRecords / ...DiscloseGenerate matched record/generate and
+       the Local records card could never be opened in the sample. */
+    try { if (control.matches && control.matches('#mlsP1LegalRoot .p1l-disclose')) return true; } catch (e3) {}
     return false;
   }
 

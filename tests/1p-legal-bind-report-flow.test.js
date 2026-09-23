@@ -1273,8 +1273,12 @@ function makeRuntime(options = {}) {
     /* p1-legal-readlive-1.0.0: the live read line is painted by renderReadOps,
        like the day box beside it — always present, shown only while a read is
        running, so this drift guard can still see it. */
+    /* legalfix-1.0.0: the discard question (mlsP1LegalAsk) and the records
+       card's refusal line (mlsP1LegalSourcesMsg) are created when needed. */
     const RENDERED_LATER = ['mlsP1LegalChange', 'mlsP1LegalRosterSearch', 'mlsP1LegalRosterResults', 'mlsP1LegalReadDay', 'mlsP1LegalReadLive'];
-    deep([...looked].filter(id => !painted.has(id) && RENDERED_LATER.indexOf(id) < 0).sort(), [],
+    const CREATED_ON_DEMAND = ['mlsP1LegalAsk', 'mlsP1LegalSourcesMsg'];
+    CREATED_ON_DEMAND.forEach(id => ok(source.indexOf(".id = '" + id + "'") >= 0, 'the module never creates ' + id));
+    deep([...looked].filter(id => !painted.has(id) && RENDERED_LATER.indexOf(id) < 0 && CREATED_ON_DEMAND.indexOf(id) < 0).sort(), [],
       'the module looks up a control the shell markup never renders');
     deep([...painted].filter(id => !Object.prototype.hasOwnProperty.call(UI_IDS, id) &&
       /* static labels/landmarks, never looked up or wired */
