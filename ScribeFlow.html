@@ -19625,22 +19625,34 @@ function _todayStr(){ if(typeof _acctTodayKey==='function') return _acctTodayKey
 function _boardDay(){ return _boardDate||_todayStr(); }
 function changeBoardDate(delta){ var d=new Date((_boardDate||_todayStr())+'T12:00'); d.setDate(d.getDate()+delta); _boardDate=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); loadBoard(true); }
 function jumpBoardDate(v){ if(v){ _boardDate=String(v).slice(0,10); loadBoard(true); } }
+/* stafffix-1.0.0 (2026-09-23): a slow refresh for one day could land after the
+   receptionist had moved to another day and paint the old day's rows under the
+   new date, so Check in / Cancel acted on the wrong day's appointment. Each load
+   remembers its day and its turn; an answer for a day no longer shown, or one
+   overtaken by a newer load, is dropped. */
+var _boardSeq=0;
 async function loadBoard(showToast){
   const box=document.getElementById('boardBox'); if(!box) return;
   /* dlc-1.0.0: hosted signed-out blocks; local/demo uses the local shim */
   if(typeof backendMode==='function'&&backendMode()&&!bkToken()){ if(showToast) toast('Sign in to see the check-in board.','err'); return; }
   if(showToast){ box.style.display='block'; box.innerHTML='<div class="mini" style="color:var(--muted)">Loading the board…</div>'; }
+  const seq=++_boardSeq;
+  var day='';
+  const stale=function(){ return seq!==_boardSeq||day!==_boardDay(); };
   try{
     try{ await syncProfileName(); }catch(e){}
     if(!_boardDate)_boardDate=_todayStr();
-    const r=await fetch(bkBase()+'/api/appointments?date='+_boardDay(),{headers:{Authorization:'Bearer '+bkToken()}});
+    day=_boardDay();
+    const r=await fetch(bkBase()+'/api/appointments?date='+day,{headers:{Authorization:'Bearer '+bkToken()}});
+    if(stale()) return;
     if(r.status===403){ box.style.display='none'; if(showToast) toast('The schedule is for practice staff accounts.','err'); return; }
     if(!r.ok){ _boardStaleNote(showToast,box); return; }
     const d=await r.json().catch(function(){return {appointments:[],doctors:[]};});
+    if(stale()) return;
     _boardDoctors=d.doctors||[];
     _boardRemoveStaleNote();
     renderBoard(d.appointments||[]);
-  }catch(e){ _boardStaleNote(showToast,box); }
+  }catch(e){ if(!stale()) _boardStaleNote(showToast,box); }
 }
 /* ck-1.1.0: a FAILED background refresh (after check-in/room/cancel actions)
    used to return silently — the board kept painting the pre-action state with
@@ -19661,7 +19673,10 @@ function renderBoard(appts){
   const box=document.getElementById('boardBox'); if(!box) return;
   box.style.display='block';
   const order={checked_in:0,roomed:1,booked:2,completed:3,no_show:4,cancelled:5};
-  const sorted=(appts||[]).slice().sort(function(a,b){ return ((order[a.status]||9)-(order[b.status]||9)) || (((a.time_unknown||!a.start_at)?1:0)-((b.time_unknown||!b.start_at)?1:0)) || String(a.start_at||'').localeCompare(String(b.start_at||'')); });
+  /* stafffix-1.0.0: checked_in is 0, and (0||9) sorted the patient waiting in
+     the lobby below the cancellations. */
+  const rank=function(s){ return Object.prototype.hasOwnProperty.call(order,s)?order[s]:9; };
+  const sorted=(appts||[]).slice().sort(function(a,b){ return (rank(a.status)-rank(b.status)) || (((a.time_unknown||!a.start_at)?1:0)-((b.time_unknown||!b.start_at)?1:0)) || String(a.start_at||'').localeCompare(String(b.start_at||'')); });
   const docOpts='<option value="">No provider</option>'+_boardDoctors.map(function(d){return '<option value="'+d.id+'">'+esc(d.name||('Provider #'+d.id))+'</option>';}).join('');
   var _bd=_boardDay(); var _isToday=(_bd===_todayStr());
   var _lbl=_isToday?'Today':new Date(_bd+'T12:00').toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
@@ -21983,7 +21998,7 @@ function _copilotRenderThread(){
        dictated or pasted multi-line question rendered as one run-on blob. */
     if(m.role==='user') return '<div class="cmsg cmsg-user"><div class="cbubble">'+_ce(m.text).replace(/\n/g,'<br>')+'</div></div>';
     if(m.role==='pending') return '<div class="cmsg cmsg-ai"><div class="cbubble cbubble-ai"><span class="cdots"><i></i><i></i><i></i></span></div></div>';
-    var acts=(m.actions&&m.actions.length)? '<div class="cactions">'+m.actions.map(function(a,ix){ return '<button class="cact-btn" onclick="_copilotDoAction('+_ce(JSON.stringify(a.kind))+','+_ce(JSON.stringify(a.arg))+',this)">'+_ce(a.label)+'</button>'; }).join('')+'</div>' : '';
+    var acts=(m.actions&&m.actions.length)? '<div class="cactions">'+m.actions.map(function(a,ix){ return '<button class="cact-btn" onclick="_copilotDoAction('+_ce(JSON.stringify(a.kind))+','+_ce(JSON.stringify(a.arg))+',this)">'+_ce(_copilotActionLabel(a))+'</button>'; }).join('')+'</div>' : '';
     return '<div class="cmsg cmsg-ai"><div class="cbubble cbubble-ai">'+_ce(m.text).replace(/\n/g,'<br>')+acts+_copilotCitationsHtml(m)+_copilotChartHtml(m,i,'main')+'</div></div>'+_copilotArtifactHtml(m,i);
   }).join('');
   _copilotScrollToLatest(box);
@@ -22195,6 +22210,19 @@ function _copilotResolvePatientSafe(arg){
   if(partial.length){ out.reason='partial-name'; out.candidates=partial; }
   return out;
 }
+/* stafffix-1.0.0 (2026-09-23): "Choose match 1 / Choose match 2" left the
+   doctor guessing which same-name chart was which. The stored action keeps
+   its generic label (the thread is saved on this device and must not carry
+   identifiers), and the button is labelled from the chart at render time. */
+function _copilotActionLabel(a){
+  var lbl=String((a&&a.label)||'');
+  if(!/^Choose match \d+$/.test(lbl)) return lbl;
+  try{
+    var p=(typeof getPatients==='function'?(getPatients()||[]):[]).find(function(x){ return x&&String(x.id)===String(a.arg); });
+    if(p) return (p.name||'Patient')+' · DOB '+(p.dob||'not on file')+(p.mrn?' · MRN '+p.mrn:'');
+  }catch(e){}
+  return lbl;
+}
 function _copilotAskWhichPatient(kind,raw,candidates){
   var shown=(candidates||[]).slice(0,6);
   var actions=shown.map(function(p,i){return {label:'Choose match '+(i+1),kind:kind,arg:String(p.id)};});
@@ -22244,7 +22272,7 @@ function _copilotDoAction(kind, arg, btn){
       if(verified&&!moved){ try{ toast('That chart did not open — try it from Patients.','err'); }catch(e){} return; }
       if(kind==='startVisit' && typeof goNewVisitForPatient==='function'){ goNewVisitForPatient(); }
       else if(typeof showView==='function'){ showView('patients'); }
-      try{ toast((kind==='startVisit'?'Starting a visit for ':'Opened ')+(p2.name||'patient'),'ok'); }catch(e){}
+      try{ toast((kind==='startVisit'?'Starting a visit for ':'Opened ')+(p2.name||'patient')+(p2.dob?' (DOB '+p2.dob+')':''),'ok'); }catch(e){}
       done();
       return;
     }
@@ -45572,7 +45600,11 @@ async function loadRecMessages(){
   try{
     var r=await fetch(bkBase()+'/api/messages',{headers:{Authorization:'Bearer '+bkToken()}});
     if(r.status===401){ handle401(); return; }
-    var d=await r.json(); var msgs=d.messages||[]; recUpdateBadge(d.unread||0);
+    /* stafffix-1.0.0 (2026-09-23): a server error used to be read as an empty
+       inbox - "No messages yet" and a cleared badge while callbacks waited. */
+    var d=r.ok?await r.json().catch(function(){ return null; }):null;
+    if(!d||!Array.isArray(d.messages)){ box.innerHTML='<div class="mini" style="color:#c0392b">Could not load messages. Nothing was changed. <button class="btn-ghost" style="font-size:12px;padding:3px 10px" onclick="loadRecMessages()">↻ Try again</button></div>'; return; }
+    var msgs=d.messages; recUpdateBadge(d.unread||0);
     var h='<div style="font-weight:700;font-size:15px;margin-bottom:8px">💬 Phone messages <span class="mini" style="color:var(--muted);font-weight:400">— taken by your AI phone assistant</span></div>';
     if(!msgs.length){ box.innerHTML=h+'<div class="mini" style="color:var(--muted)">No messages yet. When the phone assistant takes a message, it shows up here.</div>'; return; }
     msgs.forEach(function(m){
@@ -45591,7 +45623,12 @@ async function loadRecMessages(){
     box.innerHTML=h;
   }catch(e){ box.innerHTML='<div class="mini" style="color:#c0392b">Could not load messages.</div>'; }
 }
-async function recResolveMsg(id){ try{ await fetch(bkBase()+'/api/messages/'+id+'/resolve',{method:'POST',headers:{Authorization:'Bearer '+bkToken()}}); }catch(e){} loadRecMessages(); }
+async function recResolveMsg(id){
+  var ok=false;
+  try{ var r=await fetch(bkBase()+'/api/messages/'+id+'/resolve',{method:'POST',headers:{Authorization:'Bearer '+bkToken()}}); if(r.status===401){ handle401(); return; } ok=r.ok; }catch(e){}
+  if(!ok){ try{ toast('Could not mark that message done. It is still open - try again.','err'); }catch(e2){} }
+  loadRecMessages();
+}
 function recComposeText(num){ window._recPrefill={to:num||'',body:''}; recTab('comms'); }
 function renderRecComms(){
   var box=document.getElementById('recComms'); if(!box) return;
@@ -45633,11 +45670,20 @@ async function loadRecSettings(){
   try{
     var r=await fetch(bkBase()+'/api/comms/settings',{headers:{Authorization:'Bearer '+bkToken()}});
     if(r.status===401){ handle401(); return; }
-    var d=await r.json(); var c=d.comms||{}; window._recComms=c;
+    /* stafffix-1.0.0 (2026-09-23): a failed load rendered an all-off form, and
+       Save then switched off the practice's reminders, confirmations and
+       no-show messages. Only a real answer gets a form and a Save button. */
+    var d=r.ok?await r.json().catch(function(){ return null; }):null;
+    if(!d||!d.comms||typeof d.comms!=='object'){ box.innerHTML='<div class="mini" style="color:#c0392b">Could not load settings. Nothing was changed. <button class="btn-ghost" style="font-size:12px;padding:3px 10px" onclick="loadRecSettings()">↻ Try again</button></div>'; return; }
+    var c=d.comms; window._recComms=c;
+    /* Call forwarding is the doctor's or owner's to change (the server keeps a
+       front-desk account's edits out); show it read-only instead of a
+       "Saved." that did not happen. */
+    var _xferRO=isReceptionistUser();
     var h='<div style="font-weight:700;font-size:15px;margin-bottom:6px">⚙️ Communication settings</div>';
     if(!d.twilioReady) h+='<div class="mini" style="background:#fff7e6;border:1px solid #f0d9a0;border-radius:10px;padding:8px 11px;margin-bottom:10px;color:#7a5b00">Texts &amp; calls won\'t actually send until your Twilio credentials (and A2P 10DLC for texts) are set in the backend. Configure everything now — it starts working the moment that\'s done.</div>';
     h+=recSettingCard('📅 Calendar tab','Show the shared month Calendar tab to everyone in your practice (doctors and front desk).','<label style="display:flex;align-items:center;gap:7px;font-size:14px"><input type="checkbox" id="rc_calendar" '+(c.calendarEnabled!==false?'checked':'')+'> Show the Calendar tab</label>');
-    h+=recSettingCard('🔀 Live call transfer','When a caller wants a real person, the phone assistant rings this number.','<label style="display:flex;align-items:center;gap:7px;font-size:14px"><input type="checkbox" id="rcTransfer" '+(c.transferEnabled?'checked':'')+'> Enable live transfer to a person</label><input id="rcPhone" placeholder="Front-desk phone to ring, e.g. (555) 123-4567" value="'+esc(c.frontDeskPhone||'')+'" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid var(--line);border-radius:10px;font-size:14px;margin-top:7px">');
+    h+=recSettingCard('🔀 Live call transfer','When a caller wants a real person, the phone assistant rings this number.','<label style="display:flex;align-items:center;gap:7px;font-size:14px"><input type="checkbox" id="rcTransfer" '+(c.transferEnabled?'checked':'')+(_xferRO?' disabled':'')+'> Enable live transfer to a person</label>'+(_xferRO?'<div class="mini" style="color:var(--muted);margin:4px 0">Only the doctor or practice owner can change call forwarding.</div>':'')+'<input id="rcPhone"'+(_xferRO?' disabled':'')+' placeholder="Front-desk phone to ring, e.g. (555) 123-4567" value="'+esc(c.frontDeskPhone||'')+'" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid var(--line);border-radius:10px;font-size:14px;margin-top:7px">');
     h+=recFeatureCard('reminders','⏰ Appointment reminders','Auto text/call before each appointment.',c.reminders,true);
     h+=recFeatureCard('confirmations','✅ Booking confirmations','Sent the moment a patient books online or by phone.',c.confirmations,false);
     h+=recFeatureCard('missedCall','📵 Missed-call follow-up','Reach a caller you could not help live.',c.missedCall,false);
@@ -45652,19 +45698,19 @@ async function saveRecSettings(btn){
   function channels(key){ var a=[]; if(chk('rc_'+key+'_sms'))a.push('sms'); if(chk('rc_'+key+'_voice'))a.push('voice'); return a.length?a:['sms']; }
   var payload={
     calendarEnabled:chk('rc_calendar'),
-    transferEnabled:chk('rcTransfer'), frontDeskPhone:(document.getElementById('rcPhone')||{}).value||'',
     reminders:{enabled:chk('rc_reminders_en'),channels:channels('reminders'),dayBefore:chk('rc_reminders_day'),hoursOf:chk('rc_reminders_soon')},
     confirmations:{enabled:chk('rc_confirmations_en'),channels:channels('confirmations')},
     missedCall:{enabled:chk('rc_missedCall_en'),channels:channels('missedCall')},
     waitlist:{enabled:chk('rc_waitlist_en'),channels:channels('waitlist')},
     noShow:{enabled:chk('rc_noShow_en'),channels:channels('noShow')}
   };
+  if(!isReceptionistUser()){ payload.transferEnabled=chk('rcTransfer'); payload.frontDeskPhone=(document.getElementById('rcPhone')||{}).value||''; }
   var msg=document.getElementById('recSetMsg'); if(btn) btn.disabled=true; if(msg){msg.style.color='var(--muted)';msg.textContent='Saving…';}
   try{
     var r=await fetch(bkBase()+'/api/comms/settings',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+bkToken()},body:JSON.stringify({comms:payload})});
     if(btn) btn.disabled=false;
-    if(r.ok){ if(msg){msg.style.color='#127a55';msg.textContent='✓ Saved.';} try{toast('Communication settings saved.','ok');}catch(e){} }
-    else { if(msg){msg.style.color='#c0392b';msg.textContent='Could not save.';} }
+    if(r.ok){ try{ var sv=await r.json(); if(sv&&sv.comms) window._recComms=sv.comms; }catch(eS){} if(msg){msg.style.color='#127a55';msg.textContent='✓ Saved.';} try{toast('Communication settings saved.','ok');}catch(e){} }
+    else { var er=null; try{ er=await r.json(); }catch(eR){} if(msg){msg.style.color='#c0392b';msg.textContent=(er&&typeof er.error==='string'&&er.error.length<200&&/\s/.test(er.error))?er.error:'Could not save. Nothing was changed.';} }
   }catch(e){ if(btn) btn.disabled=false; if(msg){msg.style.color='#c0392b';msg.textContent='Network error.';} }
 }
 function isReceptionistUser(){ return !!(bkUser && bkUser.role==='receptionist'); }
@@ -49461,7 +49507,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1324';
+  window.__MLS_AV='b1325';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
