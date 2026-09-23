@@ -197,6 +197,10 @@ function opnSay(id, sentence, bad) {
    painted into the gate, so nothing of the notes exists on the page until the
    code has been accepted - not a title, not a count, not a name. */
 var opnHint = '';
+/* opnfix-1.0.0: what a sign-in interrupted mid-save, put back afterwards */
+var opnPending = null;
+/* and closing the tab with something unsaved asks first */
+try { window.addEventListener('beforeunload', function (e) { try { if (opnDirty()) { e.preventDefault(); e.returnValue = ''; } } catch (x) {} }); } catch (eBu) {}
 function opnSignInCard(say) {
   var g = opnEl('gate');
   if (!g) return;
@@ -209,7 +213,7 @@ function opnSignInCard(say) {
     '<button class="btn" id="opnCodeBtn" onclick="opnAskCode()">Email me a code</button>' +
     '<div id="opnCodeWrap" class="hide">' +
       '<label for="opnCode">The six-digit code</label>' +
-      '<input id="opnCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000">' +
+      '<input id="opnCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" onkeydown="if(event.key===\'Enter\'){event.preventDefault();opnVerify();}">' +
       '<button class="btn" onclick="opnVerify()">Sign in</button>' +
     '</div>' +
     '<p class="said hide" id="opnSignMsg"></p>';
@@ -222,7 +226,8 @@ async function opnAskCode() {
   try {
     var r = await opnPost('/api/client/opnotes/code', {});
     var d = null; try { d = await r.json(); } catch (e) { d = null; }
-    if (b) { b.disabled = false; b.textContent = 'Send another code'; }
+    /* opnfix-1.0.0: "another" only once a code was actually sent */
+    if (b) { b.disabled = false; b.textContent = r.ok ? 'Send another code' : 'Email me a code'; }
     if (r.ok) {
       if (d && d.emailHint) opnHint = String(d.emailHint);
       opnShow('opnCodeWrap', true);
@@ -273,9 +278,14 @@ async function opnVerify() {
 }
 
 /* ---- the list ---------------------------------------------------------- */
+/* opnfix-1.0.0: a list that FAILED to load said "Nothing waiting for you
+   right now" - a surgeon with pending notes was told there was nothing to do.
+   The failure is said as a failure, with a way to try again. */
+var opnJobsFailed = false;
 function opnRenderList() {
   var host = opnEl('list');
   if (!host) return;
+  if (opnJobsFailed) { host.innerHTML = '<p class="stop">Your op notes could not be loaded just now.</p><button class="btn2" onclick="opnReloadList()">Try again</button>'; return; }
   if (!opnJobs.length) { host.innerHTML = '<p class="sub">Nothing waiting for you right now.</p>'; return; }
   var h = '';
   for (var i = 0; i < opnJobs.length; i++) {
@@ -287,7 +297,16 @@ function opnRenderList() {
       '<span class="jobstate' + (j.status === 'completed' ? ' done' : '') + '">' + opnEsc(state) + '</span>' +
       '</button>';
   }
-  host.innerHTML = h;
+  host.innerHTML = h + '<p class="said hide" id="listMsg"></p>';
+}
+async function opnReloadList() {
+  try {
+    var jr = await opnGet('/api/client/opnotes/jobs');
+    if (jr.status === 401) { await opnHandle401(jr); return; }
+    if (jr.ok) { var jd = await jr.json(); opnJobs = (jd && jd.jobs) || []; opnJobsFailed = false; }
+    else opnJobsFailed = true;
+  } catch (e) { opnJobsFailed = true; }
+  opnRenderList();
 }
 
 /* ---- one op note ------------------------------------------------------- */
@@ -330,7 +349,11 @@ function opnRenderJob(job) {
     '<p class="said hide" id="jobMsg"></p>' +
     opnRefitHtml(job);
   var card = opnEl('jobCard');
-  if (card) { card.innerHTML = h; card.className = 'card'; }
+  if (card) {
+    card.innerHTML = h; card.className = 'card';
+    /* opnfix-1.0.0: "Saved." stops being true at the next keystroke */
+    if (!card.__opnWired) { card.__opnWired = true; try { card.addEventListener('input', function () { var m = opnEl('jobMsg'); if (m && m.className === 'said') opnShow('jobMsg', false); }); } catch (eIn) {} }
+  }
 }
 
 function opnCollect() {
@@ -383,7 +406,7 @@ async function opnPush(where, msgId) {
   var picked = opnCollect();
   var r = await opnPost('/api/client/opnotes/jobs/' + encodeURIComponent(opnOpen.id) + '/' + where,
     { noteText: picked.noteText, blanks: picked.blanks, expectedVersion: opnOpen.version });
-  if (r.status === 401) { await opnHandle401(r); return null; }
+  if (r.status === 401) { opnPending = { id: opnOpen.id, blanks: picked.blanks, noteText: picked.noteText }; await opnHandle401(r); return null; }
   if (r.status === 409) { opnSay(msgId, 'Someone else changed this note. Reload the page to see the newest one.', true); opnShow(msgId, true); return null; }
   if (r.status === 422) {
     var e = null; try { e = await r.json(); } catch (x) { e = null; }
@@ -399,8 +422,11 @@ async function opnPush(where, msgId) {
   if (typeof saved.noteText === 'string') {
     opnOpen.noteText = saved.noteText;
     if (saved.blanks && saved.blanks.length !== undefined) opnOpen.blanks = saved.blanks;
+    var wasOn = document.activeElement && document.activeElement.getAttribute ? document.activeElement.getAttribute('onclick') : '';
     opnRenderJob(opnOpen);
     var body = opnEl('opnNote'); if (body) body.value = saved.noteText;
+    /* opnfix-1.0.0: the card is rebuilt; focus goes back to the button pressed */
+    if (wasOn) { var again = document.querySelector('#jobCard [onclick="' + wasOn + '"]'); if (again && again.focus) { try { again.focus(); } catch (e) {} } }
   } else {
     opnOpen.noteText = picked.noteText;
   }
@@ -410,6 +436,13 @@ async function opnPush(where, msgId) {
   if (where === 'complete') patch.status = saved.status || 'completed';
   opnRemember(patch);
   return saved;
+}
+
+/* A sentence that belongs to the list the surgeon just pressed, not to the
+   note that happens to be open below it. */
+function opnListSay(sentence) {
+  if (!opnEl('listMsg')) opnRenderList();
+  opnSay('listMsg', sentence, true); opnShow('listMsg', true);
 }
 
 function opnRemember(patch) {
@@ -423,12 +456,28 @@ function opnRemember(patch) {
 
 async function opnOpenJob(id) {
   try {
+    /* opnfix-1.0.0: WHAT WAS TYPED IS NEVER DROPPED BY OPENING ANOTHER NOTE.
+       It is saved first; if that save is refused, this note stays open with
+       the save's own reason on it. */
+    if (opnOpen && String(opnOpen.id) !== String(id) && opnDirty()) {
+      var kept = await opnSaveJob();
+      if (!kept) { opnListSay('Your changes to the open note are not saved yet, so it stays open - see the note below.'); return; }
+    }
     var r = await opnGet('/api/client/opnotes/jobs/' + encodeURIComponent(id));
     if (r.status === 401) { await opnHandle401(r); return; }
-    if (!r.ok) { opnSay('jobMsg', 'That did not go through. Try again in a moment.', true); opnShow('jobMsg', true); return; }
+    if (!r.ok) { opnListSay('That note did not open. Try again in a moment.'); return; }
     var d = await r.json();
     opnUndoText = '';
     opnRenderJob(d.job || {});
+    /* opnfix-1.0.0: put back what a sign-in interrupted */
+    if (opnPending && String(opnPending.id) === String(id)) {
+      var pend = opnPending; opnPending = null;
+      for (var pi = 0; pi < pend.blanks.length; pi++) { var pf = opnEl('opnB_' + pend.blanks[pi].key); if (pf) pf.value = pend.blanks[pi].value; }
+      var pb = opnEl('opnNote'); if (pb) pb.value = pend.noteText;
+      opnSay('jobMsg', 'You were signed out before this saved. What you typed is back on the page - press Save.', true);
+      opnShow('jobMsg', true);
+      return;
+    }
     /* opnsvc-1.0.0: a value typed earlier that is still not in the note is
        named again when the note is opened, not only right after the save -
        the practice sees the same list until it is typed in. */
@@ -575,6 +624,10 @@ function opnRefitUndo() {
 }
 
 /* ---- templates --------------------------------------------------------- */
+function opnTemplatesFailed() {
+  var host = opnEl('tplList');
+  if (host) host.innerHTML = '<p class="stop">Your templates could not be loaded just now. Reload the page to try again.</p>';
+}
 function opnRenderTemplates(list) {
   var host = opnEl('tplList');
   opnTemplates = list || [];
@@ -583,7 +636,7 @@ function opnRenderTemplates(list) {
   if (!rows.length) { host.innerHTML = '<p class="sub">Nothing here yet.</p>'; return; }
   var h = '';
   for (var i = 0; i < rows.length; i++) {
-    h += '<div class="jobrow"><span class="jobtitle">' + opnEsc(rows[i].name || 'Template') + '</span></div>';
+    h += '<div class="jobrow" style="cursor:default"><span class="jobtitle">' + opnEsc(rows[i].name || 'Template') + '</span></div>';
   }
   host.innerHTML = h;
 }
@@ -717,14 +770,19 @@ async function opnOpenApp(client, who) {
     var tr = await opnGet('/api/client/opnotes/templates');
     if (tr.status === 401) { await opnHandle401(tr); return; }
     if (tr.ok) { var td = await tr.json(); opnRenderTemplates((td && td.templates) || []); }
-  } catch (e) { opnRenderTemplates([]); }
+    else opnTemplatesFailed();
+  } catch (e) { opnTemplatesFailed(); }
 
   try {
     var jr = await opnGet('/api/client/opnotes/jobs');
     if (jr.status === 401) { await opnHandle401(jr); return; }
-    if (jr.ok) { var jd = await jr.json(); opnJobs = (jd && jd.jobs) || []; }
-  } catch (e) { opnJobs = []; }
+    if (jr.ok) { var jd = await jr.json(); opnJobs = (jd && jd.jobs) || []; opnJobsFailed = false; }
+    else { opnJobs = []; opnJobsFailed = true; }
+  } catch (e) { opnJobs = []; opnJobsFailed = true; }
   opnRenderList();
+  /* opnfix-1.0.0: a note whose save was interrupted by a sign-in opens first,
+     with what the surgeon had typed put back. */
+  if (opnPending && opnPending.id) { await opnOpenJob(opnPending.id); return; }
 
   /* Straight into the first one that still needs them. A surgeon who signed in
      to fill two blanks should not have to choose a row first; if everything is

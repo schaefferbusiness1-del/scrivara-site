@@ -2782,7 +2782,12 @@ const tests = [
      answer a press, orders survive a patient switch, Practice is not caught
      by the AI Studio lock, one Practice heading, clean letterheads, and phone
      titles ellipsize. */
-  'errors-reach-the-doctor-runtime.test.js'
+  'errors-reach-the-doctor-runtime.test.js',
+  /* opnfix-1.0.0 (b1319): the surgeon op-note page saves before opening
+     another note, says a failed load is a failure (with a retry), says a
+     failed open by the list, keeps typed values across a mid-save sign-in,
+     and signs in on Enter. */
+  'opnotes-keeps-what-the-surgeon-typed-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
