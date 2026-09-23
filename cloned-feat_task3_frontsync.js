@@ -654,6 +654,10 @@
   function postCalendarRender() {
     var grid = $('calGrid'); if (!grid) return;
     var old = $('mlsT3Empty'); if (old) old.remove();
+    /* resil-1.0.0: after a FAILED hosted read, "No appointments this month" is a
+       claim nothing checked; the core's #calLoadNotice says what happened
+       instead. The sample/local calendar never sets the code (no MLS server). */
+    if (safe(function () { return !!window.__mlsCalendarLoadError; }, false)) return;
     var opt = unitOpt();
     var c = Cal.counts(opt);
     if (c.scoped > 0) return;

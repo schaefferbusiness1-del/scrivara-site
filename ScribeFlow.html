@@ -7751,6 +7751,53 @@ function regTwofaFinish(){
 }
 
 var sfSessionStartupId=0, sfActiveStartupController=null, sfSessionLegalState='unknown';
+/* resil-1.0.0: WHY the hosted gate is closed. checkAgreementsGate fails closed
+   on every outage - correct - but the locked screen then read every closed
+   answer as a policy refusal: MEASURED with the backend stubbed to 502, to 500
+   and to no answer, all three said "Not switched on yet - ask your MLS
+   administrator" about a check that never ran, and "Check workspace access
+   again" repeated it while the server was still down. The decision stays a
+   boolean and stays CLOSED; this only records whether it came from the
+   server's own answer (null) or from not getting one, so the screen can say
+   which. 429/5xx wording is signin-1.0.0's _authServerTrouble, not a copy. */
+var sfGateTrouble=null, SF_GATE_RETRY_MS=12000;
+function sfNoteGateTrouble(kind,detail){
+  detail=detail||{};
+  var r=detail.response||null, status=0, text='';
+  try{ status=r?(Number(r.status)||0):0; }catch(e){}
+  try{ if(r&&typeof _authServerTrouble==='function') text=_authServerTrouble(r,''); }catch(e){}
+  sfGateTrouble={kind:String(kind||'network'),status:status,text:text,seconds:Number(detail.seconds)||0,at:Date.now()};
+  return true;
+}
+/* A 429 or a 5xx never reached a readiness decision; any other refusal did. */
+function sfGateResponseTrouble(r){
+  var s=0; try{ s=Number(r&&r.status)||0; }catch(e){}
+  if(s===429) return sfNoteGateTrouble('rate',{response:r});
+  if(s>=500) return sfNoteGateTrouble('server',{response:r});
+  return false;
+}
+function sfGateTroubleCopy(t){
+  t=t||{};
+  var http=t.status?' (HTTP '+t.status+')':'';
+  var notYou=' This is not a setting on your account, and there is nothing for your administrator to switch on.';
+  if(t.kind==='rate') return {title:'MLS is busy right now',
+    summary:'<b>'+esc(t.text||'Too many requests from this network.')+'</b> Your workspace access was not checked, so patient work stays locked for now.'+notYou,
+    again:'the MLS server is still limiting requests from this network'+http+'.'};
+  if(t.kind==='server') return {title:'MLS is having server trouble',
+    summary:'<b>'+(t.status>=500?'The MLS server answered with an error'+http:'The MLS server sent an answer that could not be read')+', so your workspace access could not be checked.</b> Patient work stays locked until the check succeeds - try again in a minute.'+notYou,
+    again:(t.status>=500?'the MLS server still answered with an error'+http:'the MLS server’s answer still could not be read')+'.'};
+  /* resil-1.0.0 (review): a 401 during the check. handle401 then decides; this
+     stays true whichever way it goes (signed out, or a stray 401 survived). */
+  if(t.kind==='signin') return {title:'Workspace access was not checked',
+    summary:'<b>The MLS server did not accept this sign-in when checking your workspace access (HTTP 401), so the check did not complete.</b> If your sign-in has ended, MLS takes you to the sign-in screen; otherwise try again.'+notYou,
+    again:'the MLS server did not accept this sign-in for the check (HTTP 401).'};
+  if(t.kind==='timeout') return {title:'MLS did not answer',
+    summary:'<b>The MLS server did not answer'+(t.seconds?' within '+t.seconds+' seconds':' in time')+', so your workspace access could not be checked.</b> It may be starting up or overloaded; patient work stays locked until the check succeeds - try again in a minute.'+notYou,
+    again:'the MLS server did not answer'+(t.seconds?' within '+t.seconds+' seconds':' in time')+'.'};
+  return {title:'Can’t reach MLS right now',
+    summary:'<b>This device could not reach the MLS server, so your workspace access could not be checked.</b> Check the internet connection, then try again; patient work stays locked until the check succeeds.'+notYou,
+    again:'the MLS server still could not be reached.'};
+}
 /* visit-choice-first-login-1.0.0: a new account must explicitly choose the
    Athena visit depth after identity/legal setup settles. This flag also gives
    every other first-run prompt one owner to yield to, so no dialog can replace
@@ -8017,6 +8064,7 @@ function startSession(email){
   let _identityReady=null, _startupOpts=null, _refreshPromise=null;
   if(_gateMode){
     sfSessionLegalState='unknown';
+    sfGateTrouble=null; /* resil-1.0.0: a new decision, a new reason */
     _startupId=++sfSessionStartupId;
     try{ if(sfActiveStartupController) sfActiveStartupController.abort(); }catch(e){}
     try{ _startupController=typeof AbortController==='function'?new AbortController():null; }catch(e){ _startupController=null; }
@@ -8084,6 +8132,8 @@ function startSession(email){
         if(document.hidden){ _armGate(5000); return; }
         _startupOpts.cancelled=true;
         try{ if(_startupController) _startupController.abort(); }catch(e){}
+        /* resil-1.0.0: closed because nothing answered, not because of a policy. */
+        if(_startupId===sfSessionStartupId&&!sfGateTrouble) sfNoteGateTrouble('timeout',{seconds:10});
         resolve(true);
       },ms); };
       _armGate(10000);
@@ -8251,6 +8301,10 @@ async function logout(force){
     bkUser=null;
   }
   document.getElementById('appScreen').style.display='none';
+  /* resil-1.0.0 (review): the workspace lock belongs to the session that just
+     ended. A forced sign-out while it was up (a 401 on its Retry) left it at
+     z-index 9999 over this sign-in card and the card's sign-out reason. */
+  try{ if(typeof hideAgreementsGate==='function') hideAgreementsGate(); }catch(e){}
   const authScreen=document.getElementById('authScreen');
   authScreen.style.display='flex';
   // make sure the normal login card is showing (not a stale 2FA / reset card)
@@ -8299,6 +8353,8 @@ function refreshMe(opts){
         if(!sfStartupValid(opts)){ notifyIdentity(); return false; }
         if(_m<3) await new Promise(rs=>setTimeout(rs,_m===1?500:1200));
       }
+      /* resil-1.0.0: a startup that never got its identity says so on the gate. */
+      if(opts.startupId&&sfStartupValid(opts)){ if(!r) sfNoteGateTrouble('network'); else if(!r.ok&&r.status!==401) sfGateResponseTrouble(r); }
       if(!r){ notifyIdentity(); return false; }
       if(!sfStartupValid(opts)){ notifyIdentity(); return false; }
       if(r.status===401){ notifyIdentity(); handle401(); return false; }
@@ -8417,9 +8473,13 @@ var _h401Busy=false;
 function handle401(){
   if(_h401Busy) return;
   var tok=''; try{ tok=bkToken(); }catch(e){}
-  if(!tok){ setBkToken(''); bkUser=null; if(session){ try{ _stampSignoutReason('expired'); }catch(e401a){} toast('Your session expired — please log in again.','err'); logout(true); } return; }
+  /* resil-1.0.0: the session still ends exactly as before; un-synced work is
+     held across the purge and the sign-in card says why and what was kept
+     (_sfHoldUnsyncedForSignout). The toast moved AFTER logout: the reset inside
+     logout cleared #toast the moment it was shown. */
+  if(!tok){ setBkToken(''); bkUser=null; if(session){ try{ _stampSignoutReason('expired'); }catch(e401a){} var held401a=_sfHoldUnsyncedForSignout(); logout(true); _sfAfterForcedSignout(held401a,'Your session expired — please sign in again.'); } return; }
   _h401Busy=true;
-  var evict=function(){ setBkToken(''); bkUser=null; if(session){ try{ _stampSignoutReason('expired'); }catch(e401b){} toast('Your session expired — please log in again.','err'); logout(true); } };
+  var evict=function(){ setBkToken(''); bkUser=null; if(session){ try{ _stampSignoutReason('expired'); }catch(e401b){} var held401b=_sfHoldUnsyncedForSignout(); logout(true); _sfAfterForcedSignout(held401b,'Your session expired — please sign in again.'); } };
   try{
     fetch(bkBase()+'/api/me',{headers:{Authorization:'Bearer '+tok}}).then(function(r){
       _h401Busy=false;
@@ -9968,14 +10028,85 @@ function _showSignoutReasonOnGate(){
     if(!d||!d.at||(Date.now()-d.at)>12*3600000){ localStorage.removeItem('sf_last_signout'); return; }
     var el=document.getElementById('authErr'); if(!el||String(el.textContent||'').trim()) return;
     var when=new Date(d.at).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
+    /* resil-1.0.0: the expiry line said "nothing was lost" while the forced
+       sign-out had just purged a note the server never accepted. The line now
+       states only what the stamp RECORDED (_sfAfterForcedSignout counts what was
+       held and what was not); a stamp without that record claims nothing. */
+    var facts='', recorded=typeof d.lostNotes==='number';
+    if(recorded){
+      var plural=function(n,one,many){ return n+' '+(n===1?one:many); };
+      var parts=[];
+      if(d.lostNotes>0) parts.push(plural(d.lostNotes,'note','notes')+' that had not been backed up to your account '+(d.lostNotes===1?'was':'were')+' removed from this device when the session ended.');
+      if(d.lostDraft) parts.push('An unsaved visit in this tab was removed.');
+      if(d.lostPatients>0) parts.push(plural(d.lostPatients,'patient record change','patient record changes')+' that had not reached your account could not be kept.');
+      if(d.stoppedRecording) parts.push('The recording in progress was stopped.');
+      facts=parts.length?parts.join(' ')+' ':'Your work is saved — nothing was waiting to back up. ';
+    }
     el.textContent=(d.reason==='idle')
-      ? ('You were signed out at '+when+' after '+(d.mins||30)+' quiet minutes (auto log-off — adjustable in Settings → Security & privacy). Your work is saved; sign in to continue.')
-      : ('Your session ended at '+when+' — nothing was lost. Sign in to continue.');
+      ? ('You were signed out at '+when+' after '+(d.mins||30)+' quiet minutes (auto log-off — adjustable in Settings → Security & privacy). '+(recorded?facts+'Sign in to continue.':'Your work is saved; sign in to continue.'))
+      : ('Your session ended at '+when+' because the server no longer accepts this sign-in (it expired or was ended elsewhere). '+facts+'Sign in to continue.');
     el.style.display='block';
     localStorage.removeItem('sf_last_signout');
   }catch(e){}
 }
 try{ if(document.readyState!=='loading'){ setTimeout(_showSignoutReasonOnGate,800); } else { document.addEventListener('DOMContentLoaded',function(){ setTimeout(_showSignoutReasonOnGate,800); }); } }catch(e){}
+/* resil-1.0.0: A FORCED sign-out (a dead token, the idle log-off) has nobody to
+   ask, so logout(true) skips the "N notes have NOT been backed up" warning and
+   the purge deletes them - the 401 save path even queues the failed note one
+   line before handle401 (saveNoteToBackend), and the purge then removes it.
+   MEASURED: a 401 at page load with one queued note -> notes and pendingBackup
+   gone at 300ms, and the sign-in card said "nothing was lost".
+   The sign-out itself is unchanged: token, identity, every account key,
+   IndexedDB and audio are purged exactly as before - synctruth-1.0.0 (owner
+   2026-07-24): "sign-out purges local clinical state BY DESIGN", for shared
+   clinical workstations. Nothing is carried across the purge. What changed is
+   that the loss is COUNTED before the purge and said on the sign-in card,
+   instead of "nothing was lost". (Keeping un-synced notes across a forced
+   sign-out is an owner decision, recorded in the session log.) */
+function _sfHoldUnsyncedForSignout(){
+  var hold={email:'',notes:[],pending:[],declined:[],draft:null,lostPatients:0,stoppedRecording:false};
+  try{
+    hold.email=String((session&&session.email)||getSessionEmail()||'').trim();
+    if(!hold.email||!backendMode()) return hold;
+    /* counted only - no new copy of the visit is written before the purge */
+    try{ hold.draft=!!((typeof _visitDirty!=='undefined'&&_visitDirty)||sessionStorage.getItem(uns('visitDraft'))); }catch(e){}
+    hold.pending=(_pendingBackupGet()||[]).slice();
+    hold.declined=(_svrDeclinedGet()||[]).slice();
+    var want=Object.create(null);
+    hold.pending.concat(hold.declined).forEach(function(id){ if(id!=null) want[String(id)]=1; });
+    hold.notes=(getNotes()||[]).filter(function(n){ return n&&n.id!=null&&want[String(n.id)]; });
+    var pts=Object.create(null);
+    try{ (_pendingSyncGet()||[]).forEach(function(id){ if(id!=null) pts[String(id)]=1; }); }catch(e){}
+    try{ var batch=__mlsPtsBatchByKey&&__mlsPtsBatchByKey[uns('patients')]; if(batch&&batch.syncIds) Object.keys(batch.syncIds).forEach(function(id){ if(id) pts[id]=1; }); }catch(e){}
+    hold.lostPatients=Object.keys(pts).length;
+    try{ hold.stoppedRecording=!!((typeof capturing!=='undefined'&&capturing)||(typeof phoneMicCode!=='undefined'&&phoneMicCode)); }catch(e){}
+  }catch(e){}
+  return hold;
+}
+function _sfAfterForcedSignout(hold,toastMsg,toastType){
+  var facts={lostNotes:0,lostDraft:false,lostPatients:0,stoppedRecording:false,account:''};
+  try{
+    hold=hold||{};
+    facts.account=hold.email||''; facts.lostPatients=Number(hold.lostPatients)||0; facts.stoppedRecording=!!hold.stoppedRecording;
+    /* Counted, never carried (see above): the purge removed these. */
+    facts.lostNotes=(hold.notes&&hold.notes.length)||0;
+    facts.lostDraft=!!hold.draft;
+  }catch(e){}
+  try{
+    var st=JSON.parse(localStorage.getItem('sf_last_signout')||'null')||{reason:'expired',at:Date.now()};
+    localStorage.setItem('sf_last_signout',JSON.stringify(Object.assign(st,facts)));
+  }catch(e){}
+  /* Mid-session nothing else would ever show it: the gate line ran only on an
+     800ms boot timer, and the toast was cleared by the sign-out's own reset.
+     The card was raised by this sign-out a moment ago, so whatever #authErr
+     still holds is left over from an earlier screen (hideAuthErr keeps the
+     text) - clear it, or the "never clobber a real error" rule would keep a
+     stale line up instead of this one. */
+  try{ var ae=document.getElementById('authErr'); if(ae){ ae.textContent=''; ae.style.display=''; ae.classList.remove('show'); } }catch(e){}
+  try{ _showSignoutReasonOnGate(); }catch(e){}
+  try{ if(toastMsg) toast(toastMsg,toastType==null?'err':toastType); }catch(e){}
+  return facts;
+}
 var _legalGenerating=false; // true while a medical-legal report is being generated
 function idleLogout(){
   if(!session) return;
@@ -10009,8 +10140,11 @@ function idleLogout(){
        in what happens at the end. */
     try{ if(typeof swEnabled==='function'&&swEnabled()&&swLock('idle')) return; }catch(eSw){}
     _stampSignoutReason('idle',{mins:getIdleMins()||30});
-    toast('Logged out due to inactivity.','');
+    /* resil-1.0.0: same forced path as an expired token - keep the un-synced
+       work, name it on the sign-in card, show the toast after the reset. */
+    var heldIdle=_sfHoldUnsyncedForSignout();
     logout(true);
+    _sfAfterForcedSignout(heldIdle,'Logged out due to inactivity.','');
   });
 }
 function resetIdle(){
@@ -16802,6 +16936,55 @@ let currentView='patients';
 var _calYear=null, _calMonth=null, _calAppts=[], _calMe={}, _calProviders=[], _calMode='month', _calRefDate=null;
 var _calHydration='idle';
 var _calOwnerAccount='', _calOwnerEpoch=0;
+/* resil-1.0.0: EVERY message written into #calGrid in place of a grid must
+   drop the render signature. Month/Week/Day skip their repaint when the HTML
+   they would write equals grid._mlsSig (and the grid is not empty), and
+   "Loading appointments…" replaced the grid WITHOUT resetting it - so a month
+   that rendered empty before the load rendered the identical empty HTML after
+   it, the repaint was skipped, and the placeholder stayed forever (MEASURED: 0
+   appointments, and /api/appointments 502; only Week->Month repainted). */
+function _calGridNotice(grid,html){ if(!grid) return; grid.innerHTML=html; grid._mlsSig=''; }
+/* resil-1.0.0: a FAILED read said nothing where the appointments go - the grid
+   read "No appointments this month" (nothing was read) and the only failure
+   line was a status strip that hides itself after 30s. The failure now sits
+   above the grid, says what happened and offers Try again, until a read
+   succeeds. It is a sibling of #calGrid, so no grid repaint can wipe it. */
+var _calLoadErr='';
+/* resil-1.0.0 (review): only a HOSTED read can fail this way. The public sample
+   workspace (?preview=1) and local mode have no MLS server behind the calendar,
+   so a missing server answer there is not a failure to report (MEASURED: the
+   sample calendar showed a red "MLS server could not be reached" alert under
+   "Finished updating appointments"). Mirrored on window for the empty state in
+   feat_task3_frontsync. */
+function _calSetLoadErr(code){ _calLoadErr=String(code||''); try{ window.__mlsCalendarLoadError=_calLoadErr; }catch(e){} }
+function _calLoadErrWhy(code){
+  var m=/^appointments_http_(\d+)$/.exec(String(code||''));
+  if(m){ var st=+m[1];
+    if(st===429) return 'the MLS server is limiting requests right now (HTTP 429)';
+    if(st>=500) return 'the MLS server answered with an error (HTTP '+st+')';
+    return 'the MLS server refused the request (HTTP '+st+')'; }
+  if(code==='appointments_unavailable') return 'the MLS server could not be reached';
+  return 'the server\u2019s answer could not be read';
+}
+function _calSyncLoadNotice(){
+  try{
+    var grid=document.getElementById('calGrid');
+    var el=document.getElementById('calLoadNotice');
+    var hosted=false; try{ hosted=typeof backendMode==='function'&&!!backendMode(); }catch(e){}
+    if(!hosted||_calHydration!=='error'||!_calLoadErr||!grid||!grid.parentNode){ if(el) el.remove(); return; }
+    if(!el){
+      el=document.createElement('div'); el.id='calLoadNotice'; el.setAttribute('role','alert');
+      el.style.cssText='display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:0 0 10px;padding:10px 12px;border:1px solid #f6cccd;border-radius:10px;background:#fdeced;color:#8f2d2d;font-size:13px;line-height:1.45';
+      var txt=document.createElement('span'); txt.className='calLoadNoticeText'; txt.style.flex='1 1 240px'; el.appendChild(txt);
+      var btn=document.createElement('button'); btn.type='button'; btn.className='btn-ghost'; btn.id='calLoadRetry'; btn.textContent='Try again'; btn.style.cssText='font-size:12.5px;padding:5px 12px';
+      btn.addEventListener('click',function(){ btn.disabled=true; btn.textContent='Trying again\u2026'; Promise.resolve(loadCalendar()).catch(function(){}).then(function(){ btn.disabled=false; btn.textContent='Try again'; _calSyncLoadNotice(); }); });
+      el.appendChild(btn);
+    }
+    if(el.parentNode!==grid.parentNode||el.nextSibling!==grid) grid.parentNode.insertBefore(el,grid);
+    var shown=Array.isArray(_calAppts)&&_calAppts.length>0;
+    el.querySelector('.calLoadNoticeText').textContent='Appointments could not be loaded: '+_calLoadErrWhy(_calLoadErr)+'. '+(shown?'Showing the last copy saved on this device; it may be out of date.':'The calendar is empty because nothing loaded, not because the schedule is empty.');
+  }catch(e){}
+}
 function _calNormalizeOwner(value){ return String(value||'').trim().toLowerCase(); }
 function _calLiveAccount(){
   try{ if(typeof window.__mlsSessionAccount!=='undefined') return _calNormalizeOwner(window.__mlsSessionAccount); }catch(e){}
@@ -16830,7 +17013,8 @@ function _calResetForSession(account,epoch){
   window.__mlsCalLoadSeq=(Number(window.__mlsCalLoadSeq)||0)+1;
   window.__mlsCalendarMutationEpoch=(Number(window.__mlsCalendarMutationEpoch)||0)+1;
   try{
-    var grid=document.getElementById('calGrid'); if(grid) grid.innerHTML='<div class="mini" style="color:var(--muted)">Loading appointments\u2026</div>';
+    var grid=document.getElementById('calGrid'); if(grid) _calGridNotice(grid,'<div class="mini" style="color:var(--muted)">Loading appointments\u2026</div>');
+    _calSetLoadErr(''); var ln=document.getElementById('calLoadNotice'); if(ln) ln.remove();
     var day=document.getElementById('calDayPanel'); if(day){ day.innerHTML=''; day.style.display='none'; }
     var checkin=document.getElementById('calCheckinWrap'); if(checkin){ checkin.innerHTML=''; checkin.style.display='none'; }
     var pf=document.getElementById('calProvFilter'); if(pf){ pf.innerHTML='<option value="">Default schedule</option>'; pf.value=''; }
@@ -16936,7 +17120,8 @@ async function loadCalendar(options){
       window.__mlsCalendarHydration='denied'; window.__mlsCalendarHydrationAt=0;
       window.dispatchEvent(new CustomEvent('mls:calendar-hydrated',{detail:{state:'denied',count:0}}));
     }catch(eDeniedState){}
-    if(grid) grid.innerHTML='<div class="mini" role="status" style="color:var(--muted)"><b>Calendar is not available for this account.</b><br>No clinical schedule was loaded.</div>';
+    if(grid) _calGridNotice(grid,'<div class="mini" role="status" style="color:var(--muted)"><b>Calendar is not available for this account.</b><br>No clinical schedule was loaded.</div>');
+    _calSetLoadErr(''); _calSyncLoadNotice();
     return _calResult(false,false,'calendar_not_available','');
   }
   /* dlc-1.0.0: only a HOSTED signed-out session bails. A local/demo session
@@ -16944,7 +17129,8 @@ async function loadCalendar(options){
      the local per-account calendar shim, so booking works fully offline. */
   if(typeof backendMode==='function'&&backendMode()&&!_calToken){
     _calHydration='error'; try{ window.__mlsCalendarHydration='error'; }catch(eHyd2){}
-    if(grid) grid.innerHTML='<div class="mini" style="color:var(--muted)">Sign in to see the calendar.</div>';
+    if(grid) _calGridNotice(grid,'<div class="mini" style="color:var(--muted)">Sign in to see the calendar.</div>');
+    _calSetLoadErr(''); _calSyncLoadNotice();
     return _calResult(false,false,'calendar_unavailable','');
   }
   /* Paint immediately from the last known rows so the calendar is never a
@@ -16959,7 +17145,7 @@ async function loadCalendar(options){
   }catch(e){}
   if(!_calRequestCurrent()) return _calResult(false,false,'',_calDiscardReason());
   if(_calAppts&&_calAppts.length){ renderCalendar(); renderCalCheckin(); }
-  else if(grid) grid.innerHTML='<div class="mini" style="color:var(--muted)">Loading appointments…</div>';
+  else if(grid) _calGridNotice(grid,'<div class="mini" style="color:var(--muted)">Loading appointments…</div>');
   /* both requests in parallel — the providers list must not delay appointments */
   var _calResults=await Promise.all([
     fetch(bkBase()+'/api/appointments',{headers:{Authorization:'Bearer '+_calToken},cache:'no-store'}).catch(function(){ return null; }),
@@ -17030,11 +17216,13 @@ async function loadCalendar(options){
     if(!_ccDone){ try{ localStorage.removeItem(uns('calApptsCacheV2')); }catch(_ccR){} }
   } }catch(e){} }, 250);
   _calHydration=_calApplied?'settled':(_calReadError?'error':'settled');
+  _calSetLoadErr((_calApplied||!_calHosted)?'':_calReadError);
   try{
     window.__mlsCalendarHydration=_calHydration; window.__mlsCalendarHydrationAt=0;
     window.dispatchEvent(new CustomEvent('mls:calendar-hydrated',{detail:{state:_calHydration,count:Array.isArray(_calAppts)?_calAppts.length:0}}));
   }catch(eHyd3){}
   renderCalendar(); renderCalCheckin();
+  _calSyncLoadNotice();
   return _calResult(_calApplied,_calApplied,_calReadError,'');
 }
 /* pa-1.0.0: a row matches the provider filter by LOCAL CLINICIAN ID when it
@@ -43802,7 +43990,17 @@ function showAgreementsGate(fromLoading){
      label; it now uses the same plain words the summary does. */
   const tt=document.getElementById('agGateTitleText'); if(tt) tt.textContent='Not switched on yet';
   const summary=document.getElementById('agGateSummary'), reasons=agReadinessReasons();
-  if(summary){
+  /* resil-1.0.0: a check that never got an answer is not a refusal. Same
+     locked screen, same Retry, but it says what actually happened and drops the
+     "why signing in worked" explainer, which only describes a real refusal. */
+  const trouble=(typeof sfGateTrouble!=='undefined'&&sfGateTrouble)||null;
+  const why=document.querySelector('#agLockedWrap details'); if(why) why.style.display=trouble?'none':'';
+  if(trouble){
+    const copy=sfGateTroubleCopy(trouble);
+    if(tt) tt.textContent=copy.title;
+    if(summary) summary.innerHTML=copy.summary;
+  }
+  else if(summary){
     if(reasons.indexOf('PRACTICE_REQUIRED')>=0) summary.innerHTML='<b>This account is not attached to a practice.</b> Ask your MLS administrator to correct the practice assignment before patient work begins.';
     else if(reasons.indexOf('AGREEMENT_ARTIFACT_INVALID')>=0) summary.innerHTML='<b>Your signed-form receipt did not pass the server integrity check.</b> Patient work remains closed; ask your MLS administrator to review the account evidence.';
     else if(reasons.indexOf('PRACTICE_BAA_INVALID')>=0) summary.innerHTML='<b>The practice agreement did not pass the server integrity check.</b> Patient work remains closed; ask the MLS owner to review the executed agreement.';
@@ -43813,7 +44011,7 @@ function showAgreementsGate(fromLoading){
   /* clunky2-signin-1.0.0 (CLUNKY 44): the summary above already says what is
      not enabled and who enables it; this line is the RESULT, not a third
      retelling of the reason. */
-  agGateErr('Access remains locked.');
+  agGateErr(trouble?'Access remains locked until MLS can check it.':'Access remains locked.');
   const gate=document.getElementById('agreementsGate'); if(gate) gate.style.display='block';
   const retry=document.getElementById('agRetryBtn'); if(retry) try{ retry.focus(); }catch(e){}
 }
@@ -43858,13 +44056,19 @@ function agAccountSetupSurface(){
     return '';
   }catch(e){ return 'locked'; }
 }
-async function agRefreshAccountReadiness(){
+async function agRefreshAccountReadiness(opts){
+  opts=opts||{};
   const token=bkToken(), epoch=Number(window.__mlsSessionEpoch)||0;
   if(!token) return false;
   let r,d={};
-  try{ r=await fetch(bkBase()+'/api/me',{method:'GET',cache:'no-store',headers:{Authorization:'Bearer '+token}}); }catch(e){ return false; }
+  /* resil-1.0.0: the gate's retry passes its time bound and asks for the reason. */
+  const init={method:'GET',cache:'no-store',headers:{Authorization:'Bearer '+token}}; if(opts.signal) init.signal=opts.signal;
+  try{ r=await fetch(bkBase()+'/api/me',init); }catch(e){ if(opts.noteTrouble&&!(opts.signal&&opts.signal.aborted)) sfNoteGateTrouble('network'); return false; }
   try{ d=await r.json(); }catch(e){}
-  if(r.status===401){ handle401(); return false; }
+  if(opts.signal&&opts.signal.aborted) return false;
+  const mine=bkToken()===token&&(Number(window.__mlsSessionEpoch)||0)===epoch;
+  if(r.status===401){ if(opts.noteTrouble&&mine) sfNoteGateTrouble('signin',{response:r}); handle401(); return false; }
+  if(opts.noteTrouble&&mine&&!r.ok) sfGateResponseTrouble(r);
   if(!r.ok||!d.user||bkToken()!==token||(Number(window.__mlsSessionEpoch)||0)!==epoch) return false;
   bkUser=d.user;
   try{ applyAccessUI(); }catch(e){}
@@ -43951,7 +44155,16 @@ function agCeremonySkip(ev){
 function hideAgreementsGate(){
   const gate=document.getElementById('agreementsGate'); if(gate) gate.style.display='none';
 }
-function agGateLogout(ev){ if(ev&&ev.preventDefault) ev.preventDefault(); hideAgreementsGate(); logout(true); }
+/* resil-1.0.0: this link called logout(true) - the FORCED path, which skips
+   the "N notes have NOT been backed up" warning - and hid the gate first. During
+   an outage it is one of only two controls on this screen, and MEASURED: one
+   click purged a note the server had never accepted, with no dialog. A click is
+   a deliberate sign-out, so it takes the same guarded path as the menu's Log
+   out; the gate stays up if the doctor keeps the session. */
+function agGateLogout(ev){
+  if(ev&&ev.preventDefault) ev.preventDefault();
+  Promise.resolve(logout()).then(function(){ if(!session) hideAgreementsGate(); },function(){});
+}
 
 /* Transitional compatibility for the exact current server-recorded agreement
    response used before the immutable-release endpoint shipped. A bare `signed`
@@ -43984,24 +44197,90 @@ async function checkAgreementsGate(opts){
     const init={headers:{'Authorization':'Bearer '+bkToken()}}; if(opts.signal) init.signal=opts.signal;
     const r=await fetch(bkBase()+'/api/agreements/me',init);
     if(!sfStartupValid(opts)) return true;
-    if(r.status===401){ handle401(); return true; }
-    if(!r.ok) return true;
-    const d=await r.json();
+    if(r.status===401){ if(typeof sfNoteGateTrouble==='function') sfNoteGateTrouble('signin',{response:r}); handle401(); return true; }
+    /* resil-1.0.0: still closed either way; a 5xx/429 is "no answer", and the
+       gate now says so instead of "not switched on". */
+    if(!r.ok){ if(typeof sfGateResponseTrouble==='function') sfGateResponseTrouble(r); return true; }
+    let d;
+    try{ d=await r.json(); }
+    catch(eBody){
+      if(!sfStartupValid(opts)) return true;
+      if(typeof sfNoteGateTrouble==='function') sfNoteGateTrouble('server',{response:r});
+      return true;
+    }
     if(!sfStartupValid(opts)) return true;
+    if(typeof sfGateTrouble!=='undefined') sfGateTrouble=null; /* the server itself answered */
     return !hasVerifiedServerLegalRelease(d);
   }catch(e){
+    /* resil-1.0.0: an abort is a time bound running out, and the bound's owner
+       records it; anything else never connected. */
+    const aborted=(e&&e.name==='AbortError')||!!(opts.signal&&opts.signal.aborted)||!!opts.cancelled;
+    if(!aborted&&typeof sfNoteGateTrouble==='function') sfNoteGateTrouble('network');
     return true;
   }
 }
 
+/* resil-1.0.0 (review): the retry belongs to the session that started it.
+   MEASURED: Retry against a hung server, then Log out -> 12s later its
+   showAgreementsGate brought the lock screen back over the sign-in card
+   ("MLS did not answer", no token); signed back in -> it hid the new
+   session's app. Every write re-checks that token + session epoch, a session
+   boundary aborts its requests, and only the newest retry restores the button. */
+var sfGateRetrySeq=0;
+function sfGateRetryOwner(){
+  const seq=++sfGateRetrySeq, token=bkToken(), epoch=Number(window.__mlsSessionEpoch)||0;
+  return {seq:seq,token:token,owned:()=>seq===sfGateRetrySeq&&bkToken()===token&&(Number(window.__mlsSessionEpoch)||0)===epoch};
+}
 async function retryLegalReadiness(){
   const btn=document.getElementById('agRetryBtn');
+  const owner=sfGateRetryOwner(), owned=owner.owned;
+  /* A hosted lock screen with no sign-in behind it has nothing to check: end
+     what is left of the session the way a dead token does, and show sign-in. */
+  if(backendMode()&&!owner.token){
+    try{ if(session) handle401(); }catch(e){}
+    if(!session){ hideAgreementsGate(); const a=document.getElementById('authScreen'); if(a) a.style.display='flex'; try{ switchAuth('login'); }catch(e){} }
+    if(btn){ btn.disabled=false; btn.textContent='Check workspace access again'; }
+    return;
+  }
   if(btn){ btn.disabled=true; btn.textContent='Checking…'; }
   agGateErr('Checking deployment and account clinical readiness…');
+  /* resil-1.0.0: this retry had NO time bound (startup's gate phase has 10s).
+     MEASURED with a backend that never answers: the button read "Checking…
+     40s", disabled, with no way to retry and no failure - and when the socket
+     finally reset it said "still not enabled", about a check that never ran.
+     Now one bound covers both requests; running out aborts them, restores the
+     button and names what happened. Nothing unlocks on any failure. */
+  sfGateTrouble=null;
+  let ctl=null; try{ ctl=typeof AbortController==='function'?new AbortController():null; }catch(e){ ctl=null; }
+  const onBoundary=()=>{ try{ if(ctl) ctl.abort(); }catch(e){} };
+  try{ window.addEventListener('mls:session-boundary',onBoundary); }catch(e){}
+  let timedOut=false, boundTimer=0;
+  const deadline=new Promise(resolve=>{ boundTimer=setTimeout(()=>{ timedOut=true; try{ if(ctl) ctl.abort(); }catch(e){} resolve(null); },SF_GATE_RETRY_MS); });
+  const within=p=>Promise.race([p,deadline]);
+  const noteTimeout=()=>{ if(timedOut) sfNoteGateTrouble('timeout',{seconds:Math.round(SF_GATE_RETRY_MS/1000)}); };
+  const troubleLine=()=>{ const at=new Date().toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}); return 'Checked again at '+at+': '+sfGateTroubleCopy(sfGateTrouble).again+' Access remains locked.'; };
   try{
-    const gated=await checkAgreementsGate({});
-    if(gated){ agGateErr('The clinical workspace is still not enabled for this deployment or account. Access remains locked.'); return; }
-    if(!await agRefreshAccountReadiness()){ agGateErr('The account state could not be refreshed. Nothing was unlocked; please check again.'); return; }
+    const gated=await within(checkAgreementsGate({signal:ctl&&ctl.signal}));
+    if(!owned()) return;
+    noteTimeout();
+    if(gated!==false){
+      /* Re-render the locked copy only when the locked screen is the one up;
+         the signing/pending screens share this button and keep their layout. */
+      const lw=document.getElementById('agLockedWrap');
+      if(!lw||lw.style.display!=='none') showAgreementsGate(false);
+      agGateErr(sfGateTrouble?troubleLine():'The clinical workspace is still not enabled for this deployment or account. Access remains locked.');
+      return;
+    }
+    const refreshed=await within(agRefreshAccountReadiness({signal:ctl&&ctl.signal,noteTrouble:true}));
+    if(!owned()) return;
+    noteTimeout();
+    if(!refreshed){
+      /* Same as above: an unanswered identity read re-renders the lock with its reason. */
+      if(sfGateTrouble){ const lw=document.getElementById('agLockedWrap'); if(!lw||lw.style.display!=='none') showAgreementsGate(false); }
+      agGateErr(sfGateTrouble?troubleLine():'The account state could not be refreshed. Nothing was unlocked; please check again.');
+      return;
+    }
+    clearTimeout(boundTimer);
     const setupSurface=agAccountSetupSurface();
     if(setupSurface==='locked'){ showAgreementsGate(false); return; }
     if(setupSurface==='ceremony'){ showAgreementsCeremony(false); return; }
@@ -44009,8 +44288,12 @@ async function retryLegalReadiness(){
     hideAgreementsGate();
     const email=(bkUser&&bkUser.email)||(session&&session.email)||getSessionEmail();
     await startSession(email);
-  }catch(e){ agGateErr('Clinical workspace access could not be verified for this deployment and account. Access remains locked.'); }
-  finally{ if(btn){ btn.disabled=false; btn.textContent='Check workspace access again'; } }
+  }catch(e){ if(owned()) agGateErr('Clinical workspace access could not be verified for this deployment and account. Access remains locked.'); }
+  finally{
+    clearTimeout(boundTimer);
+    try{ window.removeEventListener('mls:session-boundary',onBoundary); }catch(e){}
+    if(btn&&owner.seq===sfGateRetrySeq){ btn.disabled=false; btn.textContent='Check workspace access again'; }
+  }
 }
 
 /* Build a PDF receipt of the signed acknowledgment via jsPDF.
@@ -48829,7 +49112,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1296';
+  window.__MLS_AV='b1297';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
@@ -49088,7 +49371,8 @@ function _ptGroupSort(mode){
  * Deliberately in the shell rather than a new feat_*.js: boot-script-budget
  * caps the loader at exactly 234 modules, and counts observers/intervals across
  * every root feat_*.js whether loaded or not. This adds neither a module, nor
- * an interval, nor an observer — two event listeners and one node.
+ * an interval, nor an observer — three event listeners (resil-1.0.0 added
+ * resize) and two nodes (the bar and its header-clearance rule).
  * Reversible: window.__mlsOffline.revert(). */
 (function () {
   if (window.__mlsOffline) return;
@@ -49111,26 +49395,62 @@ function _ptGroupSort(mode){
       'padding:10px 14px', 'padding-top:calc(10px + env(safe-area-inset-top,0px))',
       'background:#8A5A00', 'color:#fff',
       'font:600 13.5px/1.4 "Public Sans",system-ui,-apple-system,sans-serif',
-      'text-align:center', 'box-shadow:0 1px 6px rgba(0,0,0,.22)'
+      'text-align:center', 'box-shadow:0 1px 6px rgba(0,0,0,.22)',
+      'pointer-events:none'
     ].join(';');
     (document.body || document.documentElement).appendChild(b);
+    if (!document.getElementById(BAR_ID + 'Css')) {
+      var css = document.createElement('style');
+      css.id = BAR_ID + 'Css';
+      css.textContent = 'html.mls-offline-on body #appHeader{border-top:var(--mls-offline-h,0px) solid transparent !important}';
+      (document.head || document.documentElement).appendChild(css);
+    }
     return b;
   }
 
+  /* resil-1.0.0: THE BAR MAY NOT COVER THE HEADER. It is fixed at top:0 over
+     the sticky #appHeader, and MEASURED at 390x844 (isMobile) it was 96px tall
+     over the Account button, the mode chip and the title: elementFromPoint at
+     the Account button returned this bar, the tap opened nothing, and with no
+     close control Settings and Log out were unreachable for as long as the
+     phone stayed offline. While the bar shows, its height is reserved as a
+     transparent top border on the header, so the header's controls sit just
+     below it (scrolled or not) and the header's measured height, which the
+     sticky context bar and other under-header surfaces key off (--mls-hdr-h,
+     feat_mls_redesign.js), grows with it. The bar also stops being a hit target
+     (it has no control of its own), the same rule as #mlsBootReadiness. */
+  function reserve(on) {
+    try {
+      var root = document.documentElement;
+      if (on) {
+        var h = Math.ceil(bar().getBoundingClientRect().height) || 0;
+        root.style.setProperty('--mls-offline-h', h + 'px');
+        root.classList.add('mls-offline-on');
+      } else {
+        root.classList.remove('mls-offline-on');
+        root.style.removeProperty('--mls-offline-h');
+      }
+      var hd = document.getElementById('appHeader'), r = hd && hd.getBoundingClientRect();
+      if (r && r.height > 0) root.style.setProperty('--mls-hdr-h', Math.round(r.height) + 'px');
+    } catch (e) {}
+  }
   function paint() {
     try {
       /* Only the reliable negative. Absent API => assume online, never warn. */
       var off = (typeof navigator.onLine === 'boolean') ? navigator.onLine === false : false;
       var b = bar();
-      if (!off) { b.style.display = 'none'; b.textContent = ''; return; }
+      if (!off) { b.style.display = 'none'; b.textContent = ''; reserve(false); return; }
       b.textContent = 'You are offline. MLS is showing the last data saved on this device. '
         + 'Nothing you type will sync, and pulling, sending and signing are unavailable until the connection returns.';
       b.style.display = 'block';
+      reserve(true);
     } catch (e) {}
   }
+  function onResize() { try { if (bar().style.display === 'block') reserve(true); } catch (e) {} }
 
   try { window.addEventListener('online', paint, false); } catch (e) {}
   try { window.addEventListener('offline', paint, false); } catch (e) {}
+  try { window.addEventListener('resize', onResize, false); } catch (e) {}
   if (document.readyState === 'loading') {
     try { document.addEventListener('DOMContentLoaded', paint, false); } catch (e) {}
   } else { paint(); }
@@ -49141,6 +49461,8 @@ function _ptGroupSort(mode){
   api.revert = function () {
     try { window.removeEventListener('online', paint, false); } catch (e) {}
     try { window.removeEventListener('offline', paint, false); } catch (e) {}
+    try { window.removeEventListener('resize', onResize, false); } catch (e) {}
+    try { reserve(false); } catch (e) {}
     try { var b = document.getElementById(BAR_ID); if (b) b.remove(); } catch (e) {}
     try { delete window.__mlsOffline; } catch (e) { window.__mlsOffline = null; }
   };

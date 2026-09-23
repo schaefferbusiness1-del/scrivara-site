@@ -2708,7 +2708,13 @@ const tests = [
      side or unrequested level in the diagnosis, indication or narrative is
      asked about (or re-filled from a template slot, visibly) - never refused,
      never silently rewritten. */
-  'opnote-title-blanks-side-runtime.test.js'
+  'opnote-title-blanks-side-runtime.test.js',
+  /* resil-1.0.0 (b1297): an outage at sign-in says outage, the lock-screen Log
+     out warns before purging, a forced sign-out names what it removed (the
+     purge itself is the owner's rule), the calendar paints an empty month and
+     names a failed read, the phone offline banner leaves the header tappable,
+     and the workspace-access re-check is bounded and owned by its session. */
+  'resilience-honesty-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
