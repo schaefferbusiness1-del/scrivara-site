@@ -351,7 +351,7 @@ ok(/id="tplList"[^>]*overflow-y:\s*auto/.test(tplHtml),
    scrolls; the phone media query already clears it. Pin both halves. */
 ok(/id="tplDetail"[^>]*position:\s*sticky/.test(tplHtml),
   '#tplDetail stays sticky on desktop (preview holds while the list scrolls)');
-ok(/@media\(max-width:640px\)\{[\s\S]{0,400}?#tplWorkspace>#tplDetail\{position:static!important\}/.test(
+ok(/@media\(max-width:640px\)\{[\s\S]{0,400}?#tplWorkspace>#tplDetail\{position:static!important[;}]/.test(
     HTML.replace(/\/\*[\s\S]*?\*\//g, '')),
   'on a phone the sticky is cleared (nothing to stick to in one column)');
 

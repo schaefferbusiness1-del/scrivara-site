@@ -659,9 +659,14 @@
     safe(function () {
       if (!isFn(window.toast)) return;
       if (!landed) { window.toast('That setting could not be saved on this device.', 'err'); return; }
-      var lbl = '';
+      /* tplsync-1.0.0: name the button the doctor just pressed. The /p1 label
+         adapter renames the three buttons (Closely / Balanced / Adapt to case),
+         and the old sentence built from these labels read "Drafts will now
+         adapt to the case" after a press on "Balanced". */
+      var lbl = '', shown = '';
       for (var k = 0; k < TPL_MODES.length; k++) if (TPL_MODES[k][0] === m) lbl = TPL_MODES[k][1];
-      window.toast('Drafts will now ' + lbl.toLowerCase() + '. Re-draft to apply it.', 'ok');
+      shown = safe(function () { var a = window.__mlsP1TemplateModes; return (a && a.installed === true && isFn(a.labelFor)) ? S(a.labelFor(m)) : ''; }, '');
+      window.toast(shown ? ('Template style: ' + shown + '. Re-draft to apply it.') : ('Drafts will now ' + lbl.toLowerCase() + '. Re-draft to apply it.'), 'ok');
     });
   }
 

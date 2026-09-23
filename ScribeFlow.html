@@ -1479,7 +1479,10 @@
   @media(max-width:640px){
     #tplWorkspace{grid-template-columns:1fr!important}
     #tplWorkspace>#tplList,#tplWorkspace>#tplDetail{grid-column:1 / -1}
-    #tplWorkspace>#tplDetail{position:static!important}
+    /* tplphone-1.0.0: both panes kept the desktop grid-row:1, so in one column
+       the white editor pane sat ON TOP of the saved-template list and hid it.
+       One column is list, then editor. */
+    #tplWorkspace>#tplDetail{position:static!important;grid-row:2}
   }
   /* ===== Settings sections (additive, MLS) — titled groups in the Settings modal ===== */
   .set-section{border-top:1px solid var(--line);padding-top:16px;margin-top:18px}
@@ -23841,7 +23844,31 @@ function setTemplates(arr){
   // MLS additive — template edits also follow the account (hosted, fire-and-forget)
   try{ if(typeof syncPrefsToServer==='function') syncPrefsToServer(); }catch(e){}
   try{ if(typeof _syncSpecialtyPresetTemplates==='function') _syncSpecialtyPresetTemplates(); }catch(e){}
+  _tplAnnounceChanged();
 }
+/* tplsync-1.0.0: THE ONE "the library changed" signal. The op-note room's row
+   pickers, the standard-line checkboxes and the template health panel each
+   painted the library once and never again, so after an add or delete a
+   picker kept a deleted template selected (and Draft then said none was
+   selected), new templates were missing, and the health panel could say "No
+   templates saved yet" beside a full list. setTemplates is the single writer;
+   one coalesced event after it lets every surface repaint from the store. */
+var _tplChangedTimer=null;
+function _tplAnnounceChanged(){
+  if(_tplChangedTimer) return;
+  try{ _tplChangedTimer=setTimeout(function(){
+    _tplChangedTimer=null;
+    try{ window.dispatchEvent(new CustomEvent('mls:templates-changed')); }catch(e){}
+  },0); }catch(e){ _tplChangedTimer=null; }
+}
+try{ window.addEventListener('mls:templates-changed',function(){
+  try{
+    var ids={}; _tplStore().forEach(function(t){ ids[String(t.id)]=1; });
+    (window._opPrep||[]).forEach(function(r){ if(r&&r.tplId&&!ids[String(r.tplId)]){ r.tplId=''; r.tplManual=false; } });
+    var m=document.getElementById('opPrepModal');
+    if(m&&m.classList.contains('show')&&typeof opPrepRender==='function') opPrepRender();
+  }catch(e){}
+}); }catch(e){}
 /* tpldef-1.0.0 (owner 2026-09-11): a fresh account/device has never written
    either key, so localStorage.getItem returns null - that null used to read
    as OFF. Both checkboxes must default ON for a fresh account while any
@@ -26940,7 +26967,7 @@ async function useTemplateNow(id){
 }
 function previewTemplate(id){ tplSelect(id); }
 function editTemplate(id){ Promise.resolve(tplSelect(id)).then(function(){ try{ var n=document.getElementById('tplDetName'); if(n) n.focus(); }catch(e){} }); return true; }
-function duplicateTemplate(id){ var t=getTemplateById(id); if(!t) return; var list=getTemplates(); var copyId='tpl'+Date.now().toString(36)+Math.random().toString(36).slice(2,5); list.unshift({ id:copyId, name:(t.name||'Template')+' (copy)', keywords:(t.keywords||[]).slice(), text:t.text||'', created:Date.now() }); setTemplates(list); _tplUI.selectedId=copyId; renderTemplateList(); renderTemplateActiveSelect(); toast('Duplicated — now editing the copy.','ok'); }
+function duplicateTemplate(id){ var t=getTemplateById(id); if(!t) return; var list=getTemplates(); var copyId='tpl'+Date.now().toString(36)+Math.random().toString(36).slice(2,5); var copy={ id:copyId, name:(t.name||'Template')+' (copy)', keywords:(t.keywords||[]).slice(), text:t.text||'', created:Date.now() }; /* tplsync-1.0.0: the copy is the same kind of template and keeps the doctor's decisions about suggestions, so the picker treats it like the original */ var ck=_mlsTplKindOf(t); if(ck) copy.kind=ck; ['autoKw','autoKind','kwSuggested','kindSuggested'].forEach(function(k){ if(t[k]!==undefined) copy[k]=t[k]; }); list.unshift(copy); setTemplates(list); _tplUI.selectedId=copyId; renderTemplateList(); renderTemplateActiveSelect(); toast('Duplicated — now editing the copy.','ok'); }
 async function deleteTemplate(id){
   var t=getTemplateById(id); if(!t) return;
   if(!await mlsConfirm('Delete the template “'+(t.name||'')+'”? You can undo right after.')) return;
@@ -49224,7 +49251,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1309';
+  window.__MLS_AV='b1310';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

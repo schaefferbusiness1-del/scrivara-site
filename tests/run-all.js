@@ -2744,7 +2744,12 @@ const tests = [
   'opnote-room-phone-and-settings-words-runtime.test.js',
   /* onenudge-1.0.0 (b1305): the taskbar's one-time question and the "Use MLS
      on your phone" card are never on screen together; the question wins. */
-  'one-corner-nudge-at-a-time-runtime.test.js'
+  'one-corner-nudge-at-a-time-runtime.test.js',
+  /* tplsync-1.0.0 (b1310): every Templates surface follows the library -
+     health rows, standard-line ticks and the op room repaint on a change, the
+     match test applies the visit-note gate, Duplicate keeps the kind, Add then
+     Cancel changes nothing, and the phone editor does not cover the list. */
+  'templates-stay-in-step-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

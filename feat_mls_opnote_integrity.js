@@ -48,6 +48,17 @@
 
   function toast(msg, kind) { try { if (isFn(window.toast)) window.toast(msg, kind || ''); } catch (e) {} }
   function templates() { try { return isFn(window.getTemplates) ? (window.getTemplates() || []) : []; } catch (e) { return []; } }
+  /* tplsync-1.0.0: the op room drafts OPERATIVE notes. A template the doctor
+     declared a SOAP or insurance note is not one of them - the base ranker
+     (tplpick-1.0.0) already left those out, and this replacement had lost
+     that filter. Undeclared templates stay in, so an undeclared library ranks
+     exactly as before. */
+  function opTemplates() {
+    return templates().filter(function (t) {
+      var k = ''; try { k = isFn(window._mlsTplKindOf) ? S(window._mlsTplKindOf(t)) : S(t && t.kind).toLowerCase(); } catch (e) { k = ''; }
+      return k === '' || k === 'op';
+    });
+  }
   /* opmatch-1.0.0: ONE splitter for compact level spellings, shared by
      normText (lower case) and levelsOf (upper case). Case-insensitive; the
      region letter's case is preserved in the output. */
@@ -1075,7 +1086,7 @@
   }
   function rank(procedure) {
     procedure = expandShorthand(procedure);
-    var proc = normText(stripNegated(procedure)), pc = procClass(procedure), pf=procedureFacts(procedure), pt = tokens(stripNegated(procedure)), list = templates();
+    var proc = normText(stripNegated(procedure)), pc = procClass(procedure), pf=procedureFacts(procedure), pt = tokens(stripNegated(procedure)), list = opTemplates();
     var scored = list.map(function (t, index) {
       var name = normText(S(t.name) + ' ' + ((t.keywords || []).join(' ')));
       var body = normText(S(t.text).slice(0, 1800));
@@ -1278,7 +1289,7 @@
        undecided — auto-matching either template risks the wrong note. */
     var classSet = procClassSet(procedure);
     if (classSet.length > 1) return { tpl:null, confident:false, reason:'names more than one procedure ('+classSet.join(', ')+') — choose the template manually', score:0, multi:classSet };
-    var r = rank(procedure), top = r[0], second = r[1], list = templates();
+    var r = rank(procedure), top = r[0], second = r[1], list = opTemplates();
     if (!top || !top.tpl) return { tpl:null, confident:false, reason:'no templates', score:0 };
     /* DETERMINISTIC FIRST, HEURISTIC SECOND. Every safety refusal above still
        runs before this line (no procedure stated, two procedures named), and

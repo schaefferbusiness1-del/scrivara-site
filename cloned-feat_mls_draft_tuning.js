@@ -1961,6 +1961,11 @@
   var VISIT_TEMPLATE_FILE_ACCEPT = '.txt,.text,.md,.markdown,.rtf,.csv,.tsv,.json,.html,.htm,.doc,.docx,.odt,.pdf,.png,.jpg,.jpeg,.webp,.gif,text/plain,text/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg,image/webp,image/gif';
   var visitUploadFamily = '';
   var visitUploadRequest = 0, visitMountGeneration = 0;
+  /* tplsync-1.0.0: a format added but never saved. Add persists the new,
+     empty format AND makes it the active one, so Cancel used to leave the
+     section writing with no template. Cancel now takes it back out and
+     restores the format that was active before Add. */
+  var visitPendingAdd = {};
 
   function visitTemplateFamily(id) {
     var clean = String(id || '');
@@ -2256,6 +2261,7 @@
       var selector = row.querySelector('#mlsVnTplProfile_' + family);
       var editor = profileEditor(family);
       var picked = selector && String(selector.value || '');
+      delete visitPendingAdd[family];
       if (!editor || !picked || !editor.select(picked)) {
         paintVisitTemplates();
         visitTemplateStatus('That saved format could not be selected on this device. Try again.', true);
@@ -2267,18 +2273,31 @@
     row.querySelector('#mlsVnTplAdd_' + family).addEventListener('click', function () {
       var editor = profileEditor(family), profiles = visitTemplateProfiles(family);
       if (!editor || profiles.length >= MAX_SECTION_PROFILES) { visitTemplateStatus('You can keep up to ' + MAX_SECTION_PROFILES + ' saved formats per section.', true); return; }
+      var priorActive = ''; try { priorActive = String((editor.active() || {}).id || ''); } catch (ePrior) {}
       var next = editor.add({ id: 'visit_' + (profiles.length + 1), label: 'New ' + title + ' format', templateText: '', templateMode: SECTION_TEMPLATE_DEFAULT, sectionMode: profiles[0] && profiles[0].sectionMode });
       if (!next) { visitTemplateStatus('That format could not be added on this device. Try again.', true); return; }
+      visitPendingAdd[family] = { id: String(next.id || ''), prior: priorActive };
       visitTemplateResync(family);
       var selector = q('mlsVnTplProfile_' + family); if (selector) selector.value = next.id;
       visitTemplateEditorClose(family);
       visitTemplateEditorOpen(family);
     });
     row.querySelector('#mlsVnTplDelete_' + family).addEventListener('click', function () {
+      delete visitPendingAdd[family];
       if (!visitTemplateRemove(family)) { visitTemplateStatus('The final format cannot be deleted.', true); return; }
       visitTemplateResync(family); visitTemplateEditorClose(family);
     });
-    row.querySelector('#mlsVnTplCancel_' + family).addEventListener('click', function () { visitTemplateEditorClose(family); visitTemplateStatus(''); });
+    row.querySelector('#mlsVnTplCancel_' + family).addEventListener('click', function () {
+      var pend = visitPendingAdd[family]; delete visitPendingAdd[family];
+      var editor = pend && pend.id ? profileEditor(family) : null;
+      var fresh = editor ? editor.list().filter(function (p) { return p.id === pend.id; })[0] : null;
+      visitTemplateEditorClose(family);
+      if (fresh && !String(fresh.templateText || '').trim() && editor.remove(pend.id)) {
+        if (pend.prior && editor.list().some(function (p) { return p.id === pend.prior; })) editor.select(pend.prior);
+        visitTemplateResync(family);
+      }
+      visitTemplateStatus('');
+    });
     row.querySelector('#mlsVnTplUpload_' + family).addEventListener('click', function () {
       var input = q('mlsVnTplFile');
       if (!input) return;
@@ -2294,6 +2313,7 @@
         visitTemplateStatus('That template could not be saved on this device. Try again.', true);
         return;
       }
+      delete visitPendingAdd[family];
       visitTemplateEditorClose(family);
       visitTemplateResync(family);
       visitTemplateStatus('Saved. MLS will use this for your ' + title + ' section.');
@@ -2304,6 +2324,7 @@
         visitTemplateStatus('That template could not be removed on this device. Try again.', true);
         return;
       }
+      delete visitPendingAdd[family];
       var box = q('mlsVnTplText_' + family);
       if (box) box.value = '';
       visitTemplateEditorClose(family);

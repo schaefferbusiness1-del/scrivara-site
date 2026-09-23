@@ -19573,13 +19573,21 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var useOn = isFn(window.useTemplatesOn) ? window.useTemplatesOn() : false;
       var autoOn = isFn(window.templateAutoOn) ? window.templateAutoOn() : false;
       var act = null; try { act = tplById(isFn(window.getActiveTemplateId) ? window.getActiveTemplateId() : ""); } catch (e2) {}
+      /* tplsync-1.0.0: the same visit-note scope gate Generate applies
+         (_mlsGenTemplateScopeSkip) - an operative-report template is never
+         what a visit note is shaped by, so the test must not say it would be. */
+      var skip = function (t) { try { return t && isFn(window._mlsGenTemplateScopeSkip) ? S(window._mlsGenTemplateScopeSkip(t)) : ""; } catch (eSk) { return ""; } };
+      var skipWhy = function (t) { return '<div class="tpf-cand">\u2192 NO template: \u201C' + esc(t.name || "Template") + '\u201D ' + (skip(t) === "operative-report" ? "is an operative-report template" : "is not shaped like a visit note") + " \u2014 the visit note is left as generated</div>"; };
       if (!useOn) h += '<div class="tpf-cand">\u2014 nothing: the "Use templates when generating" toggle is OFF</div>';
       else if (autoOn && isFn(window.pickTemplateForVisit)) {
         var picked = window.pickTemplateForVisit(text);
-        if (picked) h += '<div class="tpf-win">\u2192 ' + esc(picked.name || "Template") + " (auto-chosen by keywords)</div>";
+        if (picked && skip(picked)) h += skipWhy(picked);
+        else if (picked) h += '<div class="tpf-win">\u2192 ' + esc(picked.name || "Template") + " (auto-chosen by keywords)</div>";
+        else if (act && skip(act)) h += skipWhy(act);
         else if (act) h += '<div class="tpf-cand">no keyword match \u2192 falls back to the active template: <b>' + esc(act.name) + "</b></div>";
         else h += '<div class="tpf-cand">no keyword match and no active template \u2192 note is left as generated</div>';
-      } else if (act) h += '<div class="tpf-win">\u2192 ' + esc(act.name) + " (the active template; auto-choose is OFF)</div>";
+      } else if (act && skip(act)) h += skipWhy(act);
+      else if (act) h += '<div class="tpf-win">\u2192 ' + esc(act.name) + " (the active template; auto-choose is OFF)</div>";
       else h += '<div class="tpf-cand">auto-choose is OFF and no active template is set \u2192 note is left as generated</div>';
     } catch (e) { h += '<div class="tpf-cand">matcher error</div>'; }
     /* C: the safety gate's verdict (mls_notegen_grounding_v1.js, when shipped) */
@@ -19691,6 +19699,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       renderPanel();
     } catch (e) {}
   }
+  /* tplsync-1.0.0: a template saved, deleted or renamed anywhere repaints the
+     health rows; the panel is built once and never rebuilt on reopen. */
+  try { window.addEventListener("mls:templates-changed", function () { try { if ($("tpfPanel")) renderPanel(); } catch (e) {} }); } catch (eTc) {}
 
   /* =====================================================================
    * (3) op-prep: whole-month mode + reliable Draft-all with ledger

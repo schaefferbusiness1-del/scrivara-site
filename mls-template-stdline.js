@@ -401,7 +401,11 @@
     try {
       var modal = document.getElementById('templatesModal');
       if (!modal) { return; }
-      if (modal.querySelector('#' + SECTION_ID)) { return; }
+      /* tplsync-1.0.0: the section painted the library once; opening
+         Templates again showed the page-load template list (new templates
+         missing, deleted ones still tickable). Re-open repaints it. */
+      var existing = modal.querySelector('#' + SECTION_ID);
+      if (existing) { if (!editingId) { renderInto(existing); } return; }
       var h3 = null;
       var hs = modal.querySelectorAll('h1,h2,h3');
       for (var i = 0; i < hs.length; i++) {
@@ -420,6 +424,16 @@
       }
     } catch (e) {}
   }
+
+  /* tplsync-1.0.0: and every library change repaints it too (unless a
+     standard line is mid-edit, which keeps what the doctor is typing). */
+  function onTemplatesChanged() {
+    try {
+      var existing = document.getElementById(SECTION_ID);
+      if (existing && !editingId) { renderInto(existing); }
+    } catch (e) {}
+  }
+  try { window.addEventListener('mls:templates-changed', onTemplatesChanged); } catch (e) {}
 
   function installOpenWrap() {
     try {
