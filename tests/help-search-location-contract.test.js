@@ -15,14 +15,28 @@ assert(directory.includes('Shared by Find and Help'), 'Help and Find no longer s
 assert(directory.includes("name:'Free Marketing workspace'") && directory.includes("where:'Tools -> Marketing'") && directory.includes("route:'reach:reviews'"),
   'Marketing location or its guarded legacy-route handoff is stale or missing');
 assert(!directory.includes("where:'Left navigation -> Reviews'"), 'Help still teaches the retired Reviews navigation');
-assert(directory.includes("where:'Left navigation -> Send to patient (or Patient portal in the active-patient bar)'") && directory.includes("route:'reach:send'"), 'Send-to-patient location is stale or missing');
-assert(directory.includes("where:'AI Studio -> natural-language study builder at the top'") && directory.includes("route:'study'"), 'natural-language study location is stale or missing');
+/* helpdir-1.0.0: the Calm shell has no left navigation, top navigation or Menu
+   door (#mlsTbMenu is hidden). These pins are the locations measured in a
+   signed-in clinician shell: taskbar, Tools menu, open visit, Settings tabs.
+   Send to patient sits under the open visit's "Visit shortcuts" chip; the
+   Tools menu has no Templates row (op-note templates are the op-note room's
+   Templates button); AI Studio's builder is a custom TOOL, not the widget
+   builder, so Custom widget names only its Tools row. */
+assert(directory.includes("where:'In a visit: Visit shortcuts -> Send to patient'") && directory.includes("route:'reach:send'"), 'Send-to-patient location is stale or missing');
+assert(directory.includes("where:'AI Studio -> Study & build -> natural-language study builder at the top'") && directory.includes("route:'study'"), 'natural-language study location is stale or missing');
 assert(directory.includes('limited-data draft') && directory.includes('clinician and privacy review are still required'), 'Help/Search overstates study privacy or readiness');
 assert(directory.includes("name:'Ask MLS Copilot'") && directory.includes("route:'copilot'"), 'MLS Copilot location is stale or missing');
-assert(directory.includes("name:'Manage note and op-note templates'") && directory.includes("where:'Menu -> Templates'"), 'Templates still teaches a retired top-bar location');
-assert(directory.includes("name:'Ask MLS Copilot'") && directory.includes("where:'Menu -> Ask'"), 'Ask still teaches a retired top-bar location');
-assert(directory.includes("name:'Build a custom widget'") && directory.includes("where:'Menu -> Custom widget (also at the top of AI Studio)'"), 'Custom widget still teaches a retired top-bar location');
+assert(directory.includes("name:'Manage note and op-note templates'") && directory.includes("where:'Op-note: Tools -> Prep op notes -> Templates; visit-note: Settings -> Notes & AI'"), 'Templates location is stale or missing');
+assert(directory.includes("name:'Ask MLS Copilot'") && directory.includes("where:'Copilot on the taskbar (also AI Studio -> Ask)'"), 'Ask still teaches a retired Menu location');
+assert(directory.includes("name:'Build a custom widget'") && directory.includes("where:'Tools -> Custom widget'"), 'Custom widget still teaches a retired Menu location');
 assert(!directory.includes("where:'Top bar -> Templates'") && !directory.includes("where:'Top bar -> Ask'") && !directory.includes("where:'Top bar -> Custom widget"), 'canonical directory still contains retired top-bar locations');
+/* helpdir-1.0.0: none of the retired doors may come back as a location, nor the
+   two wrong doors measured at b1304 (no Tools -> Templates row; AI Studio's
+   builder is not the widget builder). */
+for (const retired of ["where:'Menu -> ", "where:'Top navigation -> ", "where:'Left navigation -> ", "where:'Top bar -> ", "where:'Settings -> Display'", 'easy recorder', 'top workflow card', 'Connect to EMR',
+  "where:'Op-note: Tools -> Templates", 'Custom widget (also AI Studio']) {
+  assert(!directory.includes(retired), 'canonical directory still teaches a retired location: ' + retired);
+}
 assert(directory.includes("route.indexOf('reach:') === 0") && directory.includes("mode:'dialog',source:'feature-directory'"), 'Help/Find context actions must open compact Reach dialogs');
 assert(directory.includes("if(typeof window.showView==='function') window.showView('studio')") &&
   directory.includes('function focusStudyPrompt(tries)') &&
