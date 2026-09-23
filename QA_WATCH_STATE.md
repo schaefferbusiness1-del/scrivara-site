@@ -9,6 +9,76 @@ names the exact SHA that was gated, not "the tip".
 
 ---
 
+## 2026-08-07 18:3x — site `90abab56` (b946) — GREEN, and live is current again
+
+| Gate | Result |
+|---|---|
+| site — complete registry | **506/506, 0 failed** |
+| site — Jekyll build + `audit-pages-build.js` | **PASS — 326 exact reviewed files** |
+| site — Pages deploy | run 76 `success` — the pipeline recovered |
+| backend `ad7ac1c` — `npm test` | PASS, exit 0, 49 suites (unchanged since 17:4x) |
+| live origin verification | still **NOT POSSIBLE** — 403 at the proxy |
+
+b946 carries b945 and av-5.6.7, both of which had been sitting unpublished behind
+the failed deploys below.
+
+---
+
+## 2026-08-07 18:08–18:26Z — 🔴 THE SITE STOPPED DEPLOYING AND NOBODY WAS TOLD
+
+**For 28 minutes `mlsscribe.com` served b944 while `main` moved on three times.**
+Three consecutive Pages deploys failed. Each is an ordinary red X on a workflow
+nobody watches, so the shipping lanes kept merging into a pipeline that had
+quietly stopped publishing.
+
+| deploy run | commit | carried | result |
+|---|---|---|---|
+| 72 | `2cf06548` | b944 | ✅ success — what stayed live throughout |
+| 73 | `294c117d` | b945 | ❌ failure |
+| 74 | `8f00177a` | QA docs | ❌ failure |
+| 75 | `44c53a30` | av-5.6.7 | ❌ failure |
+| 76 | `90abab56` | b946 | ✅ **recovered** |
+
+### Cause — verbatim from run 73's build job
+
+```
+FAIL Pages publication output (1 issue)
+- unexpected/unreviewed generated file: feat_mls_opnote_daybrain.js
+##[error]Process completed with exit code 1.
+```
+
+b945 added `feat_mls_opnote_daybrain.js` — a 57 KB shipped module that
+`mls-connect.js` loads — without adding it to `pages-publication-inventory.json`.
+The publication audit is fail-closed by design and refused the tree. That audit
+runs in the **build** job of `pages-deploy.yml`, *before* `upload-pages-artifact`,
+so the deploy job never ran and nothing published. The gate worked exactly as
+intended: it caught an undeclared public file. What failed is that its verdict
+reached nobody.
+
+### Why every source gate stayed green
+
+The registry passed **506/506** on b945, including `public-publication-boundary`
+and `pages-build-output-audit`. Those read the source and the config. Only
+`audit-pages-build.js` walks the *generated tree* against the reviewed inventory,
+and it needs a real `jekyll build` first. **A lane running `npm test` alone cannot
+see this class at all** — which is why this lane now always builds and audits.
+
+### Resolution — not this lane's fix
+
+Another lane found it independently and shipped **b946 / PR #16** ("the new module
+was never listed as a published file"); deploy 76 succeeded at 18:26Z and live is
+current again. This lane had the identical one-line inventory fix built and
+verified locally (`PASS ... 326 exact reviewed files`) and **discarded it rather
+than push a duplicate** — §0 again: re-derive from the tip before acting.
+
+### The gap that is still open
+
+A red deploy on the production branch alerted no one for 28 minutes, across three
+runs. It was found by a QA lane running the audit by hand. Nothing in the repo
+watches `pages-deploy.yml` outcomes.
+
+---
+
 ## 2026-08-07 17:4x — site `4256f4fd` (b943), backend `ad7ac1c` — ALL GREEN
 
 Six site PRs (#4, #6, #8, #9, #5, #10) and three backend PRs (#12, #14, #15) merged

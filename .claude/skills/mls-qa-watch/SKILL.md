@@ -107,7 +107,23 @@ read the timings rather than the tally.
 
 Backend: `cd ../scrivara-backend && npm ci && npm test`.
 
-## 2. Verify what actually deployed
+## 2. Verify what actually deployed — DO THIS FIRST, EVERY TICK
+
+**Check `pages-deploy.yml` before anything else.** On 2026-08-07 three consecutive
+deploys failed (runs 73, 74, 75) and `mlsscribe.com` served b944 for 28 minutes while
+`main` moved on three times. Nobody was told: a failed deploy is an ordinary red X on
+a workflow nobody watches, and the lanes kept merging into a pipeline that had stopped
+publishing. **The source gates were all green** — b945 passed 506/506 — because only
+`audit-pages-build.js` walks the generated tree, and it caught an undeclared published
+file (`feat_mls_opnote_daybrain.js`, loaded by `mls-connect.js`, absent from
+`pages-publication-inventory.json`).
+
+Two rules fall out of that, and neither is optional:
+
+- **The last GREEN deploy is what is live**, not `origin/main`. Never report the tip's
+  build number as the live build without checking.
+- **`npm test` cannot see the publication class at all.** Always `jekyll build` and run
+  `audit-pages-build.js`, on every gate.
 
 **`mlsscribe.com` and `scrivara-backend.onrender.com` are BLOCKED by this
 environment's egress policy** — the proxy answers 403 to CONNECT, and the README
