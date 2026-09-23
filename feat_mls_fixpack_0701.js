@@ -875,6 +875,9 @@
          only a real string is honoured - anything else opens empty exactly as
          before. Rendered through qfRender, never by faking an input event. */
       var qfOpen = function (prefill) {
+        /* kiosk-1.0.0: never over the patient intake kiosk - it lists other
+           patients' names and dates of birth. */
+        try { if (typeof window._intakeActive === 'function' && window._intakeActive()) return; } catch (eK) {}
         qfEnsure();
         qfIndex = buildIndex(); /* fresh every open - fixes stale-after-one-use */
         var o = qfEl(); o.style.display = 'flex';

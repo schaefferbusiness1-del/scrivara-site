@@ -2763,7 +2763,11 @@ const tests = [
   /* sigonce-1.0.0 (b1314): the signature pad inks and syncs once per stroke
      however often it is re-initialised; MLS Easy wires its note and search
      inputs by property; the phone card registers one resize listener. */
-  'listeners-bind-once-runtime.test.js'
+  'listeners-bind-once-runtime.test.js',
+  /* kiosk-1.0.0 (b1315): while Patient intake is up nothing but the intake
+     renders - no Find palette listing patients, no taskbar, no background
+     notice - and the app's global keys are swallowed. */
+  'intake-kiosk-shows-only-the-intake-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

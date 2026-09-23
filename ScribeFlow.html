@@ -3027,6 +3027,14 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 .ik-sat .n{font-size:22px;font-weight:700}
 .ik-sat .l{font-size:12px;font-weight:600;text-align:center}
 .ik-sat.on{background:#2E6A4B;border-color:#2E6A4B;color:#fff}
+/* kiosk-1.0.0: while the patient holds the device, NOTHING but the intake,
+   its staff-exit dialog and its own notices renders. openIntake hid
+   #appScreen and the open .modal-bg dialogs, but every body-level overlay
+   (the "/" Find palette listing other patients' names and dates of birth,
+   the taskbar, the Copilot drawer, the "patient calling" bar) could still
+   open over the kiosk. Keyed to the intake's own display so it can never
+   outlive the kiosk. */
+html:has(> body > #intakeView[style*="display: block"]) body > :not(#intakeView):not(#ikExitModal):not(#toast){display:none!important}
 </style>
 <div id="intakeView">
   <div class="ik-wrap">
@@ -6972,6 +6980,10 @@ window.__mlsSyncNoticeAnchor=mlsSyncNoticeAnchor;
 let toastT,toastKey='';
 function toast(msg,type){
   const t=document.getElementById('toast'); if(!t)return null;
+  /* kiosk-1.0.0: background work keeps running under the patient intake; its
+     notices (a chart pull naming a patient) wait. The intake's own go
+     through _ikToast. */
+  try{ if(typeof _intakeActive==='function'&&_intakeActive()&&!window.__mlsKioskToastOk) return null; }catch(eK){}
   const nextType=type||'',nextMsg=String(msg==null?'':msg),nextKey=nextType+'|'+nextMsg;
   mlsPlaceMobileNotice(t); mlsSyncNoticeAnchor();
   /* Repeated owner/poll messages must not restart the lifetime forever. */
@@ -18575,7 +18587,7 @@ async function calToggleCheckin(btn){
       else if(typeof showView==='function'){ showView(it.k); }
     } else { if(typeof selectPatient==='function') selectPatient(it.p.id); if(typeof showView==='function') showView('patients'); }
   }catch(e){} }
-  window.mlsQuickFind=function(){ _qfInit(); var ov=_qfEl(); if(!ov) return; ov.style.display='flex'; var inp=document.getElementById('mlsQfInput'); if(inp){ inp.value=''; inp.focus(); } _qfRender(''); };
+  window.mlsQuickFind=function(){ try{ if(typeof _intakeActive==='function'&&_intakeActive()) return; }catch(eK){} /* kiosk-1.0.0 */ _qfInit(); var ov=_qfEl(); if(!ov) return; ov.style.display='flex'; var inp=document.getElementById('mlsQfInput'); if(inp){ inp.value=''; inp.focus(); } _qfRender(''); };
   window.mlsQuickFindClose=function(){ var ov=_qfEl(); if(ov) ov.style.display='none'; };
   document.addEventListener('keydown', function(e){
     var t=e.target, tag=(t&&t.tagName||'').toUpperCase(), editable=t&&t.isContentEditable;
@@ -40809,6 +40821,20 @@ function _intakeActive(){
   const v=document.getElementById('intakeView');
   return !!(v && v.style.display!=='none' && v.style.display!=='');
 }
+/* kiosk-1.0.0: while the kiosk is up the app's global keys belong to nobody.
+   A key aimed outside the intake, or any Ctrl/Cmd/Alt shortcut other than
+   plain editing (copy, paste, cut, undo, redo, select all), stops here -
+   before "/" opens Find, Ctrl+K a palette, or Alt+R starts a recording.
+   Registered here, ahead of every other window-level key listener. */
+window.addEventListener('keydown',function(e){
+  if(!_intakeActive()) return;
+  var t=e.target, inKiosk=!!(t&&t.closest&&t.closest('#intakeView,#ikExitModal'));
+  var mod=e.ctrlKey||e.metaKey||e.altKey;
+  var editKey=(e.ctrlKey||e.metaKey)&&!e.altKey&&/^[acvxyz]$/i.test(String(e.key||''));
+  if(!inKiosk||(mod&&!editKey)) e.stopImmediatePropagation();
+},true);
+/* Only the intake's own notices show while it is up (see toast()). */
+function _ikToast(msg,type){ window.__mlsKioskToastOk=true; try{ return toast(msg,type); }finally{ window.__mlsKioskToastOk=false; } }
 function _installIntakeBackTrap(){
   if(window.__mlsIntakeBackTrap) return;
   window.__mlsIntakeBackTrap=true;
@@ -40818,12 +40844,16 @@ function _installIntakeBackTrap(){
        point at the protected exit. */
     if(!_intakeActive()) return;
     try{ history.pushState({mlsIntake:1},'',location.href); }catch(e){}
-    try{ toast('Patient intake stays open — staff use “Staff: exit” (password) to leave.',''); }catch(e){}
+    try{ _ikToast('Patient intake stays open — staff use “Staff: exit” (password) to leave.',''); }catch(e){}
   });
 }
 function openIntake(){
   if(typeof isLawyerUser==='function' && isLawyerUser()) return; // never for lawyer accounts
   resetIntakeForm();
+  /* kiosk-1.0.0: a notice already on screen (a background pull naming a
+     patient, say) does not carry over into the patient's hands. */
+  try{ var _kt=document.getElementById('toast'); if(_kt){ _kt.className='toast'; _kt.textContent=''; } }catch(eKt){}
+  try{ if(typeof mlsQuickFindClose==='function') mlsQuickFindClose(); }catch(eKq){}
   // privacy: close any open modal (they live outside appScreen) + hide ALL clinical UI
   document.querySelectorAll('.modal-bg.show').forEach(m=>m.classList.remove('show'));
   const app=document.getElementById('appScreen'); if(app) app.style.display='none';
@@ -41013,7 +41043,7 @@ function submitIntake(){
   const v=id=>((document.getElementById(id)||{}).value||'').trim();
   const checked=nm=>Array.from(document.querySelectorAll('input[name="'+nm+'"]:checked')).map(c=>c.value);
   const name=v('ikName');
-  if(!name){ toast('Please enter your full name in the first box.','err'); const el=document.getElementById('ikName'); if(el){ el.focus(); el.scrollIntoView({block:'center'}); } return; }
+  if(!name){ _ikToast('Please enter your full name in the first box.','err'); const el=document.getElementById('ikName'); if(el){ el.focus(); el.scrollIntoView({block:'center'}); } return; }
   const dob=v('ikDob');
   // Match an existing patient by exact name (case-insensitive) + same/absent DOB; else create new.
   const nmLower=name.toLowerCase();
@@ -49331,7 +49361,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1314';
+  window.__MLS_AV='b1315';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
