@@ -2718,7 +2718,11 @@ const tests = [
   /* pvfix-1.0.0 (b1298): the sample workspace only blocks what could contact
      Athena, record, save or send - Back, local searches, Cancel buttons, the
      notes card and the Records report work; the day button no longer flickers. */
-  'preview-sample-local-controls-runtime.test.js'
+  'preview-sample-local-controls-runtime.test.js',
+  /* menufocus-1.0.x (b1299): the Account, mode and Recent menus answer Escape
+     and the arrows and close when focus leaves; Settings keeps Tab inside
+     itself (but not over its own sub-layers) and returns focus on close. */
+  'header-menus-and-settings-keyboard-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

@@ -10666,6 +10666,27 @@ function _mlsOfferSettingsAction(message,anchorIds){
     return true;
   }catch(eOffer){ return false; }
 }
+var _settingsReturnFocus=null;   /* menufocus-1.0.0: see openSettings */
+var _settingsKeydown=null;
+/* menufocus-1.0.1: Settings wraps Tab only while it is the top layer. 1.0.0 let
+   a stacked [role=dialog] keep its Tab and pulled focus back from everything
+   else, but not every layer painted over Settings is a dialog: the billing code
+   table editor (#mlsCtModal, opened FROM Settings > Notes & AI) and the dock nub
+   with its menu (#mlsDockNub, above every overlay) have no role, so Tab from them
+   went back into Settings, behind them, and their own buttons were unreachable.
+   Ask the hit test, the same question a pointer asks:
+   - something else owns the middle of the screen (a modal over Settings) -> it keeps Tab;
+   - the focused control outside Settings is what is painted at its own centre
+     (above the overlay, like the nub) -> it keeps Tab;
+   - otherwise focus is in Settings, on <body>, or on a control the overlay
+     covers -> Settings takes it. */
+function _settingsYieldsTab(modal,current){
+  const hitIs=(x,y,el)=>{ const h=document.elementFromPoint(x,y); return !!h&&(h===el||el.contains(h)); };
+  if(!hitIs(window.innerWidth/2,window.innerHeight/2,modal)) return true;
+  if(!current||current===document.body||current===document.documentElement||modal.contains(current)) return false;
+  const r=current.getBoundingClientRect();
+  return r.width>0&&r.height>0&&hitIs(r.left+r.width/2,r.top+r.height/2,current);
+}
 function openSettings(opts){
   /* settingsgate-1.0.0: the gate. See the note above - nothing below this line
      runs for a caller nobody pressed. */
@@ -10749,6 +10770,31 @@ function openSettings(opts){
   if(typeof loadLegalProfile==='function') loadLegalProfile();
   try{ if(typeof backendMode==='function'&&backendMode()&&bkToken()){ if(typeof loadApiKeys==='function') loadApiKeys(); if(typeof loadEmrSync==='function') loadEmrSync(); } }catch(e){}
   try{ if(typeof __mlsJunkScrubRender==='function') __mlsJunkScrubRender(); }catch(eJsr){} /* junkscrub-1.0.0 */
+  const _setModal=document.getElementById('settingsModal');
+  /* menufocus-1.0.0: Settings is role=dialog aria-modal=true, but nothing kept
+     the keyboard inside it - Tab walked 22 controls behind the overlay, and Enter
+     on one changed the page under the open dialog - and closing dropped focus on
+     <body>. Same pattern as the patient modal and the op-prep room: remember the
+     opener once (a re-open while showing must not overwrite it with a control
+     inside the dialog), and wrap Tab/Shift+Tab while Settings is the top dialog. */
+  if(!_setModal.classList.contains('show')){
+    const _setOpener=document.activeElement;
+    _settingsReturnFocus=(_setOpener&&_setOpener!==document.body&&_setOpener!==document.documentElement&&!_setModal.contains(_setOpener))?_setOpener:null;
+  }
+  if(_settingsKeydown) document.removeEventListener('keydown',_settingsKeydown,true);
+  _settingsKeydown=e=>{
+    if(e.key!=='Tab'||e.defaultPrevented||!_setModal.classList.contains('show')) return;
+    const current=document.activeElement;
+    /* a dialog stacked on top (mlsConfirm, the invite-password prompt) owns Tab while it is up */
+    const top=current&&current.closest?current.closest('[role="dialog"],[role="alertdialog"]'):null;
+    if(top&&!_setModal.contains(top)) return;
+    if(_settingsYieldsTab(_setModal,current)) return;   /* menufocus-1.0.1: any other layer above it too */
+    const rows=_patientModalFocusables(_setModal); if(!rows.length){e.preventDefault();return;}
+    const first=rows[0],last=rows[rows.length-1];
+    if(e.shiftKey&&(current===first||!_setModal.contains(current))){e.preventDefault();last.focus();}
+    else if(!e.shiftKey&&(current===last||!_setModal.contains(current))){e.preventDefault();first.focus();}
+  };
+  document.addEventListener('keydown',_settingsKeydown,true);
   document.getElementById('settingsModal').classList.add('show');
   try{ if(window.__mlsUiUnification&&typeof window.__mlsUiUnification.reconcileSettings==='function') window.__mlsUiUnification.reconcileSettings(); }catch(e){}
   /* setfix-1.0.0 (b1169, n=46): the live extension-version row's render() now
@@ -10791,7 +10837,21 @@ function closeSettings(){
     const qpl=document.getElementById('qolPtLayout'); if(qpl) qpl.value=getQolPtLayout();
     const qgp=document.getElementById('qolGroupProc'); if(qgp) qgp.checked=getQolGroupProc();
   }catch(e){}
-  document.getElementById('settingsModal').classList.remove('show');
+  const _setModal=document.getElementById('settingsModal');
+  const _setWasOpen=_setModal.classList.contains('show');
+  _setModal.classList.remove('show');
+  /* menufocus-1.0.0: give the keyboard back to whatever opened Settings (the
+     Account button when it came from the Account menu). Only when closing
+     actually lost focus - a caller that already moved it on (Re-run setup) wins -
+     and never for a close of a dialog that was not open. */
+  if(_settingsKeydown){ document.removeEventListener('keydown',_settingsKeydown,true); _settingsKeydown=null; }
+  const _setPrior=_settingsReturnFocus; _settingsReturnFocus=null;
+  if(!_setWasOpen) return;
+  const _setActive=document.activeElement;
+  if(_setActive&&_setActive!==document.body&&_setActive!==document.documentElement&&!_setModal.contains(_setActive)) return;
+  const _setVisible=el=>{ if(!el||!el.isConnected||el.disabled) return false; const s=getComputedStyle(el),r=el.getBoundingClientRect(); return s.display!=='none'&&s.visibility!=='hidden'&&r.width>0&&r.height>0; };
+  const _setBack=_setVisible(_setPrior)?_setPrior:[document.getElementById('mlsAccountMenuBtn')].find(_setVisible);
+  if(_setBack){ try{ _setBack.focus({preventScroll:true}); }catch(e){} }
 }
 /* MLS — Clear saved data on THIS device only.
    Scoped strictly to this app's per-user namespace produced by uns():
@@ -50935,7 +50995,12 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
   }
   function closeChip() {
     var m = document.getElementById('mslChipMenu'), b = document.getElementById('mslChipBtn');
-    if (!m) return; m.setAttribute('hidden', '');
+    if (!m) return;
+    /* menufocus-1.0.0: hiding the menu while one of its choices holds focus
+       (Escape, or picking a mode) dropped the keyboard onto <body>, so the next
+       Tab restarted at the bottom of the page. Hand it back to the chip first. */
+    if (b && m.contains(document.activeElement)) { try { b.focus({ preventScroll: true }); } catch (e) {} }
+    m.setAttribute('hidden', '');
     if (b) b.setAttribute('aria-expanded', 'false');
   }
   function paintChip() {

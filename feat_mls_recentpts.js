@@ -69,7 +69,40 @@
       closeMenu();
     }catch(e){}
   }
-  function closeMenu(){try{var m=document.getElementById(MENU_ID);if(m)m.remove();}catch(e){}}
+  /* menufocus-1.0.0: the menu is appended to <body> so it floats over any bar,
+     which put its rows at the very END of the Tab order (15 Tabs from the
+     button), and nothing listened for Escape. Opening now puts the keyboard on
+     the first chart, the arrows walk the rows, Escape closes and hands focus
+     back to the button, and Tab leaves from the button's place in the page
+     instead of from the end of the document. Removing the menu while a row held
+     focus also dropped the keyboard onto <body>; it returns to the button now,
+     except on an outside pointer press, where the press decides where focus goes. */
+  function triggerBtn(){var w=document.getElementById(WRAP_ID);return w?w.querySelector('.mrp-btn'):null;}
+  function focusTrigger(){var b=triggerBtn();if(b&&!b.disabled){try{b.focus({preventScroll:true});}catch(e){}}return b;}
+  function closeMenu(keepFocus){try{
+    document.removeEventListener('mousedown',onDocClick,true);
+    var m=document.getElementById(MENU_ID);if(!m)return;
+    var hadFocus=m.contains(document.activeElement);
+    m.remove();
+    if(hadFocus&&!keepFocus)focusTrigger();
+  }catch(e){}}
+  function onMenuKey(ev){try{
+    var m=document.getElementById(MENU_ID);if(!m||!ev)return;
+    var key=ev.key;
+    if(key==='Escape'||key==='Esc'){ev.preventDefault();ev.stopPropagation();closeMenu(true);focusTrigger();return;}
+    if(key==='Tab'){
+      /* Shift+Tab lands on the button; Tab continues to whatever follows it. */
+      closeMenu(true);focusTrigger();
+      if(ev.shiftKey)ev.preventDefault();
+      return;
+    }
+    if(key!=='ArrowDown'&&key!=='ArrowUp'&&key!=='Home'&&key!=='End')return;
+    var rows=Array.prototype.slice.call(m.querySelectorAll('.mrp-item'));if(!rows.length)return;
+    ev.preventDefault();
+    var i=rows.indexOf(document.activeElement);
+    var n=key==='Home'?0:key==='End'?rows.length-1:key==='ArrowDown'?(i+1)%rows.length:(i<=0?rows.length-1:i-1);
+    rows[n].focus();
+  }catch(e){}}
 
   function openMenu(anchor){
     closeMenu();
@@ -77,16 +110,20 @@
     var index=lastIndex||patientIndex();
     var rows=loadIds().filter(function(id){return String(id)!==String(cur)&&ptById(id,index);});
     var menu=document.createElement('div');menu.id=MENU_ID;
+    menu.setAttribute('role','menu');menu.setAttribute('aria-label','Recent charts');
     if(!rows.length){menu.innerHTML='<div class="mrp-empty">No other recent charts yet.<br>Open a few patients and they will show up here.</div>';}
     else{menu.innerHTML=rows.map(function(id){var p=ptById(id,index)||{};var meta=[p.sex,p.dob].filter(Boolean).join(' · ');
-      return '<button type="button" class="mrp-item" data-id="'+esc(id)+'"><span class="mrp-nm">'+esc(p.name||'Patient')+'</span>'+(meta?'<span class="mrp-meta">'+esc(meta)+'</span>':'')+'</button>';}).join('');}
+      return '<button type="button" class="mrp-item" role="menuitem" data-id="'+esc(id)+'"><span class="mrp-nm">'+esc(p.name||'Patient')+'</span>'+(meta?'<span class="mrp-meta">'+esc(meta)+'</span>':'')+'</button>';}).join('');}
     document.body.appendChild(menu);
     try{var r=anchor.getBoundingClientRect();menu.style.top=Math.round(r.bottom+6)+'px';menu.style.left=Math.round(Math.min(r.left,window.innerWidth-250))+'px';}catch(e){}
     menu.querySelectorAll('.mrp-item').forEach(function(b){b.addEventListener('click',function(ev){ev.preventDefault();ev.stopPropagation();switchTo(b.getAttribute('data-id'));});});
-    setTimeout(function(){document.addEventListener('mousedown',onDocClick,true);},0);
+    menu.addEventListener('keydown',onMenuKey,false);
+    var first=menu.querySelector('.mrp-item');if(first){try{first.focus({preventScroll:true});}catch(e){}}
+    setTimeout(function(){if(document.getElementById(MENU_ID)===menu)document.addEventListener('mousedown',onDocClick,true);},0);
   }
   function onDocClick(ev){var m=document.getElementById(MENU_ID),w=document.getElementById(WRAP_ID);
-    if(m&&!m.contains(ev.target)&&w&&!w.contains(ev.target)){closeMenu();document.removeEventListener('mousedown',onDocClick,true);}}
+    if(!m){document.removeEventListener('mousedown',onDocClick,true);return;}
+    if(!m.contains(ev.target)&&w&&!w.contains(ev.target))closeMenu(true);}
 
   function injectCss(){
     if(document.getElementById(STYLE_ID))return;
@@ -162,7 +199,9 @@
       var btn=existing.querySelector('.mrp-btn');
       if(btn&&!btn.__mlsRecentBound){btn.__mlsRecentBound=true;btn.addEventListener('click',function(ev){ev.preventDefault();ev.stopPropagation();
         if(btn.disabled)return;
-        if(document.getElementById(MENU_ID)){closeMenu();}else{openMenu(existing);}});}
+        if(document.getElementById(MENU_ID)){closeMenu();}else{openMenu(existing);}});
+        /* menufocus-1.0.0: Escape from the button too (an empty menu has no row to hold focus). */
+        btn.addEventListener('keydown',function(ev){if(ev&&(ev.key==='Escape'||ev.key==='Esc')&&document.getElementById(MENU_ID)){ev.preventDefault();ev.stopPropagation();closeMenu(true);}});}
       attachObs(loc.bar);
     }catch(e){}
   }
@@ -280,7 +319,7 @@
       try{unlisten();}catch(e){}
       try{detachObs();}catch(e){}
       try{document.removeEventListener('mousedown',onDocClick,true);}catch(e){}
-      try{closeMenu();}catch(e){}
+      try{closeMenu(true);}catch(e){}
       try{var w=document.getElementById(WRAP_ID);if(w)w.remove();}catch(e){}
       try{var s=document.getElementById(STYLE_ID);if(s)s.remove();}catch(e){}
       try{delete window.__mlsRecentPts;}catch(e){window.__mlsRecentPts=undefined;}

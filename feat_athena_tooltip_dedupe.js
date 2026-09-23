@@ -439,17 +439,19 @@
   } catch (e) { try { boot(); } catch (e2) {} }
 })();
 
-/*! single-owner UI + account access -> window.__mlsUiUnification (v1.1.6)
+/*! single-owner UI + account access -> window.__mlsUiUnification (v1.1.7)
  * Keeps the easy visit recorder authoritative until the user deliberately
  * opens Advanced, removes duplicate entry points, and puts account/security
  * access in the always-visible top bar. The extension is not involved.
+ * v1.1.7 (menufocus-1.0.0): the Account menu keyboard contract - see
+ * openAccountMenu() below.
  */
 (function () {
   'use strict';
   var W = (typeof window !== 'undefined') ? window : null;
   if (!W || (W.__mlsUiUnification && W.__mlsUiUnification.installed)) return;
 
-  var VERSION = '1.1.6';
+  var VERSION = '1.1.7';
   var STYLE_ID = 'mlsUiUnificationStyle';
   var ACCOUNT_WRAP_ID = 'mlsAccountAccess';
   var retryTimer = null;
@@ -600,10 +602,77 @@
     return (s.charAt(0) || 'A').toUpperCase();
   }
 
+  /* menufocus-1.0.0: the Account menu is role=menu, but only a pointer click
+     elsewhere could close it. Escape did nothing, Tabbing out left it open over
+     the page, the arrows did not move, and hiding it while one of its items held
+     focus dropped the keyboard onto <body> (so Settings, opened from that item,
+     had nowhere to hand focus back to). Opening it also left the mode ("Normal")
+     menu open underneath: this button stops its click, and that click is what
+     the mode menu's outside-click listener waits for. Now: one header menu at a
+     time, Escape and Tab-away close it, arrows walk the items, and closing
+     returns focus to the button whenever focus was inside the menu. */
+  function accountItems() {
+    var pop = byId('mlsAccountPopover');
+    if (!pop) return [];
+    return Array.prototype.slice.call(pop.querySelectorAll('[role="menuitem"]')).filter(function (el) {
+      return !el.disabled && el.getAttribute('data-mls-ui-owner-hidden') !== '1';
+    });
+  }
+
   function closeAccountMenu() {
     var btn = byId('mlsAccountMenuBtn'), pop = byId('mlsAccountPopover');
+    if (btn && pop && pop.contains(document.activeElement)) safe(function () { btn.focus({ preventScroll: true }); });
     if (btn) btn.setAttribute('aria-expanded', 'false');
     if (pop) pop.hidden = true;
+  }
+
+  function openAccountMenu(focusItem) {
+    var btn = byId('mlsAccountMenuBtn'), pop = byId('mlsAccountPopover');
+    if (!btn || !pop) return;
+    safe(function () { if (W.__mlsSimpleLayerChip && typeof W.__mlsSimpleLayerChip.close === 'function') W.__mlsSimpleLayerChip.close(); });
+    pop.hidden = false;
+    btn.setAttribute('aria-expanded', 'true');
+    if (!focusItem) return;
+    var items = accountItems();
+    var target = focusItem === 'last' ? items[items.length - 1] : items[0];
+    if (target) safe(function () { target.focus(); });
+  }
+
+  function onAccountKeydown(ev) {
+    var btn = byId('mlsAccountMenuBtn'), pop = byId('mlsAccountPopover');
+    if (!btn || !pop) return;
+    var key = ev.key;
+    if (key === 'Escape' || key === 'Esc') {
+      if (pop.hidden) return;
+      ev.preventDefault(); ev.stopPropagation();
+      closeAccountMenu();
+      safe(function () { btn.focus({ preventScroll: true }); });
+      return;
+    }
+    if (key !== 'ArrowDown' && key !== 'ArrowUp' && key !== 'Home' && key !== 'End') return;
+    if (ev.target === btn) {
+      if (key !== 'ArrowDown' && key !== 'ArrowUp') return;
+      ev.preventDefault();
+      openAccountMenu(key === 'ArrowUp' ? 'last' : 'first');
+      return;
+    }
+    if (pop.hidden || !pop.contains(ev.target)) return;
+    var items = accountItems();
+    if (!items.length) return;
+    ev.preventDefault();
+    var i = items.indexOf(document.activeElement);
+    var n = key === 'Home' ? 0 : key === 'End' ? items.length - 1 :
+      key === 'ArrowDown' ? (i + 1) % items.length : (i <= 0 ? items.length - 1 : i - 1);
+    safe(function () { items[n].focus(); });
+  }
+
+  function onAccountFocusOut(ev) {
+    /* Only a real move to another control closes it. A null relatedTarget is a
+       click on the menu's own identity line or the window losing focus; the
+       outside-click handler owns pointer dismissal. */
+    var wrap = byId(ACCOUNT_WRAP_ID), pop = byId('mlsAccountPopover'), next = ev.relatedTarget;
+    if (!wrap || !pop || pop.hidden || !next || wrap.contains(next)) return;
+    closeAccountMenu();
   }
 
   function markHidden(el, reason) {
@@ -658,10 +727,11 @@
       wrap.querySelector('.mls-account-id').textContent = email || 'Signed-in MLS account';
       btn.addEventListener('click', function (ev) {
         ev.preventDefault(); ev.stopPropagation();
-        var open = pop.hidden;
-        pop.hidden = !open;
-        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        if (pop.hidden) openAccountMenu(false);
+        else closeAccountMenu();
       });
+      wrap.addEventListener('keydown', onAccountKeydown);
+      wrap.addEventListener('focusout', onAccountFocusOut);
       wrap.querySelector('[data-account-action="settings"]').addEventListener('click', function () {
         closeAccountMenu();
         if (typeof W.openSettings === 'function') safe(function () { W.openSettings(); });
