@@ -18,6 +18,8 @@
   var activeStatus = "new";
   var lastRequests = [];
   var loadVersion = 0;
+  var newCount = null; /* stafffix-1.0.0 (2026-09-23): last known number of new requests; null until a load of New answers */
+  var markedIds = {}; /* every request this panel marked reviewed (a later mark's reload can replace an earlier one's) */
   var eventTypes = ["mls:ui-ready", "mls:topbar-ready", "mls:header-rendered"];
 
   function safe(fn, fallback) { try { return fn(); } catch (e) { return fallback; } }
@@ -109,9 +111,10 @@
     return true;
   }
   function setCount(count) {
+    var value = Math.max(0, Number(count) || 0);
+    newCount = value;
     var badge = safe(function () { return gid(BUTTON_ID).querySelector(".mlsPrqCount"); }, null);
     if (!badge) return;
-    var value = Math.max(0, Number(count) || 0);
     badge.textContent = value > 99 ? "99+" : String(value);
     badge.classList.toggle("on", value > 0);
   }
@@ -147,11 +150,18 @@
   function markReviewed(request, button) {
     if (!request || !request.id) return;
     button.disabled = true; button.textContent = "Saving...";
+    /* stafffix-1.0.0 (2026-09-23): only a failed POST means nothing changed. A
+       200 changed exactly one new request (the server answers 404 otherwise), so
+       the badge drops by one whichever filter is open, and a list reload that
+       fails afterwards says the mark was saved instead of "no request was changed". */
     api("/api/patient/admin/requests/" + encodeURIComponent(request.id) + "/handled", { method: "POST", body: "{}" })
+      .then(function (result) { return result; }, function () { return { ok: false }; })
       .then(function (result) {
-        if (!result.ok) throw result;
-        return load(activeStatus);
-      }).catch(function () { button.disabled = false; button.textContent = "Mark reviewed"; showNotice("Could not update this request. Nothing else was changed.", true); });
+        if (!result.ok) { button.disabled = false; button.textContent = "Mark reviewed"; showNotice("Could not update this request. Nothing else was changed.", true); return; }
+        if (newCount != null) setCount(newCount - 1);
+        markedIds[String(request.id)] = true;
+        return load(activeStatus, request);
+      });
   }
   function renderCard(request) {
     var card = make("article", "mlsPrqCard");
@@ -192,17 +202,17 @@
     notice.style.display = message ? "block" : "none";
     notice.style.color = warning ? "#9f2d2d" : "#845d2d";
   }
-  function render(requests) {
+  function render(requests, stale) {
     var list = gid("mlsPrqList"); if (!list) return;
     while (list.firstChild) list.removeChild(list.firstChild);
     lastRequests = Array.isArray(requests) ? requests : [];
     if (!lastRequests.length) {
-      list.appendChild(make("div", "mlsPrqNotice", activeStatus === "new" ? "No new portal requests." : "No requests in this view."));
+      if (!stale) list.appendChild(make("div", "mlsPrqNotice", activeStatus === "new" ? "No new portal requests." : "No requests in this view."));
       return;
     }
     lastRequests.forEach(function (request) { list.appendChild(renderCard(request)); });
   }
-  function load(status) {
+  function load(status, marked) {
     var version = ++loadVersion;
     activeStatus = status || "new";
     var list = gid("mlsPrqList"); if (list) list.textContent = "Loading portal requests…";
@@ -222,6 +232,20 @@
       return requests;
     }).catch(function (error) {
       if (version !== loadVersion) return [];
+      if (marked) {
+        /* stafffix-1.0.0 (2026-09-23): the mark was saved; keep the cards already
+           shown, with the marked one reviewed (gone from New), and say so. */
+        /* every mark saved this session applies (not only this one), and the
+           kept cards are filtered for the tab that is open now - the list
+           shown last may belong to another filter */
+        render(lastRequests.map(function (item) {
+          return markedIds[String(item.id)] ? Object.assign({}, item, { status: "handled" }) : item;
+        }).filter(function (item) {
+          return activeStatus === "all" || (activeStatus === "handled" ? item.status === "handled" : item.status !== "handled");
+        }), true);
+        showNotice("Marked reviewed. The list could not refresh.", true);
+        return lastRequests.slice();
+      }
       var failedList = gid("mlsPrqList");
       if (failedList) while (failedList.firstChild) failedList.removeChild(failedList.firstChild);
       lastRequests = [];

@@ -257,6 +257,12 @@
    * narrow-windowed laptops into phone mode.
    * -------------------------------------------------------------------------*/
   function owns() {
+    /* stafffix-1.0.0 (2026-09-23): THE ROLE COMES FIRST. This is the doctor's
+       recording app. Over a receptionist's session it covered the check-in
+       board and offered "Start recording", because nothing here looked at the
+       account. A front-desk login keeps the front desk: the app's own role
+       predicate decides it, and applyAccessUI asks again once the role is known. */
+    if (safe(function () { return typeof window.isReceptionistUser === 'function' && window.isReceptionistUser(); }, false)) return false;
     var ph = safe(function () { return window.__mlsPhoneHome; }, null);
     if (ph && typeof ph.wantPhone === 'function') return !!safe(function () { return ph.wantPhone(); }, false);
     /* wantPhone() is closure-private in mls-connect.js, so in practice THIS is

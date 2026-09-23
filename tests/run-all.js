@@ -2803,7 +2803,12 @@ const tests = [
   'outcome-import-keeps-what-was-read.test.js',
   'legal-refusals-say-why.test.js',
   'front-desk-shows-what-is-true-runtime.test.js',
-  'import-says-what-was-kept-apart.test.js'
+  'import-says-what-was-kept-apart.test.js',
+  'intake-attach-never-guesses-the-chart-runtime.test.js',
+  'portal-requests-mark-reviewed-runtime.test.js',
+  'front-desk-offers-no-clinical-route-runtime.test.js',
+  'assistant-schedule-and-chat-truth-runtime.test.js',
+  'team-notes-stay-open-and-keep-typing-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

@@ -410,8 +410,13 @@
       var ACTS=[
         ['New patient', function(){ try{ if(typeof showView==='function') showView('patients'); if(typeof newPatient==='function') setTimeout(newPatient,40); }catch(e){} }],
         ['New visit', function(){ try{ if(typeof showView==='function') showView('visit'); if(typeof newVisit==='function') newVisit(); }catch(e){} }],
-        ['New appointment', function(){ try{ if(typeof calScheduleForPatient==='function') calScheduleForPatient(); }catch(e){} }]
+        ['New appointment', function(){ try{ if(typeof calScheduleForPatient==='function') calScheduleForPatient(); }catch(e){} }, 'frontdesk']
       ];
+      /* stafffix-1.0.0 (2026-09-23): a front-desk login (the app's own
+         isReceptionistUser) is offered New appointment only. New visit and New
+         patient are clinical, and on a phone this menu is the header's one
+         button. */
+      function frontDesk(){ try{ return typeof window.isReceptionistUser==='function'&&!!window.isReceptionistUser(); }catch(e){ return false; } }
       function close(restore){
         menu.classList.remove('open'); b.setAttribute('aria-expanded','false');
         if(restore){ try{ b.focus({preventScroll:true}); }catch(e){ try{b.focus();}catch(_){} } }
@@ -420,7 +425,8 @@
       function focusItem(index){ var rows=items(); if(!rows.length)return; index=(index+rows.length)%rows.length; try{rows[index].focus({preventScroll:true});}catch(e){rows[index].focus();} }
       function open(){
         menu.innerHTML='';
-        ACTS.forEach(function(a){ var r=document.createElement('button'); r.type='button'; r.setAttribute('role','menuitem'); r.textContent=a[0];
+        var desk=frontDesk();
+        ACTS.forEach(function(a){ if(desk&&a[2]!=='frontdesk') return; var r=document.createElement('button'); r.type='button'; r.setAttribute('role','menuitem'); r.textContent=a[0];
           r.addEventListener('click',function(ev){ ev.stopPropagation(); close(false); a[1](); });
           r.addEventListener('keydown',function(ev){ if(!ev||!/^(Enter| |Spacebar)$/.test(ev.key))return;ev.preventDefault();ev.stopPropagation();r.click(); });
           menu.appendChild(r); });

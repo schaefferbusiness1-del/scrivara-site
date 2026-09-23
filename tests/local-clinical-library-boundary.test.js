@@ -32,7 +32,8 @@ const freshHardcodedLoaderTags = new Map([
      advances the loader with the source so browsers cannot retain lib8. */
   ['mls-opnote-pro.js', '20260912lib9'],
   ['mls-procedure-report.js', '20260807lib7'],
-  ['feat_mls_assistant_exact.js', '20260820asst220perf2'],
+  /* stafffix-1.0.0 (2026-09-23): the assistant loader advances with its source. */
+  ['feat_mls_assistant_exact.js', '20260923asst221'],
   ['feat_mls_outcome_pdf.js', '20260807lib7'],
   ['feat_mls_studygroups.js', '20260912sg1c9'],
   ['feat_comp_report.js', '20260718pr5']

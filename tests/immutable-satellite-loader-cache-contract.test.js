@@ -32,7 +32,9 @@ const assets = [
   /* feat_mls_asst_fix.js now follows the shared build token. Its account and
      provider-readiness fixes change with the release and must not depend on a
      second hand-maintained URL. */
-  ['feat_mls_assistant_exact.js', '20260820asst220perf2', '20260808asst220perf1'],
+  /* stafffix-1.0.0 (2026-09-23): the Schedule tab resolves each appointment through
+     the shell's one resolver and the Chat tab stops painting over the shared thread. */
+  ['feat_mls_assistant_exact.js', '20260923asst221', '20260820asst220perf2'],
   /* feat_mls_b121_pack.js left this list on 2026-08-07 (px train): the pack
      changed (matchRow lost its name-only merge leg - the cross-patient weld)
      and rather than mint 20260807p2c7 for the same date-granularity blindness
@@ -52,7 +54,7 @@ const assets = [
   ['feat_mls_pull_device_picker.js', '20260729pdp110', '20260717pdp100'],
   ['feat_mls_caldedupe_render.js', '20260727dd110', '20260629dd1c1'],
   ['feat_mls_force_full_phone.js', '20260719ffp200', '20260630c1'],
-  ['feat_mls_header_exact.js', '20260912hx304', '20260802hx303'],
+  ['feat_mls_header_exact.js', '20260923hx305', '20260912hx304'], /* stafffix-1.0.0: a role-hidden Orders tab stays hidden */
   ['feat_mls_loading_calm.js', '20260719lb204', '20260719lb203'],
   ['feat_mls_provider_passthrough.js', '20260820pp1c6', '20260722pp1c5'],
   /* Bumped, not reshaped: two suites pin this asset to a LITERAL token, and the
@@ -307,8 +309,8 @@ assert(!staging.includes('feat_mls_checker.js?v=20260714chk2922r1'),
   'staging checker loader still exposes the retired immutable URL');
 assert(staging.includes('feat_mls_command_palette.js?v=20260831cpal107'),
   'staging must load the same canonical Ctrl/Cmd+K owner as production');
-assert(staging.includes('feat_mls_assistant_exact.js?v=20260820asst220perf2') &&
-  !staging.includes('20260725asst217'),
+assert(staging.includes('feat_mls_assistant_exact.js?v=20260923asst221') &&
+  !staging.includes('20260820asst220perf2'),
   'staging must use the current assistant asset URL and retire the prior one');
 for (const assetUrl of [
   'feat_mls_patientpick.js?v=20260811pick171',

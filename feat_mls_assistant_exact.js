@@ -288,23 +288,24 @@
     return (a >= 0 && a < 130) ? a : null;
   }
 
-  /* ---------- match an appointment to an existing patient record (read-only) ---------- */
+  /* ---------- match an appointment to an existing patient record (read-only) ----------
+     stafffix-1.0.0 (2026-09-23): the old local index keyed charts by
+     p.external_id (a field local charts never carry), compared raw DOB strings
+     and fell back to the FIRST chart with the same name - so a 1990 "Ada Sample"
+     appointment showed and opened the 1960 Ada's chart. The shell's
+     _calResolveLocalPatient is the one appointment->chart answer (exact MLS id
+     with a DOB/MRN check, normalized DOBs, same-name charts refused), so this
+     panel asks it and nothing else. No answer means "not in MLS yet". */
   function buildIndex() {
-    var ps = getPatients(), byExt = {}, byNameDob = {}, byName = {};
-    for (var i = 0; i < ps.length; i++) {
-      var p = ps[i]; if (!p) continue;
-      if (p.external_id != null && p.external_id !== "") byExt[String(p.external_id)] = p;
-      var nm = (p.name || "").toLowerCase();
-      if (nm) { byNameDob[nm + "|" + (p.dob || "")] = p; if (!byName[nm]) byName[nm] = p; }
-    }
-    return { byExt: byExt, byNameDob: byNameDob, byName: byName };
+    var ps = getPatients(), byId = {};
+    for (var i = 0; i < ps.length; i++) { var p = ps[i]; if (p && p.id != null) byId[String(p.id)] = p; }
+    return byId;
   }
-  function matchAppt(a, idx) {
-    if (a.patient_external_id != null && idx.byExt[String(a.patient_external_id)]) return idx.byExt[String(a.patient_external_id)];
-    var nm = (a.name || "").toLowerCase();
-    if (nm && idx.byNameDob[nm + "|" + (a.dob || "")]) return idx.byNameDob[nm + "|" + (a.dob || "")];
-    if (nm && idx.byName[nm]) return idx.byName[nm];
-    return null;
+  function matchAppt(a, byId) {
+    var resolve = safe(function () { return window._calResolveLocalPatient; }, null);
+    if (!isFn(resolve)) return null;
+    var id = safe(function () { return resolve(a); }, null);
+    return id == null ? null : (byId[String(id)] || null);
   }
   function providerTokenKey(raw) {
     var noise = { dr:1, doctor:1, md:1, do:1, np:1, pa:1, c:1, pac:1, aprn:1, fnp:1, dnp:1, rn:1, crnp:1, dpm:1, dds:1, dmd:1, phd:1, mbbs:1, od:1 };
@@ -347,15 +348,20 @@
       var a = pool[i];
       var key = (a.patient_external_id || "") + "|" + (a.name || "") + "|" + (a.dob || "");
       if (seen[key]) continue; seen[key] = 1;
-      var p = matchAppt(a, idx); if (!p) continue;
-      out.push({ id: p.id, name: p.name || a.name || "(unnamed)", dob: p.dob || a.dob || "",
-        sex: p.sex || "", reason: a.reason || "", time: a.start_at || "", mins: apptMins(a.start_at) });
+      /* stafffix-1.0.0: an appointment with no chart stays on the day (it is
+         on the schedule) with id null - it never borrows another chart. */
+      var p = matchAppt(a, idx);
+      out.push({ id: p ? p.id : null, name: (p && p.name) || a.name || "(unnamed)", dob: (p && p.dob) || a.dob || "",
+        sex: (p && p.sex) || "", reason: a.reason || "", time: a.start_at || "", mins: apptMins(a.start_at) });
     }
     return out;
   }
   /* op-note candidates: appointments whose reason reads like a procedure / operative visit.
      Honest, derived from the real set (never a hardcoded 0); labeled as "candidates". */
-  var OPNOTE_RE = /\b(op|surg|surgery|surgical|proc|procedure|inject|injection|fracture|repair|excision|removal|scope|arthro|laparo|endoscop|biopsy|suture|incision|drainage|aspiration|debridement)\b/i;
+  /* stafffix-1.0.0 (2026-09-23): a pain-procedure day read half empty - medial
+     branch blocks, radiofrequency ablations, epidurals and facet work matched
+     none of these words, and plurals ("trigger point injections") missed too. */
+  var OPNOTE_RE = /\b(op|surg|surgery|surgical|proc|procedure|inject|injection|fracture|repair|excision|removal|scope|arthro|laparo|endoscop|biopsy|suture|incision|drainage|aspiration|debridement|block|ablation|radiofrequency|rfa|rhizotomy|epidural|esi|tfesi|facet|mbb|kyphoplasty|vertebroplasty|stimulator)s?\b/i;
   function opNoteCount(list) {
     var n = 0; for (var i = 0; i < list.length; i++) if (OPNOTE_RE.test(String(list[i].reason || ""))) n++;
     return n;
@@ -398,7 +404,10 @@
   function wbMarkPulled(ids) {
     if (!ids || !ids.length) return;
     var o = wbLoad(), now = new Date().toISOString();
-    for (var i = 0; i < ids.length; i++) { var k = String(ids[i]); var rec = o.items[k] || {}; rec.pulledAt = now; o.items[k] = rec; }
+    for (var i = 0; i < ids.length; i++) {
+      if (ids[i] == null) continue;   /* stafffix-1.0.0: a "not in MLS yet" row has no chart to stamp */
+      var k = String(ids[i]); var rec = o.items[k] || {}; rec.pulledAt = now; o.items[k] = rec;
+    }
     wbSave(o);
   }
   /* the honest per-card writeback line */
@@ -566,7 +575,10 @@
     if (!p) return;
     safe(function () { p.classList.remove("open"); });
     var f = $(FAB_ID); if (f) f.style.display = "";
-    var thread = p.querySelector(".as-thread"); if (thread) thread.innerHTML = "";
+    /* stafffix-1.0.0: drop feat_mls_asst_fix's painted-count mark with the
+       text, or its observer sees the old count, never repaints, and the Chat
+       thread stays blank after a sign-in on this tab */
+    var thread = p.querySelector(".as-thread"); if (thread) { safe(function () { thread.removeAttribute("data-mlsfix"); }); thread.innerHTML = ""; }
     var ta = p.querySelector("textarea"); if (ta) ta.value = "";
     var prov = p.querySelector(".as-prov");
     if (prov) { prov.innerHTML = ""; prov.value = ""; prov.__mlsAccountEpoch = -1; prov.__mlsRosterSig = ""; }
@@ -686,6 +698,9 @@
       "border-radius:12px;border:1px solid #E7E5DD;background:#fff;cursor:pointer;font-family:inherit;transition:border-color .12s,box-shadow .12s;}",
       "#" + PANEL_ID + " .as-pcard:hover{border-color:#EAF1EE;box-shadow:0 8px 20px -14px rgba(20,33,28,.4);}",
       "#" + PANEL_ID + " .as-pcard.is-active{border-color:#2E6A4B;box-shadow:0 0 0 2px rgba(32,64,52,.18);}",
+      /* stafffix-1.0.0: a "not in MLS yet" row cannot be pressed, and stays readable */
+      "#" + PANEL_ID + " .as-pcard.is-out{cursor:default;opacity:1;background:#FCFBF8;}",
+      "#" + PANEL_ID + " .as-pcard.is-out:hover{border-color:#E7E5DD;box-shadow:none;}",
       "#" + PANEL_ID + " .as-ptime{flex:0 0 auto;min-width:58px;text-align:center;font-weight:700;font-size:11.5px;color:#204034;",
       "background:#EAF1EE;border:1px solid #DEEAE3;border-radius:8px;padding:5px 6px;line-height:1.15;}",
       "#" + PANEL_ID + " .as-ptime small{display:block;font-size:8.5px;font-weight:800;letter-spacing:.05em;color:#2E6A4B;margin-top:1px;}",
@@ -812,8 +827,10 @@
 
     var hd = pane.querySelector(".as-listhd");
     if (hd) {
+      var nOut = list.filter(function (x) { return x.id == null; }).length;
       if (!list.length) hd.textContent = "No patients scheduled for " + prettyFull(selDate) + ".";
-      else hd.textContent = list.length + " patient" + (list.length === 1 ? "" : "s") + " on " + prettyFull(selDate) + (/all/i.test(selProvider) ? "" : " . " + selProvider) + " . tap one to open their chart.";
+      else hd.textContent = list.length + " patient" + (list.length === 1 ? "" : "s") + " on " + prettyFull(selDate) + (/all/i.test(selProvider) ? "" : " . " + selProvider) +
+        (nOut ? " . " + nOut + " not in MLS yet" : "") + (nOut < list.length ? " . tap one to open their chart." : ".");
     }
 
     if (!list.length) {
@@ -822,7 +839,7 @@
     }
     var html = "";
     for (var j = 0; j < list.length; j++) {
-      var pt = list[j], isActive = (pt.id === curId), isNow = (j === nIdx);
+      var pt = list[j], inMls = pt.id != null, isActive = inMls && (pt.id === curId), isNow = (j === nIdx);
       var age = ageFromDob(pt.dob), meta = [];
       if (age != null) meta.push(age + "y");
       if (pt.sex) meta.push(esc(pt.sex));
@@ -830,8 +847,10 @@
       var tStr = fmtTime(pt.time);
       var upcoming = (pt.mins != null && pt.mins >= nMins);
       var tag = isNow ? ("<small>" + (upcoming ? "NEXT" : "NOW") + "</small>") : (tStr ? "<small>appt</small>" : "");
-      var wl = wbLine(pt.id);
-      html += '<button type="button" class="as-pcard' + (isActive ? " is-active" : "") + (isNow ? " is-now" : "") + '" data-id="' + esc(pt.id) + '">' +
+      /* stafffix-1.0.0: a row with no chart says so and cannot be pressed - there
+         is no chart to open, and it must never open someone else's. */
+      var wl = inMls ? wbLine(pt.id) : { cls: "notyet", text: "not in MLS yet" };
+      html += '<button type="button" class="as-pcard' + (inMls ? "" : " is-out") + (isActive ? " is-active" : "") + (isNow ? " is-now" : "") + '"' + (inMls ? ' data-id="' + esc(pt.id) + '"' : " disabled") + '>' +
         '<span class="as-ptime">' + (tStr ? esc(tStr) : "&mdash;") + tag + '</span>' +
         '<span class="as-pav">' + esc(initials(pt.name)) + '</span>' +
         '<span class="as-pinfo">' +
@@ -840,11 +859,11 @@
           (pt.reason ? '<span class="as-preason">' + esc(pt.reason) + '</span>' : '') +
           '<span class="as-pwb ' + wl.cls + '">' + esc(wl.text) + '</span>' +
         '</span>' +
-        '<span class="as-pgo">' + (isActive ? "&#10003; Active" : "Select") + '</span>' +
+        (inMls ? '<span class="as-pgo">' + (isActive ? "&#10003; Active" : "Select") + '</span>' : '') +
       '</button>';
     }
     host.innerHTML = html;
-    var cards = host.querySelectorAll(".as-pcard");
+    var cards = host.querySelectorAll(".as-pcard[data-id]");
     for (var c = 0; c < cards.length; c++) {
       cards[c].addEventListener("click", function () {
         var id = this.getAttribute("data-id");
@@ -939,6 +958,13 @@
   }
 
   /* ---------- CHAT pane ---------- */
+  /* stafffix-1.0.0 (2026-09-23): once feat_mls_asst_fix binds Send, it owns this
+     thread and paints the shared Copilot conversation there (the one it sends
+     as history). Painting this module's own greeting over it on Schedule->Chat
+     or a reopen hid the conversation the next answer was built on. */
+  function chatOwnedByFix() {
+    return safe(function () { var s = $(PANEL_ID) && $(PANEL_ID).querySelector(".as-send"); return !!(s && s.getAttribute("data-mlsfix-bound")); }, false);
+  }
   function renderThread(owner) {
     owner = owner || chatOwnerKey();
     /* A completed request may belong to a hidden patient bucket. Store it
@@ -946,6 +972,13 @@
     if (owner !== chatOwnerKey()) return;
     var history = ensureGreeting(owner).history;
     renderedChatOwner = owner;
+    if (chatOwnedByFix()) {
+      /* the owner painted the thread; still bring the newest turn into view
+         (the pane kept the Schedule tab's scroll offset) */
+      var ob = $(PANEL_ID) && $(PANEL_ID).querySelector(".as-body");
+      if (ob && tab === "chat") ob.scrollTop = ob.scrollHeight;
+      return;
+    }
     var t = $(PANEL_ID) && $(PANEL_ID).querySelector(".as-thread");
     if (!t) return;
     var html = "";
@@ -1057,7 +1090,7 @@
     if (!force && owner === renderedChatOwner) return;
     ensureGreeting(owner);
     renderThread(owner);
-    setSendEnabled(!chatState(owner).busy);
+    if (!chatOwnedByFix()) setSendEnabled(!chatState(owner).busy);   /* stafffix-1.0.0: its busy state, not ours */
   }
 
   /* ---------- tab switching ---------- */

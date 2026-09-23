@@ -973,9 +973,25 @@
      recommendations) renders them as a segmented row, because the reach map
      promises those views are reachable from the dock — and a promise the UI
      does not keep is exactly the feature loss this whole shell is guarding. */
+  /* stafffix-1.0.0 (2026-09-23): ONE ROLE PREDICATE FOR EVERY DESTINATION.
+     A front-desk login (the app's own isReceptionistUser) is offered the front
+     desk and the Calendar, nothing clinical. This shell used to trust the
+     app's inline hides alone, and they did not hold: Review reached Orders
+     through a tab another module re-showed, AI Studio was never hidden, and
+     Tools listed Dictate, Prep op notes, Staff prep and Export for EMR. So the
+     dock, the Tools menu and Copilot all ask this one question. The server's
+     403 is the backstop, not the only guard. */
+  function frontDesk() {
+    return !!safe(function () { return typeof W.isReceptionistUser === 'function' && W.isReceptionistUser(); });
+  }
+  var FRONT_DESK_TABS = { nav_patients: 1, nav_calendar: 1 };
+  function roleOffers(el) {
+    return !frontDesk() || FRONT_DESK_TABS[el.id] === 1;
+  }
+
   function destTargets(d) {
     return (d.targets || []).map(function (id) { return D.getElementById(id); })
-      .filter(available);
+      .filter(available).filter(roleOffers);
   }
 
   function destTarget(d) {
@@ -995,7 +1011,7 @@
     real.forEach(function (t) { seen[t.id] = 1; });
     return real.concat((d.extra || []).map(function (id) {
       return seen[id] ? null : D.getElementById(id);
-    }).filter(function (el) { return el && available(el); }));
+    }).filter(function (el) { return el && available(el) && roleOffers(el); }));
   }
 
 
@@ -1216,7 +1232,9 @@
     /* `last: true` pins a row to the end of its section behind a rule, wherever
        the app happens to offer it. Log out is the only one, and the flag exists
        so it cannot drift back into the middle the way it already did once. */
-    { id: 'app', label: 'App', items: [
+    /* stafffix-1.0.0: the only section a front-desk login is offered - its
+       rows are about the app (Settings, Help, Log out), not a patient. */
+    { id: 'app', label: 'App', frontDesk: true, items: [
       { label: /^settings$/i, within: '#appHeader' },
       /* helprow-1.0.0 (b1180, measured live 2026-09-01): with no 'as', these two rows derived their label from the rail ('Navigation:'), so the Simple shell's only Help route read as a nonsense row. Name them. */
       { id: 'nav_admin', as: 'Admin' }, { id: 'nav_help', as: 'Help' },
@@ -1421,10 +1439,7 @@
      control is still an absent row. */
   function toolsItems() {
     var out = [];
-    TOOLS_SOURCES.forEach(function (spec) {
-      var it = toolsResolve(spec);
-      if (it) out.push(it);
-    });
+    toolsSections().forEach(function (s) { out = out.concat(s.rows, s.tailRows); });
     return out;
   }
 
@@ -1433,8 +1448,9 @@
      available are dropped whole - a caption over no rows is chrome describing
      absence, which is exactly what this menu is being cleaned up to stop. */
   function toolsSections() {
-    var out = [], flat = 0;
+    var out = [], flat = 0, desk = frontDesk();
     TOOLS_GROUPS.forEach(function (g) {
+      if (desk && !g.frontDesk) return; /* stafffix-1.0.0: see frontDesk() */
       var head = [], tail = [];
       g.items.forEach(function (spec) {
         var it = toolsResolve(spec);
@@ -1664,6 +1680,7 @@
      openCopilotDock, we never WRAP it - wrapping it has caused re-entrancy
      trouble in this app before. */
   function openCopilot() {
+    if (frontDesk()) return; /* stafffix-1.0.0: see frontDesk() */
     var btn = D.getElementById('askCopilotHdrBtn');
     if (available(btn)) { runControl(btn); return; }
     safe(function () { if (typeof W.openCopilotDock === 'function') W.openCopilotDock(); });
@@ -1885,6 +1902,10 @@
       if (b.getAttribute('aria-current') !== wantCur) b.setAttribute('aria-current', wantCur);
       if (on) activeBtn = b;
     });
+    /* stafffix-1.0.0: Copilot is a clinical assistant; see frontDesk(). */
+    var cop = qs('#mlsDockCopilot', dockEl);
+    var wantCop = frontDesk() ? 'none' : '';
+    if (cop && cop.style.display !== wantCop) cop.style.display = wantCop;
     if (pill && activeBtn) {
       /* offsetWidth/offsetLeft are FORCED LAYOUT reads, two per pass, in the
          file the boot lane measured at 29% of boot's 5,576 forced layouts. */
@@ -2556,6 +2577,28 @@
       hd.removeAttribute('role');
       hd.removeAttribute('tabindex');
     });
+    /* stafffix-1.0.0 (2026-09-23): Team notes (#pf2TeamNotes) is its own
+       disclosure too - its heading IS the toggle button and it renders its body
+       only when opened. The adopt loop below folded it the moment it opened
+       (heading + body = two children), which hid the body AND, once closed,
+       the module's own button on every patient: an empty box with no title and
+       no count. A pf2* id is the profile card's documented "leave me alone"
+       prefix - the pf2 layout pass already skips it (see the TEAM NOTES comment
+       in 1pScribeFlow.html) - so the adopt loop below skips it too, and any
+       block an earlier pass already stamped is handed back here.
+       aria-expanded goes too: on these blocks only this shell ever set it on
+       the heading (the module puts its own on the button inside). */
+    qsa(':scope > [id^="pf2"].mls-fold', card).forEach(function (blk) {
+      if (blk.classList.contains('pf2-sec')) return;   /* healed just above */
+      blk.classList.remove('mls-fold');
+      blk.classList.remove('mls-open');
+      var hd = blk.children[0];
+      if (!hd) return;
+      hd.classList.remove('mls-fold-hd');
+      hd.removeAttribute('role');
+      hd.removeAttribute('tabindex');
+      hd.removeAttribute('aria-expanded');
+    });
     /* Re-assert the click target on blocks already folded, in case they
        re-rendered their heading since the last pass. */
     qsa('.mls-fold', card).forEach(markFoldHead);
@@ -2563,6 +2606,7 @@
     qsa(':scope > div, :scope > section', card).forEach(function (block) {
       if (block.id === 'mlsPrepRows') return;
       if (PT_KEEP_OPEN.indexOf(block.id) !== -1) return;
+      if (/^pf2/.test(block.id || '')) return;        /* stafffix-1.0.0: see the pf2* hand-back above */
       if (PT_KEEP_OPEN_TEXT.test(foldTitle(block))) return;
       if (block.children.length < 2) return;          /* nothing to fold */
       /* b749: pf2 rows are already disclosures with their own arrow, their own
@@ -3049,14 +3093,15 @@
            OFFER - it claims no match it has not made. */
         var qRaw = input.value.trim();
         var canFind = typeof W.mlsQuickFind === 'function';
+        var canAsk = !frontDesk(); /* stafffix-1.0.0: see frontDesk() */
         var safeQ = qRaw.replace(/[<>&]/g, '');
-        results = canFind ? [{ finder: true, q: qRaw }, { copilot: true, q: qRaw }] : [{ copilot: true, q: qRaw }];
+        results = (canFind ? [{ finder: true, q: qRaw }] : []).concat(canAsk ? [{ copilot: true, q: qRaw }] : []);
         sel = 0;
         panel.innerHTML = '<div class="none">Nothing here is called that.</div>' +
           (canFind ? '<div class="r sel" role="option" data-i="0">&#128269; Find a patient or screen: "' +
             safeQ + '"<small>Enter</small></div>' : '') +
-          '<div class="r' + (canFind ? '' : ' sel') + '" role="option" data-i="' + (canFind ? 1 : 0) + '">' +
-          '&#129302; Ask MLS Copilot: "' + safeQ + '"' + (canFind ? '' : '<small>Enter</small>') + '</div>';
+          (canAsk ? '<div class="r' + (canFind ? '' : ' sel') + '" role="option" data-i="' + (canFind ? 1 : 0) + '">' +
+          '&#129302; Ask MLS Copilot: "' + safeQ + '"' + (canFind ? '' : '<small>Enter</small>') + '</div>' : '');
         panel.style.display = 'block';
         qsa('.r', panel).forEach(function (row) {
           row.addEventListener('click', function () { choose(parseInt(row.getAttribute('data-i'), 10)); });
@@ -3069,7 +3114,7 @@
          ('pay schedule' matches 'schedule') showed rows and no way to ask -
          from a box whose own placeholder promises 'Ask or find anything'.
          Appended LAST so control matches keep their ranking. */
-      results = results.concat([{ copilot: true, q: input.value.trim() }]);
+      if (!frontDesk()) results = results.concat([{ copilot: true, q: input.value.trim() }]);
       panel.innerHTML = results.map(function (r, i) {
         if (r.copilot) {
           return '<div class="r ask" role="option" data-i="' + i + '">' +

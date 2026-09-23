@@ -114,14 +114,22 @@
     "background": "transparent", "font-weight": "600", "font-size": "14px",
     "box-sizing": "border-box", "text-align": "left"
   };
-  function styleMenuRow(el) { for (var k in MENUROW_STYLE) { if (MENUROW_STYLE.hasOwnProperty(k)) imp(el, k, MENUROW_STYLE[k]); } try { el.style.removeProperty("color"); } catch (e) {} }
+  /* stafffix-1.0.0 (2026-09-23): A ROLE GATE OWNS ITS HIDE. The app's
+   * mlsRoleHide hides Orders for a front-desk login (inline display:none,
+   * el.__mlsRoleDisplayOwned). This module then wrote display:flex !important
+   * over it on every pass, so Orders came back and the dock's Review reached
+   * it. A role-hidden row stays hidden, !important so the relocated-row rule
+   * above cannot re-show it; resetRoleUi hands the display back. */
+  function roleHidden(el) { try { return !!el.__mlsRoleDisplayOwned && el.style.getPropertyValue("display") === "none"; } catch (e) { return false; } }
+  function styleMenuRow(el) { var hide = roleHidden(el); for (var k in MENUROW_STYLE) { if (MENUROW_STYLE.hasOwnProperty(k)) imp(el, k, (hide && k === "display") ? "none" : MENUROW_STYLE[k]); } try { el.style.removeProperty("color"); } catch (e) {} }
   function clearMenuRow(el) { for (var k in MENUROW_STYLE) { if (MENUROW_STYLE.hasOwnProperty(k)) { try { el.style.removeProperty(k); } catch (e) {} } } }
 
   /* Orders -> Menu dropdown always. Admin -> Menu ONLY for real-admin (business)
    * accounts; for personal/non-admin accounts Admin is hidden everywhere. */
   function placeInMenu(el, menu) {
     if (el.parentElement !== menu) {
-      el.style.removeProperty("display"); menu.appendChild(el);
+      if (!roleHidden(el)) el.style.removeProperty("display");
+      menu.appendChild(el);
     }
     if (!el.classList.contains("hx-menurow")) el.classList.add("hx-menurow");
     if (el.getAttribute("data-hx-relocated") !== "1") el.setAttribute("data-hx-relocated", "1");

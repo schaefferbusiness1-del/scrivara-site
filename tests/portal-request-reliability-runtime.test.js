@@ -13,7 +13,7 @@ assert(portal.includes('requestFetch("/api/patient/requests")'), 'patient portal
 assert(portal.includes('My submitted requests'), 'patient portal has no visible request status list');
 assert(portal.includes('not a prescription or approval'), 'patient receipt copy does not preserve the review-only boundary');
 assert(!portal.includes('btn.textContent="Sent"; setTimeout(closeModal'), 'successful receipt still disappears automatically');
-assert(loader.includes("A='feat_mls_portal_request_inbox.js'") && loader.includes("A+'?v=20260717prq102'"), 'clinician inbox asset is not loaded');
+assert(loader.includes("A='feat_mls_portal_request_inbox.js'") && loader.includes("A+'?v=20260923prq103'"), 'clinician inbox asset is not loaded'); // stafffix-1.0.0: token bumped for the mark-reviewed fix
 assert(!/postMessage|mlsApp(?:Read|Write|Pull)|runPull|pullSchedule/i.test(source), 'clinician inbox contains a pull/Athena/extension action');
 
 function descendants(rootNode) {

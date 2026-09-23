@@ -107,7 +107,10 @@
   var openFor = null;
   var pendingUndo = null;     /* {ptId, id} - the one deletion undo offers */
   var busyAi = false;
-  var draft = { ptId: '', text: '', author: '' };  /* survives a repaint */
+  /* stafffix-1.0.0 (2026-09-23): one half-typed note PER PATIENT, surviving a
+     repaint. It was a single slot, so opening another patient's Team notes
+     just to read them overwrote a note still being written for the first. */
+  var drafts = {};
 
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
   function S(v) { return v == null ? '' : String(v); }
@@ -395,9 +398,13 @@
   }
 
   function editorHtml(n) {
+    /* stafffix-1.0.0: the edit box refills from what was being typed in it
+       (keepTyped), and says which note it belongs to so that text can never
+       land in a different note's editor. */
+    var t = (editDraft && editDraft.id === String(n.id)) ? editDraft.text : n.text;
     return '<div class="mls-tn-note" style="border:1px solid #cfe0d6;border-radius:10px;padding:9px 11px;background:#F6FBF8">' +
-      '<textarea id="mlsTnEditText" class="inline-edit-area" rows="4" aria-label="Edit this team note" ' +
-        'style="width:100%;box-sizing:border-box">' + esc(n.text) + '</textarea>' +
+      '<textarea id="mlsTnEditText" data-tn-id="' + esc(n.id) + '" class="inline-edit-area" rows="4" aria-label="Edit this team note" ' +
+        'style="width:100%;box-sizing:border-box">' + esc(t) + '</textarea>' +
       '<div class="inline-edit-actions" style="display:flex;gap:8px;margin-top:7px">' +
         '<button type="button" class="btn-green" data-tn-act="editsave" data-tn-id="' + esc(n.id) + '">Save</button>' +
         '<button type="button" class="btn-ghost" data-tn-act="editcancel">Cancel</button>' +
@@ -436,8 +443,9 @@
   function bodyHtml(p, editingId) {
     var list = listOf(p), shown = live(list), i, out;
     var sugg = authorSuggestions();
-    var who = (draft.ptId === String(p.id) && draft.author) ? draft.author : (lastAuthor() || '');
-    var text = (draft.ptId === String(p.id)) ? draft.text : '';
+    var d = drafts[String(p.id)] || null;
+    var who = (d && d.author) ? d.author : (lastAuthor() || '');
+    var text = d ? d.text : '';
 
     out = '<div id="mlsTnBody" style="margin-top:9px">';
 
@@ -496,11 +504,40 @@
   }
 
   var editingId = null;
+  var shownFor = null;    /* stafffix-1.0.0: whose OPEN thread is in the box right now */
+  var editDraft = null;   /* stafffix-1.0.0: {id, text} typed into the edit box */
+
+  /* stafffix-1.0.0 (2026-09-23): a repaint erased a half-typed note. The draft
+     was stashed only on some clicks, so when the AI summary landed (commit ->
+     renderProfile -> render) or a sync or another tab repainted the card, the
+     box was refilled from an older stash - usually empty - and what the doctor
+     was typing was gone, unsaved. render() is the one place that replaces the
+     box, so it reads the box first; no caller has to remember to. Returns the
+     field that had the cursor, so render can put it back. */
+  function keepTyped(box) {
+    if (shownFor === null) return null;
+    var nt = box.querySelector('#mlsTnNew'), au = box.querySelector('#mlsTnAuthor');
+    var et = box.querySelector('#mlsTnEditText');
+    if (nt && au) drafts[shownFor] = { text: S(nt.value), author: S(au.value) };
+    editDraft = et ? { id: S(et.getAttribute('data-tn-id')), text: S(et.value) } : null;
+    var a = document.activeElement;
+    if (!a || (a !== nt && a !== au && a !== et)) return null;
+    return { pt: shownFor, id: a.id, tn: S(a.getAttribute('data-tn-id')),
+             s: safe(function () { return a.selectionStart; }, null), e: safe(function () { return a.selectionEnd; }, null) };
+  }
+  function refocus(box, f, id) {
+    if (!f || f.pt !== id) return;
+    var el = box.querySelector('#' + f.id);
+    if (!el || S(el.getAttribute('data-tn-id')) !== f.tn) return;
+    safe(function () { el.focus({ preventScroll: true }); });
+    safe(function () { if (f.s != null) el.setSelectionRange(f.s, f.e); });
+  }
 
   function render(p) {
     var box = safe(function () { return document.getElementById(BOX_ID); }, null);
     if (!box) return false;
-    if (!p || p.id == null) { box.style.display = 'none'; box.innerHTML = ''; return false; }
+    var focused = safe(function () { return keepTyped(box); }, null);
+    if (!p || p.id == null) { shownFor = null; box.style.display = 'none'; box.innerHTML = ''; return false; }
     var id = String(p.id);
     if (openFor !== null && openFor !== id) { openFor = null; editingId = null; pendingUndo = null; }
     var open = (openFor === id);
@@ -518,8 +555,10 @@
     '</h3>';
 
     box.innerHTML = head + (open ? bodyHtml(p, editingId) : '');
+    shownFor = open ? id : null;
     box.style.display = '';
     wire(box);
+    if (open) refocus(box, focused, id);
     return true;
   }
 
@@ -547,9 +586,9 @@
     return el ? S(el.value) : '';
   }
   function stashDraft(ptId) {
-    draft = { ptId: String(ptId), text: val('mlsTnNew'), author: val('mlsTnAuthor') };
+    drafts[String(ptId)] = { text: val('mlsTnNew'), author: val('mlsTnAuthor') };
   }
-  function clearDraft() { draft = { ptId: '', text: '', author: '' }; }
+  function clearDraft(ptId) { if (ptId == null) drafts = {}; else delete drafts[String(ptId)]; }
 
   function onClick(ev) {
     var el = actOf(ev && ev.target);
@@ -628,8 +667,13 @@
     if (!res.ok) { commit(String(p.id), res, ''); return; }
     rememberAuthor(author);
     pendingUndo = null;
-    clearDraft();
-    commit(String(p.id), res, 'Note added for the team.');
+    clearDraft(String(p.id));
+    /* stafffix-1.0.0: render() now keeps what is in the box, so the note being
+       saved leaves the box first or it would come back as a draft. It goes back
+       in if the save is refused, so nothing typed is lost. */
+    var nt = safe(function () { return document.getElementById('mlsTnNew'); }, null);
+    if (nt) nt.value = '';
+    if (!commit(String(p.id), res, 'Note added for the team.') && nt) nt.value = text;
   }
 
   /* --------------------------------------------------------------- the AI */

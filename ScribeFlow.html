@@ -8158,7 +8158,10 @@ function startSession(email){
   __mlsPtsBootBarrier(function(){
   renderDots();
   newVisit({preserveRecovery:true});
-  showView('visit');   // land ready to record the first patient — not the busy Patients list
+  /* stafffix-1.0.0: a front-desk login lands on the front desk itself (its
+     only home); sending it to 'visit' made the route guard greet every
+     receptionist sign-in with "That screen is for clinicians". */
+  if(typeof isReceptionistUser==='function'&&isReceptionistUser()) showView('patients'); else showView('visit');   // land ready to record the first patient — not the busy Patients list
   /* Counts are data-owned, not route-owned. Refresh them after sign-in only
      when the browser is genuinely idle so an existing large roster cannot
      block the first Visit click, while local/offline accounts never remain at
@@ -8688,6 +8691,10 @@ function applyAccessUI(){
   // 🧰 App-tab gating: hide advanced tabs the doctor hasn't switched on (runs LAST so it wins).
   try{ applyNavFeatureGates(); }catch(e){}
   try{ if(window.__mlsTopbar&&typeof window.__mlsTopbar.apply==='function') window.__mlsTopbar.apply(); }catch(e){}
+  /* stafffix-1.0.0 (2026-09-23): the phone app is the doctor's recording app
+     and decides from the role too, so it is asked again once the role is
+     known. It used to stay mounted over a receptionist's check-in board. */
+  try{ var _phoneUi=window.__mlsPhoneUI; if(_phoneUi&&_phoneUi.installed&&typeof _phoneUi.ensure==='function') _phoneUi.ensure(); }catch(e){}
   try{ if(typeof maybePromptSetup==='function') maybePromptSetup(); }catch(e){}
 }
 
@@ -18754,6 +18761,17 @@ function showView(v){
     if(!_liteSaid){ try{ toast(_liteMsg,'err'); }catch(_eLite2){} }
     v='visit';
   } }catch(e){}
+  /* stafffix-1.0.0 (2026-09-23): FRONT-DESK ROUTE GUARD. A receptionist login
+     is front desk only: Front desk, Messages, Communication and Settings live
+     in the Patients view, plus the Calendar. The role gate was only inline
+     hides that other modules undid, so the dock's Review reached Orders and
+     "Start unassigned visit" opened the recording workspace. Every clinical
+     route now lands back on the front desk, whoever calls it. The server's
+     403 stays the backstop. */
+  try{ if(typeof isReceptionistUser==='function' && isReceptionistUser() && v && v!=='patients' && v!=='calendar'){
+    try{ toast('That screen is for clinicians. A front-desk account has the front desk and the calendar.','err'); }catch(_eDesk){}
+    v='patients';
+  } }catch(e){}
   /* noteq-1.1.0 (b1177): warm the note-quality module on Visit-screen entry.
      Fire-and-forget and never awaited - by the time Generate is pressed the
      module is normally already resident, so the bounded await at the
@@ -22403,15 +22421,33 @@ function closeCopilotDock(){
    attach (merge into existing or create new), drop the face photo onto the avatar. ===== */
 function _normName(s){ return String(s||'').trim().toLowerCase().replace(/\s+/g,' '); }
 function findPatientMatch(name, dob){
-  const n=_normName(name), d=String(dob||'').trim();
+  /* stafffix-1.0.0: the intake form sends yyyy-mm-dd and charts often hold
+     mm/dd/yyyy (Athena), so compare one DOB key, never the raw strings - the
+     same person read as "date of birth differs". */
+  const dk=function(v){ return (typeof _calDobKey==='function'?_calDobKey(v):'')||String(v||'').trim(); };
+  const n=_normName(name), d=dk(dob);
   if(!n) return null;
   const pts=(typeof getPatients==='function')?getPatients():[];
-  const both=pts.filter(function(p){ return _normName(p.name)===n && d && String(p.dob||'').trim()===d; });
+  const both=pts.filter(function(p){ return _normName(p.name)===n && d && dk(p.dob)===d; });
   if(both.length===1) return {patient:both[0], confident:true};
-  if(both.length>1) return {patient:null, ambiguous:true, count:both.length};
+  /* stafffix-1.0.0 (2026-09-23): every candidate goes back to the card. It
+     used to return byName[0] alone, so with two same-name charts "Attach"
+     was bound to whichever chart was first in storage and one patient's
+     meds, allergies and problems went into another patient's chart. With
+     more than one candidate there is no single patient: the doctor picks. */
+  if(both.length>1) return {patient:null, ambiguous:true, count:both.length, candidates:both};
   const byName=pts.filter(function(p){ return _normName(p.name)===n; });
-  if(byName.length) return {patient:byName[0], nameOnly:true, count:byName.length};
+  if(byName.length===1) return {patient:byName[0], nameOnly:true, count:1, candidates:byName};
+  if(byName.length) return {patient:null, nameOnly:true, count:byName.length, candidates:byName};
   return null;
+}
+/* stafffix-1.0.0: one Attach button per chart, labelled with that chart's DOB
+   and MRN so two people who share a name can be told apart before anything
+   is written. The chart id is passed as a JSON string, safe in the attribute. */
+function _intakeAttachBtn(intakeId, p, cls){
+  const dob=String(p.dob||'').trim(), mrn=String(p.mrn||p.athenaId||p.athenaPatientId||'').trim();
+  const label='Attach to '+(p.name||'this chart')+' · '+(dob?('DOB '+dob):'no DOB on file')+' · '+(mrn?('MRN '+mrn):'no MRN');
+  return '<button class="'+cls+'" style="font-size:13px;padding:8px 12px;white-space:normal;text-align:left;max-width:100%" onclick="attachIntake('+intakeId+','+esc(JSON.stringify(String(p.id)))+')">'+esc(label)+'</button>';
 }
 async function loadPendingIntakes(showToast){
   const box=document.getElementById('pendingIntakeBox'); if(!box) return;
@@ -22434,8 +22470,10 @@ function renderPendingIntakes(items){
     const x=it.data||{}; const m=findPatientMatch(x.name, x.dob); let matchTxt, action;
     const pid=m&&m.patient?String(m.patient.id):'';
     if(m && m.confident){ matchTxt='✓ Matches existing chart: <b>'+esc(m.patient.name)+'</b>'; action='<button class="btn-green" style="font-size:13px;padding:8px 12px" onclick="attachIntake('+it.id+',\''+pid+'\')">Attach to chart</button>'; }
-    else if(m && m.nameOnly){ matchTxt='⚠️ Same name, but date of birth differs — confirm before attaching ('+m.count+' match'+(m.count>1?'es':'')+')'; action='<button class="btn-primary" style="font-size:13px;padding:8px 12px" onclick="attachIntake('+it.id+',\''+pid+'\')">Attach to '+esc(m.patient.name)+'</button> <button class="btn-ghost" style="font-size:13px;padding:8px 12px" onclick="attachIntake('+it.id+',\'\')">New chart instead</button>'; }
-    else if(m && m.ambiguous){ matchTxt='⚠️ Several charts share this name + DOB — review manually'; action='<button class="btn-ghost" style="font-size:13px;padding:8px 12px" onclick="attachIntake('+it.id+',\'\')">Create new chart</button>'; }
+    /* stafffix-1.0.0: "date of birth differs" only when both sides have one;
+       a missing DOB is said as missing, not as a mismatch. */
+    else if(m && m.nameOnly && m.patient){ const xd=String(x.dob||'').trim(), cd=String(m.patient.dob||'').trim(); matchTxt='⚠️ Same name, '+(!xd?'but the intake gives no date of birth':(!cd?'but that chart has no date of birth on file':'but date of birth differs'))+' — confirm it is the same person before attaching'; action=_intakeAttachBtn(it.id, m.patient, 'btn-primary')+' <button class="btn-ghost" style="font-size:13px;padding:8px 12px" onclick="attachIntake('+it.id+',\'\')">New chart instead</button>'; }
+    else if(m && m.candidates && m.candidates.length>1){ matchTxt='⚠️ '+m.candidates.length+' charts '+(m.ambiguous?'share this name and date of birth — check the MRN':('share this name'+(String(x.dob||'').trim()?' and none has this date of birth':' and the intake gives no date of birth')+' — check the date of birth and MRN'))+', then attach to the right one or create a new chart'; action=m.candidates.map(function(c){ return _intakeAttachBtn(it.id, c, 'btn-ghost'); }).join(' ')+' <button class="btn-ghost" style="font-size:13px;padding:8px 12px" onclick="attachIntake('+it.id+',\'\')">Create new chart</button>'; }
     else { matchTxt='No existing chart found — a new one will be created'; action='<button class="btn-green" style="font-size:13px;padding:8px 12px" onclick="attachIntake('+it.id+',\'\')">Create &amp; attach</button>'; }
     html+='<div style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px;background:#fff;display:flex;gap:12px;align-items:flex-start">'
       +'<div class="ik-inbox-face" aria-hidden="true">'+esc(ptInitials(x.name||''))
@@ -23397,9 +23435,13 @@ function renderProfile(){
   const chip=document.getElementById('ptDeselectChip');
   const p=activePatient();
   try{ var wantPta=!!p; if(document.body.classList.contains('pt-has-active')!==wantPta) document.body.classList.toggle('pt-has-active', wantPta); }catch(e){}
-  if(!p){
+  /* stafffix-1.0.0 (2026-09-23): a front-desk login is never offered a chart
+     or "Start unassigned visit". This renderer re-showed both over the role
+     gate's hide on every re-render. */
+  const frontDesk=typeof isReceptionistUser==='function'&&isReceptionistUser();
+  if(!p||frontDesk){
     card.style.display='none';
-    if(nonePanel) nonePanel.style.display=getPatients().length?'block':'none';
+    if(nonePanel) nonePanel.style.display=(getPatients().length&&!frontDesk)?'block':'none';
     if(chip) chip.style.display='none';
     return;
   }
@@ -31686,6 +31728,10 @@ async function pullPatientFromAthenaPrompt(btn){
 }
 async function pullPatientChartViaAssist(btn, opts){
   opts=opts||{};
+  /* stafffix-1.0.0 (2026-09-23): pulling a patient's Athena chart (problems,
+     meds, allergies, prior notes) is a clinical read; the front desk never
+     starts one, whichever button or door calls this */
+  if(typeof isReceptionistUser==='function'&&isReceptionistUser()){ try{ toast('Pulling a chart from Athena is for clinicians. A front-desk account has the front desk and the calendar.','err'); }catch(_eRp){} return false; }
   var lm=window.__mlsP1AthenaReadLease,directLeaseToken='',directTouch=null;
   var releaseDirect=function(){if(directTouch){clearInterval(directTouch);directTouch=null;}try{if(directLeaseToken)lm.release(directLeaseToken);}catch(_){}directLeaseToken='';};
   try{if(!lm||typeof lm.claim!=='function'){toast('The preview Athena reader is still loading. Retry in a moment.','err');return false;}directLeaseToken=lm.claim('p1-direct-chart',110000)||'';if(!directLeaseToken){toast('Another Athena read or schedule pull is active. Wait for it to finish, then retry.','err');return false;}directTouch=setInterval(function(){try{lm.touch(directLeaseToken);}catch(_){}},25000);if(typeof lm.ready==='function'&&await lm.ready(directLeaseToken)!==true){releaseDirect();toast('Another MLS tab owns the Athena reader. Wait for it to finish, then retry.','err');return false;}}catch(eLease){releaseDirect();return false;}
@@ -33591,10 +33637,14 @@ function togglePtMore(){
   var show=(m.style.display==='none'||!m.style.display);
   var hosted=!!(typeof backendMode==='function'&&backendMode()&&bkUser&&!isLawyerUser());
   var head=!!(hosted&&(bkUser.isHead||bkUser.role==='head'));
+  /* stafffix-1.0.0 (2026-09-23): "More" re-showed the rows the front-desk role
+     gate had hidden (Pre-visit link, Check intakes, and the data-removing
+     Athena purge). A receptionist keeps the scheduling rows only. */
+  var clinical=hosted&&!(typeof isReceptionistUser==='function'&&isReceptionistUser());
   var visibility={
     ptReceptionBtn:false,
-    ptLinkBtn:hosted,
-    ptIntakeBtn:hosted,
+    ptLinkBtn:clinical,
+    ptIntakeBtn:clinical,
     ptSetupBtn:mlsSetupButtonAllowed(), /* setfix-1.0.0 (b1169, n=42): was `hosted`, a weaker predicate that ignored role/capabilities.setupAllowed */
     ptBookLinkBtn:hosted,
     ptBoardBtn:hosted,
@@ -33602,7 +33652,7 @@ function togglePtMore(){
     ptFollowupBtn:false,
     ptLawyerBtn:false,
     ptDoctorsBtn:false,
-    ptPurgeAthenaBtn:hosted
+    ptPurgeAthenaBtn:clinical
   };
   Object.keys(visibility).forEach(function(id){
     var el=document.getElementById(id); if(!el) return;
@@ -45717,7 +45767,7 @@ function isReceptionistUser(){ return !!(bkUser && bkUser.role==='receptionist')
 function hideClinicalForReceptionist(){
   if(!isReceptionistUser()) return;
   // Clinical controls inside the Patients view — receptionists keep only scheduling.
-  ['ptNewBtn','ptLinkBtn','ptIntakeBtn','ptReceptionBtn','ptLawyerBtn','ptDeselectChip','ptSearchRow','ptList','ptEmpty','ptNoMatch','profileCard']
+  ['ptNewBtn','ptLinkBtn','ptIntakeBtn','ptReceptionBtn','ptLawyerBtn','ptDeselectChip','ptSearchRow','ptList','ptEmpty','ptNoMatch','profileCard','ptPullAthenaBtn','mlsPullDoor']
     .forEach(function(id){var e=document.getElementById(id); if(e) mlsRoleHide(e);});
   // Auto-open the board + booking tools so the front desk lands on something useful.
   var board=document.getElementById('boardBox');
@@ -45725,8 +45775,8 @@ function hideClinicalForReceptionist(){
 }
 function applyReceptionistPortal(){
   if(!isReceptionistUser()) return false;
-  // Hide every clinical nav tab.
-  ['nav_visit','nav_recs','nav_orders','nav_history','nav_analysis','nav_legalreq','nav_team','nav_admin']
+  // Hide every clinical nav tab (stafffix-1.0.0: AI Studio is one of them).
+  ['nav_visit','nav_recs','nav_orders','nav_history','nav_analysis','nav_studio','nav_legalreq','nav_team','nav_admin']
     .forEach(function(id){var e=document.getElementById(id); if(e) mlsRoleHide(e);});
   var npt=document.getElementById('nav_patients'); if(npt) mlsRoleSetNavText(npt,'🗓️ Front desk ');
   // Hide clinical header buttons (Patient intake, Templates, Custom widget).
@@ -49518,7 +49568,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1326';
+  window.__MLS_AV='b1327';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
@@ -52241,6 +52291,9 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
     m=m||menuEl();
     if(!m) return false;
     if(!workspace()) return false;
+    /* stafffix-1.0.0 (2026-09-23): a clinical row, never offered to a
+       front-desk login (the app's one role predicate). */
+    if(isFn(W.isReceptionistUser)&&safe(function(){ return W.isReceptionistUser(); })) return false;
     if(safe(function(){ return m.querySelector('['+ROW_ATTR+']'); })) return false;
     var grp=safe(function(){ return m.querySelector('.grp[aria-label="'+GROUP+'"]'); })||null;
     if(!grp){
@@ -68868,6 +68921,8 @@ html #profUnpulledPull .mlsactip-pop{ display:none !important; }
   function say(m, bad){ var s=byId('pdSay'); if(!s) return; s.style.display='block'; s.style.color=bad?'#9f2d2d':'#52675c'; s.textContent=m; }
   function normName(n){ return String(n||'').toLowerCase().replace(/[^a-z]/g,''); }
   function mount(){
+    /* stafffix-1.0.0: no chart-pull door on a front-desk login */
+    if (typeof window.isReceptionistUser === 'function' && window.isReceptionistUser()) { var gone = byId('mlsPullDoor'); if (gone) { try { gone.remove(); } catch (eG) {} } return; }
     var host = byId('ptPullAthenaBtn');
     if (!host) return;
     /* pullone-1.0.0 parks the shell's one status line (#pullChartStatus)
