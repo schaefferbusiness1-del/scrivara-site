@@ -777,6 +777,16 @@
     });
     var btn = document.getElementById(BTN_ID);
     if (btn && btn.parentNode) btn.parentNode.insertBefore(box, btn.nextSibling); else host.appendChild(box);
+    /* studiofix-1.0.0: run from the Tools menu the report lands in a collapsed
+       (or, on Visit, hidden) patient card - the scan ran and said nothing.
+       When the report is not on screen, the result is said as a notice. */
+    try {
+      if (!box.getClientRects().length && typeof window.toast === 'function') {
+        window.toast(!rep.patientFound ? 'Not found in the saved store - nothing is saved for "' + (rep.name || '?') + '". Retry the save.'
+          : rep.ok ? 'All saved correctly - ' + rep.visitCount + ' visit' + (rep.visitCount === 1 ? '' : 's') + ' stored for ' + (rep.name || 'this patient') + '.'
+          : rep.issues.length + ' issue' + (rep.issues.length === 1 ? '' : 's') + ' found in ' + (rep.name || 'this patient') + '\u2019s saved data - open the patient card for details.', rep.ok ? 'ok' : 'err');
+      }
+    } catch (eT) {}
   }
   function onDemandScan() {
     var ap = fn('activePatient') ? safe(fn('activePatient')) : null;

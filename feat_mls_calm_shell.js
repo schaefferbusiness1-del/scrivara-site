@@ -1283,8 +1283,45 @@
 
   /* One place, so the bar, the Tools menu and Ask cannot drift apart. Returns
      true when it handled the control itself (gated -> shown, not fired). */
+  /* studiofix-1.0.0: Pull activity drives #mlsPdpSel, a <select> this shell
+     hides with the day strip's extras. el.click() never opens a select, let
+     alone a hidden one, so the row did nothing. Its choices are offered in a
+     small dialog instead, and choosing one changes the real select. */
+  function chooseFromHiddenSelect(sel) {
+    var S = function (x) { return x == null ? '' : String(x); };
+    var old = qs('#mlsSelPick'); if (old && old.parentNode) old.parentNode.removeChild(old);
+    var lab = S(sel.getAttribute('aria-label') || (sel.labels && sel.labels[0] && sel.labels[0].textContent) || 'Choose').trim();
+    var back = D.createElement('div'); back.id = 'mlsSelPick';
+    back.setAttribute('role', 'dialog'); back.setAttribute('aria-modal', 'true'); back.setAttribute('aria-label', lab);
+    back.style.cssText = 'position:fixed;inset:0;z-index:9700;background:rgba(15,25,20,.35);display:flex;align-items:center;justify-content:center;padding:16px';
+    var card = D.createElement('div');
+    card.style.cssText = 'background:#fff;color:#1A211C;border-radius:14px;max-width:360px;width:100%;padding:14px 16px;box-shadow:0 18px 44px rgba(0,0,0,.25);font:500 14px/1.4 system-ui,-apple-system,sans-serif';
+    var h = D.createElement('div'); h.style.cssText = 'font-weight:700;margin-bottom:8px'; h.textContent = lab; card.appendChild(h);
+    function close() { D.removeEventListener('keydown', onKey, true); if (back.parentNode) back.parentNode.removeChild(back); }
+    function onKey(e) { if (e.key === 'Escape') { e.stopPropagation(); close(); } }
+    Array.prototype.forEach.call(sel.options, function (o) {
+      var b = D.createElement('button'); b.type = 'button'; b.disabled = !!o.disabled;
+      b.textContent = (o.selected ? '\u2713 ' : '') + S(o.textContent).trim();
+      b.style.cssText = 'display:block;width:100%;text-align:left;margin:4px 0;padding:9px 12px;border-radius:10px;font:inherit;cursor:pointer;border:1px solid ' + (o.selected ? '#2E6A4B' : '#E7E5DD') + ';background:' + (o.selected ? '#EAF1EE' : '#fff');
+      b.addEventListener('click', function () {
+        sel.value = o.value; safe(function () { sel.dispatchEvent(new Event('change', { bubbles: true })); });
+        close(); note(lab + ': ' + S(o.textContent).trim());
+      });
+      card.appendChild(b);
+    });
+    var x = D.createElement('button'); x.type = 'button'; x.textContent = 'Close';
+    x.style.cssText = 'margin-top:6px;padding:7px 12px;border-radius:10px;border:1px solid #D9D6CD;background:#fff;font:inherit;cursor:pointer';
+    x.addEventListener('click', close); card.appendChild(x);
+    back.appendChild(card);
+    back.addEventListener('click', function (e) { if (e.target === back) close(); });
+    D.addEventListener('keydown', onKey, true);
+    (D.body || D.documentElement).appendChild(back);
+    safe(function () { var f = card.querySelector('button:not([disabled])'); if (f) f.focus(); });
+    return true;
+  }
   function runControl(el) {
     if (!el) return true;
+    if (String(el.tagName || '').toUpperCase() === 'SELECT' && !el.getClientRects().length) return chooseFromHiddenSelect(el);
     if (trustedGated(el)) {
       spotlight(el);
       note('That one has to be pressed directly — the app only accepts a real click there. It is highlighted for you.');
@@ -3832,7 +3869,10 @@
        .on class, because the title updates on showView (setTimeout 0) and
        syncDock runs a rAF later - a title reading a not-yet-painted dock would
        be one screen behind on every navigation. See activeDestLabel(). */
-    destLabel: activeDestLabel
+    destLabel: activeDestLabel,
+    /* studiofix-1.0.0: the one path the bar, the Tools menu and Ask use to
+       press a control - exported so that path is checked on the live page. */
+    runControl: runControl
   };
 
   /* The app screen appears after auth; poll cheaply until it does, then stop.

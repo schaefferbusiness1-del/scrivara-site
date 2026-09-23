@@ -1103,9 +1103,13 @@ var __mlsB18Q=window.__mlsB18QA;
   }
   __mlsB18Q.listen(document,'keydown',function(e){
     try{
+      /* studiofix-1.0.0: Escape closes the search; its chip goes with it. */
+      if(e.key==='Escape'){ if(chip) chip.style.display='none'; return; }
       if(e.key!=='Enter') return;
       var inp=findInput();
-      if(inp && e.target===inp) showChip(inp);
+      /* Enter that CHOSE a result closes the search: offer the chip only if
+         the search is still on screen a beat later (nothing was chosen). */
+      if(inp && e.target===inp) __mlsB18Q.later(function(){ if(inp.isConnected && inp.getClientRects().length) showChip(inp); },90);
     }catch(err){}
   },true);
   __mlsB18Q.listen(document,'mousedown',function(e){ try{ if(chip && chip.style.display==='block' && e.target!==chip) chip.style.display='none'; }catch(err){} },true);

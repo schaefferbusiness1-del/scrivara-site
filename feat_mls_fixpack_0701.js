@@ -752,6 +752,10 @@
       /* screens + menu items straight from the DOM (always current) */
       var seen = {};
       Array.prototype.forEach.call(document.querySelectorAll('[onclick*="showView("]'), function (el) {
+        /* studiofix-1.0.0: a route the app has switched off for this account
+           (Admin for a non-admin, unreleased Team and Legal requests) is hidden
+           inline or by [hidden]; it is not offered here either. */
+        if (el.hidden || (el.style && el.style.display === 'none') || (el.closest && el.closest('[hidden]'))) return;
         var lbl = String(el.textContent || '').trim().replace(/\s+/g, ' ');
         if (!lbl || lbl.length > 40 || seen['v:' + lbl]) return;
         seen['v:' + lbl] = 1;

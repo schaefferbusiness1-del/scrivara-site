@@ -474,7 +474,10 @@
        never a reimplementation, and only the ones that exist. */
     if (_practiceWarmed) return;
     _practiceWarmed = true;
-    ['renderKeyTrends', 'loadAnalysisBaseline', 'loadOutcomesMarketing', 'renderAnalysisSummary']
+    /* studiofix-1.0.0: the key-trends function is renderAnaKeyTrends (there is
+       no renderKeyTrends, so the card sat on "Reading your data..." forever),
+       and the research registry's loader was never called here at all. */
+    ['renderAnaKeyTrends', 'loadAnalysisBaseline', 'loadOutcomesMarketing', 'loadRegistry', 'renderAnalysisSummary']
       .forEach(function (fn) { safe(function () { if (typeof W[fn] === 'function') W[fn](); }); });
   }
 

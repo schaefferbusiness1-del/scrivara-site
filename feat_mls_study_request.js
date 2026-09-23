@@ -219,7 +219,11 @@
   /* ------------------------- normalized stored evidence ------------------------ */
   function visitFromRaw(raw, fallbackSource) {
     raw = raw || {};
-    var type = S(raw.type || raw.kind || raw.visitType || raw.encounterType || raw.appt_type || raw.cc || 'Visit').trim() || 'Visit';
+    /* studiofix-1.0.0: an appointment with no appt_type is an 'Appointment',
+       the type the harvester gives the SAME row - 'Visit' here made the dedupe
+       key differ, and every appointment counted twice. */
+    var fallbackType = (raw.appt_date != null || raw.start_at != null) ? 'Appointment' : 'Visit';
+    var type = S(raw.type || raw.kind || raw.visitType || raw.encounterType || raw.appt_type || raw.cc || fallbackType).trim() || fallbackType;
     var detail = S(raw.detail != null ? raw.detail :
       (raw.note != null ? raw.note : (raw.text != null ? raw.text :
       (raw.soap != null ? raw.soap : (raw.body != null ? raw.body : raw.content)))))

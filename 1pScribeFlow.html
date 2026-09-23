@@ -16303,16 +16303,20 @@ async function downloadOutcomesOnePager(){
   doc.save('Outcomes_'+String(practice).replace(/[^a-zA-Z0-9]+/g,'_')+'.pdf');
   toast('Marketing one-pager downloaded.','ok');
 }
+/* studiofix-1.0.0: '' | 'loading' | 'failed' | 'refused' - so Export can say
+   why there is nothing to export instead of "still loading" forever. */
+var _registryState='';
 async function loadRegistry(force){
   var box=document.getElementById('anaRegistryBody'); if(!box) return;
   if(_analyticsData && !force){ renderRegistry(_analyticsData); return; }
+  _registryState='loading';
   try{
     var r=await fetch(bkBase()+'/api/records/analytics',{headers:{Authorization:'Bearer '+bkToken()}});
-    if(r.status===403){ box.innerHTML='<div class="mini" style="color:var(--muted)">Available to clinician accounts.</div>'; return; }
+    if(r.status===403){ _registryState='refused'; box.innerHTML='<div class="mini" style="color:var(--muted)">Available to clinician accounts.</div>'; return; }
     var d=await r.json().catch(function(){return null;});
-    if(!r.ok||!d){ box.innerHTML='<div class="mini" style="color:#c0392b">Could not load registry.</div>'; return; }
-    _analyticsData=d; renderRegistry(d);
-  }catch(e){ box.innerHTML='<div class="mini" style="color:#c0392b">Could not load registry.</div>'; }
+    if(!r.ok||!d){ _registryState='failed'; box.innerHTML='<div class="mini" style="color:#c0392b">Could not load registry.</div>'; return; }
+    _registryState=''; _analyticsData=d; renderRegistry(d);
+  }catch(e){ _registryState='failed'; box.innerHTML='<div class="mini" style="color:#c0392b">Could not load registry.</div>'; }
 }
 function renderRegistry(d){
   var box=document.getElementById('anaRegistryBody'); if(!box) return;
@@ -16326,7 +16330,7 @@ function renderRegistry(d){
   box.innerHTML=h;
 }
 function exportRegistryCsv(){
-  var d=_analyticsData; if(!d){ toast('Registry still loading.','err'); return; }
+  var d=_analyticsData; if(!d){ toast(_registryState==='loading'?'Registry still loading.':_registryState==='refused'?'The registry is available to clinician accounts.':'The registry could not be loaded, so there is nothing to export yet.','err'); return; }
   var rows=[['procedure','n','avg_pain','avg_odi']];
   (d.by_procedure||[]).forEach(function(p){ rows.push([p.procedure,p.n,p.avg_pain==null?'':p.avg_pain,p.avg_odi==null?'':p.avg_odi]); });
   rows.push([]); rows.push(['SUMMARY','','','']);
@@ -22321,6 +22325,14 @@ function openCopilotDock(seed){
   try{ _copilotInit(); }catch(e){}
   setTimeout(function(){ var inp=document.getElementById('copilotInput'); if(inp){ if(seed) inp.value=seed; inp.focus(); } }, 80);
 }
+/* studiofix-1.0.0: Escape closes the drawer, as it closes Settings, Find and
+   the Account menu - unless a dialog is open over it (that dialog owns Escape). */
+document.addEventListener('keydown',function(e){
+  if(e.key!=='Escape'||e.defaultPrevented) return;
+  var d=document.getElementById('copilotDock'); if(!d||!d.classList.contains('open')) return;
+  if(document.querySelector('.modal-bg.show')) return;
+  closeCopilotDock();
+});
 function closeCopilotDock(){
   var card=document.getElementById('copilotCard'); var anc=document.getElementById('copilotHomeAnchor');
   if(card && anc && anc.parentNode){ anc.parentNode.insertBefore(card, anc); }

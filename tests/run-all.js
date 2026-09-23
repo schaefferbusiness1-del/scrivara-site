@@ -2767,7 +2767,12 @@ const tests = [
   /* kiosk-1.0.0 (b1315): while Patient intake is up nothing but the intake
      renders - no Find palette listing patients, no taskbar, no background
      notice - and the app's global keys are swallowed. */
-  'intake-kiosk-shows-only-the-intake-runtime.test.js'
+  'intake-kiosk-shows-only-the-intake-runtime.test.js',
+  /* studiofix-1.0.0 (b1316): Practice loaders exist and a failed registry
+     export says so, Find offers only usable routes, appointments count once in
+     Study & build, Verify speaks when its report is hidden, Escape closes
+     Copilot, no stray Ask chip, a hidden-select Tools row opens a chooser. */
+  'studio-and-tools-do-what-they-say-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

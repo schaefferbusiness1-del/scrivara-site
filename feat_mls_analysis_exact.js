@@ -59,7 +59,8 @@
     anaRegistry:     { icon: "&#128203;", iconBg: "#EAF1EE", accent: "#7A5CC0", title: "Outcomes registry",           sub: "pain &amp; ODI trajectory",  color: "#7A5CC0", label: "Build", premium: true },
     anaRwe:          { icon: "&#128300;", iconBg: "#e7f5ee", accent: "#12915e", title: "Research registry",           sub: "de-identified outcomes",     color: "#7A5CC0", label: "Export" },
     mlsRvuProd:      { icon: "&#128202;", iconBg: "#e7f5ee", accent: "#12915e", title: "RVU Productivity",            sub: "from signed visits",         color: "#7A5CC0", label: "wRVU", premium: true },
-    mlsDWCard:       { icon: "&#128197;", iconBg: "#EAF1EE", accent: "#2E6A4B", title: "Days worked &amp; volume",    sub: "per provider, by month",     color: "#1A211C", label: "Open" }
+    mlsDWCard:       { icon: "&#128197;", iconBg: "#EAF1EE", accent: "#2E6A4B", title: "Days worked &amp; volume",    sub: "per provider, by month",     color: "#1A211C", label: "Open" },
+    mlsMRCard:       { icon: "&#128197;", iconBg: "#EAF1EE", accent: "#2E6A4B", title: "Month &amp; year report",     sub: "one month or a whole year",  color: "#1A211C", label: "Open" }
   };
   var PREF = ["anaKeyTrends", "anaBaseline", "anaOutcomes", "anaTeamGrades", "mlsProcReport", "mlsRvuProd", "mlsDWCard", "anaDoctorReview", "anaAsk", "anaReferral", "anaRegistry", "anaRwe"];
 
@@ -221,7 +222,12 @@
     var ids = Object.keys(byId), nc = colCount();
     order(ids).forEach(function (k) {
       var card = byId[k]; if (!card) return;
+      /* studiofix-1.0.0: a card the app withholds ([hidden]: the unreleased
+         Team ratings and doctor review) gets no tile - its tile expanded to a
+         blank panel. */
+      if (card.hidden) { var wt = v.querySelector('.ax-tile[data-ax-id="' + k + '"]'); if (wt) wt.style.display = "none"; return; }
       var m = metaFor(card), tile = ensureTile(card);
+      if (tile.style.display === "none") tile.style.display = "";
       var body = tile.querySelector(".ax-body"), prev = tile.querySelector(".ax-prev");
       tile.style.setProperty("--ax-accent", m.accent || "#2E6A4B");
       if (card.parentElement !== body) body.appendChild(card);
