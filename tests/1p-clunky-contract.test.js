@@ -2015,7 +2015,16 @@ async function runtime() {
        and both have rows. Local date parts, never toISOString: the machine
        clock is Eastern and a UTC key is the previous day after 8pm. */
     const opSeed = await opPage.evaluate(() => {
+      /* The PRACTICE day, as _opContextDay() reads it (_acctTodayKey), not
+         the browser clock: this container runs on UTC, so from 8 PM Eastern
+         the machine date is already tomorrow and "today" had no rows - the
+         0-row OPEN ITEM A reading was this harness, not the room. */
       const key = (off) => {
+        const base = typeof window._acctTodayKey === 'function' ? String(window._acctTodayKey() || '') : '';
+        if (/^\d{4}-\d{2}-\d{2}$/.test(base)) {
+          const u = new Date(base + 'T12:00:00Z'); u.setUTCDate(u.getUTCDate() + off);
+          return u.toISOString().slice(0, 10);
+        }
         const d = new Date(); d.setDate(d.getDate() + off);
         if (typeof window._opDayKey === 'function') return window._opDayKey(d);
         return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-');

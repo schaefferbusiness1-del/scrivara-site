@@ -10,75 +10,76 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '..');
 const SOURCE = fs.readFileSync(path.join(ROOT, '1p-mls-connect.js'), 'utf8');
 
-function extractFunction(name) {
-  const start = SOURCE.lastIndexOf('function ' + name + '(');
-  assert(start >= 0, name + ': function is missing');
-  const end = SOURCE.indexOf('\n  /* ---- patient rows', start);
-  assert(end > start, name + ': body end marker is missing');
-  return SOURCE.slice(start, end).trim();
+/* b1303: this section used to extract the LAST pullTodayProxy in the bundle,
+   which was a copy inside a retired Easy owner that returned before
+   installing - the assertions below it were proving unreachable code. With
+   the retired owners deleted there is one copy, and it routes through
+   startDayPull -> __mlsSI.dayPull with the Staff picker's request as scope.
+   Exercise that live chain. */
+function extractLive(name, near) {
+  const sig = '  function ' + name + '(';
+  /* the copy in the proxy's own module: the definition nearest to it */
+  let at = SOURCE.indexOf(sig);
+  if (near !== undefined) for (let k = at; k >= 0; k = SOURCE.indexOf(sig, k + 1)) { if (Math.abs(k - near) < Math.abs(at - near)) at = k; }
+  assert(at >= 0, name + ': function is missing');
+  let i = SOURCE.indexOf('{', at), depth = 0;
+  for (; i < SOURCE.length; i++) {
+    const c = SOURCE[i];
+    if (c === '{') depth++;
+    else if (c === '}') { depth--; if (depth === 0) break; }
+  }
+  return SOURCE.slice(at, i + 1);
 }
+const proxyAt = SOURCE.indexOf('  function pullTodayProxy(');
+assert(proxyAt >= 0 && SOURCE.indexOf('  function pullTodayProxy(', proxyAt + 1) < 0, 'exactly one pullTodayProxy remains');
+assert(/function pullTodayProxy\(\) \{[\s\S]*?startDayPull\(false\);\s*\}/.test(extractLive('pullTodayProxy')),
+  'the Staff proxy starts the guarded day lane');
+const LIVE = ['activeProvider', 'activeProviderRequest', 'startDayPull'].map((n) => extractLive(n, proxyAt)).join('\n');
 
-function invoke(providerFilter) {
+function invoke(providerFilter, roster) {
   const calls = [];
-  const external = { click: () => calls.push(['external-hero-click']) };
-  const daySwitch = {
-    isBusy: () => false,
-    setDay: day => { calls.push(['set-day', day]); return true; },
-    pullDayFor: target => calls.push(['pull-day-for', target])
+  const win = {
+    __mlsSI: { dayPull: (o) => { calls.push(['day-pull', o.date, o.provider]); return Promise.resolve({ complete: true, calendarReceipt: {}, historyReceipt: {} }); } },
+    __mlsProviderRoster: roster
   };
-  const result = new Function(
-    'S', 'window', 'isFn', 'todayLocal', 'handOff', 'findBtnByText', 'toast', 'activeProvider',
-    extractFunction('pullTodayProxy') + '\nreturn pullTodayProxy();'
+  new Function(
+    'S', 'window', 'isFn', 'safe', 'todayLocal', 'resolveAppProvider', 'admitStaffVisitChoice', 'freshPull',
+    'p1RangeFullNotes', 'pSet', 'plog', 'pCounts', 'render', 'toast',
+    'var P = null;\n' + LIVE + '\nreturn startDayPull(false);'
   )(
-    { providerFilter },
-    { __mlsDaySwitch: daySwitch },
-    value => typeof value === 'function',
+    { providerFilter, providerRef: '' }, win,
+    (v) => typeof v === 'function',
+    (fn, d) => { try { return fn(); } catch (e) { return d; } },
     () => '2026-09-12',
-    (fn) => fn(),
-    () => external,
-    () => {},
-    () => providerFilter === null ? 'Dr Inherited' : providerFilter
+    () => 'Dr Inherited',
+    (cb) => cb(false),
+    (range, label) => ({ range, label, dayStatus: {}, failedDays: [], emptyDays: [] }),
+    () => false, () => {}, () => {}, () => {}, () => {}, () => {}
   );
-  return { calls, result };
+  return { calls };
 }
 
-assert.deepStrictEqual(invoke('Dr Ada').calls, [
-  ['set-day', '2026-09-12'],
-  ['pull-day-for', 'Dr Ada']
-], 'selected Staff provider must be frozen into the canonical DaySwitch pull');
-
-assert.deepStrictEqual(invoke('').calls, [
-  ['set-day', '2026-09-12'],
-  ['pull-day-for', 'all']
-], 'All Staff providers must use the canonical DaySwitch pull with an explicit all scope');
-
-assert.deepStrictEqual(invoke(null).calls, [
-  ['set-day', '2026-09-12'],
-  ['pull-day-for', 'Dr Inherited']
-], 'an inherited displayed provider must remain scoped instead of widening to all');
+assert.deepStrictEqual(invoke('Dr Ada').calls, [['day-pull', '2026-09-12', 'Dr Ada']],
+  'selected Staff provider must be the scope of the guarded day pull');
+assert.deepStrictEqual(invoke('').calls, [['day-pull', '2026-09-12', 'all']],
+  'All Staff providers must pull with an explicit all scope');
+assert.deepStrictEqual(invoke(null).calls, [['day-pull', '2026-09-12', 'Dr Inherited']],
+  'an inherited displayed provider must remain scoped instead of widening to all');
+const exactRef = { id: 'prov-7', name: 'Dr Ada' };
+assert.deepStrictEqual(invoke('Dr Ada', { resolve: (ref) => (ref === 'Dr Ada' ? exactRef : null) }).calls, [['day-pull', '2026-09-12', exactRef]],
+  'a roster-resolved provider is passed as its exact reference');
 
 const staffShortcutStart = SOURCE.indexOf("$('ez3sPullToday')");
 assert(staffShortcutStart >= 0, 'Staff practice-tools shortcut must target #ez3sPullToday');
-assert(/b\.onclick\s*=\s*pullTodayProxy/.test(SOURCE),
+assert(/on\('ez3sPullToday', pullTodayProxy\)/.test(SOURCE),
   '#ez3sPullToday must use the provider-aware Staff proxy');
 
-const homeRender = SOURCE.slice(SOURCE.lastIndexOf('function renderHome()'), SOURCE.lastIndexOf('function dobLabelPlain'));
-const staffRender = SOURCE.slice(SOURCE.lastIndexOf('function renderStaff()'), SOURCE.lastIndexOf('function seg('));
-assert(/var todayPullReady = canonicalDayPullReady\(\)/.test(homeRender) &&
-  !/findBtnByText\(\/pull today/.test(homeRender),
-  'home Staff pull control must not depend on the external hero');
-assert(/var todayBtn = canonicalDayPullReady\(\)/.test(staffRender) &&
-  !/findBtnByText\(\/pull today/.test(staffRender),
-  'Staff pull control must remain visible when only the canonical DaySwitch API exists');
-assert(/function canonicalDayPullReady\(\)[\s\S]*ds\.setDay[\s\S]*ds\.pullDayFor/.test(SOURCE),
-  'today controls must be gated by canonical DaySwitch readiness');
-const readyStart = SOURCE.lastIndexOf('function canonicalDayPullReady()');
-const readyEnd = SOURCE.indexOf('\n\n  function renderHome()', readyStart);
-const canonicalDayPullReady = new Function(
-  'window', 'isFn', SOURCE.slice(readyStart, readyEnd) + '\nreturn canonicalDayPullReady;'
-)({ __mlsDaySwitch: { setDay() {}, pullDayFor() {} } }, value => typeof value === 'function');
-assert.strictEqual(canonicalDayPullReady(), true,
-  'the canonical Staff control must stay available without an external hero button');
+const homeRender = extractLive('renderHome', proxyAt);
+const staffRender = extractLive('renderStaff', proxyAt);
+assert(!/findBtnByText\(\/pull today/i.test(homeRender) && !/findBtnByText\(\/pull today/i.test(staffRender),
+  'the Staff and home pull controls must not depend on the external hero');
+assert(/id="ez3sPullToday"/.test(extractLive('pullPanelHtml', proxyAt)),
+  'the Staff pull panel always renders "Pull today only" - no external hero is needed to reach it');
 
 const daySwitchApiStart = SOURCE.indexOf('api.pullDay = startPull;');
 assert(daySwitchApiStart >= 0 && /api\.pullDayFor\s*=\s*function \(providerTarget\) \{ return startPull\(false, providerTarget\); \}/.test(
@@ -98,4 +99,4 @@ assert(/__mlsRelayLink\.pullDay\(rday, \{[\s\S]*?provider:\s*DS\.pullProviderSco
 assert(/dpOpts\.provider = DS\.pullProviderScope/.test(pullLane),
   'the explicit Staff scope must be handed to the guarded importer options');
 
-console.log('PASS staff-provider-pull-route-runtime: Staff selected/all scopes use DaySwitch and never click the unscoped external hero.');
+console.log('PASS staff-provider-pull-route-runtime: the live Staff proxy pulls through the guarded day lane with the selected/all/inherited scope, and the DaySwitch lane keeps the frozen scope.');

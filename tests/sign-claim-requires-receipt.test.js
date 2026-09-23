@@ -48,7 +48,9 @@ assert.strictEqual(unconditional, 0,
   'a Sign proxy sets S.signedAt straight after sb.click(), so it claims "signed & saved" ' +
   'on all four of signNote()\'s refusal paths');
 
-/* 2. every copy reads a receipt before claiming, and there are still four.
+/* 2. every copy reads a receipt before claiming. There were four generational
+      copies; the three in retired Easy owners were deleted in b1303, so exactly
+      one remains.
       b824 widened the body of this gate - a placeholder refusal must no longer
       repaint, because the repaint destroyed the editor the refusal had just
       selected a blank in (see sign-refusal-survives-the-repaint.test.js). The
@@ -57,12 +59,12 @@ assert.strictEqual(unconditional, 0,
       So the pin moves from the whole one-line statement to the condition, and a
       companion assertion keeps the early return honest. */
 const gated = (connect.match(/if \(!lineSigned && !flagSigned\) \{/g) || []).length;
-assert.strictEqual(gated, 4,
-  'expected all 4 generational copies of the ez3Sign handler to be receipt-gated, found ' + gated +
-  ' — a new copy without the gate reintroduces the defect');
+assert.strictEqual(gated, 1,
+  'expected the one live ez3Sign handler to be receipt-gated, found ' + gated +
+  ' gated copies — a new copy without the gate reintroduces the defect');
 
 const gateBodies = connect.match(/if \(!lineSigned && !flagSigned\) \{[\s\S]{0,900}?\n      \}/g) || [];
-assert.strictEqual(gateBodies.length, 4, 'a receipt gate lost its block form');
+assert.strictEqual(gateBodies.length, 1, 'the receipt gate lost its block form');
 gateBodies.forEach((body, i) => {
   assert.match(body, /\breturn;/,
     `receipt gate ${i + 1} no longer returns, so execution falls through to the ` +
@@ -74,9 +76,9 @@ assert.strictEqual(claims, gated,
   'every "Note signed & saved" claim must be preceded by its own receipt gate');
 
 /* 3. the receipt must be the two signals signNote itself maintains */
-assert((connect.match(/var lineSigned = !!\(line && line\.style\.display !== 'none'/g) || []).length === 4,
+assert((connect.match(/var lineSigned = !!\(line && line\.style\.display !== 'none'/g) || []).length === 1,
   'the signature-line receipt is missing from a copy');
-assert((connect.match(/typeof signed !== 'undefined' && signed === true/g) || []).length === 4,
+assert((connect.match(/typeof signed !== 'undefined' && signed === true/g) || []).length === 1,
   "the engine's signed-flag receipt is missing from a copy");
 
 /* 4. and those signals must still mean what we think they mean.
@@ -89,4 +91,4 @@ assert(/function setBadge\(s\)\{[\s\S]{0,120}signed=s;/.test(shell),
 assert(/if\(currentVisitAthenaBinding&&!_athenaGuardBoundEditor\('signing this note'\)\) return;/.test(shell),
   'the patient-binding refusal disappeared from signNote — re-check what this gate must cover');
 
-console.log('PASS sign claim requires a receipt: 4/4 Sign proxies assert from signNote\'s own signature line and signed flag, never from the click');
+console.log('PASS sign claim requires a receipt: the live Sign proxy asserts from signNote\'s own signature line and signed flag, never from the click');

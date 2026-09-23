@@ -296,7 +296,10 @@ const CONNECT_BODY_SITE_AUDIT = [
   { op: "toggle('ez3fl-top-owns', wantOwns)", count: 1, reasons: ['local #mlsEz3Body plus contains() guard'] },
   { op: "remove('mls-top-voice-tools')", count: 1, reasons: ['owner revert teardown'] },
   { op: "toggle('mls-top-voice-tools', wantTvt)", count: 1, reasons: ['contains() guard'] },
-  { op: "toggle('ez3adv', S.advOpen)", count: 4, reasons: ['trusted/user toggle', 'trusted/user toggle', 'trusted/user toggle', 'trusted/user toggle'] },
+  /* b1303: three of these toggles and all three remove('ez3adv') owner
+     reverts sat in retired Easy owners (v3.1, v3.2 and its twin) that
+     returned before installing; they were deleted, so the census is 34. */
+  { op: "toggle('ez3adv', S.advOpen)", count: 1, reasons: ['trusted/user toggle'] },
   { op: "add('ez3adv')", count: 2, reasons: ['guarded by !S.advOpen state transition',
     /* walkfix-1.0.0 (b1184): the 35th site, read rather than absorbed into a
        bumped total. revwork's own openWorkspace() opens `if (advOpen()) return
@@ -305,7 +308,6 @@ const CONNECT_BODY_SITE_AUDIT = [
        #ez3Adv element is absent from the build entirely. */
     'revwork openWorkspace: advOpen() contains() guard taken before the add'] },
   { op: "toggle('ez3sec0', !secOpen)", count: 1, reasons: ['contains() guard'] },
-  { op: "remove('ez3adv')", count: 3, reasons: ['v3.2 owner revert', 'v3.2 twin owner revert', 'v3.1 owner revert'] },
   { op: "toggle('mls-r44-hidebday', !c.birthdays)", count: 1, reasons: ['contains() guard'] },
   { op: "remove('mls-r44-hidebday')", count: 1, reasons: ['Round4 owner revert'] },
   { op: "remove('mls-lite')", count: 1, reasons: ['contains() guard on repeating non-Lite cleanup'] },
@@ -366,10 +368,10 @@ while ((connectBodyMatch = connectBodyRe.exec(connectText))) {
   const op = connectBodyMatch[1] + '(' + connectBodyMatch[2] + ')';
   connectBodyOps.set(op, (connectBodyOps.get(op) || 0) + 1);
 }
-assert.strictEqual([...connectBodyOps.values()].reduce((sum, count) => sum + count, 0), 40,
-  'mls-connect body-class audit no longer enumerates exactly 40 syntactic sites');
-assert.strictEqual(CONNECT_BODY_SITE_AUDIT.reduce((sum, row) => sum + row.count, 0), 40,
-  'the documented mls-connect body-class audit does not account for all 40 sites');
+assert.strictEqual([...connectBodyOps.values()].reduce((sum, count) => sum + count, 0), 34,
+  'mls-connect body-class audit no longer enumerates exactly 34 syntactic sites');
+assert.strictEqual(CONNECT_BODY_SITE_AUDIT.reduce((sum, row) => sum + row.count, 0), 34,
+  'the documented mls-connect body-class audit does not account for all 34 sites');
 assert.strictEqual(connectBodyOps.size, CONNECT_BODY_SITE_AUDIT.length,
   'mls-connect gained or lost an operation shape without an explicit audit entry');
 for (const row of CONNECT_BODY_SITE_AUDIT) {
@@ -422,7 +424,7 @@ for (const row of SCRIBEFLOW_BODY_SITE_AUDIT) {
     'every ScribeFlow occurrence needs its own guard or exact exception: ' + row.op);
 }
 
-const SITES = { 'mls-connect.js': 40, 'feat_athena_tooltip_dedupe.js': 9, 'feat_mls_pervisit_unify.js': 1, 'ScribeFlow.html': 19, 'feat_mls_redesign.js': 6, 'feat_mls_phone_ui.js': 3 };
+const SITES = { 'mls-connect.js': 34, 'feat_athena_tooltip_dedupe.js': 9, 'feat_mls_pervisit_unify.js': 1, 'ScribeFlow.html': 19, 'feat_mls_redesign.js': 6, 'feat_mls_phone_ui.js': 3 };
 const ANY_OP = /(?:document\.body|\bbody)\.classList\.(?:add|remove|toggle)\(/g;
 for (const [file, expected] of Object.entries(SITES)) {
   const found = (read(file).match(ANY_OP) || []).length;
@@ -467,4 +469,4 @@ assert(connect.includes("var A='feat_mls_redesign.js',V='3.2.4'") &&
 assert(!connect.includes('20260808rd332perf2') && !connect.includes('20260804rd331'),
   'a retired hand-maintained redesign cache token is still reachable');
 
-console.log('PASS body-class churn: measured writers plus recurring Lite/P1-dock paths compare first; all 40 connect and 19 shell operation sites are classified, and changed satellites use fresh or build-bound cache tokens (' + scanned + ' published files scanned)');
+console.log('PASS body-class churn: measured writers plus recurring Lite/P1-dock paths compare first; all 34 connect and 19 shell operation sites are classified, and changed satellites use fresh or build-bound cache tokens (' + scanned + ' published files scanned)');

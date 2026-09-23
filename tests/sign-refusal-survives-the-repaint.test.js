@@ -27,9 +27,10 @@
  * walkthrough necessarily is by the time it has a note to sign - so no harness
  * in this repo can press it end to end. What CAN be pinned, exactly, is that no
  * copy of the driver repaints a placeholder refusal, and that all four copies
- * agree. Four is not a typo: mls-connect.js carries four byte-identical
- * generations of this handler, and fixing one is how a fix ships to a screen
- * nobody is looking at.
+ * agree. mls-connect.js used to carry four byte-identical generations of this
+ * handler; three sat in retired Easy owners that returned before installing
+ * and were deleted in b1303, so exactly one live copy remains - and a second
+ * copy appearing again is the defect this count exists to catch.
  */
 
 const assert = require('assert');
@@ -49,10 +50,9 @@ assert.strictEqual((connect.match(OLD) || []).length, 0,
   'and the doctor sees a toast with nothing moving - the "press it twice" report.');
 
 const guards = connect.match(/if \(!lineSigned && !flagSigned\) \{[\s\S]{0,900}?\n      \}/g) || [];
-assert.strictEqual(guards.length, 4,
-  `expected 4 guarded sign drivers in mls-connect.js, found ${guards.length}. This file carries ` +
-  'four byte-identical generations of the handler; they must be fixed together or the fix lands ' +
-  'on a screen nobody uses.');
+assert.strictEqual(guards.length, 1,
+  `expected exactly 1 guarded sign driver in mls-connect.js, found ${guards.length}. The retired ` +
+  'copies were deleted in b1303; another copy is a second place a fix has to land.');
 
 guards.forEach((g, i) => {
   assert.match(g, /opNoteBlankTokens/,
@@ -95,5 +95,5 @@ assert.doesNotMatch(block[0], /\.value\s*=/,
   'the sign refusal now writes to a note editor. A refused signature must change not one ' +
   'character of the medical record - selection and focus only.');
 
-console.log('PASS sign refusal survives the repaint: 4 sign drivers guard their repaint, ' +
+console.log('PASS sign refusal survives the repaint: the one live sign driver guards its repaint, ' +
   '3 candidate editors in visible-first order, and a refusal still writes nothing.');

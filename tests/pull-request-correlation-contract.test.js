@@ -71,9 +71,10 @@ assert(activeBridge.includes('if (gotId && gotId !== reqId) return;'),
   'active engine bridge does not reject foreign-id replies');
 assert(activeBridge.includes('msg.id = reqId; msg.requestId = reqId;'),
   'active engine bridge does not stamp outgoing requests');
-/* the dormant stacked engine copies carry the same contract */
-const dormantCopies = connect.split("var reqId = 'ez3d-'").length - 1;
-assert(dormantCopies >= 3, 'dormant engine bridge copies lost the correlation patch (found ' + dormantCopies + ')');
+/* b1303: the dormant stacked engine copies (reqId 'ez3d-') sat in retired
+   Easy owners and were deleted; an uncorrelated bridge copy must not return. */
+assert.strictEqual(connect.split("var reqId = 'ez3d-'").length - 1, 0,
+  'a dormant engine bridge copy is back in the bundle');
 
 /* ---- 2. pullrec bridgeOnce correlation ---- */
 const prfAt = connect.indexOf("var reqId = 'prf-'");

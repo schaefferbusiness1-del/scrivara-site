@@ -318,16 +318,18 @@ cases.push(drive({
 
 assert.strictEqual((mc.match(/function handOff\(fn, msg\) \{ try \{ fn\(\); \} catch \(e\) \{\} if \(msg\) toast\(msg\); \}/g) || []).length, 0,
   'no copy of handOff may still swallow a thrown handler and toast the success message anyway -- that is the literal shape of the "note sent to Athena over seven silent refusals" defect');
-assert.strictEqual((mc.match(/__ok \? msg :/g) || []).length, 5,
-  'all five copies must report the throw');
+/* b1303: four of the five copies sat in retired Easy owners that returned
+   before installing and were deleted; the one live copy remains. */
+assert.strictEqual((mc.match(/__ok \? msg :/g) || []).length, 1,
+  'the live handOff must report the throw');
 
 assert.strictEqual((mc.match(/'Chart context pulled \(read-only\) for '/g) || []).length, 0,
   'calPullChartFor() is fired and never awaited, so a PAST-TENSE toast is false at the moment it is shown');
-assert.strictEqual((mc.match(/'Pulling chart context \(read-only\) for '/g) || []).length, 5,
-  'all five copies must claim only what is true when the toast appears');
+assert.strictEqual((mc.match(/'Pulling chart context \(read-only\) for '/g) || []).length, 1,
+  'the live copy must claim only what is true when the toast appears');
 assert.strictEqual((mc.match(/'Chart opened \(read-only\) for '/g) || []).length, 0,
   'same for the chart-open claim');
-assert.strictEqual((mc.match(/'Opening the chart \(read-only\) for '/g) || []).length, 5);
+assert.strictEqual((mc.match(/'Opening the chart \(read-only\) for '/g) || []).length, 1);
 
 /* ================================================================== *
  * 6. THE TWO STRINGS THAT NAME ACTIONS THAT DO NOT HAPPEN (B §5).

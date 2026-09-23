@@ -96,13 +96,13 @@ ok(LANE_AT > 0, 'the visit-lane module version marker moved; re-aim this pin');
 const LANE = CONNECT.slice(LANE_AT, CONNECT.indexOf('window.__mlsEz3Flow = {', LANE_AT));
 ok(LANE.length > 10000, 'the visit-lane module could not be sliced');
 
-/* the live Easy engine is the FIRST copy in the bundle - every later copy
-   bails on `if (window.__mlsEasyV32) return;`, so the one that actually runs
-   is the one before that guard. */
+/* the live Easy engine is the ONLY copy in the bundle (b1303 deleted the
+   retired owners that used to bail on `if (window.__mlsEasyV32) return;`), so
+   the registry this suite reads is the one that runs. */
 const ENGINE_AT = CONNECT.indexOf('  var CLICKS = {}, MCLICKS = {};');
 ok(ENGINE_AT > 0, 'the live Easy engine click registry could not be located');
-ok(CONNECT.indexOf('if (window.__mlsEasyV32) return;') > ENGINE_AT,
-  'the engine copy this suite reads is no longer the FIRST (live) one in the bundle');
+ok(CONNECT.indexOf('  var CLICKS = {}, MCLICKS = {};', ENGINE_AT + 1) < 0,
+  'a second Easy engine click registry is back in the bundle - this suite may be reading the wrong copy');
 
 /* ==========================================================================
  * 1.  DEFECT 1 - THE CLICK REGISTRY IS NEVER EMPTIED WITHOUT BEING REFILLED

@@ -59,6 +59,11 @@ assert(/requireExactScheduledBinding\(a, opts\.record \? 'recording' : 'note gen
 assert(canonical.includes("window.addEventListener('mls:session-boundary', resetEasySession)"), 'canonical owner lacks synchronous account reset');
 assert(canonical.includes('window.__mlsEasyV32 = api;'), 'canonical API is not claimed by its synchronous IIFE');
 
+/* b1303: the historical owners (Easy 3.4.1, 3.2.1, 3.1.1, 3.0 and the in-place
+   Easy 1.1.0) used to ship, each failing closed on a first-line return, and
+   this suite proved that return ran before any runtime access. They are now
+   deleted, which is the stronger form of the same guarantee: no historical
+   record/generate lineage exists to activate under any load timing. */
 const retired = [
   { version: "var VER = '3.4.1'", label: 'Easy 3.4.1' },
   { version: "var VER = '3.2.1'", label: 'Easy 3.2.1' },
@@ -66,46 +71,16 @@ const retired = [
   { version: "var VER = '3.0.0'", label: 'Easy 3.0' },
   { version: "var VERSION = '1.1.0'", label: 'in-place Easy' }
 ];
-
 for (const item of retired) {
-  const versionAt = source.indexOf(item.version, canonicalEnd);
-  assert(versionAt > canonicalEnd, `${item.label}: historical owner marker missing`);
-  const start = source.lastIndexOf('(function () {', versionAt);
-  assert(start > canonicalEnd, `${item.label}: historical IIFE start missing`);
-  const prefix = source.slice(start, versionAt);
-  const returnAt = prefix.indexOf('\n  return;');
-  assert(returnAt >= 0, `${item.label}: historical owner is still activatable`);
-  const firstGuard = Math.min(...[
-    prefix.indexOf('window.__mlsEasyV32'), prefix.indexOf('window.__mlsEasyV31'),
-    prefix.indexOf('window.__mlsEasyV3'), prefix.indexOf('window.__mlsEasyInplace'),
-    prefix.indexOf('document.'), prefix.indexOf('location.')
-  ].filter(index => index >= 0));
-  assert(firstGuard === Infinity || returnAt < firstGuard, `${item.label}: touches runtime state before failing closed`);
-
-  // Execute exactly the initial IIFE path against hostile globals. Any guard,
-  // DOM, storage, or timer access before the unconditional return throws.
-  const executablePrefix = source.slice(start, start + returnAt + '\n  return;'.length) + '\n})();';
-  const hostile = new Proxy({}, { get() { throw new Error(`${item.label} touched window`); } });
-  assert.doesNotThrow(() => vm.runInNewContext(executablePrefix, {
-    window: hostile,
-    document: new Proxy({}, { get() { throw new Error(`${item.label} touched document`); } }),
-    location: new Proxy({}, { get() { throw new Error(`${item.label} touched location`); } })
-  }), `${item.label}: unusual load timing activated historical code`);
+  const at = source.indexOf(item.version, canonicalEnd);
+  const ctx = at < 0 ? '' : source.slice(Math.max(0, at - 4000), at);
+  assert(at < 0 || !/Retired (historical|in-place) Easy/.test(ctx), `${item.label}: a retired Easy owner is back in the bundle`);
 }
 
 const lockStarts = [];
 let cursor = -1;
 while ((cursor = source.indexOf('function lockAndStart(a, opts)', cursor + 1)) >= 0) lockStarts.push(cursor);
-assert(lockStarts.length >= 5, 'expected historical lockAndStart lineages were not found');
-assert(lockStarts[0] > canonicalStart && lockStarts[0] < canonicalEnd, 'first action owner is not canonical Easy');
-for (const position of lockStarts.slice(1)) {
-  const enclosingRetired = retired.some(item => {
-    const versionAt = source.indexOf(item.version, canonicalEnd);
-    const start = source.lastIndexOf('(function () {', versionAt);
-    const end = source.indexOf('\n})();', versionAt);
-    return start >= 0 && end > start && position > start && position < end;
-  });
-  assert(enclosingRetired, `later lockAndStart at offset ${position} is not inside a fail-closed retired owner`);
-}
+assert.strictEqual(lockStarts.length, 1, 'exactly one record/generate lineage (the canonical owner) ships; found ' + lockStarts.length);
+assert(lockStarts[0] > canonicalStart && lockStarts[0] < canonicalEnd, 'the only action owner is not canonical Easy');
 
-console.log('PASS canonical Easy action ownership: the 3.7.3 owner is first and exact-gated; every later record/generate lineage returns before runtime/DOM access');
+console.log('PASS canonical Easy action ownership: the 3.7.3 owner is the only record/generate lineage in the bundle and it is exact-gated');

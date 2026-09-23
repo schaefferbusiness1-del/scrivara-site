@@ -759,10 +759,10 @@ for (const contract of boundedShellIntervals) {
 }
 const steadyShellIntervals = shellIntervals - boundedShellIntervals.length;
 
-const SHELL_OBSERVER_CEILING = 39;   // measured 2026-09-01: mls-connect.js 29 + ScribeFlow.html 10
-const SHELL_OBSERVER_FLOOR = 39;     // pin tight: only a deliberate, explained change may move either side
-const SHELL_INTERVAL_CEILING = 239; /* measured 2026-09-01 at b1177: 238 (noteq-1.1.0 warm-load poll added one); 2026-09-15 b1280: 239 - statetruth-1.0.1 gave the Calendar hero pull lane its 60 s ceiling interval, armed only on a manual pull press and cleared at the final settle (never steady-state on an idle tab) */  // measured 2026-09-01: mls-connect.js 188 + ScribeFlow.html 49
-const SHELL_INTERVAL_FLOOR = 237;
+const SHELL_OBSERVER_CEILING = 38;   // measured 2026-09-01: mls-connect.js 29 + ScribeFlow.html 10; 2026-09-23 b1303: 38 - five retired Easy owners (unreachable after their first-line return) deleted
+const SHELL_OBSERVER_FLOOR = 38;     // pin tight: only a deliberate, explained change may move either side
+const SHELL_INTERVAL_CEILING = 223; /* measured 2026-09-01 at b1177: 238 (noteq-1.1.0 warm-load poll added one); 2026-09-15 b1280: 239 - statetruth-1.0.1 gave the Calendar hero pull lane its 60 s ceiling interval, armed only on a manual pull press and cleared at the final settle (never steady-state on an idle tab); 2026-09-23 b1303: 223 - the five retired Easy owners deleted carried 16 of them, none reachable */  // measured 2026-09-01: mls-connect.js 188 + ScribeFlow.html 49
+const SHELL_INTERVAL_FLOOR = 221;
 
 if (shellObservers > SHELL_OBSERVER_CEILING) {
   failed = true;

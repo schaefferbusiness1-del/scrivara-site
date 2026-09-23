@@ -305,26 +305,14 @@ const ATTENTION_DAYS = ['2026-08-05', '2026-08-06', '2026-08-12', '2026-08-27'];
     'so an adopted job would hide the days the card is asking the doctor about');
   ok(/P\.failedDays\.push\(key\)/.test(sync), 'p1RangeSyncP no longer fills P.failedDays at all');
 
-  /* (ii) the three historical copies of the rule are DEAD, not variants */
+  /* (ii) the three historical copies of the rule were DEAD, not variants; they
+     sat in retired Easy owners that returned before installing, and b1303
+     deleted those owners. No copy of the old shape may come back. */
   const retired = CONNECT.split("var btnR = $('ez3PullRetry'); if (btnR) btnR.style.display = (!P.running && P.failedDays.length) ? '' : 'none';");
-  eq(retired.length - 1, 3,
-    `expected exactly 3 retired copies of the historical retry rule, found ${retired.length - 1} - ` +
-    'if a live site now carries that shape it is missing the durable branch');
-  ok(CONNECT.indexOf('SUPERSEDED - DEAD CODE, kept verbatim as the historical record') > 0,
-    'the record that says those copies are dead ("Fix those, never these") has been removed');
-  const owners = CONNECT.split('\n').reduce((acc, lineText, idx) => {
-    if (/^\(function \(\) \{$/.test(lineText)) acc.push(idx);
-    return acc;
-  }, []);
-  ok(owners.length > 0, 'no column-0 IIFE owners found, so the dead-code pin below would be vacuous');
+  eq(retired.length - 1, 0,
+    `found ${retired.length - 1} copies of the historical retry rule - a live site carrying that shape is missing the durable branch`);
   ['Retired historical Easy 3.4.1 owner', 'Retired historical Easy 3.2.1 owner', 'Retired historical Easy 3.1.1 owner']
-    .forEach((marker) => {
-      const at = CONNECT.indexOf(marker);
-      ok(at > 0, `the retired owner comment "${marker}" is gone`);
-      const after = CONNECT.slice(at, at + 400);
-      ok(/\n\s*return;\n/.test(after),
-        `"${marker}" no longer opens with an unconditional return - its copy of the retry rule is live again`);
-    });
+    .forEach((marker) => ok(CONNECT.indexOf(marker) < 0, `the retired owner "${marker}" is back in the bundle`));
 
   /* the live rule is where the card's other controls are decided */
   const counts = balanced(CONNECT, 'function pCounts()', 'pCounts');
