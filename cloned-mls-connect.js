@@ -22914,14 +22914,24 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     '.ez3-tx{background:rgba(0,0,0,.30);border:1px solid rgba(255,255,255,.10);border-radius:12px;',
       'padding:10px 12px;font-size:13px;color:#EAF1EE;max-height:118px;overflow-y:auto;white-space:pre-wrap;}',
     '.ez3-transcript-card{padding:14px 16px!important;}',
+    /* visitfix-1.0.0 (2026-09-23): the transcript card's text kept the old
+       dark panel's colours (#eef4ff, #C9DCD2, #fff) and read 1.0-1.3:1 on
+       today's light card. It now uses the light --ink value and the panel's
+       own muted label colour (the gradient block's LABEL). The card takes the
+       tint it already showed as an OPAQUE colour, because the theme-parity
+       layer (tp-1.0.0) flips only opaque light surfaces: under
+       body.theme-dark it maps this card to --surface and these colours to
+       --ink/--muted, where the translucent tint over #mlsEz3's white gradient
+       left that light text on white. */
+    '#mlsEz3 .ez3-card.ez3-transcript-card{background:#F5F8F6!important;}',
     '.ez3-transcript-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 8px;}',
-    '.ez3-transcript-head label{font-size:13px;font-weight:800;color:#eef4ff;}',
-    '.ez3-transcript-head span{font-size:11.5px;font-weight:650;color:#C9DCD2;text-align:right;}',
+    '.ez3-transcript-head label{font-size:13px;font-weight:800;color:#1A211C;}',
+    '.ez3-transcript-head span{font-size:11.5px;font-weight:650;color:#55605A;text-align:right;}',
     '.ez3-transcript{display:block;width:100%;min-height:142px;resize:vertical;background:#fff;color:#1A211C;',
       'border:1px solid rgba(255,255,255,.28);border-radius:12px;padding:12px 13px;font:14.5px/1.48 system-ui,-apple-system,"Segoe UI",sans-serif;}',
     '.ez3-transcript:focus{outline:none;border-color:#78b9a1;box-shadow:0 0 0 3px rgba(60,150,115,.22);}',
-    '.ez3-transcript-meta{display:flex;justify-content:space-between;gap:10px;margin-top:7px;color:#C9DCD2;font-size:11.5px;line-height:1.35;}',
-    '.ez3-transcript-meta strong{color:#fff;}',
+    '.ez3-transcript-meta{display:flex;justify-content:space-between;gap:10px;margin-top:7px;color:#55605A;font-size:11.5px;line-height:1.35;}',
+    '.ez3-transcript-meta strong{color:#1A211C;}',
     '.ez3-note{width:100%;min-height:320px;background:#f8fbff;color:#1E2B24;border:1px solid #EAF1EE;',
       'border-radius:12px;padding:14px;font-size:14.5px;line-height:1.5;font-family:inherit;}',
     '.ez3-note[readonly]{background:#eef4fe;}',
@@ -23049,6 +23059,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
        module drives them by id — hidden buttons stay clickable via JS) */
     '#captureCard,#noteCard,#emrCard,#outcomesCard{display:none!important;}',
     'body.ez3adv #noteCard,body.ez3adv #emrCard,body.ez3adv #outcomesCard{display:block!important;}',
+    /* visitfix-1.0.0 (2026-09-23): the redesign's visit grid is three columns
+       (capture | note | EMR). With #captureCard hidden above, #noteCard fell
+       into column 1 - a 383px strip with 819px empty beside it at 1400px. The
+       engine cards that can still show take the whole row instead. */
+    '#visitView .mlsRdVisitGrid>#noteCard,#visitView .mlsRdVisitGrid>#emrCard{grid-column:1 / -1!important;}',
     'body.ez3adv #noteCard button[onclick*="generateNote"],body.ez3adv #noteCard button[onclick*="regenerateNote"],body.ez3adv #noteCard .ne-regen{display:none!important;}',
     /* onenote-1.2.0: ONE NOTE ON THE SCREEN - AND NEVER ZERO.
        The rule above shows #noteCard while the review workspace is open, and
@@ -25734,27 +25749,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         }
       }
     } else { /* idle / stopped */
-      var stopped = S.phase === 'stopped';
       var tx = ($('transcript') && $('transcript').value) || '';
-      if (stopped || tx.trim().length) {
-        /* gcx-1.0.0: the `disabled` attribute is GONE on purpose. A disabled
-           button eats the click and explains nothing, which is exactly the
-           dead-click the owner reported. syncGenGateUi() (run by syncTx() at
-           the end of this same render, and again on every keystroke) paints
-           the blocked skin, aria-disabled, the tooltip and this <small>. */
-        h += '<button type="button" class="ez3-big" id="ez3Gen">✨ Generate one note' +
-             '<small>' + (tx.trim().length ? GEN_READY_HINT : GEN_NO_TEXT_HINT) + '</small></button>' +
-             '<div class="ez3-row2"><button type="button" class="ez3-sm pri" id="ez3Rec2">🎙 Resume recording</button></div>';
-      } else {
-        /* b940: the patient name comes OFF this button. The visit workspace
-           already names the patient in the banner immediately above, and
-           .ez3-big small renders display:block - so the name became its own
-           line and read as a duplicate Start Recording pill above the stage
-           rail, which the owner reported twice. The HOME screen buttons keep
-           the name on purpose: no banner there, and the onboarding teaches
-           that exact label. */
-        h += '<button type="button" class="ez3-big" id="ez3Rec">🎙 Start Recording</button>';
-      }
+      h += idlePrimaryHtml(S.phase === 'stopped', !!tx.trim().length);
     }
 
     if (a) h += visitQuickToolsHtml();
@@ -26072,6 +26068,40 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         try { txReal.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {}
         syncTx();
       };
+      /* visitfix-1.1.0 (2026-09-23): a box left stale while nobody was in it
+         is brought up to date as the doctor enters it, before the first key.
+         The merge above read a stale EMPTY box as "all of #transcript is new
+         speech" and wrapped the whole transcript around the caret
+         ("DAlso reports numbness.octor: ..."). Only a box holding nothing but
+         the last agreed text is refreshed - never an edit of the doctor's.
+         An empty box is refreshed at once (there is no spot in it to keep;
+         the caret goes to the end). A box that shows older text is refreshed
+         just after the tap has placed the caret, and the caret is kept at
+         that spot: changing the text inside the focus event made a phone
+         drop the tapped spot. The merge already handles a key typed first. */
+      var refreshStaleTx = function (atEnd) {
+        /* visitfix-1.1.0: never rewrite the box while a keyboard composition is open in it */
+        if (typeof txComposingIn !== 'undefined' && txComposingIn === txTop) return;
+        var v = txReal.value || '', old = txTop.value, mirror = window.__mlsTxMirror;
+        if (old === v) return;
+        var base = mirror ? mirror.baseOf(txTop) : null;
+        if (base != null && old !== base) return;
+        var s = null, e = null;
+        try { s = txTop.selectionStart; e = txTop.selectionEnd; } catch (e0) {}
+        if (mirror) mirror.set(txTop, v); else txTop.value = v;
+        try {
+          if (atEnd) txTop.setSelectionRange(v.length, v.length);
+          else if (s != null) txTop.setSelectionRange(caretAfterRefresh(old, v, s), caretAfterRefresh(old, v, e == null ? s : e));
+        } catch (e1) {}
+        syncTx();
+        /* the text now on screen decides Start Recording or Generate - swapped, never re-rendered, under a focused box */
+        if (S.phase === 'idle' && !!v.trim() !== !!$('ez3Gen')) { try { swapIdlePrimary(!!v.trim()); } catch (e2) {} }
+      };
+      txTop.onfocus = function () {
+        if (txTop.value === (txReal.value || '')) return;
+        if (!txTop.value) { refreshStaleTx(true); return; }
+        setTimeout(function () { if (document.activeElement === txTop) refreshStaleTx(false); }, 0);
+      };
     }
     /* note-style chips as HTML with data-chip — resolved at click time */
     var chipHost = $('ez3StyleChips');
@@ -26108,6 +26138,66 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       }
     }
     syncTx();
+  }
+
+  /* The idle / stopped room's primary control. visitfix-1.1.0 (2026-09-23):
+     one builder, shared by renderDoctor() and swapIdlePrimary(), so the
+     control swapped in while the doctor types is the one a render paints. */
+  function idlePrimaryHtml(stopped, hasText) {
+    if (stopped || hasText) {
+      /* gcx-1.0.0: the `disabled` attribute is GONE on purpose. A disabled
+         button eats the click and explains nothing, which is exactly the
+         dead-click the owner reported. syncGenGateUi() (run by syncTx() at
+         the end of this same render, and again on every keystroke) paints
+         the blocked skin, aria-disabled, the tooltip and this <small>. */
+      return '<button type="button" class="ez3-big" id="ez3Gen">✨ Generate one note' +
+             '<small>' + (hasText ? GEN_READY_HINT : GEN_NO_TEXT_HINT) + '</small></button>' +
+             '<div class="ez3-row2"><button type="button" class="ez3-sm pri" id="ez3Rec2">🎙 Resume recording</button></div>';
+    }
+    /* b940: the patient name comes OFF this button. The visit workspace
+       already names the patient in the banner immediately above, and
+       .ez3-big small renders display:block - so the name became its own
+       line and read as a duplicate Start Recording pill above the stage
+       rail, which the owner reported twice. The HOME screen buttons keep
+       the name on purpose: no banner there, and the onboarding teaches
+       that exact label. */
+    return '<button type="button" class="ez3-big" id="ez3Rec">🎙 Start Recording</button>';
+  }
+  /* visitfix-1.1.0 (2026-09-23): while the doctor is in the phone box, swap
+     ONLY Start Recording <-> Generate. render() would take the focused box
+     out of the page and put it back, and that commits an IME composition
+     half-way: composing "Patient" into the empty box saved "PPatient". The
+     box, its caret and its composition stay untouched here. The clicks stay
+     live because the click registry resolves ez3Gen / ez3Rec by id. */
+  function swapIdlePrimary(wantGen) {
+    var w = wrap(), old = $('ez3Gen') || $('ez3Rec');
+    if (!w || !old || !old.parentNode || !w.contains(old)) return false;
+    var parent = old.parentNode, gone = [old];
+    if (old.id === 'ez3Gen') {
+      var r2 = $('ez3Rec2'), row = r2 && r2.parentNode;
+      if (row && row.parentNode === parent && row.classList && row.classList.contains('ez3-row2')) gone.push(row);
+    }
+    var tmp = document.createElement('div');
+    tmp.innerHTML = idlePrimaryHtml(S.phase === 'stopped', wantGen);
+    while (tmp.firstChild) parent.insertBefore(tmp.firstChild, old);
+    gone.forEach(function (n) { if (n.parentNode) n.parentNode.removeChild(n); });
+    w.__ez3H = null; /* the room no longer matches the cached html: the next render repaints it */
+    try { syncGenGateUi(); } catch (e) {}
+    return true;
+  }
+
+  /* visitfix-1.1.0 (2026-09-23): where a caret at offset n of the old box
+     text belongs in the refreshed text. Text before the change keeps its
+     offset and text after it keeps its distance from the end, so a stale box
+     that only lacked appended words keeps the caret exactly where it was. */
+  function caretAfterRefresh(oldText, newText, n) {
+    var pre = 0, max = Math.min(oldText.length, newText.length);
+    while (pre < max && oldText.charCodeAt(pre) === newText.charCodeAt(pre)) pre++;
+    if (n <= pre) return n;
+    var suf = 0;
+    while (suf < max - pre && oldText.charCodeAt(oldText.length - 1 - suf) === newText.charCodeAt(newText.length - 1 - suf)) suf++;
+    if (n >= oldText.length - suf) return newText.length - (oldText.length - n);
+    return newText.length - suf;
   }
 
   function syncTx() {
@@ -28164,6 +28254,48 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function escClose(ev) { if (ev.key === 'Escape' && $('ez3Confirm')) closeConfirm(); }
   document.addEventListener('keydown', escClose, true);
   cleanup.push(function () { document.removeEventListener('keydown', escClose, true); });
+
+  /* visitfix-1.1.0 (2026-09-23): on a phone the room's #ez3Transcript is the
+     ONLY transcript box and #ez3Gen the only Generate, but the box was filled
+     and Generate built only when render() ran - and render() runs on presses.
+     So "Type or paste visit notes" > "Use these visit notes" toasted
+     "Transcript added to this visit." over an empty box reading "0 words
+     captured" beside Start Recording, and a transcript typed straight into
+     the box never offered Generate. Every writer of the real transcript fires
+     `input` on it; follow that: refresh the box and its count, and switch the
+     idle room's primary control between Start Recording and Generate.
+     While the doctor is in the box (focused, or an IME composition is open)
+     nothing re-renders: only that one control is swapped, so the box is never
+     moved and a composing keyboard (Android, CJK) never commits half a word.
+     Only while that box is on screen - on desktop the flow lane owns both. */
+  var txComposingIn = null;
+  function onTxComposition(ev) {
+    var t = ev && ev.target;
+    if (t && t.id === 'ez3Transcript') txComposingIn = ev.type === 'compositionstart' ? t : null;
+  }
+  function onRealTranscriptInput(ev) {
+    var t = ev && ev.target;
+    if (!t || t.id !== 'transcript' || S.mode !== 'doctor' || S.screen !== 'doctor' || !S.appt) return;
+    if (S.phase !== 'idle' && S.phase !== 'stopped') return;
+    var box = $('ez3Transcript');
+    if (!box || !box.getClientRects().length) return;
+    var editing = document.activeElement === box || txComposingIn === box;
+    var wantGen = S.phase === 'stopped' || !!String(t.value || '').trim();
+    if (wantGen !== !!$('ez3Gen')) {
+      if (editing) { try { swapIdlePrimary(wantGen); } catch (e) {} }
+      else { try { render(); } catch (e1) {} return; }
+    }
+    /* the box's own oninput fired this event and syncs right after it */
+    if (!editing) { try { syncTx(); } catch (e2) {} }
+  }
+  var TX_COMPOSE_EVENTS = ['compositionstart', 'compositionend', 'focusout'];
+  TX_COMPOSE_EVENTS.forEach(function (n) { document.addEventListener(n, onTxComposition, true); });
+  document.addEventListener('input', onRealTranscriptInput, true);
+  cleanup.push(function () {
+    TX_COMPOSE_EVENTS.forEach(function (n) { document.removeEventListener(n, onTxComposition, true); });
+    document.removeEventListener('input', onRealTranscriptInput, true);
+    txComposingIn = null;
+  });
 
   function resetEasySession() {
     try { if (P) cancelPullRun(); } catch (e0) {}

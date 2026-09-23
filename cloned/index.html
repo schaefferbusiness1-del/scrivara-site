@@ -10503,6 +10503,10 @@ function swOnSessionStart(email){
       /* a DIFFERENT clinician unlocked this computer: the held draft is not
          theirs to see, and uns() is about to point somewhere else anyway. */
       try{ sessionStorage.removeItem('sf_u::'+String(rec.email)+'::visitDraft'); }catch(e){}
+      /* visitfix-1.1.0 (2026-09-23): the set-aside drafts and the per-patient
+         stash hold that clinician's unsaved visit text too */
+      try{ sessionStorage.removeItem('sf_u::'+String(rec.email)+'::visitDraftAside'); }catch(e){}
+      try{ sessionStorage.removeItem('sf_u::'+String(rec.email)+'::visitDraftByPt'); }catch(e){}
     }
   }catch(e){}
   swClearLock();
@@ -11523,20 +11527,123 @@ function _saveVisitDraft(){
     var t=(document.getElementById('transcript')||{}).value||'';
     var soap=(typeof currentSoap!=='undefined'?currentSoap:'')||'';
     var ins=(typeof currentInsurance!=='undefined'?currentInsurance:'')||'';
-    if(!String(t).trim() && !String(soap).trim() && !String(ins).trim()) return;
+    /* visitfix-1.1.0 (2026-09-23): orders travel with the draft, so a New
+       visit that could not save them (an incomplete order, another patient's
+       editor) keeps them here instead of clearing the only copy. */
+    var ord=[], ordDx=null;
+    try{ if(Array.isArray(currentOrders)&&currentOrders.length){ ord=currentOrders.slice(); ordDx=(typeof ordersDx!=='undefined'&&ordersDx)?ordersDx:null; } }catch(eOrd){}
+    if(!String(t).trim() && !String(soap).trim() && !String(ins).trim() && !ord.length) return;
+    /* visitfix-1.1.0: a restore offer still on screen names the draft this
+       write is about to replace. Keep that draft aside first. */
+    try{ if(typeof _mlsSetAsideVisitOffer==='function') _mlsSetAsideVisitOffer('new-work'); }catch(eAside){}
     var binding=(typeof currentVisitAthenaBinding!=='undefined'&&currentVisitAthenaBinding)?currentVisitAthenaBinding:null;
     var bindingCopy=binding?{patient:binding.patient||null,source:binding.source||'',historical:binding.historical===true,identityConflict:binding.identityConflict===true,routeBlocked:binding.routeBlocked===true,visitContext:binding.visitContext||null,noteTimestamp:binding.noteTimestamp||null,displayDate:binding.displayDate||'',displayProvider:binding.displayProvider||''}:null;
-    sessionStorage.setItem(_visitDraftKey(), JSON.stringify({ t:t, soap:soap, ins:ins, context:(document.getElementById('contextBox')||{}).value||'', visitComment:(document.getElementById('visitComment')||{}).value||'', fmt:(typeof currentFormat!=='undefined'?currentFormat:'soap'), noteProvenance:(typeof currentNoteProvenance==='string'&&/^(typed|saved|generated_soap|edited_generated_soap|generated_nonsoap)$/.test(currentNoteProvenance))?currentNoteProvenance:'typed', athenaNote:(typeof currentAthenaNote==='string'?currentAthenaNote:''), athenaNoteProvenance:(typeof currentAthenaNoteProvenance==='string'&&/^(none|generated|edited|stale)$/.test(currentAthenaNoteProvenance))?currentAthenaNoteProvenance:'none', athenaNoteSourceFingerprint:(typeof currentAthenaNoteSourceFingerprint==='string'?currentAthenaNoteSourceFingerprint:''), noteAdvisory:((typeof _mlsVisitNoteAdvisoryRecord==='function')?_mlsVisitNoteAdvisoryRecord():null), pt:(document.getElementById('patientLabel')||{}).value||'', ptId:(bindingCopy&&bindingCopy.patient&&bindingCopy.patient.patientId)||(typeof getActivePtId==='function'?(getActivePtId()||''):''), ts:Date.now(), athenaBinding:bindingCopy, athenaCompromised:(typeof currentVisitAthenaCompromised!=='undefined'&&currentVisitAthenaCompromised===true) }));
+    /* visitfix-1.1.0: with no binding, text that the owner gate still holds
+       for the PREVIOUS patient (visitowner's editor owner) is that patient's
+       draft. Stamp their id and name, not the chart open now, so the offer
+       says "Open <them>" instead of restoring it onto the wrong chart. */
+    var activePt=(typeof getActivePtId==='function'?(getActivePtId()||''):''), ownerPt='';
+    try{ ownerPt=(!bindingCopy&&typeof window!=='undefined'&&window.__mlsVisitEditorOwnerId)?String(window.__mlsVisitEditorOwnerId):''; }catch(eOwner){}
+    var foreignOwner=!!(ownerPt&&activePt&&ownerPt!==activePt);
+    var ptLabel=(document.getElementById('patientLabel')||{}).value||'';
+    if(foreignOwner){ try{ var ownerRec=(typeof findPatient==='function')?findPatient(ownerPt):null; if(ownerRec&&ownerRec.name) ptLabel=String(ownerRec.name); }catch(eOwnerName){} }
+    var draft={ t:t, soap:soap, ins:ins, context:(document.getElementById('contextBox')||{}).value||'', visitComment:(document.getElementById('visitComment')||{}).value||'', fmt:(typeof currentFormat!=='undefined'?currentFormat:'soap'), noteProvenance:(typeof currentNoteProvenance==='string'&&/^(typed|saved|generated_soap|edited_generated_soap|generated_nonsoap)$/.test(currentNoteProvenance))?currentNoteProvenance:'typed', athenaNote:(typeof currentAthenaNote==='string'?currentAthenaNote:''), athenaNoteProvenance:(typeof currentAthenaNoteProvenance==='string'&&/^(none|generated|edited|stale)$/.test(currentAthenaNoteProvenance))?currentAthenaNoteProvenance:'none', athenaNoteSourceFingerprint:(typeof currentAthenaNoteSourceFingerprint==='string'?currentAthenaNoteSourceFingerprint:''), noteAdvisory:((typeof _mlsVisitNoteAdvisoryRecord==='function')?_mlsVisitNoteAdvisoryRecord():null), pt:ptLabel, ptId:(bindingCopy&&bindingCopy.patient&&bindingCopy.patient.patientId)||(foreignOwner?ownerPt:activePt), ts:Date.now(), athenaBinding:bindingCopy, athenaCompromised:(typeof currentVisitAthenaCompromised!=='undefined'&&currentVisitAthenaCompromised===true) };
+    if(ord.length){ draft.orders=ord; draft.ordersDx=ordDx; }
+    sessionStorage.setItem(_visitDraftKey(), JSON.stringify(draft));
   }catch(e){}
 }
-function _wipeVisitDraft(){ if(_visitDraftTimer){ clearTimeout(_visitDraftTimer); _visitDraftTimer=null; } _visitDirty=false; try{ sessionStorage.removeItem(_visitDraftKey()); }catch(e){} var b=document.getElementById('_visitRestoreBar'); if(b) b.remove(); }
-function _markVisitDirty(){ _visitDirty=true; if(_visitDraftTimer) clearTimeout(_visitDraftTimer); _visitDraftTimer=setTimeout(_saveVisitDraft, 800); }
+function _wipeVisitDraft(){ if(_visitDraftTimer){ clearTimeout(_visitDraftTimer); _visitDraftTimer=null; } _visitDirty=false; /* visitfix-1.1.0: an offered draft is deleted only by its own Discard */ try{ if(typeof _mlsSetAsideVisitOffer==='function') _mlsSetAsideVisitOffer('wipe'); }catch(eAside){} try{ sessionStorage.removeItem(_visitDraftKey()); }catch(e){} var b=document.getElementById('_visitRestoreBar'); if(b) b.remove(); }
+function _markVisitDirty(){ _visitDirty=true; /* visitfix-1.1.0: new work on screen retires a restore offer (its draft is kept aside) */ try{ if(document.getElementById('_visitRestoreBar')&&typeof _mlsSetAsideVisitOffer==='function'&&typeof _mlsVisitEditorHasText==='function'&&_mlsVisitEditorHasText()) _mlsSetAsideVisitOffer('new-work'); }catch(eAside){} if(_visitDraftTimer) clearTimeout(_visitDraftTimer); _visitDraftTimer=setTimeout(_saveVisitDraft, 800); }
+/* visitfix-1.1.0 (2026-09-23): THE RESTORE OFFER NEVER OUTLIVES THE DRAFT IT
+ * NAMES. Measured on the 1.0.0 build: reload, the offer shows ("unsaved visit
+ * for Ada Sample from 6:50 PM"), the doctor ignores it and pastes new notes.
+ * The autosave then replaced the named draft in the one slot while the offer
+ * stayed up, so its Restore brought back the NEW text, and its Discard deleted
+ * the current visit's autosave and cleared _visitDirty (the leave-page
+ * warning). The next reload lost the current notes with no warning.
+ * Now the offer remembers the exact draft it names (bar.__mlsDraftRaw). As soon
+ * as other work reaches the editor, or anything would overwrite or wipe the
+ * slot, that draft moves to its own key in this tab and the offer is retired.
+ * It is offered again once the Visit screen is empty (the next New visit).
+ * Discard deletes only the draft it names, never the draft of the visit on
+ * screen, and leaves the leave-page warning alone. Nothing here touches
+ * History. */
+function _visitDraftAsideKey(){ return uns('visitDraftAside'); }
+function _mlsVisitEditorHasText(){
+  try{
+    if(String((document.getElementById('transcript')||{}).value||'').trim()) return true;
+    if(String((document.getElementById('noteBox')||{}).value||'').trim()) return true;
+    if(typeof currentSoap!=='undefined'&&String(currentSoap||'').trim()) return true;
+    if(typeof currentInsurance!=='undefined'&&String(currentInsurance||'').trim()) return true;
+  }catch(e){}
+  try{ if(Array.isArray(currentOrders)&&currentOrders.length) return true; }catch(e2){}
+  return false;
+}
+/* true when this stored draft IS the visit on screen (its own autosave) */
+function _mlsDraftIsOnScreen(raw){
+  try{
+    var d=JSON.parse(raw||'null'); if(!d) return false;
+    var tr=String((document.getElementById('transcript')||{}).value||''), soap=String((typeof currentSoap!=='undefined'?currentSoap:'')||'');
+    return !!(tr.trim()||soap.trim())&&String(d.t||'')===tr&&String(d.soap||'')===soap;
+  }catch(e){ return false; }
+}
+function _mlsSetAsideVisitOffer(reason){
+  var bar=null; try{ bar=document.getElementById('_visitRestoreBar'); }catch(e0){}
+  if(!bar) return false;
+  var raw=String(bar.__mlsDraftRaw||''), label=String(bar.__mlsDraftLabel||'');
+  try{ bar.remove(); }catch(eRm){}
+  if(!raw) return false;
+  var kept=false;
+  try{
+    var k=_visitDraftAsideKey(), list=[];
+    try{ list=JSON.parse(sessionStorage.getItem(k)||'[]'); }catch(eParse){ list=[]; }
+    if(!Array.isArray(list)) list=[];
+    if(list.indexOf(raw)<0) list.push(raw);
+    sessionStorage.setItem(k, JSON.stringify(list));
+    kept=true;
+    /* the slot is about to hold other work: it stops offering this draft too */
+    if(sessionStorage.getItem(_visitDraftKey())===raw) sessionStorage.removeItem(_visitDraftKey());
+  }catch(eKeep){}
+  if(reason==='wipe') return kept;   /* New visit / Save / sign-out: the empty screen offers it again */
+  try{
+    if(typeof toast==='function') toast((reason==='stale'?'Nothing was changed: the Visit screen already has other work in it. ':'')+
+      (kept?('The earlier unsaved visit'+label+' is kept in this tab. MLS offers it again when you start your next visit.')
+           :('The earlier unsaved visit'+label+' could not be kept: this browser has no room left for it.')), (kept&&reason!=='stale')?'':'err');
+  }catch(eSay){}
+  return kept;
+}
+/* the most recent draft kept aside goes back into the slot, ready to offer */
+function _mlsTakeAsideVisitDraft(){
+  try{
+    var k=_visitDraftAsideKey(), list=JSON.parse(sessionStorage.getItem(k)||'[]');
+    if(!Array.isArray(list)||!list.length) return '';
+    var raw=String(list.pop()||''); if(!raw) return '';
+    sessionStorage.setItem(_visitDraftKey(), raw);
+    if(list.length) sessionStorage.setItem(k, JSON.stringify(list)); else sessionStorage.removeItem(k);
+    return raw;
+  }catch(e){ return ''; }
+}
 function _maybeRestoreVisitDraft(){
   try{
-    if((document.getElementById('transcript')||{}).value) return; // don't clobber current work
-    if(document.getElementById('_visitRestoreBar')) return;
-    var raw=sessionStorage.getItem(_visitDraftKey()); if(!raw) return;
-    var d=JSON.parse(raw); if(!d || (!String(d.t||'').trim() && !String(d.soap||'').trim())) return;
+    var old=document.getElementById('_visitRestoreBar');
+    /* visitfix-1.1.0: any work on screen (not only a transcript) means no
+       offer, and an offer still up is retired with its draft kept aside. */
+    var busy=!!(document.getElementById('transcript')||{}).value || ((typeof _mlsVisitEditorHasText==='function')&&_mlsVisitEditorHasText());
+    if(busy){ if(old&&typeof _mlsSetAsideVisitOffer==='function') _mlsSetAsideVisitOffer('new-work'); return; } // don't clobber current work
+    var raw=sessionStorage.getItem(_visitDraftKey());
+    /* visitfix-1.1.0: nothing waiting in the slot - offer a draft kept aside */
+    if(!raw&&typeof _mlsTakeAsideVisitDraft==='function') raw=_mlsTakeAsideVisitDraft();
+    var curActive=''; try{curActive=(typeof getActivePtId==='function')?String(getActivePtId()||''):'';}catch(eCur){}
+    /* visitfix-1.1.0: an offer already on screen is RE-CHECKED on every call
+       (every showView('visit')) instead of returning early: it must still name
+       the draft in the slot for the patient open now, and sit where the doctor
+       works. A stale one is rebuilt below. */
+    if(old){
+      if(raw&&old.__mlsDraftRaw===raw&&old.__mlsActiveId===curActive){ _placeVisitRestoreBar(old); return; }
+      try{ old.remove(); }catch(eOld){}
+    }
+    if(!raw) return;
+    var d=JSON.parse(raw); if(!d || (!String(d.t||'').trim() && !String(d.soap||'').trim() && !(Array.isArray(d.orders)&&d.orders.length))) return;
     var when=d.ts?(' from '+new Date(d.ts).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})):'';
     /* Name the draft's patient, and never invite a restore onto a DIFFERENT
        active patient: the single per-user draft slot survives patient
@@ -11546,20 +11653,68 @@ function _maybeRestoreVisitDraft(){
     var draftPtId=String(d.ptId||'').trim();
     var activeId=''; try{activeId=(typeof getActivePtId==='function')?String(getActivePtId()||''):'';}catch(eA){}
     var mismatch=!!(draftPtId&&activeId&&draftPtId!==activeId);
+    var ordersOnly=!String(d.t||'').trim()&&!String(d.soap||'').trim();
     var bar=document.createElement('div'); bar.id='_visitRestoreBar';
     bar.style.cssText='background:#fff7e6;border:1px solid #f0d9a0;border-radius:10px;padding:10px 12px;margin:0 0 10px;font-size:13px;color:#8a5a00;display:flex;align-items:center;gap:10px;flex-wrap:wrap';
+    /* visitfix-1.1.0: the offer is bound to the exact draft it names */
+    bar.__mlsDraftRaw=raw; bar.__mlsActiveId=curActive; bar.__mlsDraftLabel=(draftName?(' for '+draftName):'')+when;
     var lead=document.createElement('span');
-    lead.textContent='💾 You have an unsaved visit'+(draftName?(' for '+draftName):'')+when+(mismatch?'. It belongs to a different patient than the one open now.':'.');
+    lead.textContent='💾 You have '+(ordersOnly?'unsaved orders':'an unsaved visit')+(draftName?(' for '+draftName):'')+when+(mismatch?'. It belongs to a different patient than the one open now.':'.');
     bar.appendChild(lead);
     var act=document.createElement('button'); act.className='btn-primary'; act.style.cssText='font-size:12px;padding:5px 11px';
-    if(mismatch){ act.textContent='Open '+(draftName||'that patient'); act.onclick=function(){ _openVisitDraftPatient(); }; }
-    else { act.textContent='Restore it'; act.onclick=function(){ _restoreVisitDraft(); }; }
+    if(mismatch){ act.textContent='Open '+(draftName||'that patient'); act.onclick=function(){ if(_mlsVisitOfferStillCurrent(bar)) _openVisitDraftPatient(); }; }
+    else { act.textContent='Restore it'; act.onclick=function(){ if(_mlsVisitOfferStillCurrent(bar)) _restoreVisitDraft(); }; }
     bar.appendChild(act);
     var dis=document.createElement('button'); dis.className='btn-ghost'; dis.style.cssText='font-size:12px;padding:5px 11px';
     dis.textContent='Discard'; dis.onclick=function(){ _dismissVisitRestore(); };
     bar.appendChild(dis);
-    var host=document.getElementById('transcript'); if(host && host.parentNode){ host.parentNode.insertBefore(bar, host); }
+    _placeVisitRestoreBar(bar);
   }catch(e){}
+}
+/* visitfix-1.1.0 (2026-09-23): WHERE THE OFFER GOES, decided every time it is
+   shown and kept true afterwards. The guided workspace (#mlsEz3) hides
+   #captureCard, so the old spot beside #transcript was inside a display:none
+   card. The 1.0.0 fix read #captureCard's display once, when the bar was
+   built - but on a real signed-in reload startSession() shows the visit about
+   0.8 s in, before cloned-mls-connect.js has loaded and hidden the card, so the bar
+   still went inside it and never moved (measured on desktop and phone). Now the
+   bar always sits at the top of #visitView: right above the workspace
+   (#mlsEz3) when it is mounted, else above the classic hero, and a watcher on
+   #visitView's children moves it there again when the workspace mounts later.
+   No other module claims "just above the workspace", so nothing fights it. */
+function _placeVisitRestoreBar(bar){
+  try{
+    if(!bar) return;
+    var vv=document.getElementById('visitView');
+    if(!vv){
+      var host=document.getElementById('transcript');
+      if(host&&host.parentNode&&bar.nextSibling!==host) host.parentNode.insertBefore(bar, host);
+      return;
+    }
+    var ez=document.getElementById('mlsEz3'), hero=document.getElementById('visitHero');
+    var target=(ez&&ez.parentNode===vv)?ez:((hero&&hero.parentNode===vv)?hero:vv.firstElementChild);
+    if(target!==bar&&!(bar.parentNode===vv&&bar.nextElementSibling===target)) vv.insertBefore(bar, target||null);
+    if(!bar.__mlsPlaceWatch&&typeof MutationObserver==='function'){
+      bar.__mlsPlaceWatch=new MutationObserver(function(){
+        if(!bar.isConnected){ try{ bar.__mlsPlaceWatch.disconnect(); }catch(eDc){} bar.__mlsPlaceWatch=null; return; }
+        _placeVisitRestoreBar(bar);
+      });
+      bar.__mlsPlaceWatch.observe(vv,{childList:true});
+    }
+  }catch(e){}
+}
+/* visitfix-1.1.0: a press on the offer acts only while it still names the
+   draft in the slot and the Visit screen is still empty; otherwise the named
+   draft is kept aside, nothing is restored, and the offer is rebuilt. */
+function _mlsVisitOfferStillCurrent(bar){
+  try{
+    var cur=sessionStorage.getItem(_visitDraftKey());
+    var busy=(typeof _mlsVisitEditorHasText==='function')&&_mlsVisitEditorHasText();
+    if(bar&&bar.__mlsDraftRaw&&cur===bar.__mlsDraftRaw&&!busy) return true;
+    if(typeof _mlsSetAsideVisitOffer==='function') _mlsSetAsideVisitOffer('stale'); else if(bar&&bar.remove) bar.remove();
+    try{ _maybeRestoreVisitDraft(); }catch(eRe){}
+    return false;
+  }catch(e){ return true; }
 }
 function _openVisitDraftPatient(){
   try{
@@ -11580,6 +11735,9 @@ function _restoreVisitDraft(){
     var _dpid=String(d.ptId||'').trim(), _aid='';
     try{_aid=(typeof getActivePtId==='function')?String(getActivePtId()||''):'';}catch(eG){}
     if(_dpid&&_aid&&_dpid!==_aid){ try{ toast('That unsaved visit belongs to '+String(d.pt||'another patient')+'. Open their chart to restore it; nothing was changed.','err'); }catch(eT){} return; }
+    /* visitfix-1.1.0: the offer goes first, so nothing the restore triggers
+       can mistake the restored text for new work and keep a second copy aside */
+    try{ var ob=document.getElementById('_visitRestoreBar'); if(ob) ob.remove(); }catch(eOb){}
     var tx=document.getElementById('transcript'); if(tx) tx.value=d.t||'';
     if(typeof finalText!=='undefined') finalText=d.t||'';
     if(typeof currentSoap!=='undefined') currentSoap=d.soap||'';
@@ -11600,12 +11758,26 @@ function _restoreVisitDraft(){
     if(typeof _mlsRestoreAthenaState==='function') _mlsRestoreAthenaState(d);
     /* noteadv-1.0.0: the lines to check come back with the note they belong to. */
     try{ if(typeof _mlsRestoreVisitNoteAdvisory==='function') _mlsRestoreVisitNoteAdvisory(d); }catch(eNoteAdvDraft){}
+    /* visitfix-1.1.0: orders kept with the draft come back with it */
+    try{ if(Array.isArray(d.orders)&&d.orders.length){ currentOrders=d.orders.slice(); if(d.ordersDx&&typeof d.ordersDx==='object') ordersDx={text:d.ordersDx.text||'',icd:d.ordersDx.icd||[]}; if(typeof renderVisitOrders==='function') renderVisitOrders(); } }catch(eOrders){}
     var b=document.getElementById('_visitRestoreBar'); if(b) b.remove();
     _visitDirty=true;
     try{ toast('Restored your unsaved visit.','ok'); }catch(e){}
   }catch(e){ try{ toast('Could not restore the draft.','err'); }catch(_){} }
 }
-function _dismissVisitRestore(){ _wipeVisitDraft(); }
+function _dismissVisitRestore(){
+  /* visitfix-1.1.0 (2026-09-23): Discard deletes the draft THIS offer names
+     and nothing else. It used to be _wipeVisitDraft(), which removed whatever
+     the slot held by then - after the doctor had started new work, that was
+     the current visit's autosave - and cleared _visitDirty, the leave-page
+     warning. The warning and the current visit's draft are never touched. */
+  var bar=null; try{ bar=document.getElementById('_visitRestoreBar'); }catch(e0){}
+  var raw=bar?String(bar.__mlsDraftRaw||''):'';
+  try{ if(bar) bar.remove(); }catch(eRm){}
+  try{ if(raw&&sessionStorage.getItem(_visitDraftKey())===raw&&!_mlsDraftIsOnScreen(raw)) sessionStorage.removeItem(_visitDraftKey()); }catch(eDel){}
+  /* a draft kept aside earlier in this tab gets its own offer next */
+  try{ _maybeRestoreVisitDraft(); }catch(eNext){}
+}
 /* "What's next" — a connected next-step prompt after a note is saved/signed,
    so finishing a visit flows straight into the next action instead of a dead end. */
 function _showNextActions(kind){
@@ -18374,7 +18546,8 @@ function calStartVisit(id){
       var _active=(typeof activePatient==='function')?activePatient():null;
       if(_active&&String(_active.id||'')===String(_localPid)&&typeof goNewVisitForPatient==='function'){
         goNewVisitForPatient();
-        try{ toast('Started a visit for '+_calLabelOf(a)+'.','ok'); }catch(e){}
+        /* visitfix-1.1.0: keeps what New visit said about the unfinished note */
+        try{ (typeof _mlsNewVisitToast==='function'?_mlsNewVisitToast:toast)('Started a visit for '+_calLabelOf(a)+'.','ok'); }catch(e){}
         return {ok:true,bound:true,patientId:String(_localPid),reason:'exact-patient'};
       }
     }
@@ -18401,7 +18574,7 @@ function calStartVisit(id){
   if(!_started) return {ok:false,bound:false,patientId:'',reason:'visit-start-failed'};
   try{ var pl=document.getElementById('patientLabel'); if(pl) pl.value=_calLabelOf(a); }catch(e){}
   try{ var cb=document.getElementById('contextBox'); if(cb && a.reason) cb.value=(cb.value?cb.value+'\n':'')+'Reason for visit: '+a.reason; }catch(e){}
-  try{ toast('Started a visit for '+_calLabelOf(a)+' — dictate or paste, then Generate.','ok'); }catch(e){}
+  try{ (typeof _mlsNewVisitToast==='function'?_mlsNewVisitToast:toast)('Started a visit for '+_calLabelOf(a)+' — dictate or paste, then Generate.','ok'); }catch(e){}
   /* dupadopt-1.0.0: say WHICH way resolution failed so the caller can refuse
      recording with the real cause instead of a bare 'Choose a patient'. */
   return {ok:true,bound:false,patientId:'',reason:'patient-unresolved',
@@ -29519,8 +29692,145 @@ function _mlsSetContinuedFromId(id){
   try{ window.__mlsContinuedFromNoteId=String(id||''); }catch(eCf2){}
 }
 
+/* ===== visitfix-1.0.0 (2026-09-23) ========================================
+ * "NEW VISIT" THREW AWAY AN UNSAVED NOTE WITHOUT A WORD.
+ * MEASURED on the signed-in shell: generate a note (288 chars), edit it, then
+ * History > Chart tools > New visit (desktop) or the phone header "+" > New
+ * visit: note 288 -> 0, transcript 233 -> 0, History still 0 rows, no confirm,
+ * no message, no Restore offer. newVisit() never saved and then wiped the
+ * session recovery slot too. A patient switch does not lose the same work:
+ * __mlsOpenSwitchFix's preserveBeforeSwitch (cloned-mls-connect.js) saves it first.
+ * This is that same step, owned by the one reset every New visit door calls
+ * (the Visit card button, History's Chart tools, the phone "+" menu, the
+ * floating "+" menu, Next patient, the calendar, Copilot): unsigned transcript
+ * or note text -> the app's own saveDraft(); orders alone ->
+ * saveOrdersToHistory(). Skipped for the switch's internal reset (it already
+ * saved, BEFORE the active patient changed) and startup (preserveRecovery),
+ * for a signed note (signing saved it), and for an editor that still equals
+ * the History record it came from (Next patient right after Save to history).
+ *
+ * visitfix-1.1.0 (2026-09-23), from the review of 1.0.0:
+ *  - "Still equals the saved record" now ignores the COMMENT block the save
+ *    folds into the note. With a visit comment (every visit, for a doctor with
+ *    a default comment) Next patient right after Save to history re-saved the
+ *    row and said the note was unfinished.
+ *  - A save counts only when its record is in History with this visit's text.
+ *    On a full device saveDraft() reported success with nothing stored, and
+ *    the doctor was told "Saved ... to History" while the slot was wiped.
+ *  - Anything not saved (text or orders) stays in this tab's recovery slot,
+ *    and the offer to bring it back shows at the top of the Visit screen.
+ *  - newVisit says what happened AFTER the reset. A caller that toasts next
+ *    ("Started a visit for X.") adds this to its own words through
+ *    _mlsNewVisitToast instead of replacing it. */
+var _mlsNewVisitNotice=null;
+function _mlsNewVisitSay(msg,kind){
+  _mlsNewVisitNotice={msg:String(msg||''),kind:kind||'',at:Date.now()};
+  try{ toast(msg,kind); }catch(e){}
+}
+/* For a door that toasts right after starting a visit: the notice is not
+   consumed, so every such toast in the next few seconds still carries it. */
+function _mlsNewVisitToast(msg,kind){
+  var n=_mlsNewVisitNotice;
+  if(n&&n.msg&&Date.now()-n.at<6000) return toast(String(msg||'')+' '+n.msg,(n.kind==='err'||kind==='err')?'err':(kind||n.kind));
+  return toast(msg,kind);
+}
+function _mlsEditorMatchesSavedRecord(){
+  try{
+    if(typeof currentNoteId==='undefined'||!currentNoteId||typeof getNotes!=='function') return false;
+    var saved=(getNotes()||[]).find(function(n){return n&&String(n.id)===String(currentNoteId);}); if(!saved) return false;
+    var comment=(typeof getVisitComment==='function')?getVisitComment():'';
+    if(String(saved.visitComment||'').trim()!==String(comment||'').trim()) return false;
+    /* the exact block withCommentBlock() adds; whitespace is not clinical text */
+    var block=comment?('\n\nCOMMENT:\n'+comment):'';
+    function norm(x){ x=String(x||''); if(block) x=x.split(block).join(''); return x.replace(/\s+/g,' ').trim(); }
+    /* compare what a save would write NOW (noteRecordFromState: the note box
+       is the shown format's text) - not currentSoap, which the save's comment
+       fold rewrites and which then differs from the row it just wrote */
+    var ins=(typeof currentFormat!=='undefined'&&currentFormat==='insurance');
+    var box=(document.getElementById('noteBox')||{}).value;
+    var soapNow=ins?(typeof currentSoap!=='undefined'?currentSoap:''):box;
+    var insNow=ins?box:(typeof currentInsurance!=='undefined'?currentInsurance:'');
+    if(norm((document.getElementById('transcript')||{}).value)!==norm(saved.transcript)) return false;
+    if(norm(soapNow)!==norm(saved.soap)) return false;
+    if(norm(insNow)!==norm(saved.insurance)) return false;
+    if(JSON.stringify((typeof currentCoding!=='undefined'&&currentCoding)||null)!==JSON.stringify(saved.coding||null)) return false;
+    var ord=[]; try{ ord=Array.isArray(currentOrders)?currentOrders:[]; }catch(eO){}
+    return JSON.stringify(ord)===JSON.stringify(Array.isArray(saved.orders)?saved.orders:[]);
+  }catch(e){ return false; }
+}
+/* The record this save wrote, read back from History: written in this call
+   (updated >= t0) and carrying this visit's transcript / orders. */
+function _mlsNewVisitRecordLanded(t0,transcript,orders){
+  try{
+    if(typeof currentNoteId==='undefined'||!currentNoteId) return null;
+    var rec=(getNotes()||[]).find(function(n){return n&&String(n.id)===String(currentNoteId);})||null;
+    if(!rec||!(Number(rec.updated)>=t0)) return null;
+    if(transcript!==null&&String(rec.transcript||'')!==transcript) return null;
+    if(orders&&JSON.stringify(Array.isArray(rec.orders)?rec.orders:[])!==JSON.stringify(orders)) return null;
+    return rec;
+  }catch(e){ return null; }
+}
+/* Write the visit on screen to this tab's recovery slot and read it back. */
+function _mlsKeepInRecoverySlot(){
+  try{ if(typeof _saveVisitDraft==='function') _saveVisitDraft(); }catch(eSlot){}
+  try{
+    var d=JSON.parse(sessionStorage.getItem(_visitDraftKey())||'null'); if(!d) return false;
+    var n=0; try{ n=Array.isArray(currentOrders)?currentOrders.length:0; }catch(eO){}
+    return String(d.t||'')===String((document.getElementById('transcript')||{}).value||'')
+      && String(d.soap||'')===String((typeof currentSoap!=='undefined'?currentSoap:'')||'')
+      && String(d.ins||'')===String((typeof currentInsurance!=='undefined'?currentInsurance:'')||'')
+      && (!n||(Array.isArray(d.orders)&&d.orders.length===n));
+  }catch(e){ return false; }
+}
+/* Returns null (nothing to keep) or {saved|keep, msg, kind}; newVisit says msg
+   after the reset, and keeps the recovery slot when keep is set. */
+function _mlsKeepUnsavedBeforeNewVisit(){
+  /* "Go to" / "not saved" / "could not save" keep these on screen: quietnotify
+     shows only messages that ask for a step (a phone has no activity tray) */
+  var KEPT=' It is kept in this tab. Go to the top of the Visit screen to restore it.';
+  try{
+    var sl=document.getElementById('signLine');
+    if(sl&&sl.style.display!=='none') return null;
+    var trRaw=String((document.getElementById('transcript')||{}).value||''), tr=trRaw.trim();
+    var nb=String((document.getElementById('noteBox')||{}).value||'').trim();
+    var orders=[]; try{ orders=(Array.isArray(currentOrders)?currentOrders:[]).slice(); }catch(eO){}
+    if(!tr&&!nb&&!orders.length) return null;
+    if(_mlsEditorMatchesSavedRecord()) return null;
+    var nameOf=function(rec){ try{ var p=(rec&&rec.patientId&&typeof findPatient==='function')?findPatient(rec.patientId):null; return (p&&p.name)?String(p.name):''; }catch(eWho){ return ''; } };
+    /* worded as the next step on purpose: quietnotify files a bare "saved" in
+       the activity tray, which a phone does not show, and the work has just
+       left the screen - the doctor has to be told where it went. */
+    if(!tr&&!nb){
+      var t1=Date.now();
+      try{ if(typeof saveOrdersToHistory==='function') saveOrdersToHistory(); }catch(eOrd){}
+      var orec=_mlsNewVisitRecordLanded(t1,null,orders);
+      if(orec){ var on=nameOf(orec); return {saved:true,kind:'ok',msg:(on?('Saved the orders to '+on+'’s history.'):'Saved the orders to History as an unassigned visit.')+' Go to History to finish them.'}; }
+      /* visitfix-1.1.0: saveOrdersToHistory said why in its own words; the
+         orders are NOT cleared without a copy */
+      return {keep:true,kind:'err',msg:'MLS could not save these orders to History.'+(_mlsKeepInRecoverySlot()?' They are kept in this tab. Go to the top of the Visit screen to restore them.':' MLS could not keep a copy in this tab either.')};
+    }
+    /* the note box is what the doctor sees; saveCurrentNote syncs it the same way */
+    if(nb&&typeof currentFormat!=='undefined'&&currentFormat==='soap'&&!String(currentSoap||'').trim()) currentSoap=document.getElementById('noteBox').value;
+    var what=nb?'note':'transcript';
+    var t0=Date.now(), r=false;
+    try{ r=(typeof saveDraft==='function')?saveDraft():false; }catch(eSave){ r=false; }
+    var rec=(r===true)?_mlsNewVisitRecordLanded(t0,trRaw,null):null;
+    if(rec){ var n=nameOf(rec); return {saved:true,kind:'ok',msg:(n?('Saved the unfinished '+what+' to '+n+'’s history.'):('Saved the unfinished '+what+' to History as an unassigned visit.'))+' Go to History to finish it.'}; }
+    /* refused (another patient's editor, a restored visit with no verified
+       patient), or "saved" with no record in History (a full device) */
+    return {keep:true,kind:'err',msg:(r===true?('The unfinished '+what+' was not saved to History on this device.'):('MLS could not save the unfinished '+what+' to History.'))+(_mlsKeepInRecoverySlot()?KEPT:' MLS could not keep a copy in this tab either.')};
+  }catch(eKeep){
+    try{ if(_mlsKeepInRecoverySlot()) return {keep:true,kind:'err',msg:'MLS could not check whether this visit was saved.'+KEPT}; }catch(eLast){}
+    return null;
+  }
+}
+
 function newVisit(opts){
   opts=opts||{};
+  /* visitfix-1.1.0: the doctor's own New visit, not the switch's internal
+     reset or startup (they keep their own recovery rules) */
+  var realNewVisit=!opts.patientSwitchReset&&!opts.preserveRecovery;
+  if(realNewVisit) _mlsNewVisitNotice=null;
   try{if(typeof _mlsAbortActiveGeneration==='function')_mlsAbortActiveGeneration('source-changed','new-visit');}catch(eGeneration){}
   try{var _vh=(typeof mlsSpeechHub==='function')?mlsSpeechHub():null;if(_vh&&_vh.current&&_vh.current()){_vh.claim('visit-reset');_vh.release('visit-reset');}}catch(eSpeech){}
   /* a NEW encounter always requires fresh recording consent — without this,
@@ -29529,6 +29839,13 @@ function newVisit(opts){
   try{ _mlsConsentCurrent=null; _mlsConsentEpoch++; }catch(eConsent){}
   if(capturing) stopCapture();
   try{ if(typeof phoneMicCode!=='undefined'&&phoneMicCode&&typeof stopPhoneMic==='function') stopPhoneMic(); }catch(e0){}
+  /* visitfix-1.0.0: keep what is on screen before emptying it - after the
+     recorder stops (its last words are in the box), before anything is wiped. */
+  var kept=(realNewVisit&&typeof _mlsKeepUnsavedBeforeNewVisit==='function')?_mlsKeepUnsavedBeforeNewVisit():null;
+  /* work that did not reach History keeps the tab's recovery slot, as the
+     switch does (psv-1.0.0); a copy, so the caller's options object is never
+     changed */
+  if(kept&&kept.keep) opts=Object.assign({},opts,{preserveRecovery:true});
   try{ if(typeof _resetAiVisitOutputs==='function') _resetAiVisitOutputs(); }catch(eAi){}
   if(!opts.preserveRecovery){ try{ if(typeof _wipeVisitDraft==='function') _wipeVisitDraft(); }catch(e){} }
   try{ if(typeof _hideNextActions==='function') _hideNextActions(); }catch(e){}
@@ -29578,6 +29895,14 @@ function newVisit(opts){
   document.getElementById('signLine').style.display='none';
   enableOutputs(false);
   setBadge(false);
+  /* visitfix-1.1.0: a refused save still clears the editor (New visit is the
+     way out of another patient's editor). Now that the screen is empty, offer
+     back what the tab kept (this visit, or one kept aside earlier) at the top
+     of the Visit screen, and only then say where the work went. */
+  if(realNewVisit){
+    try{ if(typeof _maybeRestoreVisitDraft==='function') _maybeRestoreVisitDraft(); }catch(eOffer){}
+    if(kept&&kept.msg){ try{ _mlsNewVisitSay(kept.msg,kept.kind); }catch(eSay){} }
+  }
 }
 
 function noteRecordFromState(markSigned){
@@ -34924,8 +35249,16 @@ async function generateNote(){
         toast(outcomeMessage,'');
       }else{
         try{if(!(window.__mlsLastGenerationDiscard&&window.__mlsLastGenerationDiscard.runId===(run&&run.id)))_mlsNoteGenerationDiscard(run&&run.id,(err&&err.mlsDiscardField)||(run&&run.abortDiscardField)||'unknown');}catch(eD2){}
-        outcomeMessage='The patient or visit source changed while MLS was generating. The older result was discarded—review the current visit and generate again.';
-        toast(outcomeMessage,'err');
+        if(String((err&&err.mlsDiscardField)||(run&&run.abortDiscardField)||'')==='new-visit'){
+          /* visitfix-1.1.0 (2026-09-23): the doctor pressed New visit. Say
+             that, and keep what New visit said about the unfinished work in
+             the same message instead of replacing it. */
+          outcomeMessage='You started a new visit, so MLS stopped writing the note it was generating.';
+          (typeof _mlsNewVisitToast==='function'?_mlsNewVisitToast:toast)(outcomeMessage,'');
+        }else{
+          outcomeMessage='The patient or visit source changed while MLS was generating. The older result was discarded—review the current visit and generate again.';
+          toast(outcomeMessage,'err');
+        }
       }
     }else if(abortCode==='generation-timeout'){
       outcomeCode=abortCode;
@@ -38476,7 +38809,7 @@ function _athenaPrepareRecording(actionLabel){
   if(!binding||_athenaCurrentMatchesBound(binding))return _athenaGuardBoundEditor(actionLabel);
   var cleanCompleted=typeof _visitDirty!=='undefined'&&!_visitDirty&&(_athenaEditorIsEmpty()||_athenaEditorMatchesSavedVisit());
   if(!currentVisitAthenaCompromised&&cleanCompleted){
-    try{newVisit();if(typeof prefillContextFromProfile==='function')prefillContextFromProfile();toast('Started a fresh visit for '+String(((typeof activePatient==='function'&&activePatient())||{}).name||'the selected patient')+'.','ok');return true;}catch(e){}
+    try{newVisit();if(typeof prefillContextFromProfile==='function')prefillContextFromProfile();(typeof _mlsNewVisitToast==='function'?_mlsNewVisitToast:toast)('Started a fresh visit for '+String(((typeof activePatient==='function'&&activePatient())||{}).name||'the selected patient')+'.','ok');return true;}catch(e){}
   }
   return _athenaGuardBoundEditor(actionLabel);
 }

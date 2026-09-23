@@ -2695,7 +2695,15 @@
        lit "Record done - Review now" while the only primary was Generate and
        the flow strip below still said Record. Review means a note exists;
        visit text without one means the Record step was reached. */
-    var boxes = qsa('textarea,[contenteditable="true"]', visit).filter(visible);
+    /* visitfix-1.0.0 (2026-09-23): a box is on screen when it is visible OR
+       when its formatted view (fixpack's .mls-fp-fmt, stored as box.__fpFmt)
+       is - that view hides the textarea while it shows the same text, which is
+       how a generated note normally sits. Reading visible textareas only left
+       the rail on Record after the note existed and after it was signed,
+       while the flow strip on the same screen said Review & Sign / Send. */
+    var boxes = qsa('textarea,[contenteditable="true"]', visit).filter(function (b) {
+      return visible(b) || !!(b.__fpFmt && visible(b.__fpFmt.wrap));
+    });
     function textOf(ids) {
       for (var i = 0; i < boxes.length; i++) {
         if (ids.indexOf(boxes[i].id) >= 0) return String(boxes[i].value || boxes[i].textContent || '').trim();
@@ -2703,6 +2711,11 @@
       return '';
     }
     var noteText = textOf(['noteBox', 'ez3flNote', 'ez3Note']);
+    /* visitfix-1.0.0: Sign is done once the note card's own status badge says
+       so (the app's setBadge() keeps .signed on it, and a new visit clears
+       it), so the doctor is at Send - the same step the flow strip lights. */
+    var badge = qs('#statusBadge', visit);
+    if (noteText.length > 40 && badge && badge.classList && badge.classList.contains('signed')) return 4;
     if (signable && noteText.length > 40) return 3;
     if (noteText.length > 40) return 2;
     if (textOf(['transcript', 'ez3flTranscript', 'ez3Transcript']).length > 10) return 1;

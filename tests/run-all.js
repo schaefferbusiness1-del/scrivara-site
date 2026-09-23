@@ -2808,7 +2808,10 @@ const tests = [
   'portal-requests-mark-reviewed-runtime.test.js',
   'front-desk-offers-no-clinical-route-runtime.test.js',
   'assistant-schedule-and-chat-truth-runtime.test.js',
-  'team-notes-stay-open-and-keep-typing-runtime.test.js'
+  'team-notes-stay-open-and-keep-typing-runtime.test.js',
+  'new-visit-keeps-unsaved-note-runtime.test.js',
+  'visit-layout-restore-width-contrast-rail-runtime.test.js',
+  'typed-visit-notes-reach-the-phone-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

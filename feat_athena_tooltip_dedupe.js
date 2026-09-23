@@ -1894,6 +1894,9 @@
       '.mls-qtp-btn.danger{color:#A33636;}',
       '.mls-qtp-textarea{display:block;width:100%;min-height:220px;resize:vertical;box-sizing:border-box;border:1px solid #CAD5CE;border-radius:11px;padding:12px;font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;color:#1A211C;background:#FCFDFB;}',
       '.mls-qtp-note{font-size:12.5px;line-height:1.45;color:#68746C;margin-top:9px;}',
+      '.mls-qtp-ask{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:12px;padding:10px 12px;border:1px solid #E6C9A6;background:#FFF7EC;border-radius:10px;color:#5B3B14;font-size:13px;line-height:1.4;}',
+      '.mls-qtp-ask[hidden]{display:none;}',
+      '.mls-qtp-ask>span{flex:1 1 220px;}',
       '.mls-qtp-phone{display:grid;grid-template-columns:minmax(0,1fr) 190px;gap:18px;align-items:center;}',
       '.mls-qtp-code{font:800 34px/1.2 ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:4px;margin:7px 0;}',
       '.mls-qtp-link{display:block;color:#245C42;font-size:12px;word-break:break-all;}',
@@ -1916,6 +1919,68 @@
     safe(function () { if (focus && document.documentElement.contains(focus)) focus.focus(); });
   }
 
+  /* visitfix-1.1.0 (2026-09-23): Escape and a stray press on the backdrop are
+     how a dialog closes by accident, so they ask the open dialog first
+     (openPasteTranscript keeps typed notes). The X and Cancel stay direct:
+     those are a choice. Returns false when the dialog stays open. */
+  function requestClose(how) {
+    var ov = byId(MODAL_ID);
+    if (!ov) return true;
+    var guard = ov.__mlsQtpBeforeClose;
+    if (typeof guard === 'function' && safe(function () { return guard(how); }, true) === false) return false;
+    closePopup();
+    return true;
+  }
+
+  /* visitfix-1.1.0 (2026-09-23): another aria-modal dialog open ABOVE this
+     one (the consent ask, any mlsConfirm) owns Tab and Escape until it
+     closes - even after Tab has walked focus out of it to <body>. "Above"
+     is read from the page, not guessed: it is hit on top of this popup's
+     full-screen backdrop, or it sits in a higher (or later, equal) layer. */
+  function modalAbove() {
+    var ov = byId(MODAL_ID);
+    if (!ov) return null;
+    var at = safe(function () { return document.activeElement.closest('[aria-modal="true"]'); }, null);
+    if (at && !ov.contains(at)) return at;
+    var list = safe(function () { return document.querySelectorAll('[aria-modal="true"]'); }, []);
+    for (var i = 0; i < list.length; i++) {
+      var d = list[i];
+      if (ov.contains(d) || safe(function () { return overPopup(d, ov); }, false) !== true) continue;
+      return d;
+    }
+    return null;
+  }
+  function overPopup(d, ov) {
+    var r = d.getBoundingClientRect();
+    if (!r.width || !r.height || W.getComputedStyle(d).visibility === 'hidden') return false;
+    var x = Math.min(Math.max(r.left + r.width / 2, 0), W.innerWidth - 1);
+    var y = Math.min(Math.max(r.top + r.height / 2, 0), W.innerHeight - 1);
+    var hit = document.elementFromPoint(x, y);
+    if (hit && d.contains(hit)) return true;
+    var layer = d;
+    while (layer.parentElement && layer.parentElement !== document.body) layer = layer.parentElement;
+    if (layer.parentElement !== document.body) return false;
+    var zOf = function (el) { var z = parseInt(W.getComputedStyle(el).zIndex, 10); return isNaN(z) ? 0 : z; };
+    var zd = zOf(layer), zo = zOf(ov);
+    return zd > zo || (zd === zo && !!(ov.compareDocumentPosition(layer) & 4 /* FOLLOWING */));
+  }
+
+  /* visitfix-1.1.0 (2026-09-23): the card says aria-modal="true", so Tab and
+     Shift+Tab wrap inside it instead of walking out to the page behind. */
+  function trapTab(ev) {
+    var card = safe(function () { return byId(MODAL_ID).querySelector('.mls-qtp-card'); }, null);
+    if (!card) return;
+    var list = Array.prototype.filter.call(card.querySelectorAll('button,textarea,input,select,a[href],[tabindex]'), function (el) {
+      return !el.disabled && el.tabIndex >= 0 && el.getClientRects().length > 0;
+    });
+    if (!list.length) return;
+    var at = document.activeElement, inside = card.contains(at);
+    var edge = ev.shiftKey ? list[0] : list[list.length - 1];
+    if (inside && at !== edge) return;
+    ev.preventDefault();
+    safe(function () { (ev.shiftKey ? list[list.length - 1] : list[0]).focus(); });
+  }
+
   function popup(title, subtitle) {
     closePopup();
     priorFocus = safe(function () { return document.activeElement; }, null);
@@ -1931,7 +1996,12 @@
     overlay.querySelector('#mlsQtpTitle').textContent = title;
     overlay.querySelector('.mls-qtp-sub').textContent = subtitle || '';
     overlay.querySelector('.mls-qtp-x').addEventListener('click', closePopup);
-    overlay.addEventListener('mousedown', function (ev) { if (ev.target === overlay) closePopup(); });
+    overlay.addEventListener('mousedown', function (ev) {
+      if (ev.target !== overlay || requestClose('backdrop')) return;
+      /* visitfix-1.1.0: the dialog stayed open to ask. The press on the
+         backdrop must not then move focus off the question to <body>. */
+      safe(function () { ev.preventDefault(); });
+    });
     document.body.appendChild(overlay);
     safe(function () { overlay.querySelector('.mls-qtp-x').focus(); });
     return {
@@ -1964,6 +2034,29 @@
     var note = document.createElement('div'); note.className = 'mls-qtp-note';
     note.textContent = 'This only updates the transcript. It does not draft, sign, or send anything.';
     ui.body.appendChild(note);
+    /* visitfix-1.1.0 (2026-09-23): Escape or a stray backdrop press threw a
+       typed dictation away with no word. While the box holds text the visit
+       does not have yet, those two ask here first; a second Escape means
+       keep editing. */
+    var opened = ta.value;
+    var ask = document.createElement('div');
+    ask.className = 'mls-qtp-ask'; ask.hidden = true; ask.setAttribute('role', 'alert');
+    var askMsg = document.createElement('span');
+    var keep = button('Keep editing', '', function () { ask.hidden = true; safe(function () { ta.focus(); }); });
+    var drop = button('Discard', 'danger', closePopup);
+    ask.appendChild(askMsg); ask.appendChild(keep); ask.appendChild(drop);
+    ui.body.appendChild(ask);
+    ui.overlay.__mlsQtpBeforeClose = function (how) {
+      if (!ask.hidden) { if (how === 'escape') keep.click(); return false; }
+      if (!ta.value.trim() || ta.value === opened) return true;
+      askMsg.textContent = opened.trim()
+        ? 'Discard your changes? The visit keeps the notes it already has.'
+        : 'Discard the notes you typed? They are not in this visit yet.';
+      drop.textContent = opened.trim() ? 'Discard changes' : 'Discard notes';
+      ask.hidden = false;
+      safe(function () { keep.focus(); });
+      return false;
+    };
     ui.foot.appendChild(button('Cancel', '', closePopup));
     ui.foot.appendChild(button('Use these visit notes', 'primary', function () {
       var value = ta.value;
@@ -2105,7 +2198,11 @@
   }
 
   function onKeydown(ev) {
-    if (ev && ev.key === 'Escape' && byId(MODAL_ID)) closePopup();
+    if (!ev || (ev.key !== 'Escape' && ev.key !== 'Tab') || !byId(MODAL_ID)) return;
+    /* visitfix-1.1.0: a dialog open above this one owns the keys */
+    if (modalAbove()) return;
+    if (ev.key === 'Escape') requestClose('escape');
+    else trapTab(ev);
   }
 
   function progressCounts(text) {
