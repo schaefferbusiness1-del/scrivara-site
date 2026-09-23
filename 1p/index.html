@@ -49876,9 +49876,19 @@ function _ptGroupSort(mode){
   function menuOrModalOpen() {
     try { return !!(document.body && document.body.matches('[data-mls-clunky-menu="1"],[data-mls-clunky-modal="1"]')); } catch (e) { return false; }
   }
+  /* onenudge-1.0.0: the taskbar's own one-time question ("Taskbar covering
+     your work?") and this card both sat in the bottom-right corner at once,
+     measured on a signed-in desktop with the bottom taskbar: the card covered
+     the question's text and the question covered "Go to Patients". One nudge
+     at a time, and the question wins - it is about the doctor's work, this
+     card is an offer. The card waits, or steps aside if the question arrives
+     after it, and comes back once the question is answered. */
+  function dockNudgeOnScreen() {
+    try { var n = document.getElementById('mlsDockNudge'); return !!(n && n.classList.contains('on')); } catch (e) { return false; }
+  }
   function eligible() {
     return !isHandheld() && !isStandalone() && !dismissed() && signedIn() &&
-           !phoneCardOwnsScreen() && !hintOwnsCorner() && !menuOrModalOpen();
+           !phoneCardOwnsScreen() && !hintOwnsCorner() && !menuOrModalOpen() && !dockNudgeOnScreen();
   }
 
   /* ===========================================================================
@@ -50075,13 +50085,17 @@ function _ptGroupSort(mode){
 
   /* The card waits for a signed-in workspace. Poll rather than hook the login
      path: sign-in happens in several places (fresh signup, restored session,
-     2FA) and a poller cannot miss one of them. It stops the moment it shows the
-     card or the card is permanently dismissed, so it never runs for long. */
+     2FA) and a poller cannot miss one of them. It stops once the card is
+     permanently dismissed or after two minutes, so it never runs for long. */
   var tries = 0;
   var iv = setInterval(function () {
     try {
-      if (dismissed() || document.getElementById(CARD_ID) || ++tries > 120) { clearInterval(iv); return; }
-      if (eligible()) { show(); clearInterval(iv); }
+      if (dismissed() || ++tries > 120) { clearInterval(iv); return; }
+      if (document.getElementById(CARD_ID)) {
+        if (dockNudgeOnScreen()) close();          /* onenudge-1.0.0: step aside, not dismissed */
+        return;
+      }
+      if (eligible()) show();
     } catch (e) { clearInterval(iv); }
   }, 1000);
 
@@ -56594,8 +56608,15 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
     var n = el('mlsDockNudge');
     if (n) n.classList.remove('on');
   }
+  /* onenudge-1.0.0: one corner nudge at a time, and this question wins; the
+     phone card (__mlsGetPhone) steps aside unremembered and returns once this
+     is answered. */
+  function clearCorner() {
+    try { var g = window.__mlsGetPhone; if (g && typeof g.close === 'function' && document.getElementById(g.cardId || 'mlsGetPhoneCard')) g.close(); } catch (e) {}
+  }
   function ensureNudge() {
     if (!nudgeDue()) { var old = el('mlsDockNudge'); if (old) old.classList.remove('on'); return false; }
+    clearCorner();
     var box = el('mlsDockNudge');
     if (box) { box.classList.add('on'); placeNudge(); return true; }
     if (!document.body) return false;

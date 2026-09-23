@@ -2741,7 +2741,10 @@ const tests = [
   /* opphone-1.0.0 (b1304): the phone op-note room shows the whole day with no
      note open and clears the taskbar; Settings names real places (Tools →
      Custom widget, where templates live) and the Templates default truthfully. */
-  'opnote-room-phone-and-settings-words-runtime.test.js'
+  'opnote-room-phone-and-settings-words-runtime.test.js',
+  /* onenudge-1.0.0 (b1305): the taskbar's one-time question and the "Use MLS
+     on your phone" card are never on screen together; the question wins. */
+  'one-corner-nudge-at-a-time-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
