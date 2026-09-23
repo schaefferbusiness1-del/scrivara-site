@@ -25,7 +25,8 @@ function between(source, start, end) {
 
 /* ---- extract matchRow with its real utils (never retyped) ---- */
 const utilsSrc = between(packSource, '  /* ------------------------------ utils ---------------------------------- */', '  /* mirrors __mlsVisitModel._svcToYMD');
-const matchSrc = between(packSource, '  function matchRow(arr, name, dob, athenaId) {', '  /* merge = union fields');
+/* ptfix-1.0.0: matchRow takes the MRN too; its two helpers sit just above it */
+const matchSrc = between(packSource, '  function normMrn(v) {', '  /* merge = union fields');
 const matchRow = new Function('window', 'FLAGS', `
   ${utilsSrc}
   ${matchSrc}
@@ -54,6 +55,19 @@ assert.strictEqual(
     { id: 2, name: 'John Smith', dob: '01/02/1970' }
   ], 'John Smith', '01/02/1970', ''),
   null, 'ambiguous name+DOB merged instead of refusing');
+
+/* ptfix-1.0.0 MRN: a different MRN is a different person */
+assert.strictEqual(
+  matchRow([{ id: 1, name: 'John Smith', dob: '01/02/1970', mrn: '1110001' }], 'John Smith', '01/02/1970', '', '2220002'),
+  null, 'a name+DOB match with a different MRN merged');
+/* the veto comes after the tie check: {111} + {no MRN} + new 222 is a tie, not a merge into the MRN-less row */
+assert.strictEqual(
+  matchRow([{ id: 1, name: 'John Smith', dob: '01/02/1970', mrn: '1110001' }, { id: 2, name: 'John Smith', dob: '1970-01-02', mrn: '' }], 'John Smith', '01/02/1970', '', '2220002'),
+  null, 'dropping the conflicting row first turned a refused tie into a merge');
+/* the same MRN as exactly one tied row is the stronger key */
+assert.strictEqual(
+  matchRow([{ id: 1, name: 'John Smith', dob: '01/02/1970', mrn: '1110001' }, { id: 2, name: 'John Smith', dob: '1970-01-02', mrn: '2220002' }], 'John Smith', '01/02/1970', '', ' MRN-2220002 ').id,
+  2, 'the same MRN did not pick its own chart among ties');
 
 /* athenaId hit with only ONE shared name token and no DOB - refuse (the
    mis-stamped-id weld) */
@@ -103,9 +117,19 @@ assert.strictEqual(
   const scanSrc = between(packSource, '  function scan(arr) {', '  function calRefCounts()');
   const scanFn = new Function('window', 'FLAGS', `
     ${utilsSrc}
+    ${between(packSource, '  function normMrn(v) {', '  function matchRow(')}
     ${scanSrc}
     return scan;
   `)({ __mlsVisitModel: null }, { athenaIdMerges: true });
+  /* ptfix-1.0.0: A (no MRN) pairs with B (111) and C (222) against the anchor
+     only; two MRNs in one group is two people - the group is refused */
+  const mixed = scanFn([
+    { id: 'a', name: 'John Smith', dob: '1960-01-01' },
+    { id: 'b', name: 'John Smith', dob: '1960-01-01', mrn: '1110001' },
+    { id: 'c', name: 'John Smith', dob: '1960-01-01', mrn: '2220002' }
+  ]);
+  assert.deepStrictEqual(mixed.groups, [], 'a group holding two different MRNs was offered for merging');
+  assert.ok(mixed.vetoed.some((v) => v.reason === 'group-mrn-conflict'), 'the refusal names the MRN conflict');
   const dobless = scanFn([
     { id: 'a', name: 'John Adams', dob: '', athenaId: '7001' },
     { id: 'b', name: 'John Smith', dob: '', athenaId: '7001' }

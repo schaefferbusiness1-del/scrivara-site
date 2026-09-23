@@ -2792,7 +2792,8 @@ const tests = [
      Escape or another report type discards a draft (re-picking the same type
      does nothing), says a refused file in the records card, keeps the
      Activity chip under the sheet, and names exports without the "1p" tag. */
-  'legal-workspace-keeps-the-draft-runtime.test.js'
+  'legal-workspace-keeps-the-draft-runtime.test.js',
+  'patients-and-settings-tell-the-truth-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

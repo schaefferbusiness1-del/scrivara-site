@@ -62,7 +62,7 @@ for (const id of ['qolTheme', 'qolTextSize', 'qolCompact']) {
 /* 3. The preview appliers stay PREVIEW-only. If one of them starts writing
  *    storage it becomes a self-committing control behind a Save button, which
  *    is the other half of the same inconsistency. */
-for (const name of ['applyThemePreview', 'applyTextSizePreview', 'applyCompactPreview']) {
+for (const name of ['applyThemePreview', 'applyTextSizePreview', 'applyCompactPreview', 'applyPtLayoutPreview', 'applyGroupProcPreview']) {
   const body = fnBody(name);
   assert(!/setItem\(/.test(body),
     name + '() now writes to storage. It sits behind a Save button, so committing on change ' +

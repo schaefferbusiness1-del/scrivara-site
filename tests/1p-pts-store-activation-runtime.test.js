@@ -337,7 +337,7 @@ async function capacity() {
   ctx.__mlsPtsBatchByKey = Object.create(null);
   ctx.__mlsPtsMemo = null;
   ctx.Map = Map;
-  vm.runInContext(rosterDecl + '\n' + extractFunction(SHELL, '__mlsPtRosterData') +
+  vm.runInContext(rosterDecl + '\n' + extractFunction(SHELL, '__mlsDobParts') + '\n' + extractFunction(SHELL, '__mlsDobSearchForms') + '\n' + extractFunction(SHELL, '__mlsPtRosterData') +
     '\nthis.rosterData = __mlsPtRosterData;', ctx);
   const warm1 = ctx.rosterData(api.getRoster());
   const warm2 = ctx.rosterData(api.getRoster());

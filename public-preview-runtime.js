@@ -1136,6 +1136,15 @@
         }
       });
     } catch (eTm) {}
+    /* ptfix-1.0.0: the Account menu's "Account & security" opened the same
+       Settings the Tools row refuses, with its Save / Cancel under the strip
+       (a tap on Cancel landed on Exit preview). */
+    try {
+      var acts = [], ACT = '.mls-account-action[data-account-action="settings"]';
+      if (root.matches && root.matches(ACT)) acts.push(root);
+      if (root.querySelectorAll) acts = acts.concat(Array.prototype.slice.call(root.querySelectorAll(ACT)));
+      acts.forEach(function (b) { markBlocked(b, 'Settings, pull activity, and staff prep are off in the read-only sample workspace.'); });
+    } catch (eAc) {}
     var fields = [];
     try { fields = root.querySelectorAll('input,textarea,select,[contenteditable="true"]'); } catch (e2) {}
     try {

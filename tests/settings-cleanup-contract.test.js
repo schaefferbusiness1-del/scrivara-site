@@ -65,7 +65,8 @@ assert(ui.includes('overflow-anchor:none!important') && ui.includes('touch-actio
 assert(ui.includes("document.body.classList.toggle('mls-settings-open', open)"), 'Settings must expose a deterministic open/closed UI state');
 assert(ui.includes('body.mls-settings-open.mls-top-voice-tools #mlsCopVoiceBtn') && ui.includes('body.mls-settings-open #mlsAsstFab') && ui.includes('body.mls-settings-open #mlsDaDock'), 'floating voice tools must not cover Settings content or its footer');
 assert(appSource.includes("where:'Settings -> Notes & AI -> AI personalization'") && appSource.includes("route:'settings:notes'"), 'Help/Search must route AI personalization through the real Notes & AI tab');
-assert(appSource.includes("where:'Settings -> Extra tools & tabs -> App tabs'"), 'Help/Search must name the real App tabs destination');
+/* ptfix-1.0.0: the App tabs section is gone (its one switch changed nothing), so Help/Search must not send anyone there */
+assert(!appSource.includes("name:'App tab settings'") && !appSource.includes("where:'Settings -> Extra tools & tabs -> App tabs'"), 'Help/Search must not send doctors to the removed App tabs section');
 assert(appSource.includes("where:'Settings -> Extra tools & tabs -> Features'"), 'Help/Search must name the real Features destination');
 assert(!appSource.includes("where:'Settings -> Features & navigation -> App tabs'"), 'Help/Search must not retain the retired App tabs path');
 assert(appSource.includes("where:'Settings -> Account & security -> Security & privacy'"), 'Help/Search must name the real security destination');

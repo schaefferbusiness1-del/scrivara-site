@@ -9,7 +9,7 @@ var fs = require('fs');
 var OLD_ZIP_SHA = 'f7f5ece88cb0d49125595060d6560bb138bd9ee0426972ea17fe1c696a6ac929';
 var NEW_ZIP_SHA = String(process.env.NEW_ZIP_SHA || '').trim();
 if (!/^[0-9a-f]{64}$/.test(NEW_ZIP_SHA)) { console.error('ABORT: NEW_ZIP_SHA env missing/invalid'); process.exit(1); }
-var NEW_NOTES = "v3.0.113 - Reliability release. After a pull ends, the Athena tab MLS was working in is handed back within about two minutes even when Chrome suspends the extension, so later reads no longer stay bound to that tab. A tab you pinned for MLS is honoured correctly after Chrome restarts the extension. Idle background checks on athenaOne tabs are removed, and a slow review-page read no longer leaves listeners behind. The toolbar button now opens your MLS tab. Includes everything in v3.0.113. Requires Chrome 116+.";
+var NEW_NOTES = "v3.0.113 - Reliability release. After a pull ends, the Athena tab MLS was working in is handed back within about two minutes even when Chrome suspends the extension, so later reads no longer stay bound to that tab. A tab you pinned for MLS is honoured correctly after Chrome restarts the extension. Idle background checks on athenaOne tabs are removed, and a slow review-page read no longer leaves listeners behind. The toolbar button now opens your MLS tab. Includes everything in v3.0.112. Requires Chrome 116+.";
 
 function swapNotesParagraph(file) {
   var s = fs.readFileSync(file, 'latin1');

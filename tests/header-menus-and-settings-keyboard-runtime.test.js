@@ -80,8 +80,14 @@ const srv=http.createServer((q,r)=>{let p=decodeURIComponent(q.url.split('?')[0]
   assert.ok(!(await state(pg)).chip,'Escape closes the mode menu');
   assert.ok(await pg.evaluate(()=>document.activeElement===document.getElementById('mslChipBtn')),'Escape in the mode menu hands focus to the chip, not <body>: '+await active(pg));
   // 6. Settings: Tab and Shift+Tab stay inside, every way out gives focus back to Account
+  /* ptfix-1.0.0: the sample keeps Settings closed from the Account menu too
+     (pinned by patients-and-settings-tell-the-truth). This suite is about the
+     dialog's keyboard handling, so it lifts the sample's block from that one
+     item before using it. */
+  const liftSettingsBlock=p=>p.evaluate(()=>document.querySelectorAll('.mls-account-action[data-account-action="settings"]').forEach(b=>{b.removeAttribute('data-mls-preview-blocked');b.setAttribute('aria-disabled','false');}));
   async function openSettingsFromAccount(){
    await pg.focus('#mlsAccountMenuBtn'); await pg.keyboard.press('Enter'); await pg.waitForTimeout(150);
+   await liftSettingsBlock(pg);
    await pg.keyboard.press('ArrowDown'); await pg.keyboard.press('Enter'); await pg.waitForTimeout(700);
    assert.ok((await state(pg)).settings,'Account & security opens Settings');
   }
@@ -114,12 +120,10 @@ const srv=http.createServer((q,r)=>{let p=decodeURIComponent(q.url.split('?')[0]
   assert.ok(!(await pg.evaluate(()=>!!document.getElementById('mlsCtModal')))&&(await state(pg)).settings,'Close shuts only the editor; Settings is still open');
   await pg.keyboard.press('Tab');
   assert.ok(!(await outside()),'with the editor gone, Tab belongs to Settings again: '+await active(pg));
-  //    ...and so does the dock nub, which sits above every overlay
-  await pg.click('#mlsDockNub'); await pg.waitForTimeout(300);
-  await pg.keyboard.press('Tab');
-  assert.ok(await pg.evaluate(()=>!!document.activeElement.closest('#mlsDockNubMenu')),'Tab from the dock nub walks its own menu, not Settings behind it: '+await active(pg));
-  await pg.click('#mlsDockNub'); await pg.waitForTimeout(200);
-  assert.ok((await state(pg)).settings&&await pg.evaluate(()=>document.getElementById('mlsDockNubMenu').hasAttribute('hidden')),'the nub menu closes and Settings stays open');
+  //    ptfix-1.0.0: the dock nub no longer sits over a centred dialog (it
+  //    opened its taskbar menu on top of Settings); Settings covers it
+  const nubUnder=await pg.evaluate(()=>{const n=document.getElementById('mlsDockNub');if(!n||!n.getClientRects().length)return true;const r=n.getBoundingClientRect();const e=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return !(e&&(e===n||n.contains(e)));});
+  assert.ok(nubUnder,'the dock nub is under the Settings dialog, not over it');
   //    a control the overlay COVERS is still pulled back into Settings, both directions
   await pg.evaluate(()=>document.getElementById('mlsAccountMenuBtn').focus()); await pg.keyboard.press('Tab');
   assert.ok(!(await outside()),'Tab from the covered Account button goes into Settings: '+await active(pg));
@@ -181,6 +185,7 @@ const srv=http.createServer((q,r)=>{let p=decodeURIComponent(q.url.split('?')[0]
   await p2.touchscreen.tap(200,520); await p2.waitForTimeout(200);
   assert.ok(!(await state(p2)).acct,'phone: tapping outside closes the Account menu');
   await p2.tap('#mlsAccountMenuBtn'); await p2.waitForTimeout(200);
+  await liftSettingsBlock(p2);
   await p2.tap('#mlsAccountPopover [data-account-action="settings"]'); await p2.waitForTimeout(700);
   assert.ok((await state(p2)).settings,'phone: Account & security opens Settings');
   const phEsc=[]; for(let i=0;i<14;i++){ await p2.keyboard.press('Tab'); if(await p2.evaluate(()=>!document.getElementById('settingsModal').contains(document.activeElement))) phEsc.push(await active(p2)); }

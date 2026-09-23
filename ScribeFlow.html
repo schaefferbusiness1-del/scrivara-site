@@ -641,8 +641,17 @@
   .cw-lib-hist{font-size:11px;color:var(--brand);font-weight:600}
   .cw-lib-add{margin-top:6px;align-self:flex-start}
   /* ===== QoL: TEXT SIZE (MLS) ===== */
-  body.text-small{ font-size:15px }
-  body.text-large{ font-size:19px }
+  /* ptfix-1.0.0: the workspace is sized in px, so a body font-size reached
+     almost nothing (1 of 139 texts on Patients). Scale the workspace itself. */
+  body.text-small{ --mls-zoom:.92 }
+  body.text-large{ --mls-zoom:1.15 }
+  body.text-small #appWrap, body.text-large #appWrap{ zoom:var(--mls-zoom) }
+  /* the wrapper's width cap is zoomed with it, which ate the side gutter at
+     Large; divide it back so the workspace keeps its on-screen width */
+  body.text-small #appWrap.wrap:not(:has(#calendarView[style*="block"])), body.text-large #appWrap.wrap:not(:has(#calendarView[style*="block"])),
+  body.text-small #appWrap.wrap:has(#calendarView[style*="block"]), body.text-large #appWrap.wrap:has(#calendarView[style*="block"]){ max-width:calc(min(1680px,95vw) / var(--mls-zoom))!important }
+  /* inside the zoomed workspace a vh length is zoomed too, so a sticky panel
+     sized to the window divides by the same factor */
   /* ===== QoL: COMPACT MODE (MLS) — denser cards ===== */
   body.compact .card{ padding:13px }
   body.compact .wrap{ padding:14px }
@@ -1606,7 +1615,7 @@
   body.theme-dark [style*="background:#eef6ff"], body.theme-dark [style*="background:#F6FBF8"]{ background:var(--soft2)!important; border-color:var(--line)!important; color:var(--ink); }
   /* Split patient view — chart on the RIGHT when a patient is active (opt-in setting). */
   body.pt-split.pt-has-active #ptSplitWrap{ display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:20px; align-items:start; }
-  body.pt-split.pt-has-active #profileCard{ margin-top:0!important; position:sticky; top:66px; max-height:calc(100vh - 84px); overflow:auto; }
+  body.pt-split.pt-has-active #profileCard{ margin-top:0!important; position:sticky; top:calc(66px / var(--mls-zoom,1)); max-height:calc((100vh - 84px) / var(--mls-zoom,1)); overflow:auto; }
   body.pt-split.pt-has-active #profileNonePanel{ margin-top:0!important; }
   @media(max-width:980px){ body.pt-split.pt-has-active #ptSplitWrap{ display:block; } body.pt-split.pt-has-active #profileCard{ position:static; max-height:none; margin-top:20px!important; } }
   /* Procedure group headers in the patient list. */
@@ -1767,7 +1776,7 @@
   /* Calendar: day details open on the RIGHT (split) when a day is selected. */
   @media(min-width:981px){
     #calSplitWrap:has(#calDayPanel[style*="block"]){ display:grid; grid-template-columns:minmax(0,1.45fr) minmax(0,1fr); gap:18px; align-items:start; }
-    #calSplitWrap:has(#calDayPanel[style*="block"]) #calDayPanel{ margin-top:0; position:sticky; top:66px; max-height:calc(100vh - 96px); overflow:auto; }
+    #calSplitWrap:has(#calDayPanel[style*="block"]) #calDayPanel{ margin-top:0; position:sticky; top:calc(66px / var(--mls-zoom,1)); max-height:calc((100vh - 96px) / var(--mls-zoom,1)); overflow:auto; }
   }
 
 /* BROKEN-3 fix (2026-07-09): the LIVE redesigned header is #appHeader.mlsRdHdr (class added at runtime by the bundle); the b104 .mainnav z-index bump missed it, so fixed full-page views (z-index:5000) painted over the open Menu dropdown. 6000 stays below #_patientFace (9500) and #toast (99999). */
@@ -5058,7 +5067,7 @@ html:has(> body > #intakeView[style*="display: block"]) body > :not(#intakeView)
            about whether the server answered a health check just now. Only one
            of them may use the word "connected", and it is the one that
            actually asks. -->
-      <p class="note" style="background:#e6f7ef;color:var(--green-dk);border:1px solid #b8ecd3">✅ <b>Your clinic's MLS server handles AI for this account.</b> No API key is needed on this device — your key stays securely on the server. The Advanced tab shows whether that server is reachable right now.</p>
+      <p class="note" style="background:#e6f7ef;color:var(--green-dk);border:1px solid #b8ecd3">✅ <b>Your clinic's MLS server handles AI for this account.</b> No API key is needed on this device — your key stays securely on the server. Search Settings for “MLS server” to see whether that server is reachable right now.</p>
     </div>
     <div class="field" id="sampleAiNotice" style="display:none">
       <p class="note">This is the sample workspace: nothing here is generated, saved or sent, so no key or connection is needed. A signed-in account uses your clinic's MLS server for AI, with no key on this device.</p>
@@ -5434,7 +5443,7 @@ html:has(> body > #intakeView[style*="display: block"]) body > :not(#intakeView)
       <!-- MLS additive — 📋 Patient intake: doctor's custom questions -->
       <div class="field" style="margin-bottom:4px;border-top:1px solid var(--line);padding-top:12px;margin-top:10px">
         <label for="intakeQuestions" style="font-size:15px">📋 Patient intake — your custom questions</label>
-        <p class="note" style="margin:2px 0 8px">One question per line. These appear at the end of the <b>📋 Patient intake</b> form (the header button you hand to the patient on the iPad), and the answers flow automatically into the patient's summary/history. Leave empty to hide the section.</p>
+        <p class="note" style="margin:2px 0 8px">One question per line. These appear at the end of the <b>📋 Patient intake</b> form (Tools › Pre-visit intake forms, handed to the patient on the iPad), and the answers flow automatically into the patient's summary/history. Leave empty to hide the section.</p>
         <textarea id="intakeQuestions" rows="4" placeholder="e.g. Have you had an MRI of this area? When?&#10;Do you have an attorney involved in this injury?"></textarea>
       </div>
     </div><!-- /Features section -->
@@ -5491,7 +5500,7 @@ html:has(> body > #intakeView[style*="display: block"]) body > :not(#intakeView)
         </details>
         <details style="margin:10px 0 0">
           <summary style="cursor:pointer;font-weight:600">What changed in this update (v<span id="extDlVersionNotes">3.0.113</span>)</summary>
-          <p class="note" id="extDlNotes" style="margin:6px 0 0">v3.0.113 - Reliability release. After a pull ends, the Athena tab MLS was working in is handed back within about two minutes even when Chrome suspends the extension, so later reads no longer stay bound to that tab. A tab you pinned for MLS is honoured correctly after Chrome restarts the extension. Idle background checks on athenaOne tabs are removed, and a slow review-page read no longer leaves listeners behind. The toolbar button now opens your MLS tab. Includes everything in v3.0.113. Requires Chrome 116+.</p>
+          <p class="note" id="extDlNotes" style="margin:6px 0 0">v3.0.113 - Reliability release. After a pull ends, the Athena tab MLS was working in is handed back within about two minutes even when Chrome suspends the extension, so later reads no longer stay bound to that tab. A tab you pinned for MLS is honoured correctly after Chrome restarts the extension. Idle background checks on athenaOne tabs are removed, and a slow review-page read no longer leaves listeners behind. The toolbar button now opens your MLS tab. Includes everything in v3.0.112. Requires Chrome 116+.</p>
         </details>
       </div>
     </div>
@@ -7904,6 +7913,10 @@ function sfCancelSessionPrompts(removeBanner){
   if(removeBanner!==false){ try{ const b=document.getElementById('assistInstallBanner'); if(b)b.remove(); }catch(e){} }
 }
 function sfResetTransientSessionDom(){
+  /* ptfix-1.0.0: an unsaved Display preview belongs to the session that made
+     it; the next account must not inherit it (Settings is hidden here without
+     closeSettings()). */
+  try{ if(typeof restoreQolCommits==='function') restoreQolCommits(); }catch(e){}
   try{
     document.querySelectorAll('.modal-bg.show').forEach(function(modal){
       modal.classList.remove('show');
@@ -9693,12 +9706,6 @@ const NAV_FEATURES=[
   {key:'orders',   label:'📋 Orders (separate tab)', desc:'Orders are now built right into the Visit page. Turn this on only if you also want the standalone full Orders workspace.'}
 ];
 function navFeatOn(key){ try{ return localStorage.getItem(uns('navfeat_'+key))==='1'; }catch(e){ return false; } } // default OFF
-function setNavFeat(key,on){
-  try{ localStorage.setItem(uns('navfeat_'+key), on?'1':'0'); }catch(e){}
-  try{ applyAccessUI(); }catch(e){ try{ applyNavFeatureGates(); }catch(_){} }
-  try{ updateNavCounts(); }catch(e){}
-  try{ toast((on?'Enabled':'Hid')+' the '+(key==='legalreq'?'Legal requests':key.charAt(0).toUpperCase()+key.slice(1))+' tab.',''); }catch(e){}
-}
 function applyNavFeatureGates(){
   try{
     NAV_FEATURES.forEach(function(f){
@@ -9709,15 +9716,13 @@ function applyNavFeatureGates(){
 }
 function renderNavFeatToggles(){
   var host=document.getElementById('navFeatToggles'); if(!host) return;
-  host.innerHTML=NAV_FEATURES.map(function(f){
-    return '<div class="field" style="margin-bottom:4px">'+
-      '<label style="display:flex;align-items:center;gap:9px;cursor:pointer;font-size:15px">'+
-      '<input type="checkbox" '+(navFeatOn(f.key)?'checked':'')+' onchange="setNavFeat(\''+f.key+'\',this.checked)" style="width:17px;height:17px;cursor:pointer">'+
-      '<span>'+f.label+' <span style="font-weight:400;color:var(--muted)">(off by default)</span></span>'+
-      '</label>'+
-      '<p class="note" style="margin:4px 0 0 26px">'+f.desc+'</p>'+
-    '</div>';
-  }).join('');
+  /* ptfix-1.0.0: the only switch here, Orders, changed nothing a doctor can
+     see: Orders is a Review step on the taskbar either way, and the old tab
+     it gates is not shown by the taskbar. A switch that does nothing is not
+     offered; the section stays out of Settings until it has one that does. */
+  var sec=host.closest?host.closest('.set-section'):null;
+  if(sec){ sec.hidden=true; sec.setAttribute('aria-hidden','true'); sec.style.setProperty('display','none','important'); }
+  host.innerHTML='';
 }
 
 /* =========================================================
@@ -9892,33 +9897,25 @@ function applyAppearance(){
 /* Live preview helpers wired to the Settings selects/checkbox. */
 function applyThemePreview(v){ var w=v==='dark'; if(document.body.classList.contains('theme-dark')!==w) document.body.classList.toggle('theme-dark', w); }
 /* Patient profile position (split/stack) + group-by-procedure — per-device prefs. */
-function getQolPtLayout(){ return localStorage.getItem(uns('qolPtLayout'))||'split'; }
-function getQolGroupProc(){ return localStorage.getItem(uns('qolGroupProc'))==='1'; }
+/* ptfix-1.0.0: the two previews are held in memory until Save, so a Cancel
+   cannot be beaten by a reload or a second tab reading a value never saved,
+   and Settings no longer marks them "Applies right away" (they do not). */
+var qolPreview={};
+function getQolPtLayout(){ if(qolPreview.ptLayout!=null) return qolPreview.ptLayout; return localStorage.getItem(uns('qolPtLayout'))||'split'; }
+function getQolGroupProc(){ if(qolPreview.groupProc!=null) return qolPreview.groupProc; return localStorage.getItem(uns('qolGroupProc'))==='1'; }
 function applyPtLayout(){ try{ var w=getQolPtLayout()==='split'; if(document.body.classList.contains('pt-split')!==w) document.body.classList.toggle('pt-split', w); }catch(e){} }
-function applyPtLayoutPreview(v){ try{ localStorage.setItem(uns('qolPtLayout'), v); }catch(e){} applyPtLayout(); }
-function applyGroupProcPreview(c){ try{ localStorage.setItem(uns('qolGroupProc'), c?'1':'0'); }catch(e){} try{ if(typeof renderPatients==='function') renderPatients(); }catch(e){} }
-/* Patient layout and group-by-procedure are the two Display controls that
-   commit the moment they change, while the other three preview and wait for
-   Save. That split is invisible on screen and it made one Save button mean two
-   opposite things in a single section.
-
-   They cannot simply become preview-only: applyPtLayout() and renderPatients()
-   read the value back OUT of storage rather than taking it as an argument, so
-   previewing them at all means writing. The honest way to keep Save meaningful
-   is therefore to remember what they were when the modal opened and put that
-   back if Save is never pressed — which makes all five behave identically from
-   the doctor's side: change freely, Save keeps it, Close discards it. */
-var qolCommitSnapshot=null;
-function snapshotQolCommits(){
-  try{ qolCommitSnapshot={ptLayout:getQolPtLayout(),groupProc:getQolGroupProc()}; }
-  catch(e){ qolCommitSnapshot=null; }
-}
+function applyPtLayoutPreview(v){ qolPreview.ptLayout=String(v||'split'); applyPtLayout(); }
+function applyGroupProcPreview(c){ qolPreview.groupProc=!!c; try{ if(typeof renderPatients==='function') renderPatients(); }catch(e){} }
+/* Patient layout and group-by-procedure preview like the other Display
+   controls: the getters read the in-memory preview first, Save writes storage,
+   and Close drops the preview. All five behave the same from the doctor's
+   side: change freely, Save keeps it, Close discards it. Opening Settings and
+   saving both start from what is stored. */
+function snapshotQolCommits(){ qolPreview={}; }
 function restoreQolCommits(){
-  if(!qolCommitSnapshot) return;
-  try{
-    localStorage.setItem(uns('qolPtLayout'),qolCommitSnapshot.ptLayout);
-    localStorage.setItem(uns('qolGroupProc'),qolCommitSnapshot.groupProc?'1':'0');
-  }catch(e){}
+  var had=qolPreview.ptLayout!=null||qolPreview.groupProc!=null;
+  qolPreview={};
+  if(!had) return;
   try{ if(typeof applyPtLayout==='function') applyPtLayout(); }catch(e){}
   try{ if(typeof renderPatients==='function') renderPatients(); }catch(e){}
 }
@@ -10855,14 +10852,12 @@ function openSettings(opts){
    no-op: Save persists first and applies second, so the stored values are
    already the ones showing.
 
-   The two Display controls that DO self-commit — patient layout and group by
-   procedure — are deliberately left alone here; they write storage on change,
-   so restoring from storage is what they already show. That inconsistency is
-   real and worth resolving, but it is a behaviour change to those controls,
-   not a close-time fix. */
+   Patient layout and group by procedure preview in memory (qolPreview) and
+   are written only by Save, like the rest of Display; restoreQolCommits()
+   drops the preview. */
 function closeSettings(){
-  /* Storage first: applyAppearance() calls applyPtLayout(), which reads the
-     value back out of storage, so the snapshot has to be back in place before
+  /* Drop the preview first: applyAppearance() calls applyPtLayout(), whose
+     getter reads the preview before storage, so it must be gone before
      anything re-applies. */
   restoreQolCommits();
   try{ applyAppearance(); }catch(e){}
@@ -11598,10 +11593,12 @@ function _showNextActions(kind){
     var msg = (kind==='signed') ? '✅ Signed and saved in MLS. What next?' : '💾 Saved to history. What next?';
     var btns='';
     btns+='<button class="btn-green" style="font-size:13px;padding:7px 12px" onclick="var b=document.getElementById(\'nextActionsBar\');if(b)b.style.display=\'none\';newVisit();">➕ Next patient</button>';
-    if(navFeatOn('orders')) btns+='<button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="showView(\'orders\')">📋 Create orders</button>';
-    if(navFeatOn('calendar')) btns+='<button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="calScheduleForPatient()">📅 Book follow-up</button>';
+    /* ptfix-1.0.0: these were gated on App-tab switches - one removed (it
+       changed nothing) and one ('calendar') that Settings never offered - so
+       no doctor saw them. Orders and the calendar are always on the taskbar. */
+    btns+='<button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="showView(\'orders\')">📋 Create orders</button>';
+    btns+='<button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="calScheduleForPatient()">📅 Book follow-up</button>';
     if(typeof activePatient==='function' && activePatient()){ btns+='<button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="showView(\'patients\')">👤 Back to chart</button>'; }
-    if(navFeatOn('calendar')) btns+='<button class="btn-ghost" style="font-size:13px;padding:7px 12px" onclick="showView(\'calendar\')">📅 Calendar</button>';
     bar.innerHTML='<span style="font-weight:600;color:#127a55;margin-right:4px">'+msg+'</span>'+btns;
     bar.style.display='flex';
   }catch(e){}
@@ -15158,12 +15155,27 @@ function __mlsPtRosterData(all){
   var rows=[],byId=new Map();
   for(var i=0;i<all.length;i++){
     var p=all[i]; if(!p)continue;
-    var row={patient:p,search:[p.name,p.dob,p.mrn].filter(Boolean).join(' ').toLowerCase()};
+    var row={patient:p,search:[p.name,p.dob,__mlsDobSearchForms(p.dob),p.mrn].filter(Boolean).join(' ').toLowerCase()};
     rows.push(row); byId.set(p.id,p);
   }
   var nameRows=rows.slice().sort(function(a,b){ return (a.patient.name||'').localeCompare(b.patient.name||'',undefined,{sensitivity:'base'}); });
   __mlsPtRosterCache={key:key,raw:raw,gen:gen,batch:batch,batchChanges:batchChanges,batchExternalWrites:batchExternalWrites,rows:rows,nameRows:nameRows,byId:byId,visitsVer:-1,visitRows:null};
   return __mlsPtRosterCache;
+}
+/* ptfix-1.0.0: the banner and cards print a DOB as MM/DD/YYYY, so a search
+   typed that way (or 1/2/1961, 1-2-1961) must find the chart too. Both sides
+   meet in one fixed-width form, YYYY-MM-DD, so 1/2/1961 cannot match the
+   11/2/1961 chart the way a substring of the printed form did. */
+function __mlsDobParts(dob){
+  var s=String(dob||'').trim(),m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if(m)return {y:+m[1],m:+m[2],d:+m[3]};
+  m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  return m?{y:+m[3],m:+m[1],d:+m[2]}:null;
+}
+function __mlsDobSearchForms(dob){
+  var d=__mlsDobParts(dob); if(!d)return '';
+  var iso=d.y+'-'+('0'+d.m).slice(-2)+'-'+('0'+d.d).slice(-2);
+  return iso===String(dob).trim()?'':iso;
 }
 function __mlsPtVisitRows(data){
   var v=__mlsNotesStoreVersion();
@@ -15797,6 +15809,13 @@ async function loadPatientsFromServer(opts){
             if(__mlsTeamNotesSig(adopted.teamNotes)!==__tnBefore){ try{ _pendingSyncAdd(row.external_id); }catch(e){} }
           }catch(eTnCarry){}
           local[i]=adopted; changed=true;
+        }else if(lUpd>sUpd){
+          /* updfix-1.0.0: a local copy strictly newer than the account's is
+             one the account never took. Until 2026-09-23 the server answered
+             a save of a chart it already held with a fill-blanks merge, so
+             corrected DOBs, MRNs and problem lists were acknowledged and
+             dropped. Queue the newer copy; the server now stores it. */
+          try{ _pendingSyncAdd(row.external_id); }catch(e){}
         }
       }
     }
@@ -17736,7 +17755,11 @@ function _calGridClick(ev, key, startMin, pxPerMin){
   try{
     if(ev && ev.target && ev.target.closest && ev.target.closest('[data-appt]')) return; // clicked an appointment, not empty space
     var host=ev.currentTarget; if(!host) return; var rect=host.getBoundingClientRect();
-    var y=(ev.clientY-rect.top); if(host.scrollTop) y+=host.scrollTop;
+    /* ptfix-1.0.0: rect and clientY are on-screen pixels; pxPerMin and
+       scrollTop are the grid's own. Text size zooms the workspace, so scale
+       back by the grid's measured on-screen size. */
+    var sc=host.offsetHeight?(rect.height/host.offsetHeight):1; if(!(sc>0)) sc=1;
+    var y=(ev.clientY-rect.top)/sc; if(host.scrollTop) y+=host.scrollTop;
     _calSlotNew(key, startMin + (y/(pxPerMin||1)));
   }catch(e){}
 }
@@ -22629,7 +22652,7 @@ function renderPatients(){
   // and the only visible match was a hollow duplicate row. Every whitespace
   // token must match somewhere in the search key; single-word queries behave
   // exactly as before.
-  var qTokens=ql?ql.split(/\s+/).filter(Boolean):[];
+  var qTokens=ql?ql.split(/\s+/).filter(Boolean).map(function(t){ var d=__mlsDobParts(t); return d?(d.y+'-'+('0'+d.m).slice(-2)+'-'+('0'+d.d).slice(-2)):t; }):[];
   var matched=qTokens.length?ranked.filter(function(row){for(var qi=0;qi<qTokens.length;qi++){if(row.search.indexOf(qTokens[qi])<0)return false;}return true;}):ranked;
   /* plv-1.0.0: the provider filter narrows the RANKED roster, before the
      150-row cap below - filtering the capped page instead would silently hide
@@ -22675,7 +22698,7 @@ function renderPatients(){
     list._mlsRoster=null; list._mlsNotesVer=null;
     if(noMatch){
       noMatch.style.display='block';
-      noMatch.innerHTML=`No patient matching “<b>${esc(q)}</b>”.<br><button class="btn-primary" style="margin-top:12px;font-size:14px;padding:9px 16px" onclick="newPatientFromSearch()">＋ Add “${esc(q)}” as a new patient</button>`;
+      noMatch.innerHTML=`No patient matching “<b>${esc(q)}</b>”.<br><button class="btn-primary" style="margin-top:12px;font-size:14px;padding:9px 16px" onclick="newPatientFromSearch()">${__mlsDobParts(q)?'＋ Add a new patient born '+esc(q):'＋ Add “'+esc(q)+'” as a new patient'}</button>`;
     }
     return;
   }
@@ -22788,9 +22811,12 @@ function _ptItemHtml(p, activeId){
      either. The row is focusable now, and Enter/Space open it (the handler
      below). role=group, not button: the row CONTAINS the Record and 🗑
      buttons, and a button inside a button is not a control a screen reader
-     can reach - the calnav-1.0.0 rule for the calendar grid, applied here. */
+     can reach - the calnav-1.0.0 rule for the calendar grid, applied here.
+     ptfix-1.0.0: the avatar's tag is written <${'img'} so the browser's
+     preload scanner, reading ahead through this script as HTML, stops
+     fetching the literal "${esc(p.photo)}" as an image on every load. */
   return `<div class="pt-item ${isActive?'active':''}" data-patient-id="${esc(p.id)}" onclick="selectPatient('${p.id}')" title="Open ${esc(p.name)}'s chart" tabindex="0" role="group" aria-label="${esc(p.name)}" aria-keyshortcuts="Enter">
-      <div class="pt-avatar">${esc(ptInitials(p.name))}${p.photo?`<img src="${esc(p.photo)}" alt="" onerror="this.remove()">`:''}</div>
+      <div class="pt-avatar">${esc(ptInitials(p.name))}${p.photo?`<${'img'} src="${esc(p.photo)}" alt="" onerror="this.remove()">`:''}</div>
       <div class="pt-main" style="min-width:0">
         <div class="t" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">${esc(p.name)}${isActive?'<span class="pt-active-badge" style="font-size:10.5px;color:#fff;background:var(--brand);font-weight:700;border-radius:999px;padding:1px 8px;letter-spacing:.3px">ACTIVE</span>':''}</div>
         ${demo?`<div class="s" style="margin-top:1px">${esc(demo)}</div>`:''}
@@ -22798,7 +22824,7 @@ function _ptItemHtml(p, activeId){
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${chips}</div>
       </div>
       <div style="display:flex;align-items:center;gap:7px;flex-shrink:0">
-        <button onclick="event.stopPropagation();ptQuickVisit('${p.id}')" title="Start recording a visit for this patient" style="background:var(--brand,#2E6A4B);color:#fff;border:0;border-radius:10px;padding:8px 13px;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap">🎙️ Record</button>
+        <button onclick="event.stopPropagation();ptQuickVisit('${p.id}')" title="Start recording a visit for this patient" aria-label="Record a visit for this patient" style="background:var(--brand,#2E6A4B);color:#fff;border:0;border-radius:10px;padding:8px 13px;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap">🎙️ Record</button>
         <button class="del" title="Delete patient" onclick="event.stopPropagation();deletePatient('${p.id}')">🗑</button>
       </div>
     </div>`;
@@ -22920,7 +22946,9 @@ function _offerPatientUndo(snap){
   }
   bar.textContent='';
   var msg=document.createElement('span');
-  msg.textContent='Deleted '+String(snap.patient.name||'this patient')+'. Their documents were deleted too.';
+  msg.textContent=snap.serverFailed
+    ? ('Removed '+String(snap.patient.name||'this patient')+' on this device only.')
+    : ('Deleted '+String(snap.patient.name||'this patient')+'. Their documents were deleted too.');
   var btn=document.createElement('button');
   btn.type='button'; btn.className='btn-ghost'; btn.id='ptUndoDeleteBtn';
   btn.style.cssText='margin-left:auto;font-size:13px;padding:6px 12px';
@@ -22928,6 +22956,10 @@ function _offerPatientUndo(snap){
   btn.addEventListener('click',function(){ undoLastPatientDelete(); });
   bar.appendChild(msg); bar.appendChild(btn);
   bar.style.display='flex';
+  /* ptfix-1.0.0: on a phone or tablet the chart's Delete sits far below the
+     list, so the bar landed off screen and the promised Undo was never seen */
+  try{ var _ur=bar.getBoundingClientRect(); if(_ur.top<0||_ur.bottom>(window.innerHeight||0)) bar.scrollIntoView({block:'center'}); }catch(eS){}
+  try{ btn.focus({preventScroll:true}); }catch(eF){}
   try{ clearTimeout(_mlsPtUndoTimer); }catch(e){}
   /* the snapshot is dropped with the bar - a stale undo must never resurrect a
      patient the doctor deleted minutes ago and has moved on from */
@@ -22997,7 +23029,7 @@ async function deletePatient(id){
   _delMsg+=_mlsPtDeleteLossSentence(_dp);
   _delMsg+=_delScheduled
     ? ' Their appointment stays on the schedule, so pulling that day from Athena again will re-create this chart.'
-    : ' This cannot be undone.';
+    : ' You can undo it for 30 seconds; after that it cannot be undone.';
   if(!await mlsConfirm(_delMsg)) return;
   /* ptundo-1.0.0 (2026-08-28): the delete control is a hover-revealed trash on a
      list row, one confirm away, and the patient's uploaded DOCUMENTS - labs,
@@ -23050,6 +23082,8 @@ async function deletePatient(id){
     /* Honest and actionable: the row is gone HERE but the account copy is not,
        so the next sync or sign-in brings it back. Silence would be a false success. */
     toast('Removed on this device, but the copy on your account could NOT be removed ('+((_delVerdict&&_delVerdict.reason)||'unknown')+'). It will come back on the next sync - try again once you are back online.','err');
+    /* the confirm promised 30 seconds of Undo; keep that promise here too */
+    try{ if(_undoSnap) _undoSnap.serverFailed=true; _offerPatientUndo(_undoSnap); }catch(eU){}
   }
 }
 
@@ -23067,7 +23101,10 @@ function _patientModalFocusables(modal){
 // Open the new-patient modal pre-filled with whatever is currently in the search box.
 function newPatientFromSearch(){
   const sb=document.getElementById('ptSearch');
-  newPatient(sb ? sb.value.trim() : '');
+  const q=sb ? sb.value.trim() : '';
+  /* ptfix-1.0.0: a searched date is a date of birth, not a name */
+  if(__mlsDobParts(q)){ newPatient(''); const d=document.getElementById('ptDob'); if(d) d.value=q; return; }
+  newPatient(q);
 }
 /* ptedit-1.0.0 (2026-08-28): savePatient() has always had a correct EDIT
    branch - `editingPtId ? findPatient(editingPtId) : null` - but editingPtId
@@ -23149,6 +23186,20 @@ function closePatientModal(){
 async function savePatient(){
   const name=document.getElementById('ptName').value.trim();
   if(!name){ toast('Enter a name or label for the patient.','err'); return; }
+  /* ptfix-1.0.0: a typed date of birth must be a real, past date; free text
+     such as "age 44" is still accepted. */
+  { const _dv=document.getElementById('ptDob').value.trim(), _dp=__mlsDobParts(_dv);
+    let _bad=false;
+    if(_dp){ const _dt=new Date(_dp.y,_dp.m-1,_dp.d);
+      _bad=_dt.getFullYear()!==_dp.y||_dt.getMonth()!==_dp.m-1||_dt.getDate()!==_dp.d||_dt.getTime()>Date.now()||_dp.y<1880; }
+    /* anything else shaped like a date (a 2-digit year, trailing text, a
+       month name the browser would quietly roll over: "Feb 30 1990") is
+       refused rather than stored and reprinted as some other day */
+    else if(/^\d{1,4}[\/\-.]\d{1,2}[\/\-.]\d{1,4}/.test(_dv)||(/[a-z]/i.test(_dv)&&/\b(18|19|20)\d{2}\b/.test(_dv)&&!/^age\b/i.test(_dv))) _bad=true;
+    if(_bad){
+      toast('“'+_dv+'” is not a real date of birth. Use MM/DD/YYYY, for example 05/14/1980.','err');
+      try{ document.getElementById('ptDob').focus(); }catch(eF){}
+      return; } }
   let p = editingPtId ? findPatient(editingPtId) : null;
   /* ptedit-1.0.0: the Athena coverage receipt binds to p.id ONLY - it carries no
      name, DOB or MRN, and nothing invalidates it when demographics change. So a
@@ -23177,12 +23228,16 @@ async function savePatient(){
   p.mrn=document.getElementById('ptMrn').value.trim();
   p.sex=document.getElementById('ptSex').value;
   p.dob=document.getElementById('ptDob').value.trim();
+  const _mintedId=editingPtId ? null : p.id;
   upsertPatient(p);
   setActivePtId(p.id);
   closePatientModal();
   const _sb=document.getElementById('ptSearch'); if(_sb) _sb.value=''; // clear filter so the new patient is visible
   renderPatients(); renderProfile(); renderPatientBar();
-  toast('Patient saved and set active.','ok');
+  /* ptfix-1.0.0: a create with the same name and date of birth as a chart
+     on file opens that chart; say so instead of "saved". */
+  if(_mintedId && p.id!==_mintedId) toast('A chart for '+name+' with this date of birth is already on file, so it was opened instead of adding a second one.','ok');
+  else toast('Patient saved and set active.','ok');
 }
 
 /* ---------- PROFILE RENDER ---------- */
@@ -49049,7 +49104,7 @@ function _ptGroupSort(mode){
 }
 
 </script>
-<script src="public-preview-runtime.js?v=20260923pv718"></script>
+<script src="public-preview-runtime.js?v=20260923pv719"></script>
 <script>
 /* ===== MLS Unified Patient Card — connectedness cohesion (merges context bar + #patientBar) =====
    Supersedes the original Active-Patient Context Bar. Renders ONE polished patient card under the
@@ -49398,7 +49453,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1320';
+  window.__MLS_AV='b1321';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
@@ -56311,6 +56366,11 @@ html[data-mls-dock-band="bottom"] #opPrepModal.opr-room > .modal{
   display:flex; flex-direction:column; gap:2px;
 }
 #mlsDockNubMenu[hidden]{ display:none; }
+/* ptfix-1.0.0: 9405 keeps the nub over the op-prep room, but it also sat on
+   every centred dialog (New patient, Settings) and opened its menu there. */
+html:has(.modal-bg.show:not(.opr-room)) #mlsDockNub{ z-index:921; }
+html:has(.modal-bg.show:not(.opr-room)) #mlsDockNubMenu{ z-index:922; }
+html:has(.modal-bg.show:not(.opr-room)) #mlsDockNudge{ z-index:921; }
 #mlsDockNubMenu .mlsDockGroup{
   font:700 10.5px/1.2 var(--sans); letter-spacing:.4px; text-transform:uppercase;
   color:var(--muted); padding:4px 8px 6px;
@@ -63441,7 +63501,7 @@ html #settingsModal #advIntegrations #mlsClunkySetVendor{ margin-top:14px; }
      moment it changes — so on the Premium account where it is live, Cancel
      never put the model back. */
   var NOW_IDS = ['swSharedToggle', 'navLayoutSel', 'qolMslMode', 'qolDockSide', 'qolDockAutoHide',
-    'qolPtLayout', 'qolGroupProc', 'mlsShowPerformanceTools', 'athenaFollowToggle',
+    'mlsShowPerformanceTools', 'athenaFollowToggle', 'mlsPortalAskTgl',
     'setPullVisitBodies', 'mlsPcTgl', 'r44cVoiceSA', 'r44cVoice', 'r44cBday', 'r44cErr',
     'r44cQp', 'defaultComment', 'noteModelSel',
     'mlsVnTplProfile_soap', 'mlsVnTplProfile_hpi', 'mlsVnTplProfile_ros',
@@ -63506,6 +63566,9 @@ html #settingsModal #advIntegrations #mlsClunkySetVendor{ margin-top:14px; }
     qa('a[href]', modal).forEach(function (a) {
       if (!/get-extension/i.test(a.getAttribute('href') || '')) return;
       if (a.id === 'extDlBtn') return;
+      /* ptfix-1.0.0: a link that ends a sentence ("Not installed? Get the
+         extension.") is part of that sentence; hiding it left "Not installed? ." */
+      if (a.parentNode && /Not installed\?/.test(txt(a.parentNode))) return;
       if (!kept && a.getAttribute('data-mls-t2-extdupe') !== '1'
         && a.getAttribute('data-mls-clunky-dupe') !== '1') { kept = true; return; }
       if (a.getAttribute('data-mls-t2-extdupe') === '1') return;
@@ -65169,9 +65232,11 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
   #ptList .pt-item .pt-main .t{ font-size:15px; flex-wrap:nowrap; overflow:hidden; }
   #ptList .pt-item .pt-main .s{ margin-top:1px; font-size:12px;
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  /* ptfix-1.0.0: the row's inline padding and font-size beat this rule, so
+     the label spilled out as "Recor" beside a second mic. */
   #ptList .pt-item > div:last-child > button:not(.del){
-    width:44px; height:44px; padding:0; font-size:0; line-height:0;
-    display:grid; place-items:center;
+    width:44px; height:44px; padding:0 !important; font-size:0 !important; line-height:0 !important;
+    display:grid; place-items:center; overflow:hidden;
   }
   #ptList .pt-item > div:last-child > button:not(.del)::before{
     content:"\1F399\FE0F"; font-size:17px; line-height:1;

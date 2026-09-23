@@ -117,15 +117,15 @@ const srv=http.createServer((q,r)=>{let p=decodeURIComponent(q.url.split('?')[0]
   assert.match(await status(pg),/Copilot and the patient finder are off/,'Enter on an off hand-off explains instead of doing nothing');
   assert.ok(await pg.evaluate(()=>{const o=document.getElementById('mlsFpQf');return !o||getComputedStyle(o).display==='none';}),'the global finder did not open');
   await pg.keyboard.press('Escape');
-  // 7. Settings: auto log-off shows a real choice and Cancel closes
-  await pg.click('#mlsAccountMenuBtn'); await pg.click('[data-account-action="settings"]');
-  await until(pg,()=>{const m=document.getElementById('settingsModal');return !!m&&getComputedStyle(m).display!=='none'&&!!document.getElementById('idleMins');},null,8000);
-  const set=await pg.evaluate(()=>{const s=document.getElementById('idleMins');const c=[...document.querySelectorAll('#settingsModal button')].find(x=>x.offsetParent&&/^(Cancel|Close)$/.test(x.textContent.trim())&&x.getAttribute('onclick')==='closeSettings()');if(c)c.setAttribute('data-t','settings-cancel');return {v:s.value,i:s.selectedIndex,c:c&&c.getAttribute('data-mls-preview-blocked')};});
-  assert.ok(set.v!==''&&set.i>=0,'#idleMins shows one of its options: '+JSON.stringify(set));
-  assert.strictEqual(set.c,null,'Settings Cancel is not blocked');
-  await pg.click('[data-t="settings-cancel"]');
-  await until(pg,()=>getComputedStyle(document.getElementById('settingsModal')).display==='none',null,5000);
-  assert.strictEqual(await pg.evaluate(()=>getComputedStyle(document.getElementById('settingsModal')).display),'none','Settings Cancel closes the dialog');
+  // 7. Settings is off in the sample (ptfix-1.0.0): Account & security says so
+  //    like Tools > Settings, instead of opening a dialog whose Save / Cancel
+  //    sat under the sample strip (a tap on Cancel landed on Exit preview).
+  await pg.click('#mlsAccountMenuBtn'); await pg.click('[data-account-action="settings"]',{force:true});
+  await pg.waitForTimeout(600);
+  const set=await pg.evaluate(()=>{const m=document.getElementById('settingsModal');const st=document.getElementById('mlsPublicPreviewStrip');return {open:!!m&&getComputedStyle(m).display!=='none',said:st?st.textContent:''};});
+  assert.strictEqual(set.open,false,'Account & security does not open Settings in the sample');
+  assert.match(set.said,/disabled in the read-only sample workspace/,'and the strip says why: '+set.said);
+  await pg.keyboard.press('Escape');
   // 8. Legal / IME: Change search binds another sample patient; Records review summary can be picked
   //    The Tools row exists only once the deferred Legal / IME module has installed.
   assert.ok(await until(pg,()=>!!(window.__mlsLegalToolsRow&&window.__mlsLegalToolsRow.available()),null,120000),'the Legal / IME workspace module installs in the sample');
@@ -165,6 +165,6 @@ const srv=http.createServer((q,r)=>{let p=decodeURIComponent(q.url.split('?')[0]
   assert.ok(await ph.evaluate(()=>!document.getElementById('ez3flTranscript')&&!!document.getElementById('ez3Search')),'a tap on Back returns to the day list on a phone');
   assert.deepStrictEqual(P.external,[],'the phone sample made no non-local request');
   assert.deepStrictEqual(P.errs,[],'no page errors on the phone');
-  console.log('PASS sample workspace on /ScribeFlow.html: Back, the notes card, three local searches, dialog Cancel buttons and the Records report work; auto log-off shows a real option; empty days say so; the Reload sample day label never flickers (desktop + phone)');
+  console.log('PASS sample workspace on /ScribeFlow.html: Back, the notes card, three local searches, dialog Cancel buttons and the Records report work; Settings stays off from the Account menu too; empty days say so; the Reload sample day label never flickers (desktop + phone)');
  } finally { await b.close(); srv.close(); }
 });

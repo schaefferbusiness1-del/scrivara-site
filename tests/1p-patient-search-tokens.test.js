@@ -42,12 +42,16 @@ const segShell = extractFilter(shell, '1pScribeFlow.html');
 const segTwin = extractFilter(twin, '1p/index.html');
 ok(segShell === segTwin, 'the twins must carry byte-identical filter code');
 
-/* execute the REAL lines */
-const run = new Function('ql', 'ranked', segShell + '\nreturn matched;');
+/* execute the REAL lines (ptfix-1.0.0: a typed date becomes YYYY-MM-DD,
+   the form the roster adds to every search key, through __mlsDobParts) */
+const dobAt = shell.indexOf('function __mlsDobParts(dob){');
+ok(dobAt > 0, 'the DOB parser ships in the shell');
+const dobSrc = shell.slice(dobAt, shell.indexOf('\n}\n', dobAt) + 2);
+const run = new Function('ql', 'ranked', dobSrc + '\n' + segShell + '\nreturn matched;');
 
 const ROWS = [
-  { search: 'adam j schaeffer 03/24/2006 7833832', id: 'real' },
-  { search: 'adam schaeffer 04/24/2006', id: 'hollow' },
+  { search: 'adam j schaeffer 03/24/2006 2006-03-24 7833832', id: 'real' },
+  { search: 'adam schaeffer 04/24/2006 2006-04-24', id: 'hollow' },
   { search: 'barbara a schaeffer 05/05/1944 6612162', id: 'barbara' },
   { search: 'sue minarchi 06/28/1956 7506226', id: 'sue' }
 ];
@@ -62,5 +66,7 @@ ok(ids('schaeffer 7833832') === 'real', 'a name token plus an MRN token narrows 
 ok(ids('adam zzz') === '', 'an unmatched token must fail the row (AND, not OR)');
 ok(run('', ROWS).length === 4, 'an empty query returns the whole ranking');
 ok(ids('  adam   schaeffer  ') === 'real,hollow', 'stray whitespace must not mint empty tokens');
+ok(ids('3/24/2006') === 'real' && ids('03-24-2006') === 'real' && ids('2006-03-24') === 'real', 'a DOB typed any usual way finds its chart');
+ok(ids('4/24/2006') === 'hollow', 'and only that chart - not one whose printed date merely contains it');
 
 console.log('PASS 1p patient search tokens: ' + checks + ' checks — every query token must match the row\'s search key, so "adam schaeffer" finds Adam J Schaeffer through the middle initial instead of surfacing only a hollow duplicate; single-word behavior is unchanged, token order is free, and the twins carry identical bytes');

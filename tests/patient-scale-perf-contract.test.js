@@ -195,7 +195,9 @@ assert(app.includes('var ds=__mlsHistoryDateSearch(d);'),
   const roster2 = api.roster(patients.slice());
   assert.strictEqual(roster2, roster1, 'unchanged patient store rebuilt its derived roster');
   assert.deepStrictEqual(Array.from(roster1.nameRows, row => row.patient.id), ['p1', 'p2'], 'cached A-Z order is wrong');
-  assert.strictEqual(roster1.rows.find(row => row.patient.id === 'p1').search, 'alpha 01/01/1980 1', 'normalized patient search key is wrong');
+  /* ptfix-1.0.0: the key also carries the DOB as YYYY-MM-DD, the one form a
+     typed date is turned into, so 1/1/1980 or 01-01-1980 finds the chart */
+  assert.strictEqual(roster1.rows.find(row => row.patient.id === 'p1').search, 'alpha 01/01/1980 1980-01-01 1', 'normalized patient search key is wrong');
 
   const visitRows1 = api.visits(roster1);
   const readsAfterVisitIndex = notesReads;

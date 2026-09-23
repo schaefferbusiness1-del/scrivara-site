@@ -1802,7 +1802,15 @@
   };
 
   /* --------------------- (b) match order + create gate --------------------- */
-  function matchRow(arr, name, dob, athenaId) {
+  /* ptfix-1.0.0: two charts with different MRNs are two people, even with
+     the same name and date of birth (a new patient was folded into another
+     person's chart and the typed MRN dropped). */
+  /* the chart number's digits, the rule feat_mls_patient_merge uses: 'MRN-10421',
+     '#10421' and '10421' are one number; fewer than 5 digits or a filler
+     like 00000 / N/A says nothing, so it is treated as missing */
+  function normMrn(v) { var d = S(v == null ? '' : v).replace(/\D/g, ''); return (d.length >= 5 && !/^(\d)\1+$/.test(d)) ? d : ''; }
+  function conflictMrn(a, b) { a = normMrn(a); b = normMrn(b); return !!(a && b && a !== b); }
+  function matchRow(arr, name, dob, athenaId, mrn) {
     /* HARD RULE: single-token / single-letter names never merge with anything */
     if (tokCount(name) < 2) return null;
     var aid = S(athenaId || '').trim().toLowerCase();
@@ -1848,8 +1856,17 @@
     if (db) {
       var exact = [];
       for (i = 0; i < cands.length; i++) { if (normDob(cands[i].dob) === db) exact.push(cands[i]); }
-      if (exact.length === 1) return exact[0];
+      /* the same MRN as exactly one of them is the stronger key */
+      if (normMrn(mrn)) {
+        var sameMrn = [];
+        for (i = 0; i < exact.length; i++) { if (normMrn(exact[i].mrn) === normMrn(mrn)) sameMrn.push(exact[i]); }
+        if (sameMrn.length === 1) return sameMrn[0];
+        if (sameMrn.length > 1) return null;
+      }
       if (exact.length > 1) return null; /* ambiguous - migration will collapse them, not this gate */
+      /* the MRN veto comes AFTER the ambiguity check: filtering first turned
+         a refused two-row tie into a merge with whichever row had no MRN */
+      if (exact.length === 1 && !conflictMrn(exact[0].mrn, mrn)) return exact[0];
     }
     /* leg 3 (name-only) REMOVED - px-1.0, 2026-08-07. A create that merely
        shares a display name with one existing row used to merge INTO that row
@@ -1925,7 +1942,7 @@
               var exists = false;
               for (var i = 0; i < arr.length; i++) { if (arr[i] && arr[i].id === p.id) { exists = true; break; } }
               if (!exists) { /* this upsert would CREATE a row -> dedup gate */
-                var hit = matchRow(arr, p.name, p.dob, p.athenaId);
+                var hit = matchRow(arr, p.name, p.dob, p.athenaId, p.mrn);
                 if (hit) {
                   var rec = { kind: 'redirect', at: Date.now(), keptId: hit.id, incoming: deep(p), fieldChanges: [], visitsAdded: [] };
                   mergeRows(hit, p, rec);
@@ -2005,6 +2022,7 @@
       for (var j = 1; j < idx.length; j++) {
         var other = arr[idx[j]];
         if (conflictAid(aidOf(anchor), aidOf(other))) { veto('conflicting-athenaIds', anchor, other); continue; }
+        if (conflictMrn(anchor.mrn, other.mrn)) { veto('conflicting-mrns', anchor, other); continue; }
         uni(idx[0], idx[j]);
       }
     });
@@ -2024,6 +2042,11 @@
       });
       if (na > 1) { vetoed.push({ reason: 'group-athenaId-conflict', ids: grp.map(function (p) { return p.id; }), names: grp.map(function (p) { return S(p.name); }) }); return; }
       if (nd > 1) { vetoed.push({ reason: 'group-dob-conflict', ids: grp.map(function (p) { return p.id; }), names: grp.map(function (p) { return S(p.name); }) }); return; }
+      /* ptfix-1.0.0: pairs are checked against the anchor only, so A (no MRN)
+         joins B (111) and C (222) - two MRNs in one group is two people */
+      var mrns = {}, nm = 0;
+      grp.forEach(function (p) { var m = normMrn(p.mrn); if (m && !mrns[m]) { mrns[m] = 1; nm++; } });
+      if (nm > 1) { vetoed.push({ reason: 'group-mrn-conflict', ids: grp.map(function (p) { return p.id; }), names: grp.map(function (p) { return S(p.name); }) }); return; }
       out.push(grp);
     });
     return { groups: out, vetoed: vetoed };
@@ -2339,7 +2362,7 @@
   }
   api.runOnce = runOnce;
   api._scan = function () { return scan(getP()); };
-  api._find = function (name, dob, athenaId) { return matchRow(getP(), name, dob, athenaId); };
+  api._find = function (name, dob, athenaId, mrn) { return matchRow(getP(), name, dob, athenaId, mrn); };
   api._last = function () { return EXPECT; };
   api.report = function () {
     var ls = api.state.lastScan;

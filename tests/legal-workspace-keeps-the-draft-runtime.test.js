@@ -20,6 +20,7 @@ const ROOT = path.resolve(__dirname, '..');
 for (const f of ['1p-feat_mls_legalpack.js', 'feat_mls_legalpack.js']) {
   const src = fs.readFileSync(path.join(ROOT, f), 'utf8');
   assert.ok(!/MLS_1p_Legal|'1p Legal \/ IME/.test(src), f + ': no export or notice carries the internal "1p" tag');
+  assert.ok(/Printing is off in the read-only sample workspace/.test(src) && /Copying is off in the read-only sample workspace/.test(src), f + ': in the sample, Print and Copy say why they did nothing');
 }
 const PREVIEW = fs.readFileSync(path.join(ROOT, 'public-preview-runtime.js'), 'utf8');
 assert.ok(/#mlsP1LegalRoot \.p1l-disclose/.test(PREVIEW), 'the sample lets a Legal card header open its card');

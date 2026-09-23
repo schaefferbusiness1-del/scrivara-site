@@ -2851,11 +2851,17 @@
       win.document.open();
       win.document.write('<!doctype html><html><head><meta charset="utf-8"><title>' + esc(title) + '</title><style>body{font:14px/1.55 system-ui,sans-serif;padding:36px;color:#183a2f}pre{white-space:pre-wrap;font:inherit}</style></head><body><pre>' + esc(text) + '</pre></body></html>');
       win.document.close(); win.focus(); setTimeout(function () { try { win.print(); } catch (e) {} }, 250);
-    } catch (e) { toast('Could not open the local print view.', 'err'); }
+    } catch (e) { toast(inSample(e) ? 'Printing is off in the read-only sample workspace.' : 'Could not open the local print view.', 'err'); }
+  }
+  /* legalfix-1.0.0: the sample's policy refuses pop-ups and the clipboard
+     with a SecurityError; say that instead of a bare "Could not". */
+  function inSample(e) {
+    try { if (window.__MLS_PUBLIC_PREVIEW && window.__MLS_PUBLIC_PREVIEW.enabled === true) return true; } catch (_) {}
+    return !!(e && /Public synthetic preview blocked/.test(String(e.message || '')));
   }
   function copyText(text, label) {
     if (!navigator.clipboard || !isFn(navigator.clipboard.writeText)) { toast('Clipboard access is unavailable.', 'err'); return; }
-    navigator.clipboard.writeText(String(text || '')).then(function () { toast(label + ' copied.', 'ok'); }, function () { toast('Could not copy.', 'err'); });
+    navigator.clipboard.writeText(String(text || '')).then(function () { toast(label + ' copied.', 'ok'); }, function (e) { toast(inSample(e) ? 'Copying is off in the read-only sample workspace.' : 'Could not copy.', 'err'); });
   }
 
   var CSS = [
