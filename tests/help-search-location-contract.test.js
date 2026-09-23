@@ -109,4 +109,21 @@ assert.strictEqual(selected[selected.length - 1], 'build', 'the successful focus
 assert.strictEqual(opened, true, 'a cached builder inside the closed advanced wrapper was not revealed');
 assert.strictEqual(focused, true, 'the revealed Study prompt was not focused');
 
-console.log('PASS Help/Search locations: the canonical directory routes natural-language studies into a visible Build surface, including late and cached mounts');
+/* helpdir-1.0.1 (b1307): ONE "where is it" source. The MLS Assistant's
+   "where is ..." intent and the search rows used a private July map (Copilot
+   Voice "bottom-left", Help "in the top bar") that also appended a stale
+   "What's new (July 6)" list to the Help guide; the guide itself named a
+   "Who's Next grid", "Use current patient", "Notes & templates" and "EMR
+   sections", none of which is on screen. */
+assert(source.includes('var MAP = (window.__mlsFeatureDirectory && window.__mlsFeatureDirectory.length) ? window.__mlsFeatureDirectory : [];'),
+  'the Assistant and search rows no longer read the canonical feature directory');
+assert(!source.includes("name: '🎙️ MLS Copilot Voice', where: 'Bottom-left button'"), 'the retired private feature map is back');
+assert(!source.includes("What\\'s new (July 6)") && !source.includes("What's new (July 6)"), 'the stale July What\'s-new list is appended to the Help guide again');
+const guideAt = source.indexOf("aria-label=\"How to use MLS Scribe\">' +\n        '<div class=\"g33-top\">");
+const guide = source.slice(source.lastIndexOf('var STEPS = [', guideAt), guideAt);
+assert(guide.length > 1000, 'the Help guide steps could not be sliced');
+['Who’s Next', 'Use current patient', 'Notes & templates', 'EMR sections', 'top-right of MLS Easy'].forEach((stale) =>
+  assert(!guide.includes(stale), 'the Help guide names a control that is not on screen: ' + stale));
+assert(source.includes('Tip: reopen this guide any time - press <b>/</b> and pick <b>Help and guided tour</b>.'), 'the Help guide still sends people to a top-bar Help button');
+
+console.log('PASS Help/Search locations: the canonical directory routes natural-language studies into a visible Build surface, including late and cached mounts; the Assistant, search rows and Help guide share it and name only controls on screen');

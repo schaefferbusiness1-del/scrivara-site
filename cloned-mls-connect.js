@@ -32548,20 +32548,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   cleanup.push(function () { document.removeEventListener('click', qrClick, true); });
 
   /* ================= Q12/Q13/Q14 — product map, search, copilot ================= */
-  var MAP = [
-    { k: 'voice copilot microphone talk', name: '🎙️ MLS Copilot Voice', where: 'Bottom-left button', how: 'Tap it and just talk — "start a visit for Adam", "generate the note". Red pulse = listening. It no longer opens the chat panel; it acts directly.' },
-    { k: 'assistant chat help ask', name: 'MLS Assistant', where: 'Bottom-left "MLS Assistant" button', how: 'One assistant for everything: schedule questions, patient loads, athena status. Has its own 🎤 inside.' },
-    { k: 'google business profile reputation reviews listing', name: '🌟 Google Business Profile', where: 'Settings → What you see → More display options', how: 'Connect YOUR Google account, MLS drafts the listing from your practice data, you approve each change before anything publishes.' },
-    { k: 'settings controls toggles preferences', name: '🎛 More display options', where: 'Settings (gear) → What you see', how: 'Every new feature has a switch here: voice, tunnel mode, birthdays, quick-pick size, friendly errors.' },
-    { k: 'tunnel simple mode guided', name: 'Simple mode (tunnel)', where: 'Visit screen — green "Simple mode" button', how: 'Full-screen 5-step guided visit. Can be shown or hidden under Settings -> What you see.' },
-    { k: 'guide tour how to help', name: '📖 How-to guide + tour', where: 'Top bar ❓ Help / Menu → How-To Guide', how: 'The one current guide; the spotlight tour walks the real UI.' },
-    { k: 'qr phone mobile record', name: '📱 Phone recording', where: 'Patient page — phone mic button', how: 'Click it to SHOW the QR; scan with your phone to record there (crash-proof, auto-retry).' },
-    { k: 'send athena writeback emr sign billing save', name: 'Review Athena actions', where: 'Visit flow step 4 / Athena review', how: 'See every destination. Note write, Save Draft, billing, signing, and each supported non-medication order use exact encounter checks and separate confirmations. Prescriptions, attestations, and claim submission remain manual in Athena.' },
-    { k: 'study group research cohort', name: 'Study Groups PRO', where: 'AI Studio → advanced section', how: 'Build cohorts by procedure, auto-format all patients, run a study (graph/Excel/PDF + premium AI narrative).' },
-    { k: 'pay report money premium billing', name: '💵 Pay Reports', where: 'Top of AI Studio and Calendar', how: 'Premium feature — per-provider payment reporting.' },
-    { k: 'agenda today schedule quick pick', name: "Today's Agenda / quick-pick", where: 'Home hero strip', how: 'Shows the selected doctor\'s patients (scoped like Who\'s Next). Chips show 🎂 birthdays and 12-hour times.' },
-    { k: 'dedupe duplicates patients merge history', name: 'Duplicate protection + visit history', where: 'Automatic (server-side)', how: 'Pulls can never create duplicate patients; every visit is stored individually in the patient\'s encrypted record.' }
-  ];
+  /* helpdir-1.0.1: this module kept its own July feature map - Copilot Voice
+     "bottom-left", MLS Assistant "bottom-left", Help "in the top bar", a phone
+     mic "on the Patient page" - and the MLS Assistant answered "where is ..."
+     from it. The canonical directory (window.__mlsFeatureDirectory, installed
+     above and re-measured in the current shell) is the one source now. */
+  var MAP = (window.__mlsFeatureDirectory && window.__mlsFeatureDirectory.length) ? window.__mlsFeatureDirectory : [];
   window.__mlsProductMap = MAP;
   /* copilot intents */
   try {
@@ -32570,7 +32562,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         var ql = q.toLowerCase();
         var hit = MAP.find(function (m2) { return m2.k.split(' ').some(function (w) { return ql.indexOf(w) >= 0; }); });
         if (hit) return hit.name + ' — ' + hit.where + '. ' + hit.how;
-        return 'New in MLS: ' + MAP.map(function (m2) { return m2.name; }).join(' · ') + '. Ask me about any of them, or open Settings → What you see.';
+        return 'I could not match that to a feature. Press / to search every feature by name, or ask me in other words.';
       });
     }
   } catch (e) {}
@@ -32603,20 +32595,6 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     mo2.observe(panel, { childList: true, subtree: true });
     cleanup.push(function () { mo2.disconnect(); });
   }
-  /* help guide addendum */
-  function helpHook() {
-    var g = $('mlsG33Modal');
-    if (!g || g.__r44help) return;
-    g.__r44help = 1;
-    var box = g.querySelector('[class*=body],[class*=content]') || g.firstElementChild || g;
-    var sec = document.createElement('div');
-    sec.className = 'mls-r44-soft';
-    sec.style.cssText = 'margin:14px;padding:14px;';
-    sec.innerHTML = '<b>🆕 What\'s new (July 6)</b><ul style="margin:8px 0 0 18px;padding:0">'
-      + MAP.slice(0, 8).map(function (f) { return '<li style="margin:4px 0"><b>' + f.name + '</b> — ' + f.where + '</li>'; }).join('') + '</ul>';
-    box.appendChild(sec);
-  }
-
   /* ================= Q11 — agenda provider scoping ================= */
   function setR44Display(el, hidden) {
     if (!el) return;
@@ -32803,7 +32781,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
 
   /* ================= keep-alive ================= */
-  var iv = setInterval(function () { buildControls(); searchHook(); helpHook(); scopeAgenda(); applyCtl(); }, 2000);
+  var iv = setInterval(function () { buildControls(); searchHook(); scopeAgenda(); applyCtl(); }, 2000);
   cleanup.push(function () { clearInterval(iv); });
   buildControls(); searchHook(); applyCtl();
 
@@ -34811,47 +34789,46 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     (document.head || document.documentElement).appendChild(s);
   }
 
-  /* ---- 2. the ONE current guide (authored from the live b32 UI) ---------- */
+  /* ---- 2. the ONE current guide ------------------------------------------
+     helpdir-1.0.1: re-written against the current shell (taskbar, Visit tab,
+     Tools menu, Visit shortcuts) - the b32 copy sent doctors to a "Who's Next
+     grid", a "Use current patient" form, a "Notes & templates" card, "EMR
+     sections" and a "Record on phone" button "top-right of MLS Easy", none of
+     which is on screen any more. Every control named here was found on screen
+     in the signed-in shell (b1306). */
   var STEPS = [
     ['🔗', 'Set up MLS Assist for athenaOne',
-      'Install <b>MLS Assist</b>, keep one signed-in athenaOne tab open, and use <b>Pull from Athena</b>. ' +
+      'Install <b>MLS Assist</b> (Settings → Connections &amp; integrations), keep one signed-in athenaOne tab open, and use <b>📥 Pull today</b> on the Visit tab. ' +
       'A green status means the extension has verified the current browser connection; it does <b>not</b> mean the official athenahealth API is connected. ' +
       'Direct API access remains off until a server-side Preview app, validation, customer enablement, and contracting are complete.'],
     ['👤', 'Pick a patient',
-      'Three easy ways: (1) tap a name in the <b>Who’s Next</b> grid (the “Today” chips) to make ' +
-      'it the active patient instantly; (2) use <b>Pull today’s patients</b> / <b>From Athena chart</b> ' +
-      'to load your schedule; or (3) type the <b>Patient name</b> + <b>Date of birth</b> and press ' +
-      '<b>Use current patient</b>. The active patient always shows in the header up top — use ' +
-      '<b>Switch patient</b> to change.'],
+      'On the <b>Visit</b> tab press <b>Choose patient</b>, or pick one on the <b>Patient</b> tab. ' +
+      '<b>📥 Pull today</b> on the Visit tab’s day bar brings in today’s schedule from athenaOne. ' +
+      'The patient you are working on always shows in the bar at the top.'],
     ['🎙️', 'Record the visit',
-      'With a patient active, press <b>Start recording</b> and just talk through the visit normally. ' +
-      'MLS listens in the background and transcribes. Press <b>Stop</b> when you’re done. ' +
-      'No typing during the visit.'],
-    ['📝', 'Generate & review the note',
-      'MLS turns the conversation into a structured note in the <b>Note</b> card. Read it over and edit ' +
-      'anything you like — it’s your note. You can also <b>Prep op note</b> or apply your own ' +
-      '<b>templates</b> from the “Notes & templates” card.'],
-    ['🗂️', 'Organize the local MLS draft',
-      'Open <b>EMR sections</b> to organize the generated note locally. A 5-step bar guides you: ' +
-      '<b>record → MLS auto-sorts → review & edit → confirm approved → update local draft</b>. ' +
-      '<b>Update local MLS draft never writes to Athena.</b> When the draft is ready, use the one ' +
-      '<b>Review Athena actions</b> entry to see the fixed, fail-closed destinations.'],
+      'With a patient chosen, press <b>Start Recording</b> on the Visit tab and talk through the visit normally. ' +
+      'Press <b>Stop</b> when you’re done. Seen them already? Use <b>Type or paste visit notes</b> instead - no recording.'],
+    ['📝', 'Generate &amp; review the note',
+      'Press <b>Generate one note</b> once there is a transcript. The draft opens in its sections - read it and edit anything; it’s your note. ' +
+      'Your visit note templates (Settings → Notes &amp; AI) shape the draft; operative notes are under <b>💉 Draft op notes</b> or Tools → Prep op notes.'],
+    ['🗺', 'See where each part goes',
+      '<b>🗺 Preview EMR placement</b> shows where each part of the note will land in athenaOne. ' +
+      'Previewing, editing and <b>💾 Save to history</b> never write to Athena.'],
     ['Athena', 'Review the Athena actions',
       'When the note and sections look right, use <b>Review Athena actions</b>. The receipt shows every destination. ' +
       'Every <b>READY</b> row names What, exact Where, How and Result, and requires its own exact-encounter check and confirmation. With a capable MLS Assist version, READY can include reviewed note sections, Save Draft, billing staging, Sign &amp; Save, and one catalog-bound imaging, PT, referral or DME order. Medication/injection orders, unaccepted suggestions, prescriptions, attestation and claim submission stay manual. Nothing runs automatically or chains.'],
-    ['📅', 'Calendar & schedule',
-      'The <b>Calendar</b> tab shows the month, a day panel and <b>Who’s Next</b>. Pick any day to see ' +
-      'that day’s patients, then tap one to jump straight into the visit with them loaded.'],
+    ['📅', 'Calendar &amp; schedule',
+      'Open the <b>Calendar</b> (on the taskbar, or Tools → Schedule) for the day, week or month. ' +
+      'Pick a day to see its patients, then open one to start their visit.'],
     ['💡', 'MLS Copilot',
-      'Open <b>AI Studio</b> to ask MLS Copilot about your practice — e.g. “how many patients do I have,” ' +
-      '“who’s overdue,” “how busy is tomorrow.” Type your question in the card and it answers with ' +
-      'the details, and can open a chart or start a visit for you.'],
+      'Press <b>Copilot</b> on the taskbar, or open <b>AI Studio → Ask</b>, to ask about your practice - e.g. “who’s overdue,” ' +
+      '“how busy is tomorrow.” It answers with the details and can open a chart or start a visit for you.'],
     ['📣', 'Marketing',
       'Open <b>Tools → Marketing</b> for the free draft-only workspace: listing checklists, privacy-safe ' +
       'review replies, neutral campaign plans, and ads copy. Nothing publishes or sends.'],
     ['📱', 'Use it on your phone',
-      'Scan the <b>Record on phone</b> QR code (top-right of MLS Easy) to capture a visit from your phone. ' +
-      'Every screen also works in a narrow mobile browser — the cards stack into a single column.']
+      'In a visit, open <b>Visit shortcuts → Record on phone</b> and scan the code to capture the visit on your phone. ' +
+      'Every screen also works in a narrow phone browser.']
   ];
 
   function buildModal() {
@@ -34871,7 +34848,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         '<div class="g33-sub">MLS captures the visit, builds a reviewable note, and can place a confirmed draft in athenaOne. ' +
           'You complete final clinical and financial actions in Athena. Here’s the whole flow in plain steps.</div>' +
         '<div class="g33-body">' + stepsHtml +
-          '<div class="g33-mob">Tip: you can reopen this guide anytime from <b>❓ Help</b> in the top bar.</div>' +
+          '<div class="g33-mob">Tip: reopen this guide any time - press <b>/</b> and pick <b>Help and guided tour</b>.</div>' +
         '</div>' +
         '<div class="g33-foot">' +
           '<button class="g33-btn primary" type="button" data-g33="close">Got it</button>' +
