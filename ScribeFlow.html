@@ -1879,6 +1879,10 @@
   /* Generic floor that actually reaches non-<button> controls. */
   html body a[href], html body [role="button"], html body [role="menuitem"],
   html body summary, html body button{ min-height:44px; }
+  /* calfix-1.0.0: a timed Day/Week block is sized by its duration and placed
+     by its start time; the 44px floor above (it carries role=button) stacked
+     a 15-minute block over the appointment after it. */
+  html body #calGrid [data-appt]{ min-height:0; }
 
   /* Top bar. Height is already 44; these are all too NARROW. */
   html body #mlsRdRailBtn, html body #mlsRdBackBtn, html body #mlsRdNewBtn,
@@ -17719,7 +17723,11 @@ function _calRenderWeek(){
   var days=[]; for(var i=0;i<7;i++){ days.push(new Date(start.getFullYear(),start.getMonth(),start.getDate()+i)); }
   var lbl=document.getElementById('calMonthLabel'); if(lbl) lbl.textContent='Week of '+start.toLocaleDateString([], {month:'short',day:'numeric'})+' – '+days[6].toLocaleDateString([], {month:'short',day:'numeric',year:'numeric'});
   var byDate={}; (_calAppts||[]).filter(function(a){ return _calRowMatchesProv(a,pfVal); }).forEach(function(a){ var k=_calDateOf(a); if(k){ (byDate[k]=byDate[k]||[]).push(a); } });
-  var tn=new Date(); var todayKey=tn.getFullYear()+'-'+_calPad(tn.getMonth()+1)+'-'+_calPad(tn.getDate());
+  /* calfix-1.0.0: "today" is the account's today (its timezone), the same
+     day the Day view, the brief and the schedule call today - not the
+     browser's local date, which differs for a doctor travelling or on a
+     machine set to another zone. */
+  var todayKey=_acctTodayKey();
   var dn=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   var grid=document.getElementById('calGrid'); if(!grid) return;
   /* snappy-1.0: the hour-gutter range comes from THIS week's rows, not from an
@@ -17730,11 +17738,11 @@ function _calRenderWeek(){
   // Header row — click a day to open its Day agenda.
   var h='<div style="display:grid;grid-template-columns:44px repeat(7,1fr)">';
   h+='<div></div>';
-  days.forEach(function(d,idx){ var key=d.getFullYear()+'-'+_calPad(d.getMonth()+1)+'-'+_calPad(d.getDate()); var it=key===todayKey; h+='<div onclick="_calRefDate=\''+key+'\';calSetMode(\'day\')" title="Open this day" style="text-align:center;font-weight:700;font-size:12px;color:'+(it?'#2E6A4B':'var(--muted)')+';padding:4px 0;cursor:pointer">'+dn[idx]+' '+d.getDate()+'</div>'; });
+  days.forEach(function(d,idx){ var key=d.getFullYear()+'-'+_calPad(d.getMonth()+1)+'-'+_calPad(d.getDate()); var it=key===todayKey; h+='<div onclick="_calRefDate=\''+key+'\';_calSyncFromRef();calSetMode(\'day\')" title="Open this day" style="text-align:center;font-weight:700;font-size:12px;color:'+(it?'#2E6A4B':'var(--muted)')+';padding:4px 0;cursor:pointer">'+dn[idx]+' '+d.getDate()+'</div>'; });
   h+='</div>';
   // Body — hour gutter + 7 day lanes, appointments as duration-sized blocks.
   h+='<div style="display:grid;grid-template-columns:44px repeat(7,1fr);margin-top:2px">';
-  h+='<div style="position:relative;height:'+totalH+'px">'; for(var tg=rng.startMin;tg<=rng.endMin;tg+=60){ var topg=(tg-rng.startMin)*pxPerMin; h+='<div style="position:absolute;top:'+(topg-6)+'px;right:5px;font-size:10px;color:var(--muted)">'+_calFmtHr(tg)+'</div>'; } h+='</div>';
+  h+='<div style="position:relative;height:'+totalH+'px">'; for(var tg=rng.startMin;tg<=rng.endMin;tg+=60){ var topg=(tg-rng.startMin)*pxPerMin; h+='<div style="position:absolute;top:'+Math.min(Math.max(0,topg-6),totalH-12)+'px;line-height:12px;right:5px;font-size:10px;color:var(--muted)">'+_calFmtHr(tg)+'</div>'; } h+='</div>';
   days.forEach(function(d){
     var key=d.getFullYear()+'-'+_calPad(d.getMonth()+1)+'-'+_calPad(d.getDate());
     var it=key===todayKey; var ap=(byDate[key]||[]); var timed=[], untimed=[];
@@ -17766,7 +17774,7 @@ function _calRenderDay(){
   if(!ap.length){ h+='<div class="mini" style="color:var(--muted);margin-bottom:8px">No appointments yet — click any time below to book one.</div>'; }
   if(untimed.length){ h+='<div style="margin-bottom:8px"><span class="mini" style="color:var(--muted);margin-right:6px">No set time:</span>'; untimed.forEach(function(a){ var c=_calStatusColor(a.status); h+='<span onclick="calOpenDay(\''+key+'\');setTimeout(function(){calApptInfo('+_calIdJs(a.id)+');},60)" style="display:inline-block;margin:0 6px 6px 0;border-radius:10px;padding:5px 10px;background:'+c.bg+';color:'+c.fg+';font-size:12px;cursor:pointer">'+esc(_calLabelOf(a))+'</span>'; }); h+='</div>'; }
   h+='<div onclick="_calGridClick(event,\''+key+'\','+rng.startMin+','+pxPerMin+')" title="Click an empty time to book an appointment here" style="position:relative;height:'+totalH+'px;border:1px solid var(--line);border-radius:10px;background:var(--card);overflow:hidden;cursor:pointer">';
-  for(var t=rng.startMin; t<=rng.endMin; t+=60){ var top=(t-rng.startMin)*pxPerMin; h+='<div style="position:absolute;left:54px;right:0;top:'+top+'px;border-top:1px solid var(--line)"></div><div style="position:absolute;left:6px;top:'+(top-7)+'px;font-size:11px;color:var(--muted)">'+_calFmtHr(t)+'</div>'; }
+  for(var t=rng.startMin; t<=rng.endMin; t+=60){ var top=(t-rng.startMin)*pxPerMin; h+='<div style="position:absolute;left:54px;right:0;top:'+top+'px;border-top:1px solid var(--line)"></div><div style="position:absolute;left:6px;top:'+Math.min(Math.max(0,top-7),totalH-16)+'px;font-size:11px;line-height:14px;color:var(--muted)">'+_calFmtHr(t)+'</div>'; }
   for(var t2=rng.startMin+30; t2<rng.endMin; t2+=60){ var top2=(t2-rng.startMin)*pxPerMin; h+='<div style="position:absolute;left:54px;right:0;top:'+top2+'px;border-top:1px dashed #F4F2EC"></div>'; }
   timed.forEach(function(p){ var a=p[0], b=p[1]; var top=(b.mins-rng.startMin)*pxPerMin; var hgt=Math.max(24, b.dur*pxPerMin-3); var c=_calStatusColor(a.status); h+='<div data-appt="1" onclick="calApptPeek('+_calIdJs(a.id)+',event)" title="Click for a quick preview" style="position:absolute;left:54px;right:8px;top:'+top+'px;height:'+hgt+'px;background:'+c.bg+';color:'+c.fg+';border-left:3px solid '+c.fg+';border-radius:10px;padding:3px 9px;font-size:12.5px;overflow:hidden;cursor:pointer;box-shadow:0 1px 3px rgba(20,33,28,.08)"><b>'+_calFmtHr(b.mins)+'</b> '+esc(_calLabelOf(a))+(a.reason?' <span style="opacity:.82">· '+esc(a.reason)+'</span>':'')+'</div>'; });
   h+='</div>'; if(grid._mlsSig!==h||!grid.childElementCount){ grid.innerHTML=h; grid._mlsSig=h; }
@@ -17783,7 +17791,7 @@ function _calRenderMonth(){
   var byDate={}; (_calAppts||[]).filter(function(a){ return _calRowMatchesProv(a,pfVal); }).forEach(function(a){ var k=_calDateOf(a); if(k){ (byDate[k]=byDate[k]||[]).push(a); } });
   var startDow=new Date(_calYear,_calMonth,1).getDay();
   var daysIn=new Date(_calYear,_calMonth+1,0).getDate();
-  var tn=new Date(); var todayKey=tn.getFullYear()+'-'+_calPad(tn.getMonth()+1)+'-'+_calPad(tn.getDate());
+  var todayKey=_acctTodayKey(); /* calfix-1.0.0: account today, as in Week */
   var dn=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   var h='<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">';
   dn.forEach(function(d){ h+='<div style="text-align:center;font-weight:700;font-size:12px;color:var(--muted);padding:4px 0">'+d+'</div>'; });
@@ -17819,25 +17827,49 @@ function calApptPeek(id, ev){
   var pop=document.createElement('div'); pop.id='calApptPeek';
   pop.style.cssText='position:fixed;z-index:99999;min-width:232px;max-width:300px;background:#fff;border:1px solid #d2e0f0;border-radius:16px;box-shadow:0 14px 38px rgba(20,50,90,.26);padding:13px 15px;font-size:13px;color:#1E2B24;animation:mlsViewIn .14s ease';
   pop.innerHTML=''
-    +'<div style="display:flex;align-items:flex-start;gap:8px"><span style="font-weight:800;font-size:15.5px;flex:1;line-height:1.2">'+esc(_calLabelOf(a))+'</span><span onclick="var p=document.getElementById(\'calApptPeek\');if(p)p.remove();" style="cursor:pointer;color:#9aa7b4;font-size:17px;line-height:1;padding:0 2px">×</span></div>'
+    +'<div style="display:flex;align-items:flex-start;gap:8px"><span style="font-weight:800;font-size:15.5px;flex:1;line-height:1.2">'+esc(_calLabelOf(a))+'</span><button type="button" data-calpeek-x="1" aria-label="Close" style="cursor:pointer;color:#9aa7b4;font-size:17px;line-height:1;padding:0 4px;background:none;border:0">×</button></div>'
     +'<div style="font-size:12.5px;color:#5b7186;margin-top:3px">📅 '+esc(when||'No time set')+'</div>'
     +'<div style="display:inline-block;margin-top:8px;font-size:11px;font-weight:700;padding:2px 10px;border-radius:10px;background:'+c.bg+';color:'+c.fg+'">'+esc(String(a.status||'booked').replace(/_/g,' '))+'</div>'
     +(a.reason?'<div style="margin-top:9px;font-size:12.5px"><span style="color:#8a98a8">Reason:</span> '+esc(a.reason)+'</div>':'')
     +(a.room?'<div style="font-size:12.5px;margin-top:3px"><span style="color:#8a98a8">Room:</span> '+esc(a.room)+'</div>':'')
     +(prov?'<div style="font-size:12.5px;margin-top:3px"><span style="color:#8a98a8">Provider:</span> '+esc(prov)+'</div>':'')
     +'<div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap">'
-      +'<button onclick="calStartVisit('+id+');var p=document.getElementById(\'calApptPeek\');if(p)p.remove();" style="background:#2E6A4B;color:#fff;border:0;border-radius:10px;padding:7px 12px;font-size:12.5px;font-weight:800;cursor:pointer">🎙️ Start visit</button>'
-      +'<button onclick="calPullChartFor('+id+',this)" data-mls-pullverb="this-patient" aria-label="Pull this patient&#39;s chart" style="background:#EAF1EE;color:#204034;border:1px solid #cfe0f5;border-radius:10px;padding:7px 12px;font-size:12.5px;font-weight:700;cursor:pointer;min-height:40px">📥 Pull this patient&#39;s chart</button>'
+      +'<button onclick="calStartVisit('+_calIdJs(id)+');var p=document.getElementById(\'calApptPeek\');if(p)p.remove();" style="background:#2E6A4B;color:#fff;border:0;border-radius:10px;padding:7px 12px;font-size:12.5px;font-weight:800;cursor:pointer">🎙️ Start visit</button>'
+      +'<button onclick="calPullChartFor('+_calIdJs(id)+',this)" data-mls-pullverb="this-patient" aria-label="Pull this patient&#39;s chart" style="background:#EAF1EE;color:#204034;border:1px solid #cfe0f5;border-radius:10px;padding:7px 12px;font-size:12.5px;font-weight:700;cursor:pointer;min-height:40px">📥 Pull this patient&#39;s chart</button>'
       +'<button onclick="calOpenDay(\''+date+'\');setTimeout(function(){calApptInfo('+_calIdJs(id)+');},70);var p=document.getElementById(\'calApptPeek\');if(p)p.remove();" style="background:#EAF1EE;color:#204034;border:1px solid #cfe0f5;border-radius:10px;padding:7px 12px;font-size:12.5px;font-weight:700;cursor:pointer">Details ›</button>'
-      +'<button onclick="calDraftOpNoteFor('+id+')" style="background:#EAF1EE;color:#204034;border:1px solid #cfe0f5;border-radius:10px;padding:7px 12px;font-size:12.5px;font-weight:700;cursor:pointer">📝 Draft op note</button>'
+      +'<button onclick="calDraftOpNoteFor('+_calIdJs(id)+')" style="background:#EAF1EE;color:#204034;border:1px solid #cfe0f5;border-radius:10px;padding:7px 12px;font-size:12.5px;font-weight:700;cursor:pointer">📝 Draft op note</button>'
     +'</div>';
+  /* calfix-1.0.0: a dialog the keyboard can use. It names itself, takes
+     focus, closes on Escape or its own x button (the x was a bare span no
+     keyboard could reach), and hands focus back to the appointment it opened
+     from. A keyboard press arrives at 0,0 - it is placed at the appointment,
+     not in the top-left corner. */
+  pop.setAttribute('role','dialog'); pop.setAttribute('aria-label',_calLabelOf(a)+' - appointment');
+  var opener=null; try{ opener=(ev&&ev.target&&ev.target.closest&&ev.target.closest('[data-appt],[onclick]'))||document.activeElement; }catch(e){}
   document.body.appendChild(pop);
-  var x=window.innerWidth/2, y=160; try{ if(ev){ x=ev.clientX; y=ev.clientY; } }catch(e){}
-  var pw=pop.offsetWidth, ph=pop.offsetHeight, vw=window.innerWidth, vh=window.innerHeight;
-  var left=x+14; if(left+pw>vw-10) left=x-pw-14; if(left<8) left=8;
-  var top=y+12; if(top+ph>vh-10) top=Math.max(8, vh-ph-10);
-  pop.style.left=left+'px'; pop.style.top=top+'px';
-  setTimeout(function(){ var hn=function(e){ if(!pop.contains(e.target)){ pop.remove(); document.removeEventListener('mousedown',hn,true); } }; document.addEventListener('mousedown',hn,true); }, 0);
+  var x=window.innerWidth/2, y=160;
+  try{ if(ev&&(ev.clientX||ev.clientY)){ x=ev.clientX; y=ev.clientY; } else if(opener&&opener.getBoundingClientRect){ var orc=opener.getBoundingClientRect(); if(orc.width||orc.height){ x=orc.left+Math.min(orc.width,40); y=orc.bottom; } } }catch(e){}
+  pop._mlsAt=[x,y]; _calPeekPlace(pop);
+  function done(back){ try{ document.removeEventListener('mousedown',hn,true); document.removeEventListener('keydown',kn,true); }catch(e){} if(pop.isConnected) pop.remove(); if(back&&opener&&opener.isConnected&&opener.focus){ try{ opener.focus({preventScroll:true}); }catch(e){} } }
+  function hn(e){ if(!pop.isConnected){ done(false); return; } if(!pop.contains(e.target)) done(false); }
+  function kn(e){ if(!pop.isConnected){ done(false); return; } if(e.key==='Escape'){ e.preventDefault(); e.stopPropagation(); done(true); } }
+  var xb=pop.querySelector('[data-calpeek-x]'); if(xb) xb.addEventListener('click',function(){ done(true); });
+  setTimeout(function(){ if(!pop.isConnected) return; document.addEventListener('mousedown',hn,true); document.addEventListener('keydown',kn,true); var first=pop.querySelector('button:not([data-calpeek-x])'); if(first){ try{ first.focus({preventScroll:true}); }catch(e){} } }, 0);
+}
+/* calfix-1.0.0: ONE placement for the peek, callable again once something
+   grows it (the Calendar Launchpad appends Open chart / Timeline after it is
+   placed, which pushed its foot off the screen). Keeps clear of the bottom
+   taskbar band as well as the window edge. */
+function _calPeekPlace(pop){
+  try{
+    if(!pop||!pop.isConnected) return;
+    var at=pop._mlsAt||[window.innerWidth/2,160], x=at[0], y=at[1];
+    var clear=0; try{ clear=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--mls-dock-clear-bottom'))||0; }catch(e){}
+    var pw=pop.offsetWidth, ph=pop.offsetHeight, vw=window.innerWidth, vh=window.innerHeight-clear;
+    var left=x+14; if(left+pw>vw-10) left=x-pw-14; if(left<8) left=8;
+    var top=y+12; if(top+ph>vh-10) top=Math.max(8, vh-ph-10);
+    pop.style.left=left+'px'; pop.style.top=top+'px';
+  }catch(e){}
 }
 function calOpenDay(key){
   var panel=document.getElementById('calDayPanel'); if(!panel) return;
@@ -17864,7 +17896,7 @@ function calOpenDay(key){
   h+='</div><div id="calAddMsg" class="mini" style="color:var(--muted);margin-top:6px"></div></div>';
   panel.innerHTML=h; panel.style.display='block';
 }
-function calJump(v){ if(!v) return; var p=String(v).split('-'); var y=parseInt(p[0],10), m=parseInt(p[1],10); if(y&&m){ _calYear=y; _calMonth=m-1; var pn=document.getElementById('calDayPanel'); if(pn) pn.style.display='none'; renderCalendar(); } }
+function calJump(v){ if(!v) return; var p=String(v).split('-'); var y=parseInt(p[0],10), m=parseInt(p[1],10); if(y&&m){ _calYear=y; _calMonth=m-1; _calMonthMoved(); var pn=document.getElementById('calDayPanel'); if(pn) pn.style.display='none'; renderCalendar(); } }
 // Jump to the calendar and open the new-appointment form, prefilled with a
 // patient's name — connects Patients / History / Profile straight to scheduling.
 function calScheduleForPatient(name){
@@ -18032,13 +18064,13 @@ function calApptInfo(id){
   h+='<input id="calE_reason_'+id+'" value="'+esc(a.reason||'')+'" placeholder="Reason" style="flex:1;min-width:120px;border:1px solid var(--line);border-radius:10px;padding:6px 9px;font-size:13px">';
   h+='</div>';
   h+='<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">';
-  h+='<button class="btn-primary" style="font-size:12px;padding:6px 12px" onclick="calSaveAppt('+id+')">💾 Save changes</button>';
-  if(a.status!=='checked_in' && a.status!=='completed' && a.status!=='cancelled'){ h+='<button class="btn-ghost" style="font-size:12px;padding:6px 12px;color:#127a55;border-color:#bfe6cf;background:#eefaf3" onclick="calCheckIn('+id+')">✅ Check in</button>'; }
-  h+='<button class="btn-green" style="font-size:12px;padding:6px 12px" onclick="calStartVisit('+id+')">🎙️ Start visit</button>';
-  h+='<button class="btn-ghost" style="font-size:12px;padding:6px 11px" onclick="calOpenPatientFor('+id+')">👤 Open patient</button>';
-  h+='<button class="btn-ghost" style="font-size:12px;padding:6px 11px;min-height:40px" onclick="calPullChartFor('+id+',this)" data-mls-pullverb="this-patient" aria-label="Pull this patient&#39;s chart" title="Reads this appointment&#39;s patient in your signed-in athenaOne tab and fills in their problems, medications, allergies and past visits. Nothing is written to athena.">📥 Pull this patient&#39;s chart</button>';
-  h+='<button class="btn-ghost" style="font-size:12px;padding:6px 11px;color:#a12c2c" onclick="calCancelAppt('+id+')">Cancel appt</button>';
-  h+='<button class="btn-ghost" style="font-size:12px;padding:6px 11px;color:#fff;background:#c0392b;border-color:#c0392b" onclick="calDeleteAppt('+id+')">🗑 Delete</button>';
+  h+='<button class="btn-primary" style="font-size:12px;padding:6px 12px" onclick="calSaveAppt('+_calIdJs(id)+')">💾 Save changes</button>';
+  if(a.status!=='checked_in' && a.status!=='roomed' && a.status!=='completed' && a.status!=='cancelled'){ h+='<button class="btn-ghost" style="font-size:12px;padding:6px 12px;color:#127a55;border-color:#bfe6cf;background:#eefaf3" onclick="calCheckIn('+_calIdJs(id)+')">✅ Check in</button>'; }
+  h+='<button class="btn-green" style="font-size:12px;padding:6px 12px" onclick="calStartVisit('+_calIdJs(id)+')">🎙️ Start visit</button>';
+  h+='<button class="btn-ghost" style="font-size:12px;padding:6px 11px" onclick="calOpenPatientFor('+_calIdJs(id)+')">👤 Open patient</button>';
+  h+='<button class="btn-ghost" style="font-size:12px;padding:6px 11px;min-height:40px" onclick="calPullChartFor('+_calIdJs(id)+',this)" data-mls-pullverb="this-patient" aria-label="Pull this patient&#39;s chart" title="Reads this appointment&#39;s patient in your signed-in athenaOne tab and fills in their problems, medications, allergies and past visits. Nothing is written to athena.">📥 Pull this patient&#39;s chart</button>';
+  h+='<button class="btn-ghost" style="font-size:12px;padding:6px 11px;color:#a12c2c" onclick="calCancelAppt('+_calIdJs(id)+')">Cancel appt</button>';
+  h+='<button class="btn-ghost" style="font-size:12px;padding:6px 11px;color:#fff;background:#c0392b;border-color:#c0392b" onclick="calDeleteAppt('+_calIdJs(id)+')">🗑 Delete</button>';
   h+='<button class="btn-ghost" style="font-size:12px;padding:6px 11px" onclick="calApptInfo('+_calIdJs(id)+')">Close</button>';
   h+='<span id="calE_msg_'+id+'" class="mini" style="color:var(--muted);width:100%"></span></div></div>';
   box.innerHTML=h;
@@ -49251,7 +49283,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1310';
+  window.__MLS_AV='b1311';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
@@ -49899,8 +49931,11 @@ function _ptGroupSort(mode){
   function dockNudgeOnScreen() {
     try { var n = document.getElementById('mlsDockNudge'); return !!(n && n.classList.contains('on')); } catch (e) { return false; }
   }
+  /* calfix-1.0.0: a window this narrow is already in the phone layout (the
+     <=640px rules); a 330px card there sat over "Get today's patients". */
+  function narrow() { try { return (window.innerWidth || 0) <= 640; } catch (e) { return false; } }
   function eligible() {
-    return !isHandheld() && !isStandalone() && !dismissed() && signedIn() &&
+    return !isHandheld() && !narrow() && !isStandalone() && !dismissed() && signedIn() &&
            !phoneCardOwnsScreen() && !hintOwnsCorner() && !menuOrModalOpen() && !dockNudgeOnScreen();
   }
 
@@ -50105,7 +50140,7 @@ function _ptGroupSort(mode){
     try {
       if (dismissed() || ++tries > 120) { clearInterval(iv); return; }
       if (document.getElementById(CARD_ID)) {
-        if (dockNudgeOnScreen()) close();          /* onenudge-1.0.0: step aside, not dismissed */
+        if (dockNudgeOnScreen() || narrow()) close();   /* onenudge-1.0.0 / calfix-1.0.0: step aside, not dismissed */
         return;
       }
       if (eligible()) show();

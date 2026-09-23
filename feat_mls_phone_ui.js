@@ -446,8 +446,10 @@
     '#mlsPh3 .ph3-row:active{background:var(--ph3-wash)}',
     '#mlsPh3 .ph3-row .ph3-when{flex:none;width:64px;font-weight:800;font-size:13px;line-height:1.25;color:var(--ph3-green2)}',
     '#mlsPh3 .ph3-row .ph3-who{flex:1;min-width:0}',
-    '#mlsPh3 .ph3-row .ph3-nm{font-weight:700;font-size:16px;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
-    '#mlsPh3 .ph3-row .ph3-sub2{font-weight:500;font-size:12.5px;line-height:1.35;color:var(--ph3-dim);margin-top:2px;',
+    /* calfix-1.0.0: both are SPANs - inline, so the ellipsis never applied
+       and the sub-line ran on beside the name instead of under it. */
+    '#mlsPh3 .ph3-row .ph3-nm{display:block;font-weight:700;font-size:16px;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+    '#mlsPh3 .ph3-row .ph3-sub2{display:block;font-weight:500;font-size:12.5px;line-height:1.35;color:var(--ph3-dim);margin-top:2px;',
     'overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
     '#mlsPh3 .ph3-row .ph3-go{flex:none;color:#9AA8A0;font-size:20px;line-height:1}',
     '#mlsPh3 .ph3-row.ph3-live{background:#FBF3F3;border-color:#E9CFCF}',

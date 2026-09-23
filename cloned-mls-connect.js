@@ -40948,6 +40948,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var bTl=mkBtn('🕒 Timeline');
     bTl.onclick=function(){ safe(function(){ if(window.__mlsTimeline) window.__mlsTimeline.open(pt.id); peek.remove(); }); };
     row.appendChild(bChart); row.appendChild(bTl);
+    /* calfix-1.0.0: two more buttons make the peek taller than when it was
+       placed; place it again so its foot stays on screen. */
+    safe(function(){ if(typeof window._calPeekPlace==='function') window._calPeekPlace(peek); });
   }
   function startObserver(){
     safe(function(){

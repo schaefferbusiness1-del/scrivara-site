@@ -2749,7 +2749,12 @@ const tests = [
      health rows, standard-line ticks and the op room repaint on a change, the
      match test applies the visit-note gate, Duplicate keeps the kind, Add then
      Cancel changes nothing, and the phone editor does not cover the list. */
-  'templates-stay-in-step-runtime.test.js'
+  'templates-stay-in-step-runtime.test.js',
+  /* calfix-1.0.0 (b1311): Week and Month mark the account today, a Week header
+     day moves Month with it, Jump forgets a stale selection, hour labels are
+     whole, the peek is a keyboard dialog with quoted ids, roomed patients are
+     not offered Check in, and short phone Day blocks do not stack. */
+  'calendar-keeps-its-place-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
