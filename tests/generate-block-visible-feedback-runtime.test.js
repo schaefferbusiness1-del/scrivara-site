@@ -438,13 +438,17 @@ async function main() {
     /* =================================================================
      * D. NO FEEDBACK REGRESSION ON THE HAPPY PATH
      * ================================================================= */
-    const happy = await page.evaluate(() => {
+    const happy = await page.evaluate(async () => {
       const tx = document.getElementById('transcript');
       tx.value = 'Left knee pain is worse since Monday. Exam shows medial joint line tenderness. Assessment osteoarthritis flare. Plan naproxen and physical therapy.';
       window.syncGenGateUi();
       document.getElementById('toast').className = 'toast';
       document.getElementById('toast').textContent = '';
       document.querySelector('.ez3-warnbar').classList.remove('mls-gate-flash');
+      /* b1307: let an earlier section's shake deliver its animationstart
+         BEFORE the counters reset - on a loaded machine it arrived a frame
+         late and was counted against this accepted click. */
+      await window.__settle(); await window.__settle();
       window.__flashes = 0; window.__flashClassAdds = 0;
       window.__renders = 0;
       window.__hiddenClicks = 0;
