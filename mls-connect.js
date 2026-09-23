@@ -55253,6 +55253,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function ensurePinRow(){
     var menu=document.getElementById('mlsToolsMenu');if(!menu)return false;
     var row=document.getElementById('mlsP1DockMode');
+    /* tooldock-1.0.0: no Auto-hide offer where auto-hide cannot happen. Every
+       collapse path returns early on narrowDock() (setExpanded, scheduleCompact,
+       the reveal guard), so on a phone the row flipped to "Auto-hide", saved
+       p1DockPinnedV1=0, and the dock never hid. The saved choice still applies
+       the moment the window is wide again; only the dead toggle is withheld. */
+    if(narrowDock()){if(row&&row.parentNode)try{row.parentNode.removeChild(row);}catch(_narrowRowError){}ctl.pinRow=null;return false;}
     if(!row){row=document.createElement('div');row.id='mlsP1DockMode';row.className='r';row.tabIndex=0;
       row.addEventListener('click',function(event){try{event.preventDefault();event.stopPropagation();}catch(_clickError){}setPinned(!ctl.compactPinned);});
       row.addEventListener('keydown',function(event){if(event.key==='Enter'||event.key===' '){try{event.preventDefault();event.stopPropagation();}catch(_keyError){}setPinned(!ctl.compactPinned);}});
@@ -55555,7 +55561,19 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (window.innerWidth <= 760) {
       /* phone: ONE fab. Their features ride in its menu. Voice stays visible
          while actually listening (mls-bl42-on). */
-      ['mlsCopVoiceBtn', 'mlsAsstFab', 'mlsTabPickerChip', 'mlsScDock'].forEach(function (id) { ids.push(id); });
+      ['mlsCopVoiceBtn', 'mlsTabPickerChip', 'mlsScDock'].forEach(function (id) { ids.push(id); });
+      /* tooldock-1.0.0: under the Calm Shell #mlsAsstFab is NOT inline-hidden.
+         Its Tools menu reads an inline display:none as "the app gated this
+         feature off" (feat_mls_calm_shell.js available()), so this
+         presentation hide deleted the "During a visit > MLS Assistant" row on
+         every phone - and #mlsFab's menu is not on screen there, so the
+         assistant had no route at all. The pill itself stays hidden by
+         body.mls-calm #mlsAsstFab{display:none!important}, which the menu
+         correctly ignores. The classic layout keeps the old hide: #mlsFab's
+         menu is its route (augment() below). */
+      if (document.body && document.body.classList.contains('mls-calm')) {
+        try { var asstFab = $('mlsAsstFab'); if (asstFab && asstFab.__ftHidden) { asstFab.style.removeProperty('display'); asstFab.__ftHidden = false; } } catch (e) {}
+      } else ids.push('mlsAsstFab');
     } else {
       /* back on desktop: undo the phone-only inline hides */
       /* 2026-07-28: mlsTabPickerChip left this un-hide list - the chip is

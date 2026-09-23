@@ -295,8 +295,59 @@
   var FIX_STYLE_ID = "mlsAsstFixStyle";
   function injectStyle() {
     if ($(FIX_STYLE_ID)) return;
-    var css = "#" + FAB_ID + "{left:80px !important;bottom:18px !important;}" +
-              "#" + PANEL_ID + "{left:80px !important;}";
+    /* tooldock-1.0.0: 80px was a constant sized for #_patientFace, not for the
+       dock. With the Calm Shell's left rail (18..119 at 1400x900) the panel,
+       at z-index 2147483601, covered 39px of every dock button and took their
+       clicks. The dock publishes the band it occupies (--mls-dock-clear-*,
+       dockspace in the shell; 0px when the dock is not on that side), so the
+       panel starts past the rail, sits above a bottom dock or the sample
+       workspace's strip (--mls-preview-strip-h, sample only), and is capped to
+       what is left of the viewport. On a phone the 412px card cannot start at
+       80px (it ran 56px off a 390px screen), so it becomes an edge-to-edge
+       sheet above the dock. */
+    var left = "max(80px, calc(var(--mls-dock-clear-left, 0px) + 8px))";
+    var floor = "max(18px, calc(var(--mls-dock-clear-bottom, 0px) + 8px), calc(var(--mls-preview-strip-h, 0px) + 8px))";
+    var css = "#" + FAB_ID + "{left:" + left + " !important;bottom:18px !important;}" +
+              "#" + PANEL_ID + "{left:" + left + " !important;bottom:" + floor + " !important;" +
+              "max-width:calc(100vw - " + left + " - 12px) !important;" +
+              "max-height:calc(100vh - " + floor + " - max(18px, var(--mls-dock-clear-top, 0px))) !important;}" +
+              "@media (max-width:760px){#" + PANEL_ID + "{left:8px !important;right:8px !important;width:auto !important;max-width:none !important;}}" +
+              /* tooldock-1.0.1: THE ROOM LEFT CAN BE SHORTER THAN THE CHROME.
+                 feat_mls_assistant_exact.js builds the panel overflow:hidden
+                 with ONE scroller, .as-body (flex:1 1 auto), under ~440px of
+                 fixed rows on a desktop and ~520px on a phone (head, status,
+                 EMR, athenaOne row, tabs, input, footer). Capped to the room
+                 above the dock and the strip - 447px at 375x667 in the sample
+                 workspace, 354px at 1366x657 with a top dock - .as-body
+                 shrank to its 1px border: no conversation, no Schedule / Pull
+                 list, and the input and footer clipped below an edge nothing
+                 could scroll. HEAD only fit there by covering the dock and the
+                 strip. So the conversation keeps a floor it never shrinks
+                 under, and when floor + chrome is taller than the room the
+                 PANEL scrolls, its head (title + Close) pinned on top. Where it
+                 fits nothing changes: overflow-y:auto shows no bar, and the
+                 body still fills the panel as the only scroller. One type
+                 selector more specific, as with the pull button below. */
+              "#" + PANEL_ID + "{overflow-x:hidden !important;overflow-y:auto !important;overscroll-behavior:contain;}" +
+              "#" + PANEL_ID + " div.as-head{position:sticky;top:0;z-index:3;flex-shrink:0;}" +
+              "#" + PANEL_ID + " div.as-body{min-height:min(160px, 30vh);}" +
+              /* tooldock-1.0.0: the pull button grows with what is in it.
+                 feat_mls_assistant_exact.js fixes it at height:42px (that file
+                 ships under a literal cache token, so the correction lives
+                 here, one type selector more specific). feat_athena_clarity.js
+                 appends a sentence (.mlsac-sub) and a READ-ONLY chip INTO the
+                 button, and the page-wide button{display:inline-flex} laid all
+                 three in one row inside 42px: the label wrapped to "Pull from /
+                 athenaOne" and the sentence spilled 8px above and 11px below,
+                 over the provider line and the pull status. A column that
+                 grows keeps all three readable; undecorated it is the same
+                 42px button. The sentence takes the button's white - clarity's
+                 navy is unreadable on this green. */
+              "#" + PANEL_ID + " button.as-pullbtn{height:auto;min-height:42px;display:flex;flex-direction:column;" +
+              "align-items:flex-start;justify-content:center;padding:9px 14px;line-height:1.25;text-align:left;}" +
+              "#" + PANEL_ID + " button.as-pullbtn .mlsac-sub{color:inherit;opacity:.9;max-width:none;}" +
+              /* the <br> clarity puts before its chip is a blank flex line in a column */
+              "#" + PANEL_ID + " button.as-pullbtn > br{display:none;}";
     var s = document.createElement("style");
     s.id = FIX_STYLE_ID; s.type = "text/css";
     s.appendChild(document.createTextNode(css));

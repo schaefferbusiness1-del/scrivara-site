@@ -1429,6 +1429,18 @@
     if (existing && existing.parentNode) { existing.parentNode.removeChild(existing); return; }
     var anchor = anchorBtn || qs('#mlsDock button[data-dest="tools"]') || dockEl;
     if (!anchor) return;
+    /* tooldock-1.0.0: THE ASSISTANT PANEL YIELDS TO TOOLS. #mlsAsstPanel
+       (feat_mls_assistant_exact.js) floats at z-index 2147483601 and this menu
+       at 9500, so with the panel open Tools opened UNDER it - measured at
+       1400x900, every row hit-tested to the panel. Lifting the menu alone moves
+       the same defect one click later: Settings and the Legal / IME sheet that
+       its rows open paint under that panel too. So Tools closes the panel
+       through the panel's own API; closing it un-hides #mlsAsstFab, so the
+       "MLS Assistant" row is in this very menu to bring it back. */
+    safe(function () {
+      var asst = D.getElementById('mlsAsstPanel');
+      if (asst && asst.classList.contains('open') && W.__mlsAsst && typeof W.__mlsAsst.close === 'function') W.__mlsAsst.close();
+    });
     var menu = D.createElement('div');
     menu.id = 'mlsToolsMenu';
     menu.setAttribute('role', 'menu');
@@ -3151,6 +3163,8 @@
     safe(dropIdentityCards);
     safe(dropControlNames);
     if (observer) safe(function () { observer.disconnect(); });
+    if (dockResize) safe(function () { dockResize.disconnect(); });
+    dockResize = null;
     if (idleTimer) clearTimeout(idleTimer);
     if (cooldownTimer) { clearTimeout(cooldownTimer); cooldownTimer = 0; }
     passJobs = [];
@@ -3201,6 +3215,7 @@
   /* ------------------------------------------------------------- lifecycle */
 
   var observer = null;
+  var dockResize = null;
   var pending = false;
   var cooldownTimer = 0;
   var lastPassAt = 0;
@@ -3359,6 +3374,20 @@
        patients view too. prepRows() no-ops when its signature is unchanged, so
        its own insertion cannot drive a render loop. */
     observeRoot(qs('#patientsView'), { childList: true, subtree: true }, ['patient']);
+    /* tooldock-1.0.0: THE PILL FOLLOWS THE BUTTONS' SIZE, NOT ONLY THE DOM.
+       The dock's buttons change size with no mutation this observer can see:
+       dockspace publishes <html data-mls-dock-band> after boot, its band rules
+       drop the buttons' width (measured at 390x844: Visit 68px -> 44px at
+       ~5s), and the pill kept the old width and offset, parked over Tools,
+       until the next dock tap. A ResizeObserver on the dock and its buttons
+       re-runs syncDock, which writes only on change; it fires after layout,
+       so its offset reads force nothing, and it fires only when a size
+       really changed. */
+    if (dockEl && typeof W.ResizeObserver === 'function') safe(function () {
+      dockResize = new W.ResizeObserver(function () { if (W.__mlsCalmShell.active) safe(syncDock); });
+      dockResize.observe(dockEl);
+      qsa('button[data-dest]', dockEl).forEach(function (b) { dockResize.observe(b); });
+    });
   }
 
   /* pvfix-1.0.0 (hunt:patient F1): the phone patient list's open state. See

@@ -2889,9 +2889,17 @@
        40px on the short side (1p-ui-shape-contract item 11). Two pixels, but
        a card head and a chronology row head are the two things a doctor taps
        most in here, and they were the only controls in the room below it. */
-    '#' + ROOT_ID + ' .p1l-disclose{display:flex;justify-content:space-between;align-items:center;gap:12px;width:100%;text-align:left;background:transparent;border:0;padding:0;min-height:40px;font:750 15px/1.3 "Public Sans",system-ui,sans-serif;color:#183a2f;cursor:pointer}',
-    '#' + ROOT_ID + ' .p1l-disclose .sum{font-weight:400;font-size:13px;color:#5c7a68;flex:1;min-width:0}',
-    '#' + ROOT_ID + ' .p1l-disclose .cue{flex:0 0 auto;font-size:13px;font-weight:700;color:#2e6a4b}',
+    /* tooldock-1.0.0: the summary WRAPS UNDER THE TITLE instead of being
+       squeezed beside it. Three items in one unwrapping row gave the title its
+       full width and the cue its own, and .sum got the remainder: measured at
+       390x844, "nothing generated yet" in a 3px column, one word per line,
+       drawn across "Expand" (Chronology got 84px). The row now wraps and the
+       summary asks for ~10em before it will share a line; the cue is pinned to
+       the right edge, outside the wrapping flow, so it can never be the item
+       that drops to a line of its own. Desktop rows still read on one line. */
+    '#' + ROOT_ID + ' .p1l-disclose{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:2px 12px;position:relative;width:100%;text-align:left;background:transparent;border:0;padding:0 72px 0 0;min-height:40px;font:750 15px/1.3 "Public Sans",system-ui,sans-serif;color:#183a2f;cursor:pointer}',
+    '#' + ROOT_ID + ' .p1l-disclose .sum{font-weight:400;font-size:13px;color:#5c7a68;flex:1 1 10em;min-width:0;overflow-wrap:anywhere}',
+    '#' + ROOT_ID + ' .p1l-disclose .cue{position:absolute;right:0;top:50%;transform:translateY(-50%);font-size:13px;font-weight:700;color:#2e6a4b}',
     '#' + ROOT_ID + ' .p1l-body[hidden]{display:none}',
     '#' + ROOT_ID + ' .p1l-row{border-left:3px solid #c7d9ce;margin:6px 0;background:#fafbf9}',
     '#' + ROOT_ID + ' .p1l-rowhead{display:flex;justify-content:space-between;gap:10px;width:100%;text-align:left;background:transparent;border:0;padding:8px 10px;min-height:40px;font:650 13.5px/1.35 "Public Sans",system-ui,sans-serif;color:#183a2f;cursor:pointer}',
@@ -2900,7 +2908,23 @@
     '#' + ROOT_ID + ' .p1l-rowbody pre{white-space:pre-wrap;max-height:220px;overflow:auto;font:12px/1.45 ui-monospace,monospace;margin:0}',
     '#' + ROOT_ID + ' .p1l-scrub{font-size:12px;color:#8a5a1a;background:#fff8e8;border:1px solid #ead6a8;border-radius:8px;padding:5px 8px;margin:0 0 6px}',
     '#' + ROOT_ID + ' .p1l-raw{min-height:40px;padding:6px 11px;font-size:12px;margin-top:6px}',
-    '@media(max-width:820px){#' + ROOT_ID + ' .p1l-grid{grid-template-columns:1fr}#' + ROOT_ID + ' .p1l-card.wide{grid-column:auto}#' + ROOT_ID + ' .p1l-shell{padding:18px 13px 70px}#' + ROOT_ID + ' .p1l-bindname{font-size:21px}}'
+    '@media(max-width:820px){#' + ROOT_ID + ' .p1l-grid{grid-template-columns:1fr}#' + ROOT_ID + ' .p1l-card.wide{grid-column:auto}#' + ROOT_ID + ' .p1l-shell{padding:18px 13px 70px}#' + ROOT_ID + ' .p1l-bindname{font-size:21px}}',
+    /* tooldock-1.0.0: THIS SHEET MUST NOT BURY THE APP'S OWN FEEDBACK. It is a
+       full-screen dialog at z-index 2147483000, and every channel that answers
+       a press in it was painted underneath: #toast (99999), the activity tray
+       that holds the quiet outcomes such as "Chronology copied." (9380), and
+       the sample strip that says why a control is read-only (the same
+       2147483000, earlier in the DOM). Print, Copy chronology and every
+       blocked control therefore seemed to do nothing. While the sheet is open
+       - the root exists only then - all three ride above it, and the sheet's
+       scroll keeps its last row clear of the strip (--mls-preview-strip-h is
+       published by the sample runtime only, so production keeps 80px). On a
+       phone the toast lives inside #mlsMobileNoticeShelf, a fixed box at
+       z-index 9330 that is its own stacking context, so it is the SHELF that
+       has to ride above. */
+    'body:has(> #' + ROOT_ID + ') #toast,body:has(> #' + ROOT_ID + ') #mlsTray,body:has(> #' + ROOT_ID + ') #mlsMobileNoticeShelf{z-index:2147483002 !important}',
+    'body:has(> #' + ROOT_ID + ') #mlsPublicPreviewStrip{z-index:2147483001 !important}',
+    'body:has(> #mlsPublicPreviewStrip) #' + ROOT_ID + ' .p1l-shell{padding-bottom:max(80px, calc(var(--mls-preview-strip-h, 0px) + 24px))}'
   ].join('\n');
 
   function ensureStyle() {

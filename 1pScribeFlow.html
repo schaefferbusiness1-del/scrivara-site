@@ -1549,7 +1549,14 @@
   .navtab{ border-radius:10px; font-weight:600; }
   .empty{ border-radius:16px; }
   /* Universal hover explainer (reads title / data-tip on any element) */
-  #mlsTip{ position:fixed; z-index:2147483600; display:none; max-width:300px;
+  /* tooldock-1.0.0: 2147483645, not 2147483600. The MLS Assistant panel sits at
+     2147483601 (feat_mls_assistant_exact.js), so the tip for every control
+     INSIDE that panel - "Connect athenaOne", the sample workspace's read-only
+     notes - was painted under the panel it explained. A tip is transient,
+     pointer-events:none and only ever names what is under the pointer or
+     focus, so it belongs above every panel; the two emergency banners at
+     2147483646/7 stay above it. */
+  #mlsTip{ position:fixed; z-index:2147483645; display:none; max-width:300px;
     background:rgba(18,26,38,.97); color:#fff; font-size:12.5px; font-weight:500; line-height:1.45;
     padding:8px 12px; border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,.28); pointer-events:none;
     letter-spacing:.1px; }
@@ -2083,8 +2090,16 @@
     html body #mlsDock{
       bottom:calc(8px + env(safe-area-inset-bottom,0px) + var(--mls-kbd,0px)) !important;
     }
+    /* tooldock-1.0.0: never lower than the dock's own published clearance.
+       84px assumes the dock sits at bottom:8px; the sample workspace lifts it
+       above its strip (public-preview-runtime.js, bottom:strip+10px), so on an
+       iPhone the card (z 99997) landed ON the dock - measured y 677..760 over
+       buttons at 663..710, and a tap on Patient hit the card. dockspace
+       publishes --mls-dock-clear-bottom from the dock's measured rect, so max()
+       keeps today's 84px wherever the dock is low and clears it wherever it
+       is not. */
     html body #mlsA2hsCard{
-      bottom:calc(84px + env(safe-area-inset-bottom,0px) + var(--mls-kbd,0px)) !important;
+      bottom:max(calc(84px + env(safe-area-inset-bottom,0px) + var(--mls-kbd,0px)), var(--mls-dock-clear-bottom,0px)) !important;
     }
     /* Keep the last of the page scrollable above the dock AND the indicator. */
     html body.mls-redesign #appWrap{
@@ -56134,7 +56149,13 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
   html body[data-mls-dock] #opPrepModal.opr-room > .modal{
     padding-left:0; padding-right:0; padding-top:0;
   }
-  #mlsDockNub, #mlsDockNubMenu, #mlsDockNudge{ display:none !important; }
+  /* tooldock-1.0.0: #dockChipRows joins the nub. The shell pins the dock to
+     the bottom and always-visible on a phone whatever is stored, so the mode
+     chip's "Where the taskbar sits" rows ticked Side-left / Top / "Hide it
+     until I need it - on" and nothing moved (measured at 390x844: dock rect
+     unchanged, opacity 1). A choice that cannot take effect is not offered;
+     the stored preference is untouched and applies again on a wide window. */
+  #mlsDockNub, #mlsDockNubMenu, #mlsDockNudge, #dockChipRows{ display:none !important; }
 }
 @media print{ #mlsDockNub, #mlsDockNubMenu, #mlsDockNudge{ display:none !important; } }
 </style>
@@ -60779,9 +60800,16 @@ html[data-mls-dock-band="top"] body[data-mls-dock="top"] #appWrap{
    banner under the header. This moves it out of the doctor's line of sight and
    into the corner the owner asked for, and it composes with the reserved dock
    band rather than guessing at it. */
+/* tooldock-1.0.0: the floor is the higher of the dock band and the sample
+   workspace's strip. With a side rail the dock band is 0px, so the toast sat
+   16px off the viewport floor - inside the 50px strip, which is fixed at
+   z-index 2147483000 over this 99999: every sample-workspace notice on a
+   desktop was painted under the strip (measured 147,842 248x42 against a
+   strip at y 850..900). --mls-preview-strip-h is published only by the sample
+   runtime, so production resolves to exactly the old value. */
 html body .toast[data-mls-quiet="action"]{
   top:auto !important;
-  bottom:calc(var(--mls-dock-clear-bottom, 0px) + 16px) !important;
+  bottom:calc(max(var(--mls-dock-clear-bottom, 0px), var(--mls-preview-strip-h, 0px)) + 16px) !important;
   left:calc(var(--mls-dock-clear-left, 0px) + 16px) !important;
   right:auto !important;
   transform:none !important;
@@ -60796,7 +60824,9 @@ html body .toast[data-mls-quiet="action"].show{ transform:none !important; }
 #mlsTray{
   position:fixed; z-index:9380;
   left:calc(var(--mls-dock-clear-left, 0px) + 10px);
-  bottom:calc(var(--mls-dock-clear-bottom, 0px) + 76px);
+  /* tooldock-1.0.0: the same floor as the toast above, so the two keep their
+     60px stack over the sample strip instead of the toast rising into this. */
+  bottom:calc(max(var(--mls-dock-clear-bottom, 0px), var(--mls-preview-strip-h, 0px)) + 76px);
   display:flex; flex-direction:column; align-items:flex-start; gap:6px;
   max-width:min(340px, 78vw);
   font:500 12px/1.35 var(--sans, system-ui, sans-serif);

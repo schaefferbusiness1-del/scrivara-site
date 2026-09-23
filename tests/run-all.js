@@ -2727,7 +2727,12 @@ const tests = [
      follows every switch, patient rows work from the keyboard, the chart's
      next appointment is the next one, History counts each note once and keeps
      every merged note's text, and sample allergies are not rewritten. */
-  'patient-list-and-chart-truth-runtime.test.js'
+  'patient-list-and-chart-truth-runtime.test.js',
+  /* tooldock-1.0.x (b1301): Tools opens over the Assistant, the Assistant keeps
+     clear of the dock and stays usable on short screens, the Legal sheet no
+     longer buries toasts and the sample strip, and the phone Tools menu offers
+     only choices that take effect there. */
+  'tools-assistant-legal-phone-dock-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
