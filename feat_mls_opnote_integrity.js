@@ -605,8 +605,9 @@
         levelsVia='full-note';
       }
     }
-    var sideDx=diagnosisSideConflict(note,requested.side);
-    if(sideDx)errors.push(sideDx);
+    /* opcli-1.0.0: diagnosis/indication side AND the narrative's target side
+       and level, read by the one guard below (first pass -> repair fires). */
+    var seenLat={};lateralityConflicts(note,procedure).forEach(function(c){var k=c.error.code+'|'+c.error.message;if(!seenLat[k]){seenLat[k]=1;errors.push(c.error);}});
     return {pass:!errors.length,errors:errors,requested:requested,actual:actual,levelsVia:levelsVia};
   }
   /* opmode-1.0.0 (2026-09-22). MEASURED end to end with a stubbed model: a
@@ -618,18 +619,244 @@
      one-sided request, a diagnosis or indication line that names ONLY the
      other side is a side conflict. A line naming both sides ("left greater
      than right") or neither is left alone, and levels are not judged here: a
-     diagnosis may rightly name more spine than the procedure treats. */
-  function diagnosisSideConflict(note,side){
-    side=S(side);
-    if(side!=='left'&&side!=='right')return null;
-    var other=side==='left'?'right':'left', cur='', lines=S(note).split(/\r?\n/);
-    for(var i=0;i<lines.length;i++){
-      var h=headingLabel(lines[i]); if(h)cur=h;
-      if(!/diagnos|indication/.test(cur))continue;
-      var said=sideOf(h?S(lines[i]).slice(S(lines[i]).indexOf(':')+1):lines[i]);
-      if(said===other)return {field:'side',code:'mismatch_side_diagnosis',message:'The '+(/indication/.test(cur)?'indication':'diagnosis')+' names the '+other+' side, but the '+side+' side was requested.'};
+     diagnosis may rightly name more spine than the procedure treats.
+     opcli-1.0.0 (2026-09-23), measured through the real page with a stubbed
+     model: the check was right about the line and wrong around it. It REFUSED
+     THE WHOLE DRAFT after the repair, so a note whose only fault was one side
+     word was thrown away instead of asked about; it read "s/p right L4-5
+     microdiscectomy" and "no right-sided symptoms" as right-sided claims; and
+     the DESCRIPTION/TECHNIQUE narrative was graded by nothing - "...neural
+     foramen at L4-L5 on the right side" under a Left L5-S1 TFESI passed with
+     no repair at all. One reader (lateralityConflicts) now serves the check,
+     on the first pass so the existing repair fires, and the guard
+     (guardLaterality), after repair/reanchor. What survives is never
+     rewritten: a diagnosis/indication side becomes a visible [FILL: confirm
+     side ...] blank - the chart or the schedule may be the wrong one - and so
+     does a narrative target, unless the template's own line carried the
+     [[side]]/[[level]] slot, which is re-filled from the requested facts
+     exactly as fillProcedureSlots fills it. opNoteBlankTokens() counts the
+     blank, so save/PDF/Athena stay blocked until the doctor answers. Levels
+     are judged only in a narrative sentence that states the target, and only
+     for the ESI family, whose named level IS the target (MBB/RFA nerve levels
+     are not the facet levels, so they are not judged). */
+  /* opcli-1.0.0: what is NOT a claim about today's side is masked, and each
+     mask stays inside the phrase it describes. Measured: a negation allowed
+     to reach 60 characters across commas hid "radiculopathy without
+     myelopathy, right L5 (M54.16)" and "advanced without difficulty to the
+     right L5-S1 foramen"; a view/C-arm phrase that reached any later side hid
+     "an oblique view of the right L5-S1 foramen". A side that goes on to name
+     a spinal level ("right L5", "right-sided L5-S1") - or, in the narrative,
+     the target anatomy ("right neural foramen", "right knee") - is a claim no
+     negation or view/IV/pad phrase hides. Historical mentions keep their own
+     mask ("s/p right L4-5 microdiscectomy"), stopped at a comma or "with/now"
+     and never fired by "prior to". */
+  var SIDE_SRC='(?:left|right|bilateral)',SIDE_LIST_SRC=SIDE_SRC+'(?:\\s*(?:\\/|or|and|nor)\\s*'+SIDE_SRC+')*';
+  var SIDE_HISTORICAL_RXS=[
+    /\([^)]*\b(?:prior|previous|h\/o|hx|history|s\/p|status[\s-]?post|relief|last\s+(?:visit|time))\b[^)]*\)/gi,
+    /\b(?:prior(?!\s+to\b)|previous|h\/o|hx\s+of|history\s+of|s\/p|status[\s-]?post)\b(?:(?!\b(?:and|with|now|but|who|presents?|currently|residual|new|today|since)\b)[^.;,\n)]){0,70}/gi,
+    /\bpost[\s-]?op(?:erative)?\s+(?:check|visit|follow[\s-]?up)\b[^.;,\n]*/gi
+  ];
+  /* A negation governs a side it reaches in at most three words, never
+     through punctuation, and never through a to/into/at unless those words
+     are a radiation phrase ("not radiating to the right leg"). "absent right
+     ankle reflex" is a right-sided finding, so "absent" is not a negation. */
+  var SIDE_NEGATION_RX=new RegExp('\\b(?:no|not|without|denies|denied|negative\\s+for|free\\s+of)((?:\\s+[a-z\'\\/-]+){0,3}?)\\s+('+SIDE_LIST_SRC+')\\b','gi');
+  var NEG_THROUGH_RX=/\b(?:to|into|toward|towards|at|onto|through|via)\b/i, NEG_RADIATION_RX=/^\s*(?:radiat\w*|spread\w*|extend\w*|extension|paresthes\w*|symptoms?)\b/i;
+  /* "The right knee was not injected." */
+  var SIDE_NEGATED_AFTER_RX=new RegExp('\\b'+SIDE_LIST_SRC+'\\b(?=(?:[\\s-]+[a-z]+){0,3}?\\s+(?:was|were|is|are)\\s+not\\s+(?:injected|treated|targeted|prepped|accessed|entered|involved|addressed|blocked|ablated|lesioned)\\b)','gi');
+  /* Never a claim about the treated side: a view named by its side ("right
+     oblique"), where the patient lies, and "right angle". */
+  var NON_TARGET_FIXED_RX=/\b(?:left|right)\b(?:\s+(?:anterior|posterior))?[\s-]+obliqu\w*|\b(?:left|right)\s+(?:lateral\s+)?decubitus\b|\blying\s+on\s+(?:his|her|their|the)\s+(?:left|right)\s+side\b|\bright[\s-]+angles?\b/gi;
+  /* Not a claim unless the side goes on to name the target: a C-arm turn or
+     oblique ("obliqued to the left", "C-arm rotated 20 degrees to the
+     right"), and where the IV, cuff, oximeter or grounding pad went. */
+  var NON_TARGET_LEAD_RX=/\bobliqu\w*\s+(?:[\w°]+\s+){0,3}?(?:to(?:wards?)?|toward)\s+(?:the\s+)?(?:patient'?s\s+)?(?:left|right)\b|\bobliqu\w*\s+(?:left|right)\b|\b(?:c-?arm|fluoroscope|image\s+intensifier)\b[^.;,\n]{0,25}?\b(?:rotat\w*|angl\w*|obliqu\w*|tilt\w*|turn\w*|swung|swing\w*|mov\w*|position\w*|placed|brought)\s+(?:[\w°]+\s+){0,3}?(?:to(?:wards?)?|toward|on|from)\s+(?:the\s+)?(?:patient'?s\s+)?(?:left|right)\b|\b(?:grounding|dispersive|return)\s+(?:pad|plate|electrode)s?\b[^.;,\n]{0,40}?\b(?:left|right)\b|\b(?:iv|intravenous\s+(?:line|access|catheter)|blood\s+pressure\s+cuff|bp\s+cuff|pulse\s+oximeter)\b[^.;,\n]{0,40}?\b(?:left|right)\b/gi;
+  /* what follows a side word that makes it a claim about the target */
+  var LEVEL_AFTER_SIDE_RX=/^(?:[\s-]*sided)?(?:\s+side\s+of(?:\s+the)?)?\s+[clts]\s*\d/i;
+  var ANATOMY_AFTER_SIDE_RX=/^(?:[\s-]*sided)?(?:\s+side\s+of(?:\s+the)?)?(?:\s+[a-z-]+){0,2}?\s+(?:[clts]\s*\d|foram\w*|facets?|zygapophys\w*|pedicles?|medial\s+branch\w*|dorsal\s+ram\w*|transverse\s+process\w*|articular\s+process\w*|sacral\s+ala|sacroiliac|si\b|genicular|knees?|hips?|shoulders?|joints?|nerve\s+roots?|lamina\w*|epidural\s+space|paramedian|trochanter\w*|bursa\w*)/i;
+  /* the sentence that states the TARGET names an instrument or the anatomy it
+     reaches - generic verbs ("placed", "injected") also describe the IV, the
+     pad and the patient, so they are not cues */
+  var TARGET_CUE_RX=/\b(?:needles?|cannula[es]?|probes?|electrodes?|introducer|foram(?:en|ina|inal)|pedicles?|medial\s+branch(?:es)?|dorsal\s+ram(?:us|i)|facets?|zygapophys\w*|interlaminar|epidural\s+space|nerve\s+roots?|transverse\s+process(?:es)?|articular\s+process(?:es)?|sacral\s+ala|genicular|sacroiliac|si\s+joint|lesion\w*|ablat\w*)\b/i;
+  /* opcli-1.0.0 (review): the SITE is stated again where it is prepped,
+     numbed, marked or named as a joint - "The right knee was prepped...",
+     "the skin over the right L4-L5 level was anesthetized" - and a right-knee
+     template used for a left knee kept that line with no flag. Judged for
+     SIDE only: a prep field or skin wheal may rightly span more spine than
+     the target level. */
+  var SITE_CUE_RX=/\b(?:knees?|hips?|shoulders?|elbows?|wrists?|ankles?|joints?|intra[\s-]?articular\w*|bursa\w*|trochanter\w*|glenohumeral|acromioclavicular|subacromial|nerves?|occipital|piriformis|trigger\s+points?|prep|prepped|prepared|draped|sterile|cleansed|cleaned|anestheti[sz]ed|infiltrat\w*|skin|subcutaneous|wheal|paraspinal|paravertebral|time[\s-]?out|marked|site|level)\b/i;
+  /* contrast running on to a neighbouring level is distribution, not the
+     target: "Contrast ... spread cephalad in the epidural space to L4-L5".
+     Only a level AFTER the contrast's spread word is skipped, so the target
+     named before it ("advanced to the L4-L5 foramen and contrast spread...")
+     and a blood/CSF "flow" on aspiration are still read. */
+  var SPREAD_RX=/\b(?:contrast|dye|injectate|omnipaque|isovue)\b[^.;]*?\b(?:spread\w*|flow(?:ed|ing|s)?|extend\w*|extension|track(?:ed|ing)|travel\w*|layer(?:ed|ing)|dispers\w*)\b/i;
+  var LEVEL_ORDER=(function(){var o=[],i;for(i=1;i<=8;i++)o.push('C'+i);for(i=1;i<=12;i++)o.push('T'+i);for(i=1;i<=5;i++)o.push('L'+i);for(i=1;i<=5;i++)o.push('S'+i);return o;})();
+  var CONFIRM_TOKEN_PREFIX='[FILL: confirm ';
+  function blankOut(m){return Array(m.length+1).join(' ');}
+  /* Same length as its input, so a span found in the mask is a span of the
+     note. Blank labels, historical and negated mentions and the non-target
+     mentions above are not claims about today's side. narrative: the side of
+     a named target anatomy is a claim too, not only the side of a level. */
+  function maskSideClaims(text,narrative){
+    var s=S(text).replace(/\[FILL:[^\]]*\]|\[\[[^\]]*\]\]/gi,blankOut),claim=narrative?ANATOMY_AFTER_SIDE_RX:LEVEL_AFTER_SIDE_RX;
+    for(var i=0;i<SIDE_HISTORICAL_RXS.length;i++)s=s.replace(SIDE_HISTORICAL_RXS[i],blankOut);
+    s=s.replace(SIDE_NEGATION_RX,function(m,words,sides,at,str){
+      if(NEG_THROUGH_RX.test(words)&&!NEG_RADIATION_RX.test(words))return m;
+      return claim.test(str.slice(at+m.length))?m:blankOut(m);
+    });
+    s=s.replace(SIDE_NEGATED_AFTER_RX,blankOut).replace(NON_TARGET_FIXED_RX,blankOut);
+    return s.replace(NON_TARGET_LEAD_RX,function(m,at,str){return claim.test(str.slice(at+m.length))?m:blankOut(m);});
+  }
+  function sideSpans(masked,want){
+    var out=[],m,word=new RegExp('\\b'+want+'\\b','gi'),letter=new RegExp('(^|[\\s(:,;\\-])('+want.charAt(0)+')(?=\\s+(?:[clts]\\s*\\d|si\\b|sacroiliac\\b|knee\\b|hip\\b|shoulder\\b|genicular\\b))','gi');
+    while((m=word.exec(masked)))out.push({start:m.index,end:m.index+m[0].length});
+    while((m=letter.exec(masked)))out.push({start:m.index+m[1].length,end:m.index+m[1].length+1});
+    return out;
+  }
+  /* Level mentions with their spans, read case-insensitively from the text as
+     written (upper-casing can change a string's length). */
+  function levelTokens(text){
+    var s=S(text),rest=s,out=[],m,range=/\b([clts])\s*(\d{1,2})\s*[-–—\/]\s*(?:([clts])\s*)?(\d{1,2})\b/gi,one=/\b([clts])\s*(\d{1,2})\b/gi;
+    while((m=range.exec(s))){var lv=levelsOf(m[0]);if(lv.length)out.push({start:m.index,end:m.index+m[0].length,text:m[0],levels:lv,range:true});rest=rest.slice(0,m.index)+blankOut(m[0])+rest.slice(m.index+m[0].length);}
+    while((m=one.exec(rest))){var l1=levelsOf(m[0]);if(l1.length)out.push({start:m.index,end:m.index+m[0].length,text:m[0],levels:l1,range:false});}
+    return out.sort(function(a,b){return a.start-b.start;});
+  }
+  /* An interspace request ("L5-S1") is exact: every level named in the target
+     sentence must be requested. A nerve-root request ("L5 TFESI") names the
+     root, whose foramen is written as an interspace ("L5-S1") or beside a
+     neighbouring landmark, so it accepts an interspace holding the root and a
+     single adjacent level. */
+  function levelFits(tok,want,rootMode){
+    var i,j,all=true;
+    for(i=0;i<tok.levels.length;i++)if(want.indexOf(tok.levels[i])<0){all=false;break;}
+    if(all)return true;
+    if(!rootMode)return false;
+    if(tok.range){for(i=0;i<tok.levels.length;i++)if(want.indexOf(tok.levels[i])>=0)return true;return false;}
+    var at=LEVEL_ORDER.indexOf(tok.levels[0]);
+    for(j=0;j<want.length;j++){var w=LEVEL_ORDER.indexOf(want[j]);if(at>=0&&w>=0&&Math.abs(at-w)===1)return true;}
+    return false;
+  }
+  function sentenceRanges(text){
+    var out=[],start=0,m,re=/[.!?;](?=\s|$)/g;
+    while((m=re.exec(text))){out.push([start,m.index+1]);start=m.index+1;}
+    if(start<text.length)out.push([start,text.length]);
+    return out;
+  }
+  function lateralityConflicts(note,procedure){
+    var out=[];
+    try{
+      var req=procedureFacts(procedure),side=S(req.side),other=side==='left'?'right':(side==='right'?'left':'');
+      var cls=procClass(procedure),want=req.levels||[];
+      var judgeLevels=!!(want.length&&(cls==='tfesi'||cls==='interlaminar_esi'||cls==='generic_esi'));
+      if(!other&&!judgeLevels)return out;
+      var rt=levelTokens(stripHistorical(procedure)),rootMode=!!rt.length&&rt.every(function(t){return !t.range;});
+      var lines=S(note).split(/\r?\n/),cur='';
+      var shift=function(by){return function(s){return {start:s.start+by,end:s.end+by};};};
+      for(var i=0;i<lines.length;i++){
+        var line=S(lines[i]),h=headingLabel(line),colon=line.indexOf(':');
+        if(h)cur=h;
+        if(h&&colon<0)continue;   /* a colon-less title carries no claim */
+        var off=h?colon+1:0,isDx=/diagnos|indication/.test(cur);
+        if(!isDx&&!NARRATIVE_LABEL.test(cur))continue;
+        var masked=maskSideClaims(line.slice(off),!isDx);
+        if(isDx){
+          if(other&&sideOf(masked)===other){
+            var what=/indication/.test(cur)?'indication':'diagnosis';
+            out.push({line:i,kind:what,field:'side',said:other,spans:sideSpans(masked,other).map(shift(off)),
+              error:{field:'side',code:'mismatch_side_diagnosis',message:'The '+what+' names the '+other+' side, but the '+side+' side was requested.'}});
+          }
+          continue;
+        }
+        var rs=sentenceRanges(masked);
+        for(var k=0;k<rs.length;k++){
+          var a=rs[k][0],sub=masked.slice(a,rs[k][1]),atTarget=TARGET_CUE_RX.test(sub);
+          if(!atTarget&&!SITE_CUE_RX.test(sub))continue;
+          if(other&&sideOf(sub)===other)out.push({line:i,kind:'narrative',field:'side',said:other,spans:sideSpans(sub,other).map(shift(off+a)),
+            error:{field:'side',code:'mismatch_side_narrative',message:'The procedure description targets the '+other+' side, but the '+side+' side was requested.'}});
+          if(!judgeLevels||!atTarget)continue;
+          var sp=SPREAD_RX.exec(sub),spreadEnd=sp?sp.index+sp[0].length:Infinity;
+          var bad=levelTokens(sub).filter(function(t){return t.start<spreadEnd&&!levelFits(t,want,rootMode);});
+          if(bad.length)out.push({line:i,kind:'narrative',field:'levels',said:bad.map(function(t){return t.text;}).join(', '),spans:bad.map(shift(off+a)),
+            error:{field:'levels',code:'mismatch_levels_narrative',message:'The procedure description targets '+bad.map(function(t){return t.text;}).join(', ')+', but '+want.join(', ')+' was requested.'}});
+        }
+      }
+    }catch(e){}
+    return out;
+  }
+  /* The template line a narrative line was copied from, with its side/level
+     slots re-filled from the requested facts and every other slot keeping the
+     draft's own text. null when no slot-bearing template line matches. */
+  var TEMPLATE_SLOT_SRC='\\[\\[[^\\]]+\\]\\]|\\[(?:FILL\\s*:?\\s*)?[^\\]]+\\]|\\{\\{[^}]+\\}\\}|_{2,}';
+  var SIDE_LEVEL_SLOTS={side:1,laterality:1,level:1,levels:1,'exact level':1,'exact levels':1};
+  function slotKey(tok){var m=/^\[\[([^\]]+)\]\]$|^\[(?:FILL\s*:\s*)?([^\]]+)\]$|^\{\{([^}]+)\}\}$/i.exec(S(tok).trim());return m?normText(m[1]||m[2]||m[3]).replace(/_/g,' '):'';}
+  function refillFromTemplateLine(noteLine,tplText,values){
+    var lead=(/^\s*/.exec(S(noteLine))||[''])[0],target=S(noteLine).trim(),tl=S(tplText).split(/\r?\n/);
+    if(!target)return null;
+    for(var i=0;i<tl.length;i++){
+      var parts=S(tl[i]).trim().split(new RegExp('('+TEMPLATE_SLOT_SRC+')','i')),j,has=false;
+      for(j=1;j<parts.length;j+=2)if(SIDE_LEVEL_SLOTS[slotKey(parts[j])]){has=true;break;}
+      if(!has)continue;
+      var src='^';for(j=0;j<parts.length;j++)src+=(j%2)?'([\\s\\S]*?)':escapeRx(parts[j]).replace(/\s+/g,'\\s+');
+      var m=new RegExp(src+'$','i').exec(target);if(!m)continue;
+      var out='';
+      for(j=0;j<parts.length;j++){
+        if(!(j%2)){out+=parts[j];continue;}
+        var key=slotKey(parts[j]);
+        if(!SIDE_LEVEL_SLOTS[key]){out+=m[(j+1)/2];continue;}
+        if(!S(values[key]))return null;   /* nothing requested to put back */
+        out+=S(values[key]);
+      }
+      return lead+out;
     }
     return null;
+  }
+  function guardLaterality(note,procedure,tplText){
+    var found=lateralityConflicts(note,procedure);
+    if(!found.length)return {note:S(note),conflicts:[]};
+    var lines=S(note).split(/\r?\n/),byLine={},receipt=[],values=procedureSlotValues(procedure);
+    found.forEach(function(c){(byLine[c.line]=byLine[c.line]||[]).push(c);});
+    Object.keys(byLine).forEach(function(k){
+      var i=+k,list=byLine[k],line=lines[i];
+      if(list.every(function(c){return c.kind==='narrative';})){
+        var re=refillFromTemplateLine(line,tplText,values);
+        if(re!=null){
+          var probe=lines.slice();probe[i]=re;
+          if(!lateralityConflicts(probe.join('\n'),procedure).some(function(c){return c.line===i;})){
+            lines[i]=re;
+            list.forEach(function(c){receipt.push({kind:c.kind,field:c.field,said:c.said,action:'refilled-from-template-slot'});});
+            return;
+          }
+        }
+      }
+      var spans=[];
+      list.forEach(function(c){
+        c.spans.forEach(function(s){spans.push({start:s.start,end:s.end,token:CONFIRM_TOKEN_PREFIX+(c.field==='side'?('side - this draft said '+c.said):('level - this draft said '+line.slice(s.start,s.end).trim().replace(/\s*[\/\u2013\u2014]\s*/g,'-')))+']'});});
+        receipt.push({kind:c.kind,field:c.field,said:c.said,action:'asked'});
+      });
+      spans.sort(function(a,b){return b.start-a.start;});
+      var floor=Infinity;
+      spans.forEach(function(s){if(s.end>floor)return;line=line.slice(0,s.start)+s.token+line.slice(s.end);floor=s.start;});
+      lines[i]=line;
+    });
+    return {note:lines.join('\n'),conflicts:receipt};
+  }
+  function guardLateralityResult(result,procedure,tplText){
+    try{
+      if(!result||!S(result.note).trim())return result;
+      var g=guardLaterality(result.note,procedure,tplText);
+      if(!g.conflicts.length)return result;
+      result.note=g.note;
+      result.lateralityGuard={conflicts:g.conflicts,at:Date.now()};
+      try{window.__mlsOpLateralityGuard=result.lateralityGuard;}catch(e1){}
+      try{console.warn('[mls] op-note laterality guard: '+g.conflicts.length+' side/level conflict(s) with the requested procedure; '+g.conflicts.map(function(c){return c.kind+' '+c.field+' '+c.action;}).join(', ')+'.');}catch(e2){}
+    }catch(e){}
+    return result;
+  }
+  /* Does this text name ONLY the side opposite the requested procedure's? */
+  function sideConflictsWith(text,procedure){
+    var side=S(procedureFacts(procedure).side),other=side==='left'?'right':(side==='right'?'left':'');
+    return !!other&&sideOf(maskSideClaims(text))===other;
   }
   /* cross-procedure adapted mode keeps ONLY the requested-fact safety net —
      the wrong-procedure template's fixed wording and field lists no longer
@@ -1652,6 +1879,20 @@
     S(text).split(/\r?\n/).forEach(function(line){ var h=headingLabel(line); if(h && out[out.length-1]!==h) out.push(h); });
     return out;
   }
+  /* opcli-1.0.0: the SAME heading lines as headings(), spelled as the template
+     spells them ("OPERATIVE REPORT - LUMBAR TRANSFORAMINAL EPIDURAL STEROID
+     INJECTION", "PREOPERATIVE DIAGNOSIS:"). The repair prompt quoted the
+     normalized labels ("operative report lumbar tfesi"), which invited the
+     model to rename the doctor's title to a label fidelity also accepts. */
+  function literalHeadings(text) {
+    var out=[], last='';
+    S(text).split(/\r?\n/).forEach(function(line){
+      var h=headingLabel(line); if(!h||h===last) return; last=h;
+      var t=S(line).trim(), m=t.match(/^([^:]{2,70}):(?:\s+.*)?$/);
+      out.push(m?(m[1].trim()+':'):t);
+    });
+    return out;
+  }
   function fixedFragments(text) {
     return fixedWithHeading(text).map(function(x){ return x.frag; });
   }
@@ -1832,9 +2073,11 @@
   /* Fill only explicitly marked clinical slots. This preserves the provider's
      fixed procedure wording while preventing a visible [FILL: side] from
      becoming an excuse to omit a known side or exact level. */
-  function fillProcedureSlots(note,procedure) {
+  /* opcli-1.0.0: one value map, shared with guardLaterality's template-slot
+     re-fill, so a re-filled [[side]]/[[level]] reads exactly as a first-pass one. */
+  function procedureSlotValues(procedure) {
     var f=procedureFacts(procedure), typeLabels={tfesi:'transforaminal epidural steroid injection',interlaminar_esi:'interlaminar epidural steroid injection',caudal_esi:'caudal epidural steroid injection',facet_mbb:'medial branch block',facet_rfa:'medial branch radiofrequency ablation',si_injection:'sacroiliac joint injection'};
-    var values={
+    return {
       side:f.side?f.side.charAt(0).toUpperCase()+f.side.slice(1):'',laterality:f.side?f.side.charAt(0).toUpperCase()+f.side.slice(1):'',
       level:f.levels.join(', '),levels:f.levels.join(', '),'exact level':f.levels.join(', '),'exact levels':f.levels.join(', '),
       'level count':f.levelCount?S(f.levelCount):'','number of levels':f.levelCount?S(f.levelCount):'',
@@ -1842,6 +2085,9 @@
       region:f.region?f.region.charAt(0).toUpperCase()+f.region.slice(1):'','anatomical region':f.region?f.region.charAt(0).toUpperCase()+f.region.slice(1):'',
       'procedure type':typeLabels[f.procedureType]||''
     };
+  }
+  function fillProcedureSlots(note,procedure) {
+    var values=procedureSlotValues(procedure);
     return S(note).replace(/\[\[([^\]]+)\]\]|\[(?:FILL\s*:\s*)?([^\]]+)\]|\{\{([^}]+)\}\}/gi,function(all,a,b,c){var key=normText(a||b||c).replace(/_/g,' '),value=values[key];return value||all;});
   }
 
@@ -1978,7 +2224,13 @@
     /* opfacts-1.0.0: 23 of the 98 library templates open with one to four bytes of
        Word-binary residue in front of the title (e.g. "\u00c1OPERATIVE REPORT"). */
     var t = S(tplText).replace(TEMPLATE_JUNK_PREFIX_RX, '');
-    t = t.replace(SPLIT_TITLES, '\n$2\n');
+    /* opcli-1.0.0: split a flat paragraph BEFORE the title, never after it.
+       '\n$2\n' cut the doctor's one-line title "OPERATIVE REPORT - LUMBAR
+       TFESI" into two lines before the model saw it, so a faithful copy of his
+       template failed fidelity and was rebuilt, the note opened on a dangling
+       " - LUMBAR ..." line, and a second pass cut it again (not idempotent).
+       The labels that follow a title in a blob are still split by SPLIT_RX. */
+    t = t.replace(SPLIT_TITLES, '\n$2');
     t = t.replace(SPLIT_RX, '\n$2');
     var lines = t.split(/\r?\n/), namePatterns=priorPatientNamePatterns(lines), identityValues=priorIdentityValues(lines), skipLines={},multilineIdentity={};
     identityValues.forEach(function(item){if(item.valueLine!=null)multilineIdentity[item.headingLine]=item;});
@@ -2021,8 +2273,11 @@
      injection picks "Sacroiliac joint pain" over "Lumbar back pain". */
   function chartProblems(p, procedure) {
     var out = [], seen = {};
-    var direct = S(p.problems).replace(/\s+/g, ' ').trim();
-    if (direct) direct.split(/[;\n]/).forEach(function (x) { x = S(x).trim(); if (x && !seen[x.toLowerCase()]) { seen[x.toLowerCase()] = 1; out.push(x); } });
+    /* opcli-1.0.0: split BEFORE collapsing whitespace. savePatients() stores the
+       list newline-separated, and collapsing first turned "Right L4-L5 lumbar
+       radiculopathy\nHypertension" into ONE problem, stamped whole into the
+       diagnosis slot. */
+    S(p.problems).split(/[;\n]/).forEach(function (x) { x = S(x).replace(/\s+/g, ' ').trim(); if (x && !seen[x.toLowerCase()]) { seen[x.toLowerCase()] = 1; out.push(x); } });
     if (!out.length) {
       var raw = '';
       try { verifiedHistoryVisits(p).slice(0, 8).forEach(function (v) { raw += ' ' + S(v && v.raw); }); } catch (e) {}
@@ -2042,28 +2297,34 @@
     }
     return out;
   }
+  /* oni-2.10.0: the top-ranked problem may only become the DIAGNOSIS when it
+     plausibly relates to the requested procedure — token overlap with the
+     procedure, or pain/MSK vocabulary (this is a pain/spine practice tool;
+     "Lumbar spondylosis" legitimately drives a Caudal ESI despite sharing no
+     tokens). An unrelated comorbidity (e.g. "Hypertension") must never be
+     stamped as the pre-op diagnosis — that slot stays visible instead.
+     opcli-1.0.0: nor may a problem naming ONLY the other side ("Right L4-L5
+     lumbar radiculopathy" for a Left L5-S1 TFESI): the chart or the schedule
+     is wrong and only the doctor knows which, so it is dropped before the
+     relevance rule runs, and an empty answer leaves the slot for him. Shared
+     with the Fields box (feat_mls_opnote_fill.js chartValue). */
+  var PAIN_DX_RX = /pain|spondyl|radicul|facet|stenos|\bdisc\b|\bdisk\b|sacroiliac|si joint|\bjoint\b|spine|spinal|lumbar|cervical|thoracic|neuralg|neuropath|arthropath|myelopath|herniat|scoliosis|sciatica|tendinop|bursitis|arthritis|zygapophys|dorsal ramus|medial branch|vertebr|coccy|occipital/i;
+  function chartDiagnosis(probList, procedure) {
+    var list = (probList || []).filter(function (x) { return !sideConflictsWith(x, procedure); });
+    if (!list.length) return '';
+    if (S(procedure).trim()) {
+      var pToks = normText(procedure).split(/\s+/).filter(function (w) { return w.length >= 3; });
+      var topNorm = normText(list[0]), overlap = 0;
+      pToks.forEach(function (w) { if (topNorm.indexOf(w) >= 0) overlap += w.length; });
+      if (!(overlap > 0 || PAIN_DX_RX.test(S(list[0])))) return '';
+    }
+    return S(list[0]).slice(0, 140);
+  }
   function fillChartSlots(note, p, ctx, procedure) {
     if (!p) return S(note);
     var probList = chartProblems(p, procedure);
     var problems = probList.slice(0, 3).join('; ');
-    /* oni-2.10.0: the top-ranked problem may only become the DIAGNOSIS when it
-       plausibly relates to the requested procedure — token overlap with the
-       procedure, or pain/MSK vocabulary (this is a pain/spine practice tool;
-       "Lumbar spondylosis" legitimately drives a Caudal ESI despite sharing no
-       tokens). An unrelated comorbidity (e.g. "Hypertension") must never be
-       stamped as the pre-op diagnosis — that slot stays visible instead. */
-    var PAIN_DX_RX = /pain|spondyl|radicul|facet|stenos|\bdisc\b|\bdisk\b|sacroiliac|si joint|\bjoint\b|spine|spinal|lumbar|cervical|thoracic|neuralg|neuropath|arthropath|myelopath|herniat|scoliosis|sciatica|tendinop|bursitis|arthritis|zygapophys|dorsal ramus|medial branch|vertebr|coccy|occipital/i;
-    var diag = '';
-    if (probList.length) {
-      var relevant = true;
-      if (S(procedure).trim()) {
-        var pToks = normText(procedure).split(/\s+/).filter(function (w) { return w.length >= 3; });
-        var topNorm = normText(probList[0]), overlap = 0;
-        pToks.forEach(function (w) { if (topNorm.indexOf(w) >= 0) overlap += w.length; });
-        relevant = overlap > 0 || PAIN_DX_RX.test(S(probList[0]));
-      }
-      if (relevant) diag = S(probList[0]).slice(0, 140);
-    }
+    var diag = chartDiagnosis(probList, procedure);
     var age = 0;
     try { var d = new Date(S(p.dob)); if (!isNaN(d.getTime())) { var now = new Date(); age = now.getFullYear() - d.getFullYear(); if (now.getMonth() < d.getMonth() || (now.getMonth() === d.getMonth() && now.getDate() < d.getDate())) age--; if (age <= 0 || age >= 130) age = 0; } } catch (e) {}
     var sex = S((ctx && ctx.sex) || p.sex || p.gender).trim();
@@ -2964,11 +3225,15 @@
     if(!stillExact||S(stillExact.id)!==S(p.id)){var pe=new Error('Op-note repair stopped because the patient changed during generation.');pe.code='MLS_OPNOTE_IDENTITY';throw pe;}
     var repairSys=crossAdapt
       ?('Repair the draft so it preserves every requested clinical fact for the REQUESTED procedure. Output the same JSON shape only. The procedure must remain exactly: '+S(procedure)+'. Never change procedure type, anatomical region, side, exact level(s), number of levels, or approach; correct the draft wherever it conflicts with the requested procedure. Keep the current heading structure and formatting. Do not invent clinical facts.')
-      :('Repair the draft so it follows the selected template exactly AND preserves every requested clinical fact. Output the same JSON shape only. The output heading labels and heading order must exactly equal this list: '+check.expected.join(' | ')+'. The procedure must remain exactly: '+S(procedure)+'. Never change procedure type, anatomical region, side, exact level(s), number of levels, or approach. Remove added headings, restore missing headings, restore the template order, and '+(tplMode==='strict'
+      :('Repair the draft so it follows the selected template exactly AND preserves every requested clinical fact. Output the same JSON shape only. The output heading lines and heading order must exactly equal this list, spelled as written: '+literalHeadings(tplForModel).join(' | ')+'. The procedure must remain exactly: '+S(procedure)+'. Never change procedure type, anatomical region, side, exact level(s), number of levels, or approach. Remove added headings, restore missing headings, restore the template order, and '+(tplMode==='strict'
         ?'copy every fixed template sentence verbatim and in the same sequence.'
         /* opmode-1.0.0: the repair keeps the doctor's mode; it used to demand
            verbatim copying in every mode, the opposite of Adapt to case. */
         :'restore every template sentence listed as missing, in the same sequence, keeping its numbers and negations.'+S(TPL_MODE_CLAUSE[tplMode]))+' Do not invent clinical facts.');
+    /* opcli-1.0.0: a side/level flag names what to fix. A diagnosis side is
+       never flipped to match the schedule - either one may be the wrong one. */
+    var latFlags=((clinical&&clinical.errors)||[]).filter(function(e){return /_(?:diagnosis|narrative)$/.test(S(e.code));}).slice(0,4).map(function(e){return e.message;});
+    if(latFlags.length)repairSys+=' SIDE/LEVEL FLAGS: '+latFlags.join(' ')+' In the procedure description the target side and level(s) must be the requested ones. In a diagnosis or indication, state a side only as the verified history documents it; where that differs from the requested side, write [[confirm_side]] there instead of choosing one.';
     var frozenHistory=histBinding&&S(histBinding.context);
     var repairUser='SELECTED TEMPLATE:\n'+tplForModel+'\n\nDRAFT TO REPAIR:\n'+S(first.note).slice(0,TPL_MODEL_MAX+6000)+(frozenHistory?'\n\n'+frozenHistory:'')+'\n\nORIGINAL PATIENT/PROCEDURE CONTEXT:\n'+user.slice(0,10000);
     opts.mlsOpNotePhase='repair';
@@ -3002,6 +3267,10 @@
       if(!check2.pass){window.__mlsLastOpFidelityError='Draft stopped because it did not preserve the selected template.'+(tplTruncated?' Note: this template is longer than the '+TPL_MODEL_MAX+'-character limit and was truncated for drafting - shortening it will help.':'')+' Nothing was saved; retry or confirm the template.';var fe=new Error(window.__mlsLastOpFidelityError);fe.code='MLS_OPNOTE_TEMPLATE_FIDELITY';fe.details=check2;throw fe;}
     }
     generationStage(ctx,'Checking required fields','Rechecking required and prohibited template fields.');
+    /* opcli-1.0.0: a side/level conflict that survived the repair (or came
+       back through reanchor, which stamps PROCEDURE but keeps the model's
+       diagnosis) is asked, never rewritten and never a refusal of the draft. */
+    repaired=guardLateralityResult(repaired,procedure,tplForModel);
     var clinical2=clinicalConsistency(repaired.note,procedure,selectedTpl||{text:tplText},ctx);
     if(crossAdapt)clinical2=adaptedClinical(clinical2);
     generationStage(ctx,'Running final consistency check','Completing the repaired note consistency check.');
@@ -3338,6 +3607,6 @@
     if(isFn(all)&&!all.__oni){var allWrap=async function(){try{var _tpf=window.__mlsTplPrepFix;if(_tpf&&typeof _tpf.draftAll==='function')return await _tpf.draftAll();}catch(_eDA){}var rows=window._opPrep||[],st=document.getElementById('opPrepStatus'),ok=0,failed=0;for(var i=0;i<rows.length;i++){if(st)st.textContent='Drafting '+(i+1)+'/'+rows.length+' — '+rows[i].appt.name+'…';if(await window.opPrepGenerateOne(i))ok++;else failed++;}if(st)st.textContent=failed?('Drafted '+ok+' of '+rows.length+'. '+failed+' need a confirmed template or a retry.'):('✅ Drafted all '+ok+' op note'+(ok===1?'':'s')+' with template structure verified.');return {drafted:ok,failed:failed};};allWrap.__oni=true;window.opPrepGenerateAll=allWrap;}
   }
 
-  window.__mlsOpNoteIntegrity={installed:true,version:VERSION,classify:procClass,parseProcedureFacts:procedureFacts,templateCompatibility:templateCompatibility,clinicalConsistency:clinicalConsistency,rank:rank,best:best,bestFor:bestFor,matchVisitText:matchVisitText,stripNegated:stripNegated,statesNoProcedure:statesNoProcedure,headings:headings,fixedFragments:fixedFragments,fidelity:fidelity,templateConformance:templateConformance,conformanceLines:conformanceLines,fillDateSlots:fillDateSlots,noteStatesDay:noteStatesDay,parseDayParts:parseDayParts,exactNameMatch:exactNameMatch,alternativesFrom:alternativesFrom,templateSubstance:templateSubstance,scrubUnownedIdentifiers:scrubUnownedIdentifiers,forceFacts:forceFacts,fillProcedureSlots:fillProcedureSlots,reanchor:reanchor,airSections:airSections,sanitizeTemplate:sanitizeTemplate,conservativeClaimUnsupported:conservativeClaimUnsupported,stripUnsupportedConservativeClaim:stripUnsupportedConservativeClaim,guardUnsupportedConservativeClaim:guardUnsupportedConservativeClaim,TEMPLATE_JUNK_PREFIX_RX:TEMPLATE_JUNK_PREFIX_RX,chartProblems:chartProblems,generate:generate,bindProviderProvenance:bindProviderProvenance,finalizationContext:finalizationContext,finalizeNote:finalizeNote,preflightRow:preflightRow,preflightBatch:preflightBatch,finalizationError:finalizationError,patientAgeOn:patientAge,_historyVisitBelongsTo:historyVisitBelongsTo,_verifiedHistoryVisits:verifiedHistoryVisits,_resolveSelectedTemplate:resolveSelectedTemplate,_generationKey:generationKey,_rowGenerationCtx:rowGenerationCtx,_closeCallAdaptation:closeCallAdaptation,_providerScopeHardError:providerScopeHardError,procTitleForNote:procTitleForNote,narrativeBinding:narrativeBinding,guardNarrativeBinding:guardNarrativeBinding};
+  window.__mlsOpNoteIntegrity={installed:true,version:VERSION,classify:procClass,parseProcedureFacts:procedureFacts,templateCompatibility:templateCompatibility,clinicalConsistency:clinicalConsistency,rank:rank,best:best,bestFor:bestFor,matchVisitText:matchVisitText,stripNegated:stripNegated,statesNoProcedure:statesNoProcedure,headings:headings,fixedFragments:fixedFragments,fidelity:fidelity,templateConformance:templateConformance,conformanceLines:conformanceLines,fillDateSlots:fillDateSlots,noteStatesDay:noteStatesDay,parseDayParts:parseDayParts,exactNameMatch:exactNameMatch,alternativesFrom:alternativesFrom,templateSubstance:templateSubstance,scrubUnownedIdentifiers:scrubUnownedIdentifiers,forceFacts:forceFacts,fillProcedureSlots:fillProcedureSlots,reanchor:reanchor,airSections:airSections,sanitizeTemplate:sanitizeTemplate,conservativeClaimUnsupported:conservativeClaimUnsupported,stripUnsupportedConservativeClaim:stripUnsupportedConservativeClaim,guardUnsupportedConservativeClaim:guardUnsupportedConservativeClaim,TEMPLATE_JUNK_PREFIX_RX:TEMPLATE_JUNK_PREFIX_RX,chartProblems:chartProblems,generate:generate,bindProviderProvenance:bindProviderProvenance,finalizationContext:finalizationContext,finalizeNote:finalizeNote,preflightRow:preflightRow,preflightBatch:preflightBatch,finalizationError:finalizationError,patientAgeOn:patientAge,_historyVisitBelongsTo:historyVisitBelongsTo,_verifiedHistoryVisits:verifiedHistoryVisits,_resolveSelectedTemplate:resolveSelectedTemplate,_generationKey:generationKey,_rowGenerationCtx:rowGenerationCtx,_closeCallAdaptation:closeCallAdaptation,_providerScopeHardError:providerScopeHardError,procTitleForNote:procTitleForNote,narrativeBinding:narrativeBinding,guardNarrativeBinding:guardNarrativeBinding,lateralityConflicts:lateralityConflicts,guardLaterality:guardLaterality,sideConflictsWith:sideConflictsWith,chartDiagnosis:function(p,procedure){return p?chartDiagnosis(chartProblems(p,procedure),procedure):'';},literalHeadings:literalHeadings};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',install,{once:true});else install();
 })();

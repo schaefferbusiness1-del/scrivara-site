@@ -24653,8 +24653,23 @@ async function opPrepGenerateOne(i){
     row._reconstructed=!!(out&&out.reconstructed)||!!row._reconstructed;
     opPrepAutosaveDraft(i);                                  // land a draft in History right away — never lost
     opPrepRender();
-    var nblank=(row.missing||[]).length;
-    if(st) st.textContent='Drafted '+row.appt.name+'’s op note'+(nblank?(' — '+nblank+' blank'+(nblank===1?'':'s')+' to confirm'):'')+' · saved as a draft to History.';
+    /* opcli-1.0.0: this counted row.missing, which _opReconcileBlanks had cut
+       down to [[key]] slots after the finalizer set it canonically - measured:
+       "4 blanks to confirm" over a Fields box asking for 1 blank and 4
+       suggested values, and nothing over one asking for 4. The canonical
+       parser (chips, rail, ledger, save gate) decides WHETHER anything is
+       open; the Fields box settles its own suggestions a tick later, so it,
+       not this line, says how many. */
+    var nblank=0; try{ nblank=(opNoteBlankTokens(row.note||'')||[]).length; }catch(_eNb){ nblank=(row.missing||[]).length; }
+    /* opcli-1.0.0: a narrative line whose template slot carried the side or
+       level is re-filled from the scheduled procedure when the draft named the
+       opposite one. That is a correction the doctor must be able to see, not
+       only a console line: say how many lines were set from the schedule. */
+    var refilled=0; try{ refilled=((out&&out.lateralityGuard&&out.lateralityGuard.conflicts)||[]).filter(function(c){ return c.action==='refilled-from-template-slot'; }).length; }catch(_eRf){ refilled=0; }
+    row.lateralityRefilled=refilled;
+    if(st) st.textContent='Drafted '+row.appt.name+'’s op note'+(nblank?' — open fields to fill or check below':'')
+      +(refilled?(' · the side/level in '+refilled+' line'+(refilled===1?'':'s')+' was set from the schedule — check '+(refilled===1?'it':'them')):'')
+      +' · saved as a draft to History.';
   }catch(e){
     /* b500: show the ACTUAL reason (identity, template conflict, network,
        server error) — a generic "try again" hid every diagnosable failure.
@@ -24891,11 +24906,18 @@ async function opPrepGenerateAll(){
 /* Make row.missing cover EVERY [[key]] actually in the note — adds an entry for any stray
    placeholder the AI emitted without listing, so the stepper can always fill it. */
 function _opReconcileBlanks(row){
-  try{ var note=row.note||''; var have={}; (row.missing||[]).forEach(function(m){ if(m&&m.key) have[m.key]=1; });
+  try{ var note=row.note||''; var have={}; row.missing=row.missing||[]; row.missing.forEach(function(m){ if(m&&m.key) have[m.key]=1; });
     var re=/\[\[([a-z0-9_]+)\]\]/gi, m; var seen={};
     while((m=re.exec(note))){ var k=m[1].toLowerCase(); if(!have[k]&&!seen[k]){ seen[k]=1; row.missing.push({ key:k, label:k.replace(/_/g,' ').replace(/\b\w/g,function(c){return c.toUpperCase();}) }); } }
+    /* opcli-1.0.0: keep what the canonical parser still sees. The finalizer
+       sets row.missing from opNoteBlankTokens ([FILL:], [CAPS], ___ too) and
+       this filter used to keep only [[key]] entries. Harmless to the readers
+       below: the needle prefill and opPrepApply only ever act on [[key]]. */
+    var live={}; try{ if(typeof opNoteBlankTokens==='function') (opNoteBlankTokens(note)||[]).forEach(function(t){ if(t&&t.key) live[t.key]=t; }); }catch(e2){}
     // Drop any missing entry whose placeholder isn't in the note at all (already filled / never used).
-    row.missing=(row.missing||[]).filter(function(mf){ return note.indexOf('[['+mf.key+']]')>=0; });
+    row.missing=row.missing.filter(function(mf){ return mf&&mf.key&&(note.indexOf('[['+mf.key+']]')>=0||live[mf.key]); });
+    var kept={}; row.missing.forEach(function(mf){ kept[mf.key]=1; });
+    Object.keys(live).forEach(function(k){ if(!kept[k]) row.missing.push(live[k]); });
   }catch(e){}
 }
 function _opBlankOrder(row){ var note=row.note||''; return (row.missing||[]).slice().sort(function(a,b){ var ia=note.indexOf('[['+a.key+']]'); var ib=note.indexOf('[['+b.key+']]'); ia=ia<0?1e9:ia; ib=ib<0?1e9:ib; return ia-ib; }); }
@@ -48807,7 +48829,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1295';
+  window.__MLS_AV='b1296';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

@@ -740,8 +740,8 @@
     }, null);
     if (viaOni && viaOni.length) return viaOni;
     var out = [], seen = {};
-    var direct = S(p.problems).replace(/\s+/g, ' ').trim();
-    if (direct) direct.split(/[;\n]/).forEach(function (x) { x = S(x).trim(); if (x && !seen[x.toLowerCase()]) { seen[x.toLowerCase()] = 1; out.push(x); } });
+    /* opcli-1.0.0: split before collapsing whitespace (see chartProblems) */
+    S(p.problems).split(/[;\n]/).forEach(function (x) { x = S(x).replace(/\s+/g, ' ').trim(); if (x && !seen[x.toLowerCase()]) { seen[x.toLowerCase()] = 1; out.push(x); } });
     if (!out.length) {
       var raw = ''; safe(function () { verifiedHistoryVisits(p).slice(0, 8).forEach(function (v) { raw += ' ' + S(v && v.raw); }); });
       var re = /([A-Z][A-Za-z0-9 ,()\/-]{2,60}?)\s*-\s*Onset:\s*\d{1,2}\/\d{1,2}\/\d{2,4}/g, m;
@@ -766,7 +766,15 @@
     if (/medication|\bmeds\b/.test(l)) return S(p.meds || p.medications).replace(/\s*\r?\n+\s*/g, '; ').replace(/\s+/g, ' ').trim().slice(0, 300);
     if (/\bbmi\b|body mass/.test(l)) { var b = patientBmi(row); return b ? S(b) : ''; }
     var probList = rowProblems(p, row);
-    if (/diagnosis|indication/.test(l)) return S(probList[0] || '').slice(0, 140);
+    /* opcli-1.0.0: the integrity owner's chooser - never a problem naming only
+       the side opposite the scheduled procedure, never an unrelated one. */
+    if (/diagnosis|indication/.test(l)) {
+      var viaDx = safe(function () {
+        var oni = window.__mlsOpNoteIntegrity;
+        return oni && isFn(oni.chartDiagnosis) ? S(oni.chartDiagnosis(p, S(row && (row.proc || (row.appt && row.appt.reason))).trim())) : null;
+      }, null);
+      return viaDx != null ? viaDx : S(probList[0] || '').slice(0, 140);
+    }
     var problems = probList.slice(0, 3).join('; ');
     var bits = [], age = chartAge(p), sex = S(p.sex || p.gender).trim();
     if (age && sex) bits.push(age + '-year-old ' + sex);
@@ -1026,6 +1034,11 @@
     return '';
   }
   function knownValue(label, row) {
+    /* opcli-1.0.0: a "[FILL: confirm side ...]" / "[FILL: confirm level ...]"
+       blank is the integrity guard ASKING because the draft and the schedule
+       disagree on a side or level; nothing may answer it for the doctor
+       (autoFillKnown reads this too). Inline: suites lift this function alone. */
+    if (/^confirm\s+(?:side|level)\b/i.test(S(label).trim())) return '';
     var l = S(label).toLowerCase().replace(/[^a-z0-9 \/]/g, ' ').replace(/\s+/g, ' ').trim();
     var appt = (row && row.appt) || {};
     var prof = seedProfile();   /* onf-2.3.0: Settings-backed (name/practice/NPI) */
@@ -1584,6 +1597,10 @@
     return opts;
   }
   function resolveInitialField(label, row, patientMem) {
+    /* opcli-1.0.0: a confirm-side/level blank always starts empty - smartDefault
+       would pre-select the scheduled side and chartValue the chart problem,
+       taking the decision the guard is asking for away from the doctor. */
+    if (/^confirm\s+(?:side|level)\b/i.test(S(label).trim())) return { value: '', kind: 'blank' };
     var spec = fieldSpec(label), value = knownValue(label, row);
     if (value) return { value: value, kind: 'known' };
     value = historyMed(label, row);

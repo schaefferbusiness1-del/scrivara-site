@@ -2702,7 +2702,13 @@ const tests = [
   'opnote-surgeon-values-and-template-runtime.test.js',
   /* opblank-2.0.0 (b1294): the canonical op-note blank parser is linear-time
      and returns exactly what the original regexes did. */
-  'opnote-blank-parser-linear-time.test.js'
+  'opnote-blank-parser-linear-time.test.js',
+  /* opcli-1.0.0 (b1296): the doctor's one-line title reaches the model whole;
+     the draft status names open fields by the canonical parser; an opposite
+     side or unrequested level in the diagnosis, indication or narrative is
+     asked about (or re-filled from a template slot, visibly) - never refused,
+     never silently rewritten. */
+  'opnote-title-blanks-side-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
