@@ -45888,9 +45888,19 @@ async function revokeApiKey(id){
 function copyApiKey(){ const i=document.getElementById('newApiKey'); if(i&&i.value){ navigator.clipboard.writeText(i.value).then(function(){toast('Copied.','ok');},function(){}); } }
 
 /* ---- Nightly EMR → MLS automatic backup ---- */
+/* sweepfix-1.0.0 (2026-09-23): the server no longer overwrites a chart that
+   belongs to someone else. Such a record is kept as its own chart
+   ('separate'), or not written when only a name identifies it ('unplaced');
+   say so instead of counting them as imported. */
+function _chartWriteNotes(d){
+  var s=Number(d&&d.separate)||0, u=Number(d&&d.unplaced)||0, out=[];
+  if(s) out.push(s+(s===1?' kept as a separate chart':' kept as separate charts')+' (the name, date of birth or chart number did not match the chart on file)');
+  if(u) out.push(u+' not saved (only a name identified '+(u===1?'it':'them')+'; add a date of birth or MRN)');
+  return out.length?(' '+out.join('; ')+'.'):'';
+}
 function _emrSyncFmtResult(r){
   if(!r) return '';
-  if(r.ok) return '✓ Last backup: '+(r.patients||0)+' patient'+((r.patients===1)?'':'s')+', '+(r.visits||0)+' visit record'+((r.visits===1)?'':'s')+(r.truncated?' (more remain — will continue next run)':'')+'.';
+  if(r.ok) return '✓ Last backup: '+(r.patients||0)+' patient'+((r.patients===1)?'':'s')+', '+(r.visits||0)+' visit record'+((r.visits===1)?'':'s')+(r.truncated?' (more remain — will continue next run)':'')+'.'+_chartWriteNotes(r);
   return '⚠ Last attempt: '+(r.error||'failed')+(r.patients?(' (got '+r.patients+' before stopping)'):'');
 }
 async function loadEmrSync(){
@@ -45956,8 +45966,9 @@ async function importPatients(){
     const r=await fetch(BACKEND_URL+'/api/import/patients',{method:'POST',headers:{'Authorization':'Bearer '+bkToken(),'Content-Type':'application/json'},body:JSON.stringify(data)});
     const d=await r.json();
     if(!r.ok){ toast(d.error||'Import failed.','err'); if(out) out.textContent=''; return; }
-    toast('Imported '+d.patients+' patients · '+d.visits+' visits.','ok');
-    if(out) out.textContent='✓ Imported '+d.patients+' patients and '+d.visits+' visit records. Open the Patients tab to see them.';
+    var _notes=_chartWriteNotes(d);
+    toast('Imported '+d.patients+' patients · '+d.visits+' visits.'+(_notes?' Some records were kept apart - see below.':''),_notes?'':'ok');
+    if(out) out.textContent='✓ Imported '+d.patients+' patients and '+d.visits+' visit records.'+_notes+' Open the Patients tab to see them.';
     try{ if(typeof loadPatients==='function') loadPatients(); else if(typeof syncDown==='function') syncDown(); }catch(e){}
   }catch(e){ toast('Network error during import.','err'); if(out) out.textContent=''; }
 }
