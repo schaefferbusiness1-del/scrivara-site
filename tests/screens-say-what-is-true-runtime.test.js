@@ -53,6 +53,7 @@ const srv = http.createServer((q, r) => {
       heroName: (document.getElementById('ez3ActiveGo') || { getAttribute() { return ''; } }).getAttribute('aria-label') || '',
       card: (document.querySelector('.mls-idcard .mls-idname') || {}).textContent || '',
       banner: (document.getElementById('mlsPrfProgress') || {}).textContent || '',
+      chooser: (() => { const c = document.getElementById('ez3Choose'); return c ? { alt: c.classList.contains('alt'), bg: getComputedStyle(c).backgroundImage + '|' + getComputedStyle(c).backgroundColor } : null; })(),
       status: (document.getElementById('ez3HomeStatus') || {}).textContent || '',
       bar: (() => { const r = document.getElementById('mlsCtxBar').getBoundingClientRect(); return [Math.round(r.left), Math.round(r.right)]; })(),
       view: (() => { const r = document.getElementById('visitView').getBoundingClientRect(); return [Math.round(r.left), Math.round(r.right)]; })(),
@@ -62,6 +63,8 @@ const srv = http.createServer((q, r) => {
       assert.ok(v.card && v.heroName.indexOf(v.card) >= 0, 'the hero still names its patient (identity card and aria-label): ' + JSON.stringify(v));
     }
     assert.doesNotMatch(v.banner, /choose a patient/i, 'no "choose a patient" over an open patient: ' + v.banner);
+    /* chooser-1.0.0 (b1308): under the patient's own action, Choose patient is the outlined secondary, not the brightest control */
+    if (v.hero && v.chooser) assert.ok(v.chooser.alt && /^none\|rgb\(255, 255, 255\)/.test(v.chooser.bg), 'Choose patient outshouts the patient\'s own action: ' + JSON.stringify(v.chooser));
     assert.doesNotMatch(v.status, /athenaOne|identity guards active/, 'the sample status line claims no athenaOne and no always-on guard: ' + v.status);
     assert.match(v.status, /Sample schedule/, 'the sample status line says whose schedule it is: ' + v.status);
     assert.ok(Math.abs(v.bar[0] - v.view[0]) <= 1 && Math.abs(v.bar[1] - v.view[1]) <= 1, 'the patient bar shares the workspace column: bar ' + v.bar + ' vs view ' + v.view);

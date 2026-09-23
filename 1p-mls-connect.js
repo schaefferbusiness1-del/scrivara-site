@@ -7875,6 +7875,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     '#mlsEz3 .ez3-h1{color:#1A211C !important;font-family:Newsreader,Georgia,serif !important;font-weight:600 !important;letter-spacing:-.015em !important;}',
     '#mlsEz3 .ez3-big:not(.rec):not(.ok):not(.dim){background:#204034 !important;color:#fff !important;border:0 !important;box-shadow:0 10px 26px -10px rgba(32,64,52,.55) !important;}',
     '#mlsEz3 .ez3-big.dim{background:#F2F0E9 !important;color:#55605A !important;border:1px solid #E4E1D8 !important;box-shadow:none !important;}',
+    /* chooser-1.0.0: the secondary big door - outlined, no glow. */
+    '#mlsEz3 .ez3-big.alt{background:#FFFFFF !important;color:#1F4D3A !important;border:1.5px solid #9CC7B2 !important;box-shadow:none !important;}',
+    '#mlsEz3 .ez3-big.alt small{color:#55605A !important;}',
     /* doorlight-1.0.0 (2026-09-11, measured live on b1232): the Type-or-paste door
        shipped with the dark-surface tokens (#EAF1EE on rgba(255,255,255,.07)) on the
        light #mlsEz3 gradient - contrast ~1.2:1, the owner could not see it. Same
@@ -22813,6 +22816,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     '.ez3-big small{display:block;font-size:12.5px;font-weight:600;opacity:.9;margin-top:3px;}',
     '.ez3-big.rec{background:linear-gradient(135deg,#C2724C,#A85E3F);animation:ez3Pulse 1.6s infinite;}',
     '.ez3-big.ok{background:linear-gradient(135deg,#059669,#047857);box-shadow:0 12px 34px rgba(4,120,87,.45);}',
+    '.ez3-big.alt{background:#fff;color:#1F4D3A;border:1.5px solid #9CC7B2;box-shadow:none;}',
     '.ez3-big.dim{background:#1E2B24;color:#C9DCD2;cursor:default;box-shadow:none;}',
     '@keyframes ez3Pulse{0%,100%{box-shadow:0 0 0 0 rgba(225,29,72,.5)}50%{box-shadow:0 0 0 16px rgba(225,29,72,0)}}',
     /* v3.2: time-aware header */
@@ -24741,7 +24745,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     }
     /* one obvious action at a time: Choose only makes sense once rows exist */
     if (rows.length) {
-      h += '<button type="button" class="ez3-big ok" id="ez3Choose" style="' + ((tc.cur || tc.nxt) ? 'min-height:60px;font-size:16px;' : '') + '">👥 Choose patient' +
+      /* chooser-1.0.0: with a patient's own action already leading the page
+         (Start Recording / Continue / Now / Up next above), switching patients
+         is the secondary door - it was the brightest control on the screen,
+         a vivid gradient under the patient's own darker primary. */
+      var heroAbove = /id="ez3(ActiveGo|Now|Nxt)"/.test(h);
+      h += '<button type="button" class="ez3-big ok' + (heroAbove ? ' alt' : '') + '" id="ez3Choose" style="' + ((tc.cur || tc.nxt || heroAbove) ? 'min-height:60px;font-size:16px;' : '') + '">👥 Choose patient' +
            '<small>' + dayCountClaim(rows, (function () { var linked = rows.filter(function (a) { return a && (a.patient_external_id || a.dob); }).length, extra = rows.length - linked; return extra > 0 ? (linked + ' patient' + (linked === 1 ? '' : 's') + ' + ' + extra + ' unlinked booking' + (extra === 1 ? '' : 's')) : (rows.length + ' on ' + (visitIsToday() ? 'today’s' : (esc(visitDayName()) + '’s')) + ' schedule'); })()) + '</small></button>';
     }
     h += '<div class="ez3-row2">' +
