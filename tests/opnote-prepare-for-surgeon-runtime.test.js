@@ -232,6 +232,12 @@ const DRAFT = [
   'FINDINGS: the medial compartment (left) was inspected [see image]; the patient had fallen through a window. [BP 128/76, HR 72]'
 ].join('\n');
 
+/* opnsvc-1.0.0: a drafted card records the template that wrote it
+   (draftTplId, set by opPrepGenerateOne and kept on the History draft), and
+   the hand-off sends THAT template - a card with no record of one goes without
+   a template rather than beside whatever the dropdown shows. The drafted rows
+   below carry that record, as every card drafted in the app does;
+   tests/opnote-surgeon-values-and-template-runtime.test.js pins the rest. */
 const EXPECTED_BLANKS = [
   { key: 'graft_size', label: 'Graft Size' },
   { key: 'implant_lot', label: 'implant lot' },
@@ -307,7 +313,7 @@ function happyReplies(extra) {
   /* ---- the ordinary hand-over -------------------------------------------- */
   {
     const r = runtime({
-      rows: [{ opKey: 'row-single', note: DRAFT, proc: 'Right knee arthroscopy', tplId: 'tpl_knee' }],
+      rows: [{ opKey: 'row-single', note: DRAFT, proc: 'Right knee arthroscopy', tplId: 'tpl_knee', draftTplId: 'tpl_knee' }],
       templates: [KNEE_TEMPLATE],
       replies: happyReplies(),
     });
@@ -390,7 +396,7 @@ function happyReplies(extra) {
      the write (privacy/eviction adapters do this).  A row-only assignment is
      not enough proof to discard the exact retry key. */
   {
-    const rows = [{ opKey: 'row-single-dropped', note: DRAFT, proc: 'Right knee arthroscopy', tplId: 'tpl_knee' }];
+    const rows = [{ opKey: 'row-single-dropped', note: DRAFT, proc: 'Right knee arthroscopy', tplId: 'tpl_knee', draftTplId: 'tpl_knee' }];
     const r = runtime({ rows, templates: [KNEE_TEMPLATE], replies: happyReplies(), dropJobStoreWrites: true });
     await r.ctx.opPrepForSurgeon(0);
     r.ctx.document.getElementById('opSurgeonPick').value = 'oc_synthetic1';
@@ -415,7 +421,7 @@ function happyReplies(extra) {
       }
     };
     const storage = new Map();
-    const row = () => ({ opKey: 'row-cross-tab', note: DRAFT, proc: 'Right knee arthroscopy', tplId: 'tpl_knee' });
+    const row = () => ({ opKey: 'row-cross-tab', note: DRAFT, proc: 'Right knee arthroscopy', tplId: 'tpl_knee', draftTplId: 'tpl_knee' });
     const a = runtime({ rows: [row()], templates: [KNEE_TEMPLATE], replies: happyReplies(), locks, storage });
     const b = runtime({ rows: [row()], templates: [KNEE_TEMPLATE], replies: happyReplies(), locks, storage });
     await Promise.all([a.ctx.opPrepForSurgeon(0), b.ctx.opPrepForSurgeon(0)]);
@@ -487,8 +493,8 @@ function happyReplies(extra) {
   /* ---- whole-day creation carries one opaque idempotency key -------------- */
   {
     const rows = [
-      { opKey: 'row-a', patientId: 'fixture-a', note: DRAFT, proc: 'Right knee arthroscopy', tplId: 'tpl_knee' },
-      { opKey: 'row-b', patientId: 'fixture-b', note: DRAFT + '\nLATERALITY: right', proc: 'Right knee arthroscopy', tplId: 'tpl_knee' }
+      { opKey: 'row-a', patientId: 'fixture-a', note: DRAFT, proc: 'Right knee arthroscopy', tplId: 'tpl_knee', draftTplId: 'tpl_knee' },
+      { opKey: 'row-b', patientId: 'fixture-b', note: DRAFT + '\nLATERALITY: right', proc: 'Right knee arthroscopy', tplId: 'tpl_knee', draftTplId: 'tpl_knee' }
     ];
     const r = runtime({
       rows,
@@ -514,8 +520,8 @@ function happyReplies(extra) {
      exact key so a retry cannot duplicate the jobs whose response was partial. */
   {
     const rows = [
-      { opKey: 'row-c', patientId: 'fixture-c', note: DRAFT, proc: 'Right knee arthroscopy', tplId: 'tpl_knee' },
-      { opKey: 'row-d', patientId: 'fixture-d', note: DRAFT + '\nLATERALITY: left', proc: 'Right knee arthroscopy', tplId: 'tpl_knee' }
+      { opKey: 'row-c', patientId: 'fixture-c', note: DRAFT, proc: 'Right knee arthroscopy', tplId: 'tpl_knee', draftTplId: 'tpl_knee' },
+      { opKey: 'row-d', patientId: 'fixture-d', note: DRAFT + '\nLATERALITY: left', proc: 'Right knee arthroscopy', tplId: 'tpl_knee', draftTplId: 'tpl_knee' }
     ];
     const r = runtime({
       rows,

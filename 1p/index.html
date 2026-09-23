@@ -24434,6 +24434,7 @@ function opPrepRender(){
       h+=_opConformanceHtml(i,row);
       h+='<textarea id="opPrepNote_'+i+'" style="width:100%;min-height:220px;font-size:12.5px;margin-top:10px;font-family:ui-monospace,Menlo,Consolas,monospace" oninput="_opFinalizationChanged('+i+',this.value)">'+esc(row.note||'')+'</textarea>';
       h+=_opFinalizerMarkup(i,_opFinalizerPreview(row,'display'));
+      if(row.opSurgeonLeft&&typeof _opSurgeonLeftHtml==='function') h+=_opSurgeonLeftHtml(row);   // opnsvc-1.0.0
       /* opnsend-2.0.0: the Athena control is DISABLED while the canonical
          parser still counts an unresolved field - the same parser opPrepSave
          and pushHistoryNoteToAthena both gate on - so the card can never offer
@@ -24598,6 +24599,14 @@ async function opPrepGenerateOne(i){
       out=await _genOpNote(row.appt.name, (row.dateStr||_opTomorrowDateStr()), (row.proc||row.appt.reason||tpl.name), _tplTextForDraft(tpl.text), ctx);
     }
     row.note=out.note||''; row.missing=out.missing||[]; row.values={}; row.gen=true; row._blankIdx=0;
+    /* opnsvc-1.0.0: the template that WROTE these words, stamped the moment
+       they land on the row - before any check below can refuse the draft, since
+       a refused draft still leaves its words here. The Template dropdown only
+       moves row.tplId, so a hand-off that read tplId sent whatever the dropdown
+       showed NOW. The surgeon send reads this instead, and the hash says
+       whether that template's words were edited since. tpl is the one
+       captured before the draft started. */
+    try{ row.draftTplId=String(tpl.id||''); row.draftTplHash=(typeof _opTplTextHash==='function')?_opTplTextHash(tpl.text):''; row.opSurgeonLeft=null; }catch(_eDT){}
     row.opFinalization=(out&&out.finalization)||null;row.opFinalizationContext=(out&&out.finalizationContext)||null;
     /* Public-preview drafts and any older generator still pass through the same
        result contract.  Provider may remain an honest draft blank here; every
@@ -24775,7 +24784,15 @@ function opPrepAutosaveDraft(i){
     if(!p){ try{ toast('Draft not saved: exact patient identity could not be verified.','err'); }catch(e){} return false; }
     var ns=getNotes(); var ex=row._noteId?ns.find(function(x){ return x.id===row._noteId; }):null;
     if(ex){ ex.text=row.note; ex.updated=Date.now(); ex.cc=p.name+' — '+_opCcDate(row)+(row.proc||row.appt.reason||'Operative note')+' (op-note draft)'; if(!ex.source) ex.source='manual-ai'; }
-    else { var n={ id:'n'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), patient:p.name, patientId:p.id, cc:p.name+' — '+_opCcDate(row)+(row.proc||row.appt.reason||'Operative note')+' (op-note draft)', text:row.note, kind:'opnote', source:'manual-ai', created:Date.now(), updated:Date.now(), signed:false, isDraft:true }; ns.unshift(n); row._noteId=n.id; }
+    else { var n={ id:'n'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), patient:p.name, patientId:p.id, cc:p.name+' — '+_opCcDate(row)+(row.proc||row.appt.reason||'Operative note')+' (op-note draft)', text:row.note, kind:'opnote', source:'manual-ai', created:Date.now(), updated:Date.now(), signed:false, isDraft:true }; ns.unshift(n); row._noteId=n.id; ex=n; }
+    /* opnsvc-1.0.0: the template that wrote these words (id + a hash of its
+       words - boilerplate, never patient data) goes into History with them.
+       Reopening the day rebuilds the row from this record
+       (feat_mls_opnote_prep.js adoptExistingDraft), and a stamp that lived only
+       on the in-memory row was lost there - the surgeon send then fell back to
+       whatever the dropdown showed. It mirrors the row, so a row with no stamp
+       clears a stale one. */
+    try{ ex.opDraftTplId=String(row.draftTplId||''); ex.opDraftTplHash=String(row.draftTplHash||''); }catch(_eTs){}
     saveNotes(ns);
     /* opdb-1.0.0: the server copy, queued the moment the device copy exists */
     try{ _opQueueDraftBackup(row._noteId); }catch(eDb){}
@@ -25517,6 +25534,12 @@ function _opSurgeonPick(){
   for(var j=0;j<_opSurgeonClients.length;j++){ var c=_opSurgeonClients[j]||{}; opts+='<option value="'+esc(c.id)+'">'+esc(c.name||c.label||c.id)+'</option>'; }
   var h='<div style="font-weight:800;font-size:17px">Prepare for a surgeon</div>';
   h+='<div class="mini" style="color:var(--muted);margin-top:6px">'+blanks.length+' field'+(blanks.length===1?'':'s')+' will be left for them to fill in. Everything else is already written.</div>';
+  /* opnsvc-1.0.0: a note whose template is not known goes without one, and
+     the owner hears that BEFORE pressing Send, with the one thing to do. */
+  var pickDay=_opSurgeonDayRows(), bare=0;
+  for(var pb=0;pb<pickDay.length;pb++){ if(!_opSurgeonTplOf(pickDay[pb].row)) bare++; }
+  if(pickDay.length>1&&bare) h+='<div class="mini" style="color:var(--muted);margin-top:6px">'+bare+' of the '+pickDay.length+' drafted op notes will go without a template beside '+(bare===1?'it':'them')+', because which template wrote '+(bare===1?'it':'them')+' is not known here. Redraft '+(bare===1?'it':'them')+' if the surgeon should have the template too.</div>';
+  else if(!_opSurgeonTplOf((window._opPrep||[])[_opSurgeonRow])) h+='<div class="mini" style="color:var(--muted);margin-top:6px">It will go without a template beside it, because which template wrote it is not known here. Redraft it if the surgeon should have the template too.</div>';
   if(opts) h+='<label class="mini" for="opSurgeonPick" style="display:block;margin:12px 0 3px;color:var(--muted)">Surgeon</label><select id="opSurgeonPick" style="width:100%;min-height:40px;padding:6px 9px;border:1px solid var(--line);border-radius:10px">'+opts+'</select><div class="mini" style="color:var(--muted);margin-top:10px">Or add a new one:</div>';
   h+='<div class="row" style="gap:8px;margin-top:6px;flex-wrap:wrap"><input id="opSurgeonName" placeholder="Name" style="flex:1;min-width:150px;min-height:40px;padding:6px 9px;border:1px solid var(--line);border-radius:10px"><input id="opSurgeonPractice" placeholder="Practice" style="flex:1;min-width:150px;min-height:40px;padding:6px 9px;border:1px solid var(--line);border-radius:10px"></div>';
   h+='<input id="opSurgeonEmail" placeholder="Email" style="width:100%;margin-top:8px;min-height:40px;padding:6px 9px;border:1px solid var(--line);border-radius:10px">';
@@ -25556,12 +25579,41 @@ function _opSurgeonDayRows(){
    control on their page something to offer. */
 function _opSurgeonTplOf(row){
   try{
-    var t=(typeof getTemplateById==='function')?getTemplateById(String((row||{}).tplId||'')):null;
+    /* opnsvc-1.0.0: the template the note was DRAFTED from, not whatever the
+       dropdown says now - kept on the row and in History, so it survives a
+       reopened day. A note with no record of it (autosaved before this, or
+       typed by hand) goes WITHOUT a template: the dropdown is a guess, and the
+       surgeon's page would offer to rewrite the note against it. */
+    var r=row||{};
+    var drafted=String(r.draftTplId||'');
+    if(!drafted) return null;
+    var t=(typeof getTemplateById==='function')?getTemplateById(drafted):null;
     if(!t) return null;
     var text=String(t.text||'');
     if(!text.trim()) return null;
     return { id:String(t.id||''), name:String(t.name||'Template'), text:text };
   }catch(e){ return null; }
+}
+/* opnsvc-1.0.0: a two-seed hash of a template's words, taken when a note is
+   drafted and again when it is sent. Opaque; kept on the row and on the
+   History draft beside the template id - never the words themselves. */
+function _opTplTextHash(text){ var s=String(text==null?'':text); return 'tpl-'+_opHandoffHash(s,374761393)+'-'+_opHandoffHash(s,3266489909)+'-'+s.length; }
+/* Why this row must not go to a surgeon as it stands, or '' when it may. The
+   surgeon's page puts the template beside the note and offers to rewrite the
+   note into another one, so the template sent has to be the one that wrote
+   these words. If the dropdown moved after the draft, or the template's words
+   were edited since, the owner redrafts or switches back - nothing is guessed. */
+function _opSurgeonTplProblem(row){
+  try{
+    var r=row||{}, drafted=String(r.draftTplId||'');
+    if(!drafted) return '';
+    var who=(r.appt&&r.appt.name)?(String(r.appt.name)+'\u2019s op note'):'This op note';
+    var t=(typeof getTemplateById==='function')?getTemplateById(drafted):null;
+    /* A reopened day picks the dropdown afresh, so say WHICH one to switch back to. */
+    if(String(r.tplId||'')!==drafted) return who+': the template was changed after this note was drafted - redraft it, or switch the template back'+((t&&String(t.name||'').trim())?(' to \u201c'+String(t.name).trim()+'\u201d'):'')+'.';
+    if(t&&r.draftTplHash&&_opTplTextHash(t.text)!==String(r.draftTplHash)) return who+': the template was edited after this note was drafted - redraft it so the surgeon gets the words that wrote it.';
+    return '';
+  }catch(e){ return ''; }
 }
 function _opSurgeonBlanksOf(row){
   try{ return window.opNoteBlankTokens(String((row||{}).note||''))||[]; }catch(e){ return []; }
@@ -25722,6 +25774,7 @@ async function opPrepForSurgeon(i){
   if(!row||!String(row.note||'').trim()){ try{ toast('Draft the op note first - there is nothing to hand over yet.','err'); }catch(e){} return; }
   var finalCheck=_opFinalizerRun(i,'surgeon-open',true);
   if(!finalCheck||!finalCheck.ok){try{toast((finalCheck&&finalCheck.issues&&finalCheck.issues[0]&&finalCheck.issues[0].message)||'Review this op note before handing it off.','err');}catch(e){}return;}
+  var tplWhyOpen=_opSurgeonTplProblem(row); if(tplWhyOpen){ try{ toast(tplWhyOpen,'err'); }catch(e){} return; }   // opnsvc-1.0.0
   _opSurgeonRow=i;
   _opSurgeonDialog('<div style="font-weight:800;font-size:17px">Prepare for a surgeon</div><div class="mini" style="color:var(--muted);margin-top:10px">One moment.</div>');
   try{ var d=await _opSurgeonApi('/api/opnote-clients'); _opSurgeonClients=(d&&d.clients)||[]; }
@@ -25774,6 +25827,7 @@ async function opSurgeonSendDay(){
     if(!firstIssue&&finalDay&&finalDay.issues)firstIssue=finalDay.issues[0];
     _opSurgeonSay('Nothing was sent. '+((firstIssue&&firstIssue.message)||'Final safety review is unavailable; wait a moment and try again.'));return;
   }
+  for(var tq=0;tq<day.length;tq++){ var tplWhy=_opSurgeonTplProblem(day[tq].row); if(tplWhy){ _opSurgeonSay('Nothing was sent. '+tplWhy); return; } }
   _opSurgeonBusy='send';
   _opSurgeonTyped=''; _opSurgeonTo=''; _opSurgeonUrl=''; _opSurgeonLine=''; _opSurgeonLineOk=false; _opSurgeonUnsure=false;
   var who=await _opSurgeonResolve();
@@ -25783,7 +25837,7 @@ async function opSurgeonSendDay(){
     var r=day[n].row;
     var bl=_opSurgeonBlanksOf(r); blanksTotal+=bl.length;
     var tp=_opSurgeonTplOf(r);
-    jobs.push({ templateId:r.tplId||null, templateName:tp?tp.name:'', templateText:tp?tp.text:'',
+    jobs.push({ templateId:tp?(tp.id||null):null, templateName:tp?tp.name:'', templateText:tp?tp.text:'',
       title:(String(r.proc||'').trim()||'Op note'), noteText:String(r.note||''), blanks:bl });
   }
   var dayBody=JSON.stringify({clientId:who.id,jobs:jobs});
@@ -25826,6 +25880,7 @@ async function opSurgeonSend(){
   var i=_opSurgeonRow; var row=(window._opPrep||[])[i]; if(!row) return;
   var finalOne=_opFinalizerRun(i,'surgeon-send',true);
   if(!finalOne||!finalOne.ok){_opSurgeonSay('Nothing was sent. '+((finalOne&&finalOne.issues&&finalOne.issues[0]&&finalOne.issues[0].message)||'Final safety review is unavailable; wait a moment and try again.'));return;}
+  var tplWhyOne=_opSurgeonTplProblem(row); if(tplWhyOne){ _opSurgeonSay('Nothing was sent. '+tplWhyOne); return; }
   _opSurgeonBusy='send';
   _opSurgeonTyped=''; _opSurgeonTo=''; _opSurgeonUrl=''; _opSurgeonLine=''; _opSurgeonLineOk=false; _opSurgeonUnsure=false;
   _opSurgeonSent=0; _opSurgeonAsked=0;
@@ -25835,7 +25890,7 @@ async function opSurgeonSend(){
   var blanks=_opSurgeonBlanks();
   var title=String(row.proc||'').trim()||'Op note';
   var tplOne=_opSurgeonTplOf(row);
-  var oneBody=JSON.stringify({clientId:clientId,templateId:row.tplId||null,templateName:tplOne?tplOne.name:'',templateText:tplOne?tplOne.text:'',title:title,noteText:String(row.note||''),blanks:blanks});
+  var oneBody=JSON.stringify({clientId:clientId,templateId:tplOne?(tplOne.id||null):null,templateName:tplOne?tplOne.name:'',templateText:tplOne?tplOne.text:'',title:title,noteText:String(row.note||''),blanks:blanks});
   var oneIntent=_opHandoffIntent('single',oneBody),oneIdem='';
   try{
     var madeOne=await _opWithHandoffLock(oneIntent,async function(){oneIdem=_opIdemFor(oneIntent);return await _opSurgeonApi('/api/opnote-jobs',{method:'POST',headers:{'Idempotency-Key':oneIdem},body:oneBody});});
@@ -25931,6 +25986,38 @@ async function opSurgeonSaveEmail(){
    It is deliberately a press and not a poll. A background fetch that rewrote a
    note under the owner's cursor is the worst thing this could do, and an owner
    who has pressed nothing has not asked for their drafts to change. */
+/* opnsvc-1.0.0: THE SAFETY NET UNDER THE SURGEON'S VALUES. The service now
+   puts every value the surgeon types into its own blank on save and on done.
+   A note finished before that carries its values BESIDE the text, and for
+   those the service sends the exact offsets (or the exact wording) of the
+   blank each belongs in - so this puts them in without a parser of its own,
+   checking every offset against the text before it touches it. Anything that
+   cannot be placed is returned by name for the card, never dropped. */
+function _opApplySurgeonValues(text,blanks){
+  var s=String(text||''), edits=[], swaps=[], left=[], list=blanks||[], i, k;
+  for(i=0;i<list.length;i++){
+    var b=list[i]||{}, v=String(b.value==null?'':b.value).trim(), st=String(b.state||'');
+    if(!v||st==='placed'||st==='cleared') continue;
+    var spots=(b.spots&&b.spots.length)?b.spots:[], good=spots.length>0;
+    for(k=0;k<spots.length;k++){ var sp=spots[k]||{}; if(s.slice(Number(sp.at),Number(sp.end))!==String(sp.text||'')||!String(sp.text||'')) good=false; }
+    if(good){ for(k=0;k<spots.length;k++) edits.push({at:Number(spots[k].at),end:Number(spots[k].end),v:v}); continue; }
+    var toks=(String(b.kind||'')==='named'&&b.tokens&&b.tokens.length)?b.tokens:[], hit=false;
+    for(k=0;k<toks.length;k++){ if(String(toks[k]||'')&&s.indexOf(String(toks[k]))>=0) hit=true; }
+    if(hit){ swaps.push({toks:toks,v:v}); continue; }
+    left.push({label:String(b.label||b.key||''),value:v});
+  }
+  edits.sort(function(a,c){ return c.at-a.at; });
+  var floor=Infinity;
+  for(i=0;i<edits.length;i++){ var e=edits[i]; if(e.end>floor) continue; s=s.slice(0,e.at)+e.v+s.slice(e.end); floor=e.at; }
+  for(i=0;i<swaps.length;i++){ for(k=0;k<swaps[i].toks.length;k++){ var t=String(swaps[i].toks[k]||''); if(t) s=s.split(t).join(swaps[i].v); } }
+  return {text:s,left:left};
+}
+function _opSurgeonLeftHtml(row){
+  var left=(row&&row.opSurgeonLeft)||[]; if(!left.length) return '';
+  var one=left.length===1, bits=[];
+  for(var i=0;i<left.length;i++) bits.push(esc(String(left[i].label||''))+': '+esc(String(left[i].value||'')));
+  return '<div class="mini" style="margin-top:6px;padding:8px 10px;border:1px solid #f3c6c6;background:#fff3f3;color:#8b2525;border-radius:10px;font-weight:600">The surgeon typed '+(one?'this':'these')+', but '+(one?'it':'they')+' could not be put into the note by '+(one?'itself':'themselves')+'. Put '+(one?'it':'them')+' in where '+(one?'it belongs':'they belong')+': '+bits.join('; ')+'.</div>';
+}
 async function opPrepCheckReturned(){
   var st=document.getElementById('opPrepStatus');
   var rows=window._opPrep||[];
@@ -25943,7 +26030,7 @@ async function opPrepCheckReturned(){
   try{ done=await _opSurgeonApi('/api/opnote-jobs?status=completed'); }
   catch(e){ if(st) st.textContent='That did not go through. Try again in a moment.'; return; }
   var list=(done&&done.jobs)||[];
-  var back=0, changed=0;
+  var back=0, changed=0, leftN=0;
   for(var j=0;j<list.length;j++){
     var job=list[j]||{};
     var at=idx[String(job.id||'')];
@@ -25954,6 +26041,14 @@ async function opPrepCheckReturned(){
     try{ full=await _opSurgeonApi('/api/opnote-jobs/'+encodeURIComponent(job.id)); }catch(e){ full=null; }
     var text=String((full&&full.job&&full.job.noteText)||'');
     if(!text.trim()){ row.opReturned=true; continue; }
+    /* opnsvc-1.0.0: values still beside the note go into it here, and what
+       cannot be placed stays on the card by name. */
+    var fixed=_opApplySurgeonValues(text,(full&&full.job&&full.job.blanks)||[]);
+    text=fixed.text;
+    var kept=(full&&full.job&&full.job.unplaced)||[];
+    for(var q=0;q<kept.length;q++){ var kv=String((kept[q]||{}).value==null?'':kept[q].value).trim(); if(kv) fixed.left.push({label:String((kept[q]||{}).label||''),value:kv}); }
+    row.opSurgeonLeft=fixed.left.length?fixed.left:null;
+    leftN+=fixed.left.length;
     if(text===String(row.note||'')){ row.opReturned=true; continue; }
     row.note=text;
     row.opReturned=true;
@@ -25970,6 +26065,7 @@ async function opPrepCheckReturned(){
     if(!back) st.textContent='Nothing is finished yet. The surgeon still has '+waiting+' op note'+(waiting===1?'':'s')+'.';
     else if(!changed) st.textContent=back+' op note'+(back===1?' is':'s are')+' marked done, and the wording has not changed.';
     else st.textContent=changed+' op note'+(changed===1?'':'s')+' came back in the surgeon\'s own words. Read each one, then send it to athenaOne from its card.';
+    if(leftN) st.textContent+=' '+leftN+' value'+(leftN===1?'':'s')+' the surgeon typed could not be put into the note by '+(leftN===1?'itself':'themselves')+' - '+(leftN===1?'it is':'they are')+' shown on the card.';
   }
   try{ toast(changed?(changed+' op note'+(changed===1?'':'s')+' came back from the surgeon.'):'Nothing is finished yet.', changed?'ok':'warn'); }catch(e){}
 }

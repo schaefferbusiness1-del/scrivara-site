@@ -486,6 +486,15 @@
         row.note = S(best.text); row.gen = true;
         row._genNote = row.note; row.edited = false;
         row._resumedDraft = true;
+        /* opnsvc-1.0.0: the template that WROTE these words comes back with
+           them (opPrepAutosaveDraft keeps its id and a hash of its words on
+           the History draft). Without it the surgeon hand-off read the
+           Template dropdown, which a reopened day picks afresh - so moving it
+           and pressing Send handed the surgeon a template that did not write
+           the note. A draft saved before this has no record: it stays
+           unknown, and such a note goes without a template, never a guess. */
+        row.draftTplId = S(best.opDraftTplId);
+        row.draftTplHash = S(best.opDraftTplHash);
       }
       STATE.resumedDrafts++;
       return true;

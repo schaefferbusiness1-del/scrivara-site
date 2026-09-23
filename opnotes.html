@@ -291,18 +291,36 @@ function opnRenderList() {
 }
 
 /* ---- one op note ------------------------------------------------------- */
+/* opnsvc-1.0.0: WHAT YOU TYPE GOES INTO THE NOTE. The server used to keep the
+   values beside the note and never put them in it, so the practice read the
+   note back without them. Now Save and Mark done put each value into its own
+   blank and hand the note back with it in, and this page shows exactly that.
+   Only the blanks still waiting in the note get a field (a blank already
+   filled in is listed, not asked again); an older reply with no state still
+   gets a field for every blank. */
+function opnAsks(b) { var st = String((b && b.state) || 'open'); return st === 'open' || st === 'loose'; }
 function opnRenderJob(job) {
   opnOpen = job;
   var blanks = job.blanks || [];
+  var ask = [], done = [];
+  for (var n = 0; n < blanks.length; n++) {
+    if (opnAsks(blanks[n])) ask.push(blanks[n]);
+    else if (String(blanks[n].state) === 'placed') done.push(blanks[n]);
+  }
   var h = '<span class="pill">' + opnEsc(job.title || 'Op note') + '</span>';
-  if (blanks.length) {
+  if (ask.length) {
     h += '<h2>Fill these in</h2>';
-    for (var i = 0; i < blanks.length; i++) {
-      var b = blanks[i];
+    for (var i = 0; i < ask.length; i++) {
+      var b = ask[i];
       h += '<label for="opnB_' + opnEsc(b.key) + '">' + opnEsc(b.label || b.key) + '</label>' +
         '<input id="opnB_' + opnEsc(b.key) + '" value="' + opnEsc(b.value || '') + '" autocomplete="off">';
     }
     h += '<p class="note">Type what you used. Anything you leave empty stays as it is in the note.</p>';
+  }
+  if (done.length) {
+    var put = [];
+    for (var d = 0; d < done.length; d++) put.push(opnEsc(done[d].label || done[d].key) + ': ' + opnEsc(done[d].value || ''));
+    h += '<p class="note" id="opnPut">Already in the note: ' + put.join('; ') + '.</p>';
   }
   h += '<h2>The note</h2>' +
     '<p class="note">You can change any of this.</p>' +
@@ -320,11 +338,78 @@ function opnCollect() {
   var open = opnOpen || {};
   var list = open.blanks || [];
   for (var i = 0; i < list.length; i++) {
+    if (!opnAsks(list[i])) continue;
     var field = opnEl('opnB_' + list[i].key);
     blanks.push({ key: list[i].key, value: field ? String(field.value || '') : String(list[i].value || '') });
   }
   var body = opnEl('opnNote');
   return { blanks: blanks, noteText: body ? String(body.value || '') : String(open.noteText || '') };
+}
+
+/* Anything typed on this page that the server has not got yet. */
+function opnDirty() {
+  if (!opnOpen) return false;
+  var picked = opnCollect();
+  if (picked.noteText !== String(opnOpen.noteText || '')) return true;
+  var list = opnOpen.blanks || [];
+  for (var i = 0; i < picked.blanks.length; i++) {
+    for (var j = 0; j < list.length; j++) {
+      if (list[j].key === picked.blanks[i].key && String(list[j].value || '') !== picked.blanks[i].value) return true;
+    }
+  }
+  return false;
+}
+
+/* A value whose blank is no longer in the note (it was edited out, or the
+   blank lines were changed so nobody can say which is which) is never guessed
+   into a spot. The server hands it back by name and this says so, in words -
+   on every save and every open until it is typed in (opnsvc-1.0.0). */
+function opnNotPlacedSentence(list) {
+  var rows = list || [];
+  if (!rows.length) return '';
+  var bits = [];
+  for (var i = 0; i < rows.length; i++) bits.push(String(rows[i].label || rows[i].key || '') + ': ' + String(rows[i].value || ''));
+  return ' ' + (rows.length === 1 ? 'This was' : 'These were') + ' not put into the note because ' +
+    (rows.length === 1 ? 'its blank is no longer where it was' : 'their blanks are no longer where they were') + ', so type ' +
+    (rows.length === 1 ? 'it' : 'them') + ' in where ' + (rows.length === 1 ? 'it belongs' : 'they belong') + ': ' + bits.join('; ') + '.';
+}
+
+var OPN_SAY_REVIEW = 'Something in the note cannot be saved as it is - a bracket left open, or a line like TODO or DRAFT. Change it and save again.';
+
+/* Save and Mark done are the same write on the server: each sends the words on
+   screen and every value typed, and gets the note back with the values in it.
+   Returns the job the server settled on, or null after saying why not. */
+async function opnPush(where, msgId) {
+  var picked = opnCollect();
+  var r = await opnPost('/api/client/opnotes/jobs/' + encodeURIComponent(opnOpen.id) + '/' + where,
+    { noteText: picked.noteText, blanks: picked.blanks, expectedVersion: opnOpen.version });
+  if (r.status === 401) { await opnHandle401(r); return null; }
+  if (r.status === 409) { opnSay(msgId, 'Someone else changed this note. Reload the page to see the newest one.', true); opnShow(msgId, true); return null; }
+  if (r.status === 422) {
+    var e = null; try { e = await r.json(); } catch (x) { e = null; }
+    var err = (e && e.error) || {};
+    opnSay(msgId, err.code === 'OPNOTE_VALUE_REVIEW' && err.message ? String(err.message) : OPN_SAY_REVIEW, true);
+    opnShow(msgId, true);
+    return null;
+  }
+  if (!r.ok) { opnSay(msgId, 'That did not go through. Try again in a moment.', true); opnShow(msgId, true); return null; }
+  var d = await r.json();
+  var saved = (d && d.job) || {};
+  if (saved.version != null) opnOpen.version = saved.version;
+  if (typeof saved.noteText === 'string') {
+    opnOpen.noteText = saved.noteText;
+    if (saved.blanks && saved.blanks.length !== undefined) opnOpen.blanks = saved.blanks;
+    opnRenderJob(opnOpen);
+    var body = opnEl('opnNote'); if (body) body.value = saved.noteText;
+  } else {
+    opnOpen.noteText = picked.noteText;
+  }
+  var patch = { updatedAt: saved.updatedAt };
+  if (saved.filledCount != null) patch.filledCount = saved.filledCount;
+  if (saved.blankCount != null) patch.blankCount = saved.blankCount;
+  if (where === 'complete') patch.status = saved.status || 'completed';
+  opnRemember(patch);
+  return saved;
 }
 
 function opnRemember(patch) {
@@ -344,38 +429,35 @@ async function opnOpenJob(id) {
     var d = await r.json();
     opnUndoText = '';
     opnRenderJob(d.job || {});
+    /* opnsvc-1.0.0: a value typed earlier that is still not in the note is
+       named again when the note is opened, not only right after the save -
+       the practice sees the same list until it is typed in. */
+    var still = opnNotPlacedSentence((d.job || {}).notPlaced);
+    if (still) { opnSay('jobMsg', still.replace(/^ /, ''), true); opnShow('jobMsg', true); }
   } catch (e) { opnTrouble(); }
 }
 
 async function opnSaveJob() {
-  if (!opnOpen) return;
-  var picked = opnCollect();
+  if (!opnOpen) return false;
   try {
-    var r = await opnPost('/api/client/opnotes/jobs/' + encodeURIComponent(opnOpen.id) + '/save',
-      { noteText: picked.noteText, blanks: picked.blanks, expectedVersion: opnOpen.version });
-    if (r.status === 401) { await opnHandle401(r); return; }
-    if (r.status === 409) { opnSay('jobMsg', 'Someone else changed this note. Reload the page to see the newest one.', true); opnShow('jobMsg', true); return; }
-    if (!r.ok) { opnSay('jobMsg', 'That did not go through. Try again in a moment.', true); opnShow('jobMsg', true); return; }
-    var d = await r.json();
-    var saved = d.job || {};
-    opnOpen.version = saved.version;
-    opnOpen.noteText = picked.noteText;
-    opnRemember({ filledCount: saved.filledCount, updatedAt: saved.updatedAt });
-    opnSay('jobMsg', 'Saved.', false);
+    var saved = await opnPush('save', 'jobMsg');
+    if (!saved) return false;
+    var left = opnNotPlacedSentence(saved.notPlaced);
+    opnSay('jobMsg', 'Saved.' + left, !!left);
     opnShow('jobMsg', true);
-  } catch (e) { opnSay('jobMsg', 'That did not go through. Try again in a moment.', true); opnShow('jobMsg', true); }
+    return true;
+  } catch (e) { opnSay('jobMsg', 'That did not go through. Try again in a moment.', true); opnShow('jobMsg', true); return false; }
 }
 
+/* Mark done carries what is on screen too, so a value typed and never saved
+   still goes into the note - it used to send only the version and lose it. */
 async function opnCompleteJob() {
   if (!opnOpen) return;
   try {
-    var r = await opnPost('/api/client/opnotes/jobs/' + encodeURIComponent(opnOpen.id) + '/complete', { expectedVersion: opnOpen.version });
-    if (r.status === 401) { await opnHandle401(r); return; }
-    if (r.status === 409) { opnSay('jobMsg', 'Someone else changed this note. Reload the page to see the newest one.', true); opnShow('jobMsg', true); return; }
-    if (!r.ok) { opnSay('jobMsg', 'That did not go through. Try again in a moment.', true); opnShow('jobMsg', true); return; }
-    var d = await r.json();
-    opnRemember({ status: (d.job && d.job.status) || 'completed' });
-    opnSay('jobMsg', 'Done. Nothing else to do.', false);
+    var saved = await opnPush('complete', 'jobMsg');
+    if (!saved) return;
+    var left = opnNotPlacedSentence(saved.notPlaced);
+    opnSay('jobMsg', (left ? 'Marked done.' : 'Done. Nothing else to do.') + left, !!left);
     opnShow('jobMsg', true);
   } catch (e) { opnSay('jobMsg', 'That did not go through. Try again in a moment.', true); opnShow('jobMsg', true); }
 }
@@ -416,6 +498,14 @@ async function opnRefit() {
   var pick = opnEl('opnRefitPick');
   var tid = pick ? String(pick.value || '') : '';
   if (!tid) return;
+  /* opnsvc-1.0.0: the rewrite starts from the note the server holds. Words or
+     values typed here and not saved yet would be replaced by the rewrite on
+     screen and lost, so they are saved first - and nothing is rewritten if
+     that save does not go through. */
+  if (opnDirty()) {
+    if (!(await opnSaveJob())) return;
+    var again = opnEl('opnRefitPick'); if (again) again.value = tid;   // the save repainted the picker
+  }
   var go = opnEl('opnRefitGo');
   if (go) { go.disabled = true; go.textContent = 'Rewriting...'; }
   opnSay('refitMsg', 'This takes a few seconds.', false);
@@ -448,10 +538,19 @@ async function opnRefit() {
     if (!r.ok || !d || !d.job) { opnSay('refitMsg', 'That did not go through. Try again in a moment.', true); opnShow('refitMsg', true); return; }
     var body = opnEl('opnNote');
     opnUndoText = String(d.previousText || (body ? body.value : '') || '');
-    if (body) body.value = String(d.job.noteText || '');
     opnOpen.version = d.job.version;
     opnOpen.noteText = String(d.job.noteText || '');
     opnOpen.templateId = d.job.templateId || '';
+    /* opnsvc-1.0.0: a rewrite can add blanks the new template asks for. The
+       server sends the list for the rewritten note; the fields and the count
+       follow it, keeping anything already typed for a blank still there. */
+    if (d.job.blanks && d.job.blanks.length !== undefined) {
+      opnOpen.blanks = d.job.blanks;
+      opnRenderJob(opnOpen);
+      body = opnEl('opnNote');
+    }
+    if (body) body.value = opnOpen.noteText;
+    if (d.job.blankCount != null) opnRemember({ blankCount: d.job.blankCount, filledCount: d.job.filledCount, updatedAt: d.job.updatedAt });
     opnShow('opnRefitUndo', true);
     opnSay('refitMsg', 'Rewritten. Read it through, then Save.', false);
     opnShow('refitMsg', true);

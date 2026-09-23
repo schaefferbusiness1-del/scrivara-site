@@ -2695,7 +2695,11 @@ const tests = [
      false "Back to the calendar", the status line and the brief say which day
      and whose appointments, the header says Calendar and Today, and the
      paste-notes dialog title is readable. */
-  'calendar-and-chrome-say-one-thing-runtime.test.js'
+  'calendar-and-chrome-say-one-thing-runtime.test.js',
+  /* opnsvc-1.0.0 (b1293): a value the surgeon types reaches the note, the
+     owner's read-back places any value still beside it, and the owner sends
+     the template that drafted the note, not the one the dropdown shows now. */
+  'opnote-surgeon-values-and-template-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
