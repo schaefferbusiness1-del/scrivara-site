@@ -2759,7 +2759,11 @@ const tests = [
      written back, the AVS reads the latest real note, no empty month headings,
      Continue only where it works, Copy confirms on its button, drafts are
      titled, and phone rows stay readable. */
-  'history-tells-the-truth-runtime.test.js'
+  'history-tells-the-truth-runtime.test.js',
+  /* sigonce-1.0.0 (b1314): the signature pad inks and syncs once per stroke
+     however often it is re-initialised; MLS Easy wires its note and search
+     inputs by property; the phone card registers one resize listener. */
+  'listeners-bind-once-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

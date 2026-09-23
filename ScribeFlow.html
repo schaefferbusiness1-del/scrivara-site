@@ -43697,30 +43697,48 @@ function sigPadInit(canvasId){
   ctx.lineWidth=2.2; ctx.lineCap='round'; ctx.lineJoin='round'; ctx.strokeStyle='#1E2B24';
   const st={ctx,cssW,cssH,empty:true,drawing:false,last:null,minX:cssW,minY:cssH,maxX:0,maxY:0};
   _sigPads[canvasId]=st;
+  /* sigonce-1.0.0: the pad is re-initialised on every ceremony show, every
+     resize while it is up and every countersign open, and each call used to
+     bind six more canvas listeners and one more window mouseup - each holding
+     its own old state - so one stroke was inked once per init and every
+     mouseup anywhere ran the sync N times. The canvas is bound ONCE and its
+     handlers read the pad's CURRENT state when the event fires. */
+  if(cv.__mlsSigBound) return;
+  cv.__mlsSigBound=true;
+  const cur=()=>_sigPads[canvasId];
   const pos=ev=>{
     const r=cv.getBoundingClientRect();
     const src=(ev.touches&&ev.touches[0])||ev;
     return {x:(src.clientX-r.left), y:(src.clientY-r.top)};
   };
-  const start=ev=>{ ev.preventDefault(); st.drawing=true; st.last=pos(ev); mark(st.last); };
+  const mark=(s,p)=>{
+    s.minX=Math.min(s.minX,p.x); s.minY=Math.min(s.minY,p.y);
+    s.maxX=Math.max(s.maxX,p.x); s.maxY=Math.max(s.maxY,p.y);
+  };
+  const start=ev=>{ const s=cur(); if(!s) return; ev.preventDefault(); s.drawing=true; s.last=pos(ev); mark(s,s.last); };
   const move=ev=>{
-    if(!st.drawing) return; ev.preventDefault();
+    const s=cur(); if(!s||!s.drawing) return; ev.preventDefault();
     const p=pos(ev);
-    ctx.beginPath(); ctx.moveTo(st.last.x,st.last.y); ctx.lineTo(p.x,p.y); ctx.stroke();
-    st.last=p; mark(p); st.empty=false;
+    s.ctx.beginPath(); s.ctx.moveTo(s.last.x,s.last.y); s.ctx.lineTo(p.x,p.y); s.ctx.stroke();
+    s.last=p; mark(s,p); s.empty=false;
   };
-  const end=()=>{ st.drawing=false; st.last=null; if(typeof st.onstroke==='function'){ try{ st.onstroke(); }catch(e){} } };
-  const mark=p=>{
-    st.minX=Math.min(st.minX,p.x); st.minY=Math.min(st.minY,p.y);
-    st.maxX=Math.max(st.maxX,p.x); st.maxY=Math.max(st.maxY,p.y);
-  };
+  const end=()=>_sigPadEnd(cur());
   cv.addEventListener('mousedown',start);
   cv.addEventListener('mousemove',move);
-  window.addEventListener('mouseup',end);
   cv.addEventListener('touchstart',start,{passive:false});
   cv.addEventListener('touchmove',move,{passive:false});
   cv.addEventListener('touchend',end);
   cv.addEventListener('touchcancel',end);
+  if(!window.__mlsSigUpWired){
+    window.__mlsSigUpWired=1;
+    /* a mouse stroke may end anywhere; one listener ends whichever pad is drawing */
+    window.addEventListener('mouseup',()=>{ Object.keys(_sigPads).forEach(id=>_sigPadEnd(_sigPads[id])); });
+  }
+}
+function _sigPadEnd(s){
+  if(!s||!s.drawing) return;
+  s.drawing=false; s.last=null;
+  if(typeof s.onstroke==='function'){ try{ s.onstroke(); }catch(e){} }
 }
 function sigPadClear(canvasId){
   const cv=document.getElementById(canvasId); const st=_sigPads[canvasId];
@@ -49313,7 +49331,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1313';
+  window.__MLS_AV='b1314';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
@@ -50149,7 +50167,10 @@ function _ptGroupSort(mode){
        strip appearing after a pull. Re-check on resize, debounced, and withdraw
        the moment it starts covering something. Cheap: it only runs while the
        card is actually on screen. */
-    var reflow = null;
+    /* sigonce-1.0.0: registered once - show() runs again every time the card
+       comes back, and each run used to add another resize listener. */
+    if (resizeWired) return;
+    resizeWired = true;
     window.addEventListener('resize', function () {
       if (!document.getElementById(CARD_ID)) return;
       if (reflow !== null) { clearTimeout(reflow); reflow = null; }
@@ -50165,7 +50186,7 @@ function _ptGroupSort(mode){
      path: sign-in happens in several places (fresh signup, restored session,
      2FA) and a poller cannot miss one of them. It stops once the card is
      permanently dismissed or after two minutes, so it never runs for long. */
-  var tries = 0;
+  var tries = 0, resizeWired = false, reflow = null;
   var iv = setInterval(function () {
     try {
       if (dismissed() || ++tries > 120) { clearInterval(iv); return; }

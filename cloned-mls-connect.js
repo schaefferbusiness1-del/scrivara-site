@@ -25109,10 +25109,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     on('ez3Portal', openPortalInvite);
     on('ez3Back', function () { S.screen = 'home'; S.query = ''; render(); });
     var inp = $('ez3Search');
-    if (inp) inp.addEventListener('input', function () {
+    /* sigonce-1.0.0: a property, for the same reason as #ez3Note above */
+    if (inp) inp.oninput = function () {
       S.query = inp.value; S.showCount = 5; S.expanded = null;
       var c = $('ez3ChooseList'); if (c) c.innerHTML = chooseListHtml();
-    });
+    };
     wireChooseList();
   }
 
@@ -26024,7 +26025,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var ta = $('ez3Note');
     if (ta) {
       ta.value = noteText();
-      ta.addEventListener('input', function () {
+      /* sigonce-1.0.0: a property, not addEventListener. setWrapHtml keeps the
+         old DOM when a repaint is byte-identical, so this line ran against the
+         SAME textarea again and stacked one more handler per repaint - each
+         keystroke then re-sent the note N times. */
+      ta.oninput = function () {
         var n = $('noteBox');
         if (n) { n.value = ta.value; try { n.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {} }
         /* noteadv-1.0.1: a line the doctor has just edited away stops being
@@ -26034,7 +26039,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
            only: a full render would rebuild this very textarea and throw away
            the caret mid-edit. */
         safe(function () { return advisoryRepaint(); });
-      });
+      };
     }
     var txTop = $('ez3Transcript'), txReal = $('transcript');
     if (txTop && txReal) {
