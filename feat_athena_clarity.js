@@ -82,8 +82,15 @@
     (document.head || document.documentElement).appendChild(s);
   }
 
+  /* asstfix-1.0.0: the MLS Assistant's day-schedule pull reads "Pull from
+     athenaOne" and prefix-matched the ONE-PATIENT chart pull below - it was
+     described as opening "this patient's chart" and wired to that pull's
+     per-patient result reporting. */
+  var DAY_PULL = { ids: [], text: [], label: 'Pull from athenaOne',
+    sub: 'Reads the chosen day’s schedule from your signed-in athenaOne tab (read-only) and brings those patients into MLS.', tag: 'read', icon: '📥' };
   function matchEntry(btn) {
     if (!btn || btn.nodeType !== 1) return null;
+    if (btn.classList && btn.classList.contains('as-pullbtn')) return DAY_PULL;
     var id = btn.id || '';
     var t = norm(btn.textContent);
     for (var i = 0; i < CATALOG.length; i++) {

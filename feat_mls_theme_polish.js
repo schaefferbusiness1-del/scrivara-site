@@ -109,6 +109,9 @@
     try {
       document.addEventListener('keydown', function (e) {
         if (e.key !== 'Escape' && e.key !== 'Esc') return;
+        /* asstfix-1.0.0: a confirm (or chooser) open OVER a dialog owns Escape;
+           closing the dialog beneath it too dropped the doctor's unsaved edit. */
+        if (document.getElementById('_mlsAskDialog') || document.getElementById('mlsSelPick')) return;
         var open = visibleModals();
         if (!open.length) return;
         e.preventDefault();

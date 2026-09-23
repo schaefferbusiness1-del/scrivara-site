@@ -2772,7 +2772,12 @@ const tests = [
      export says so, Find offers only usable routes, appointments count once in
      Study & build, Verify speaks when its report is hidden, Escape closes
      Copilot, no stray Ask chip, a hidden-select Tools row opens a chooser. */
-  'studio-and-tools-do-what-they-say-runtime.test.js'
+  'studio-and-tools-do-what-they-say-runtime.test.js',
+  /* asstfix-1.0.0 (b1317): the phone card steps aside for Copilot, the
+     Assistant hides its chat box on Schedule and works from the keyboard, a
+     failed widget design says so in the builder, Escape on a confirm spares
+     the builder, and the phone Tools menu stays above the taskbar. */
+  'assistant-and-widgets-answer-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

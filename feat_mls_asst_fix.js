@@ -1110,9 +1110,24 @@
     var c = CT(), si = SI();
     var connected = safe(function () { return c && isFn(c.isConnected) && c.isConnected(); }, false);
     if (!connected) {
-      var d = safe(function () { return c && isFn(c.describe) ? c.describe() : null; }, null);
-      setPullStatus((d && (d.detail || d.label)) || "No usable Athena product tab was detected -- open Athena, sign in, and show the Day schedule before pulling.", false);
-      safe(function () { if (c && isFn(c.check)) c.check(); });
+      var NOT_READY = "No usable Athena product tab was detected -- open Athena, sign in, and show the Day schedule before pulling.";
+      var say = function () {
+        var d = safe(function () { return c && isFn(c.describe) ? c.describe() : null; }, null);
+        setPullStatus((d && (d.detail || d.label)) || NOT_READY, false);
+      };
+      say();
+      /* asstfix-1.0.0: describe() says "Checking MLS Assist readiness..." while
+         the check runs, and this line was written once and never again - it
+         stayed on "Checking" after the header already said "not detected".
+         Re-read it when the check settles, and once more later. */
+      var settle = function () {
+        if (pullBusy) return;
+        var now = safe(function () { return c && isFn(c.isConnected) && c.isConnected(); }, false);
+        if (now) setPullStatus("MLS Assist is ready - press Pull from athenaOne again.", true); else say();
+      };
+      var chk = safe(function () { return c && isFn(c.check) ? c.check() : null; }, null);
+      if (chk && isFn(chk.then)) chk.then(settle, settle); else setTimeout(settle, 4000);
+      setTimeout(settle, 12000);
       return;
     }
     if (!(si && isFn(si.pull))) { setPullStatus("Schedule pull is unavailable right now.", false); return; }

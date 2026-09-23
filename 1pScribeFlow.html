@@ -6118,7 +6118,7 @@ html:has(> body > #intakeView[style*="display: block"]) body > :not(#intakeView)
   <div class="modal" style="max-width:720px">
     <button class="modal-x" onclick="closeWidgetBuilder()">×</button>
     <h3>🧩 Custom widget builder <span style="font-weight:400;font-size:14px;color:var(--muted)">(your own auto-generated cards)</span></h3>
-    <p class="note">Describe any card you want on the visit page. MLS can design <b>dropdowns, checklists, status badges, scores and mini-charts</b> into your widget — you approve the design, and from then on it appears with the other cards and <b>auto-fills on every Generate</b> — built only from what is documented, with [bracketed placeholders] for anything missing. Up to 10 widgets; they follow your account.</p>
+    <p class="note">Describe any card you want on the visit page. MLS can design <b>dropdowns, checklists, status badges, scores and mini-charts</b> into your widget — you approve the design, and from then on it appears with the other cards and <b>auto-fills on every Generate</b> — built only from what is documented, with [bracketed placeholders] for anything missing. Up to 5 widgets on Standard, 10 on Premium; they follow your account.</p>
 
     <div class="field" style="margin-top:4px">
       <label for="cwDescribe">Describe the widget you want</label>
@@ -6129,6 +6129,7 @@ html:has(> body > #intakeView[style*="display: block"]) body > :not(#intakeView)
       <button class="btn-primary" id="cwDesignBtn" onclick="designCustomWidget()">✨ Design my widget</button>
       <button class="btn-ghost" onclick="cwShowLibrary()" title="Add a ready-made clinical widget in one click">📚 Browse library</button>
     </div>
+    <p class="note" id="cwDesignStatus" role="status" aria-live="polite" style="margin:6px 0 0;font-size:12.5px;color:#a12c2c" hidden></p>
 
     <!-- v3: one-click prebuilt clinical widgets -->
     <div id="cwLibrary" style="display:none;margin-top:14px;border:1px solid var(--line);border-radius:10px;padding:14px">
@@ -22292,8 +22293,11 @@ function openCopilot(seed){
    any tab. It physically MOVES the one copilot card into the dock (and back),
    so all its state and handlers keep working — no duplication. ===== */
 var _copilotDockOpen=false;
+var _copilotDockOpener=null;
 function openCopilotDock(seed){
   var card=document.getElementById('copilotCard'); if(!card) return;
+  /* asstfix-1.0.0: remember what opened the drawer, to hand focus back */
+  try{ var _ae=document.activeElement; var _dk=document.getElementById('copilotDock'); if(_ae&&_ae!==document.body&&!(_dk&&_dk.contains(_ae))) _copilotDockOpener=_ae; }catch(eOp){}
   var dock=document.getElementById('copilotDock');
   var freshlyBuilt=false;
   if(!dock){
@@ -22339,6 +22343,10 @@ function closeCopilotDock(){
   var d=document.getElementById('copilotDock'), s=document.getElementById('copilotDockScrim');
   if(d) d.classList.remove('open'); if(s) s.classList.remove('open');
   _copilotDockOpen=false;
+  /* asstfix-1.0.0: focus left inside the closed (off-screen) drawer goes back
+     to what opened it */
+  try{ var _op=_copilotDockOpener; _copilotDockOpener=null; var _ae2=document.activeElement;
+    if(d&&_ae2&&d.contains(_ae2)){ if(_op&&_op.isConnected&&_op.getClientRects().length&&_op.focus) _op.focus(); else _ae2.blur(); } }catch(eFr){}
 }
 /* ===== Pre-visit intake REVIEW: list submissions, match to a chart by name+DOB,
    attach (merge into existing or create new), drop the face photo onto the avatar. ===== */
@@ -47753,6 +47761,7 @@ async function designCustomWidget(){
   if(!desc){ toast('Describe the widget you want first.','err'); return; }
   if(!hasAI()){ toast('Add your OpenAI key (Settings) to design widgets.','err'); return; }
   const btn=document.getElementById('cwDesignBtn');
+  const _cwSay=document.getElementById('cwDesignStatus'); if(_cwSay){ _cwSay.hidden=true; _cwSay.textContent=''; }
   btn.disabled=true; btn.innerHTML='<span class="spin"></span> Designing…';
   try{
     const sys=`You design a CUSTOM CLINICAL WIDGET SPEC for a medical-scribe app used by physicians. The doctor describes a card they want on the visit page; you return the spec that powers it. Return ONLY valid JSON (no markdown fences, no commentary) with EXACTLY this shape:
@@ -47802,7 +47811,18 @@ The "prompt" is the instruction executed on EVERY visit against the clinical not
     showWidgetPreview({emoji:spec.emoji,title:spec.title,description:spec.description,prompt:spec.prompt,format:spec.format,layout:spec.layout,auto:true,useHistory:useHistory});
     document.getElementById('cwPreviewHead').textContent='Preview — tweak anything, then save';
     toast('Widget designed — review and tweak it, then save.','ok');
-  }catch(err){ toast(friendlyError(err),'err'); }
+  }catch(err){
+    /* asstfix-1.0.0: friendlyError's catch-all names a NOTE ("Could not
+       generate the note: 503"), and the notice went only to the Activity tray
+       behind this dialog - the press looked like it did nothing. The builder
+       now says it, in its own words. */
+    let _m=friendlyError(err);
+    if(/^Could not generate the note: /.test(_m)) _m=/\b5\d\d\b|unavailable|timed? ?out/i.test(String(err&&err.message||err))
+      ? 'The widget designer did not answer (the MLS server is unavailable). Nothing was saved - try again in a moment.'
+      : 'The widget could not be designed: '+_m.replace(/^Could not generate the note: /,'')+' Nothing was saved.';
+    const _cwSay2=document.getElementById('cwDesignStatus'); if(_cwSay2){ _cwSay2.textContent=_m; _cwSay2.hidden=false; }
+    toast(_m,'err');
+  }
   finally{ btn.disabled=false; btn.innerHTML='✨ Design my widget'; }
 }
 
@@ -64233,7 +64253,11 @@ html #mlsRightNow[data-mls-clunky-hasnav="1"] .note{ display:none !important; }
       if (!m) return;
       var r = m.getBoundingClientRect();
       if (r.width <= 0 || r.height <= 0) { m.style.removeProperty('max-height'); return; }
-      var room = Math.max(160, Math.round(window.innerHeight - r.top - 16));
+      /* asstfix-1.0.0: on a phone the taskbar is along the bottom; the menu
+         grew 52px over it and covered its own Tools button. */
+      var limit = window.innerHeight - 16, dock = el('mlsDock');
+      if (dock) { var dr = dock.getBoundingClientRect(); if (dr.height > 0 && dr.top > r.top + 40) limit = Math.min(limit, dr.top - 8); }
+      var room = Math.max(160, Math.round(limit - r.top));
       var want = room + 'px';
       /* the menu's own sheet sets max-height with !important, so this must
          too - a plain inline value measured no change at all */
@@ -64387,6 +64411,12 @@ html body[data-mls-clunky-modal="1"] #mlsA2hsCard,
 html body[data-mls-clunky-menu="1"] #mlsGetPhoneCard,
 html body[data-mls-clunky-menu="1"] #mlsKbdHint,
 html body[data-mls-clunky-menu="1"] #mlsA2hsCard{ display:none !important; }
+/* asstfix-1.0.0: and while a drawer is open - over the Copilot drawer the
+   card sat on the Send button, so pressing Send did nothing. */
+html body:has(#copilotDock.open) #mlsGetPhoneCard,
+html body:has(#copilotDock.open) #mlsKbdHint,
+html body:has(#mlsAsstPanel.open) #mlsGetPhoneCard,
+html body:has(#mlsAsstPanel.open) #mlsKbdHint{ display:none !important; }
 /* a keyboard hint on a device with no keyboard is never useful */
 @media (max-width:600px){ html body #mlsKbdHint{ display:none !important; } }
 

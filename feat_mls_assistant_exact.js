@@ -716,6 +716,10 @@
       "#" + PANEL_ID + " .as-msg.ai .as-bub{background:#F4F2EC;color:#1A211C;border-bottom-left-radius:4px;}",
       "#" + PANEL_ID + " .as-msg.pending .as-bub{opacity:.7;font-style:italic;}",
       "#" + PANEL_ID + " .as-input{display:flex;gap:8px;padding:10px 12px;border-top:1px solid #E7E5DD;background:#fff;}",
+      /* asstfix-1.0.0: the display:flex above beat the [hidden] the Schedule tab
+         sets, so the chat box showed there and a Send vanished into the hidden
+         Chat tab. */
+      "#" + PANEL_ID + " .as-input[hidden]{display:none;}",
       "#" + PANEL_ID + " .as-input textarea{flex:1 1 auto;resize:none;height:40px;max-height:120px;",
       "background:#FCFBF8;color:#1A211C;border:1px solid #D6D2C6;border-radius:10px;",
       "padding:10px 11px;font:13px/1.35 'Plus Jakarta Sans';outline:none;}",
@@ -1065,6 +1069,9 @@
     var sp = p.querySelector(".as-pane-schedule"), cp = p.querySelector(".as-pane-chat");
     if (sp) sp.hidden = which !== "schedule";
     if (cp) cp.hidden = which !== "chat";
+    /* asstfix-1.0.0: the chat box follows the tab on EVERY switch - the API
+       and the other modules call setTab directly, not the tab buttons. */
+    syncInputVisibility();
     if (which === "schedule") renderSchedule();
     if (which === "chat") { syncChatOwner(true); var ta = p.querySelector("textarea"); if (ta) safe(function () { ta.focus(); }); }
   }
@@ -1163,17 +1170,40 @@
     var inp = p.querySelector(".as-input"); if (inp) inp.hidden = (tab !== "chat");
   }
 
+  /* asstfix-1.0.0: the panel takes focus when it opens, Escape closes it, and
+     focus goes back to what opened it (it stayed on the page behind). */
+  var asOpener = null, asKeysWired = false;
+  function wireKeys() {
+    if (asKeysWired) return; asKeysWired = true;
+    document.addEventListener("keydown", function (e) {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      var p = $(PANEL_ID); if (!p || !p.classList.contains("open")) return;
+      if (document.querySelector(".modal-bg.show, #_mlsAskDialog")) return;
+      toggle(false);
+    });
+  }
   function toggle(open) {
     syncAccountIdentity();
     var p = $(PANEL_ID), f = $(FAB_ID); if (!p) return;
     var willOpen = open == null ? !p.classList.contains("open") : !!open;
+    var wasOpen = p.classList.contains("open");
     p.classList.toggle("open", willOpen);
     if (f) f.style.display = willOpen ? "none" : "";
     if (willOpen) {
+      if (!p.getAttribute("role")) { p.setAttribute("role", "dialog"); p.setAttribute("aria-label", "MLS Assistant"); }
+      wireKeys();
+      if (!wasOpen) { var ae = document.activeElement; asOpener = (ae && ae !== document.body && !p.contains(ae)) ? ae : null; }
       renderStatus();
       if (tab === "schedule") renderSchedule(); else syncChatOwner(true);
       syncInputVisibility();
       var c = ct(); if (c && isFn(c.check)) safe(function () { c.check(); });
+      if (!wasOpen) setTimeout(function () { safe(function () {
+        var t = (tab === "chat" && p.querySelector(".as-input:not([hidden]) textarea")) || p.querySelector("button:not([disabled])");
+        if (t && t.getClientRects().length) t.focus();
+      }); }, 0);
+    } else if (wasOpen) {
+      var op = asOpener; asOpener = null;
+      safe(function () { var ae2 = document.activeElement; if (ae2 && p.contains(ae2)) { if (op && op.isConnected && op.getClientRects().length) op.focus(); else ae2.blur(); } });
     }
   }
 
