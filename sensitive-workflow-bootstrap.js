@@ -55,14 +55,16 @@
   /* portalfix-1.0.0 (2026-09-23): fetch has no timeout of its own, so a backend
    * that never answered (a cold start that stalls, a proxy holding the socket)
    * left intake, booking and appointment on "Loading..." with no button, for
-   * good. A read (GET/HEAD) now gives up after 15 s - the timer also covers
+   * good. A read (GET/HEAD) now gives up after 45 s - long enough for the
+   * backend host's cold start (30-60 s), which used to succeed on the first
+   * try and must keep doing so - the timer also covers
    * reading the body - and rejects like a lost connection, which every page
    * already turns into its "could not reach the office / Try again" state.
    * A write keeps waiting unless the caller sets init.timeoutMs (0 = no limit):
    * an op-note rewrite can legitimately run longer, and abandoning a booking
    * that did land would invite a duplicate. A caller's own init.signal still
    * cancels the request. */
-  var READ_TIMEOUT_MS = 15000;
+  var READ_TIMEOUT_MS = 45000;
   window.mlsSensitiveFetch = function (input, init) {
     var options = {};
     Object.keys(init || {}).forEach(function (key) { options[key] = init[key]; });

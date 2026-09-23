@@ -40,7 +40,7 @@ for (const [name, contract] of Object.entries(pages)) {
   assert(/http-equiv=["']Cache-Control["'][^>]+content=["'][^"']*no-store/i.test(head), `${name}: no-store navigation hint is missing`);
   assert(/http-equiv=["']Pragma["'][^>]+content=["']no-cache["']/i.test(head), `${name}: no-cache compatibility hint is missing`);
 
-  const loader = head.match(/<script\b[^>]*src=["']sensitive-workflow-bootstrap\.js\?v=20260923sw1["'][^>]*><\/script>/i);
+  const loader = head.match(/<script\b[^>]*src=["']sensitive-workflow-bootstrap\.js\?v=20260923sw2["'][^>]*><\/script>/i);
   assert(loader, `${name}: synchronous sensitive URL bootstrap is missing from head`);
   assert(/referrerpolicy=["']no-referrer["']/i.test(loader[0]), `${name}: bootstrap request may not send a referrer`);
   assert(/data-query-keys=/.test(loader[0]) && /data-fragment-keys=/.test(loader[0]), `${name}: sensitive URL keys are not declared`);

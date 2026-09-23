@@ -69,7 +69,8 @@ const srv = http.createServer((q, r) => {
   const shown = (pg, id) => pg.evaluate((i) => { const e = document.getElementById(i); return !!e && !e.classList.contains('hide') && e.getBoundingClientRect().height > 0; }, id);
   try {
     /* 1. a backend that never answers: intake, booking and appointment leave
-          "Loading..." within ~15 s, and Try again works once it answers */
+          "Loading..." after the 45 s read limit (the page clock is fast-forwarded),
+          and Try again works once it answers */
     const stalls = [
       { name: 'intake.html', url: '/intake.html?token=' + TOKEN, trouble: 'offline', ok: INTAKE_OK, loaded: 'formWrap' },
       { name: 'booking.html', url: '/booking.html?token=' + 'b'.repeat(40), trouble: 'trouble', ok: BOOK_OK, loaded: 'formCard' },
@@ -78,13 +79,20 @@ const srv = http.createServer((q, r) => {
     await Promise.all(stalls.map(async (s) => {
       s.stall = true;
       s.pg = await newPage('desktop', (route) => (s.stall ? new Promise(() => {}) : send(route, 200, s.ok)));
+      await s.pg.clock.install();
       await s.pg.goto(BASE + s.url);
+      await s.pg.waitForTimeout(600);
+      /* still loading well inside the limit: a cold start (30-60 s) is waited out */
+      await s.pg.clock.fastForward(30000);
+      s.at30 = await shown(s.pg, 'loading');
+      await s.pg.clock.fastForward(16500);
+      await s.pg.waitForTimeout(300);
     }));
-    await stalls[0].pg.waitForTimeout(16500);
     for (const s of stalls) {
       const loading = await shown(s.pg, 'loading'), trouble = await shown(s.pg, s.trouble);
       const retry = await s.pg.evaluate((id) => { const box = document.getElementById(id); const btn = box && [...box.querySelectorAll('button')].find((x) => /try again/i.test(x.textContent) && x.getBoundingClientRect().height > 0); return !!btn; }, s.trouble);
-      check(!loading && trouble && retry, s.name + ': after 16.5 s of a backend that never answers the page must leave "Loading" for #' + s.trouble + ' with a Try again button (loading=' + loading + ', trouble=' + trouble + ', retry=' + retry + ')');
+      check(s.at30, s.name + ': at 30 s of a slow backend the page is still waiting (a cold start must not be cut off)');
+      check(!loading && trouble && retry, s.name + ': after 46.5 s of a backend that never answers the page must leave "Loading" for #' + s.trouble + ' with a Try again button (loading=' + loading + ', trouble=' + trouble + ', retry=' + retry + ')');
       if (retry) {
         s.stall = false;
         await s.pg.click('#' + s.trouble + ' button');
