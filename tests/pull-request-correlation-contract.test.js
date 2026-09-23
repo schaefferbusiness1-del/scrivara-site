@@ -290,8 +290,16 @@ function makeCalendarHarness(seedRows, appointmentReplies) {
   context.__mlsCalendarMutationEpoch = 7;
   vm.createContext(context);
   const loadSource = extractFunction(app, 'async function loadCalendar(', 'base loadCalendar');
+  /* resil-1.0.0 (b1297): loadCalendar records a failed hosted read and shows or
+     clears its notice through these helpers; the notice UI is not what this
+     suite measures, so they are the real recorder plus inert paint stubs. */
+  const loadErrSource = extractFunction(app, 'function _calSetLoadErr(', 'calendar load-error recorder');
+  const gridNoticeSource = extractFunction(app, 'function _calGridNotice(', 'calendar grid notice');
   vm.runInContext(`
-    var _calYear=2026, _calMonth=6, _calAppts=${JSON.stringify(seedRows)}, _calMe={}, _calProviders=[];
+    var _calYear=2026, _calMonth=6, _calAppts=${JSON.stringify(seedRows)}, _calMe={}, _calProviders=[], _calLoadErr='';
+    ${loadErrSource}
+    ${gridNoticeSource}
+    function _calSyncLoadNotice(){}
     function _calInit(){}
     function _calPad(n){ return (n<10?'0':'')+n; }
     ${loadSource}

@@ -247,7 +247,10 @@
     localStorage.setItem(ACCOUNT_PREFIX + 'practiceName', 'Sample Practice');
     localStorage.setItem(ACCOUNT_PREFIX + 'acctTz', 'America/New_York');
     localStorage.setItem(ACCOUNT_PREFIX + 'assistPromptSeen', '1');
-    localStorage.setItem(ACCOUNT_PREFIX + 'idleMins', '240');
+    /* pvfix-1.0.0: '240' is not one of #idleMins' options (5..180 or off), so
+       Settings > Account & security showed a blank auto-log-off select.
+       180 is the longest real choice and keeps the long demo window. */
+    localStorage.setItem(ACCOUNT_PREFIX + 'idleMins', '180');
     localStorage.setItem(ACCOUNT_PREFIX + 'autoSendEMR', '0');
     localStorage.setItem(ACCOUNT_PREFIX + 'calApptsCacheV2', JSON.stringify({
       appointments: baseAppointments, me: { email: EMAIL, name: 'Dr. Sample Clinician' },
@@ -415,9 +418,38 @@
   function isSafePreviewNavigation(control) {
     if (!control) return false;
     var id = control.id || '';
-    if (/^(?:mlsDsPrev|mlsDsNext|mlsDsTodayBtn|ez3Choose|ez3Hist|ez3Prep|ez3Adv)$/.test(id)) return true;
+    /* pvfix-1.0.0: the room's "‹ Back to the day list" matched \broom\b in its
+       title ("Leave this visit room…") and the home card "Type or paste visit
+       notes" matched write/recording in its own "no recording" subtitle, so
+       both were blocked although each only changes the Easy screen: Back and
+       Home set S.screen, and the notes card opens the visit with
+       record:false (data-rec="0"), the same no-recording room Choose patient
+       opens. */
+    if (/^(?:mlsDsPrev|mlsDsNext|mlsDsTodayBtn|ez3Choose|ez3Hist|ez3Prep|ez3Adv|ez3Back|ez3HomeTop|ez3ActiveNotes)$/.test(id)) return true;
     try { if (control.matches && control.matches('.ez3fl-openws')) return true; } catch (e) {}
+    /* pvfix-1.0.0: Legal / IME report-type picks only set local workspace
+       state (pickReportType); the id mlsP1LegalReport_records matched /record/
+       and left "Records review summary" the one report that could not be
+       chosen. Compile/Generate stay gated by their own words. */
+    try { if (control.matches && control.matches('#mlsP1LegalRoot .p1l-report[data-report-type]')) return true; } catch (e2) {}
     return false;
+  }
+
+  /* pvfix-1.0.0: \bcancel\b (meant for "Cancel appt") was matched against the
+     whole label, so every lone Cancel/Close in a dialog footer - Settings,
+     confirm boxes, field editors, the notes box - was blocked and the only
+     way out was × or Escape. A control whose ENTIRE label is a dismissal only
+     closes UI; it never contacts Athena, records, sends or saves. A dangerous
+     id/handler/aria-label still wins, and the Patients view keeps its own
+     default deny. */
+  var dismissLabel = /^(?:[×✕]\s*)?(?:cancel|close|dismiss|not now|no thanks)$/i;
+  function isPreviewDismissControl(control) {
+    if (!control || !control.getAttribute) return false;
+    if (control.closest && control.closest('#patientsView')) return false;
+    if (!dismissLabel.test(String(control.textContent || '').replace(/\s+/g, ' ').trim())) return false;
+    var aria = control.getAttribute('aria-label');
+    if (aria && !dismissLabel.test(aria.trim())) return false;
+    return !dangerousIds.test(control.id || '') && !dangerousIds.test(control.getAttribute('onclick') || '');
   }
 
   function markBlocked(control, reason) {
@@ -438,6 +470,13 @@
     if (!field || (field.closest && field.closest('#' + STRIP_ID))) return;
     var id = field.id || '', type = String(field.type || '').toLowerCase();
     if (id === 'ez3sMonth' || id === 'ez3From' || id === 'ez3To' || id === 'ptSearch' || id === 'ptSort' || id === 'histSearch' || id === 'histFilter' || type === 'search') return;
+    /* pvfix-1.0.0: three more search boxes that only filter what is already
+       in memory were made read-only because they are type=text: Choose
+       patient (#ez3Search filters the day list), Legal / IME Change
+       (#mlsP1LegalRosterSearch lists this account's sample patients), and the
+       dock Find (#mlsDockAsk looks up controls by name; its Copilot and
+       finder hand-offs are gated in rewriteDockFind). */
+    if (id === 'ez3Search' || id === 'mlsP1LegalRosterSearch' || id === 'mlsDockAsk') return;
     if (field.tagName === 'TEXTAREA' || /^(?:text|email|tel|number|password|url|time)$/.test(type)) {
       try { field.readOnly = true; } catch (e) {}
       field.setAttribute('data-mls-preview-readonly', '1');
@@ -551,10 +590,22 @@
 
   function rewriteDayPull() {
     var button = document.getElementById('mlsDsPullBtn'); if (!button) return;
-    button.removeAttribute('data-mls-preview-blocked'); button.setAttribute('aria-disabled', 'false');
+    /* pvfix-1.0.0: data-mls-preview-action is also the claim syncStrip reads
+       (1p-mls-connect.js) - its 1.2 s tick used to write '📥 Pull today' back
+       and this pass wrote 'Reload sample day' over it, so the label flashed
+       and jumped ~36px every tick. This pass runs for every added node, so
+       its writes are guarded: a settled button notifies no observer. */
+    button.removeAttribute('data-mls-preview-blocked');
+    if (button.getAttribute('aria-disabled') !== 'false') button.setAttribute('aria-disabled', 'false');
     button.disabled = false;
-    button.setAttribute('data-mls-preview-action', 'sample-day'); button.textContent = 'Reload sample day';
-    button.title = 'Reloads invented appointments for the selected day from memory. MLS sends no request to Athena or MLS Assist.';
+    if (button.getAttribute('data-mls-preview-action') !== 'sample-day') button.setAttribute('data-mls-preview-action', 'sample-day');
+    if (button.textContent !== 'Reload sample day') button.textContent = 'Reload sample day';
+    var tip ='Reloads invented appointments for the selected day from memory. MLS sends no request to Athena or MLS Assist.';
+    if (button.getAttribute('data-tip') !== tip && button.title !== tip) button.title = tip;
+    /* The Athena action captioner may have stamped the live verb's hint
+       ("brings in today's patients from Athena") beside it before the claim. */
+    var hint = button.nextElementSibling;
+    if (hint && /(?:^|\s)mlsaa-intent(?:\s|$)/.test(hint.className || '')) hidePreviewNode(hint);
   }
 
   function selectedPreviewDay() {
@@ -564,7 +615,11 @@
   }
 
   function selectedDayCount() {
-    var day = selectedPreviewDay(), count = 0, provider = 'Dr. Sample Clinician';
+    var day = selectedPreviewDay(), count = 0, provider = '';
+    /* pvfix-1.0.0: with no #ez3Prov on screen the Easy day list shows every
+       provider's rows, so the count does too. Defaulting to Dr. Sample
+       Clinician called Thu/Sun (Dr. Example only) empty while their list
+       showed patients, and the agenda read 0/2 over a four-row day. */
     var providerSelect = document.getElementById('ez3Prov');
     try {
       var selectedOption = providerSelect && providerSelect.options && providerSelect.options[providerSelect.selectedIndex];
@@ -794,6 +849,41 @@
     });
   }
 
+  /* pvfix-1.0.0: the dock Find box (#mlsDockAsk) now takes typing; matching
+     a control's name and running it is local, and every result still goes
+     through el.click() and so through blockedClick. Its two hand-off rows are
+     not local: "Ask MLS Copilot" is the online assistant, and "Find a patient
+     or screen" opens the global finder this preview omits (see
+     rewritePreviewCopy). Those rows are disabled with the reason; Enter on
+     them is stopped in blockedShortcut. */
+  var FIND_FOCUS = 'Find looks up buttons on this sample screen by name. Copilot answers and the patient finder are off in the read-only sample workspace.';
+  var FIND_OFF = 'Copilot and the patient finder are off in the read-only sample workspace. Find still opens buttons on this screen by name.';
+  function rewriteDockFind() {
+    var rows = [];
+    try { rows = document.querySelectorAll('#mlsAskResults .r'); } catch (e) {}
+    Array.prototype.forEach.call(rows, function (row) {
+      if (/^\s*(?:🤖\s*Ask MLS Copilot|🔍\s*Find a patient or screen)/.test(row.textContent || '')) markBlocked(row, FIND_OFF);
+    });
+  }
+
+  /* pvfix-1.0.0: the notes box the home card opens keeps its read-only
+     textarea like every preview field. Its commit would only write the
+     unchanged text back and toast "Transcript added", so it is disabled and
+     the box says why; Cancel and × close it (isPreviewDismissControl). */
+  function rewriteNotesBox() {
+    var box = document.querySelector && document.querySelector('#mlsQuickToolPopup .mls-qtp-textarea');
+    if (!box) return;
+    var popup = document.getElementById('mlsQuickToolPopup');
+    box.setAttribute('placeholder', 'Typing and pasting visit notes are off in this read-only sample.');
+    var commit = popup.querySelector('.mls-qtp-btn.primary');
+    if (commit) markBlocked(commit, 'Typing and pasting visit notes are off in the read-only sample workspace.');
+    putPreviewText(popup.querySelector('.mls-qtp-note'), 'Sample workspace: typing and pasting are off, so nothing here changes the visit.');
+    if (popup.getAttribute('data-mls-preview-explained') !== '1') {
+      popup.setAttribute('data-mls-preview-explained', '1');
+      explain('Opened the invented visit without recording. Typing or pasting visit notes is off in the read-only sample workspace.');
+    }
+  }
+
   function rewriteSampleChooserActions() {
     var actions = [];
     try { actions = document.querySelectorAll('#ez3Wrap .ez3-exbtn'); } catch (e) {}
@@ -875,11 +965,19 @@
     rewritePatientSurface();
     rewriteHistorySurface();
     rewriteSampleChooserActions();
+    rewriteDockFind();
+    rewriteNotesBox();
     putPreviewText(document.getElementById('appFooterNotice'), '⚕️ SAMPLE DATA ONLY. Invented patients and notes stay in temporary memory and reset when you reload or leave. Do not enter real patient information.');
-    putPreviewText(document.getElementById('heroPullStatus'),
-      'Sample schedule loaded - choose a patient to explore the workspace.');
-    putPreviewText(document.getElementById('mlsPrfProgress'),
-      'Sample schedule ready - invented appointments are loaded for this day.');
+    /* pvfix-1.0.0: this banner claimed "invented appointments are loaded for
+       this day" on every date, directly above #ez3DayEmpty saying the date
+       has none. It now follows the selected day. The hero line and the
+       banner carry one sentence because the connect bundle mirrors every hero
+       change into #mlsPrfProgress; two sentences made the pair fight. */
+    var dayStatus = selectedDayCount() > 0
+      ? 'Sample schedule loaded - choose a patient to explore the workspace.'
+      : 'No invented appointments on this sample date - use Reload sample day to add memory-only sample rows.';
+    putPreviewText(document.getElementById('heroPullStatus'), dayStatus);
+    putPreviewText(document.getElementById('mlsPrfProgress'), dayStatus);
 
     ['ez3Now', 'ez3Next', 'ez3Nxt'].forEach(function (id) {
       var next = document.getElementById(id);
@@ -994,6 +1092,14 @@
           (control.getAttribute && control.getAttribute('data-mls-action') === 'staff-prep') ||
           (control.getAttribute && control.getAttribute('data-mls-preview-action') === 'open-sample-appointment')) return;
       if (isSafePreviewNavigation(control)) { markPreviewNavigation(control); return; }
+      if (isPreviewDismissControl(control)) {
+        /* Only lift this runtime's own block; a Cancel the app disabled on
+           purpose (nothing running) keeps its native state. */
+        if (control.getAttribute('data-mls-preview-blocked') === '1') {
+          control.removeAttribute('data-mls-preview-blocked'); control.setAttribute('aria-disabled', 'false');
+        }
+        return;
+      }
       if (isDangerousControl(control)) markBlocked(control, 'Read-only sample workspace: this action cannot contact Athena, record, send, or save.');
     });
     /* pv-7.1.3: Tools-menu rows are DIVs, so the control sweep above never
@@ -1109,7 +1215,12 @@
     else if (target.getAttribute('data-mls-preview-action') === 'sample-day') loadSampleDay();
     else if (target.getAttribute('data-mls-preview-action') === 'open-sample-appointment') openSampleAppointment(target);
     else if (target.getAttribute('data-mls-preview-action') === 'voice-cluster') openVoiceCluster(target);
+    else if (target.closest && target.closest('#mlsAskResults')) explain(FIND_OFF);
     else explain('That action is disabled in the read-only sample workspace. Nothing was sent, saved, recorded, or pulled.');
+  }
+
+  function explainFocus(event) {
+    if (event.target && event.target.id === 'mlsDockAsk') explain(FIND_FOCUS);
   }
 
   function blockedSubmit(event) {
@@ -1136,6 +1247,15 @@
     var key = String(event.key || '').toLowerCase();
     var target = event.target;
     var typing = target && /^(?:INPUT|TEXTAREA|SELECT)$/.test(String(target.tagName || '').toUpperCase());
+    if (key === 'enter' && target && target.id === 'mlsDockAsk') {
+      var panel = document.getElementById('mlsAskResults');
+      var picked = panel && panel.style.display !== 'none' && panel.querySelector('.r.sel');
+      if (picked && picked.getAttribute('data-mls-preview-blocked') === '1') {
+        event.preventDefault(); event.stopImmediatePropagation();
+        explain(FIND_OFF);
+        return;
+      }
+    }
     if ((!typing && key === '/' && !event.altKey && !event.ctrlKey && !event.metaKey) ||
         (key === 'k' && !event.altKey && (event.ctrlKey || event.metaKey))) {
       event.preventDefault(); event.stopImmediatePropagation();
@@ -1156,6 +1276,7 @@
     window.addEventListener('drop', blockedEdit, true);
     window.addEventListener('change', blockedChange, true);
     window.addEventListener('keydown', blockedShortcut, true);
+    window.addEventListener('focusin', explainFocus, true);
     harden(document);
     try {
       observer = new MutationObserver(function (records) {

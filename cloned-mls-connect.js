@@ -56116,6 +56116,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (lb && lb.innerHTML !== desiredDayLabel) lb.innerHTML = desiredDayLabel;
     try {
       var pb = $('mlsDsPullBtn');
+      /* pvfix-1.0.0: the read-only sample workspace claims this button
+         (data-mls-preview-action) and owns its label, 'Reload sample day'.
+         Relabelling it here on every 1.2 s tick fought that runtime's
+         observer: the live '📥 Pull today' flashed and the button jumped
+         ~36px each tick. A claimed button is not this strip's to name. */
+      if (pb && pb.hasAttribute('data-mls-preview-action')) pb = null;
       /* statetruth-1.0.0 (F4): the same four-part idle predicate the status
          line below uses. With the two-part one, the 1.2 s strip tick relabelled
          the button to the idle verb during the automatic convergence round

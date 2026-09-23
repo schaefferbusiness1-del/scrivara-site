@@ -2714,7 +2714,11 @@ const tests = [
      purge itself is the owner's rule), the calendar paints an empty month and
      names a failed read, the phone offline banner leaves the header tappable,
      and the workspace-access re-check is bounded and owned by its session. */
-  'resilience-honesty-runtime.test.js'
+  'resilience-honesty-runtime.test.js',
+  /* pvfix-1.0.0 (b1298): the sample workspace only blocks what could contact
+     Athena, record, save or send - Back, local searches, Cancel buttons, the
+     notes card and the Records report work; the day button no longer flickers. */
+  'preview-sample-local-controls-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
