@@ -5399,14 +5399,14 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
       <div class="field" style="margin-bottom:4px">
         <label for="featTplUse" style="display:flex;align-items:center;gap:9px;cursor:pointer;font-size:15px">
           <input type="checkbox" id="featTplUse" style="width:17px;height:17px;cursor:pointer">
-          <span>📄 Templates <span style="font-weight:400;color:var(--muted)">(off by default)</span></span>
+          <span>📄 Templates <span style="font-weight:400;color:var(--muted)">(on by default)</span></span>
         </label>
-        <p class="note" style="margin:4px 0 0 26px">Formats generated notes to match your imported template — manage templates under Menu → 📄 Templates.</p>
+        <p class="note" style="margin:4px 0 0 26px">Drafts follow your saved templates. Visit templates are under Notes &amp; AI; op-note templates are under 📄 Templates in the op-note room.</p>
       </div>
 
       <!-- MLS additive — Custom widgets pointer (built/managed via the header button) -->
       <div class="field" style="margin-bottom:4px">
-        <p class="note" style="margin:4px 0 0">🧩 <b>Custom widgets</b> — build your own auto-generated cards with the <b>＋ Custom widget</b> button in the header. They fill on every Generate, just like the built-in cards.</p>
+        <p class="note" style="margin:4px 0 0">🧩 <b>Custom widgets</b> — build your own auto-generated cards with <b>Tools → 🧩 Custom widget</b>. They fill on every Generate, just like the built-in cards.</p>
       </div>
 
       <!-- MLS additive — 📋 Patient intake: doctor's custom questions -->
@@ -5419,7 +5419,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
 
     <!-- ============ SECTION: App tabs (hide advanced tabs until switched on) ============ -->
     <div class="set-section"><p class="set-head">🧰 App tabs</p>
-    <p class="set-desc">Keep MLS simple. The advanced tabs below are <b>hidden until you switch them on</b>, so a new doctor sees a clean app. <b>Patients, Visit, History, Copilot (AI Studio), and Help are always available.</b></p>
+    <p class="set-desc">Keep MLS simple. The advanced tabs below are <b>hidden until you switch them on</b>, so a new doctor sees a clean app. <b>The taskbar's own buttons are always there.</b></p>
       <div id="navFeatToggles"></div>
     </div><!-- /App tabs section -->
 
@@ -53155,6 +53155,10 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
    .mlsOpDayCard, so the chip on the note surface was permanently grey while the
    row it came from was green or amber. Same fact, same colour, both places. */
 #mlsOpnState{ flex:0 0 auto; align-self:center; }
+/* opphone-1.0.0: on the note surface the chip can carry a sentence ("No op note
+   needed - this is scheduled as ..., not a procedure"); nowrap ran it 33px off a
+   390px screen. It wraps inside the pane instead. */
+#mlsOpnState{ flex-shrink:1; min-width:0; max-width:100%; white-space:normal; }
 #mlsOpnState[data-mls-cardstate="drafting"]{ border-color:#c9a227; color:#7a5a16; background:#fff7e6; }
 #mlsOpnState[data-mls-cardstate="review"]{ border-color:#f0d79a; color:#7a5a16; background:#fff7e6; }
 #mlsOpnState[data-mls-cardstate="ready"],
@@ -53379,6 +53383,28 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
      the order on screen is the order of the work. */
   #mlsOpnActs{ display:grid; grid-template-columns:minmax(0,1fr); gap:8px; }
   #mlsOpnActs > button{ width:100%; }
+}
+/* opphone-1.0.0: with no note open the phone room gave the day list 34vh -
+   one patient of four visible, in its own scroller - and the rest of the
+   screen to the one-card "pick a patient" pane. With nothing open the room is
+   one page that scrolls once: the whole day, then that card. A note, once
+   open, gets the split view back through the rule above. */
+@media (max-width:620px){
+  #opPrepModal[data-mls-opnotes-state="list"] #oprPanelProcs,
+  #opPrepModal[data-mls-opnotes-state="empty"] #oprPanelProcs{
+    grid-template-rows:max-content max-content !important; overflow-y:auto !important; -webkit-overflow-scrolling:touch;
+  }
+  #opPrepModal[data-mls-opnotes-state="list"] #oprDayRail,
+  #opPrepModal[data-mls-opnotes-state="empty"] #oprDayRail{ max-height:none !important; overflow:visible !important; }
+  #opPrepModal[data-mls-opnotes-state="list"] #oprEditor,
+  #opPrepModal[data-mls-opnotes-state="empty"] #oprEditor{ overflow:visible !important; }
+  #opPrepModal[data-mls-opnotes-state="list"] #opPrepList,
+  #opPrepModal[data-mls-opnotes-state="empty"] #opPrepList{ min-height:0 !important; }
+}
+/* The room is full screen and the taskbar floats over its foot; the room
+   keeps that band clear so its last row is never under the dock. */
+html[data-mls-dock-band="bottom"] #opPrepModal.opr-room > .modal{
+  padding-bottom:var(--mls-dock-clear-bottom, 0px) !important; box-sizing:border-box !important;
 }
 @media print{ #oprDayRail,#mlsOpnNote,#mlsOpnPick{ display:none; } }
 </style>

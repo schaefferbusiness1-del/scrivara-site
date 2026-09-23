@@ -156,10 +156,10 @@ const DEAD = 'This link is no longer active. Ask for a new one.';
 /* =========================================================================
    1. A LINK THAT IS NOT GOOD — ONE SENTENCE, NOTHING ELSE
    ======================================================================= */
-async function refusedLink(label, bootOptions, expectedCalls) {
+async function refusedLink(label, bootOptions, expectedCalls, sentence) {
   const run = boot(bootOptions);
   await run.ctx.window.opnReady;
-  eq(run.dom.el('gate').textContent, DEAD, label + ': the page did not say the one plain sentence');
+  eq(run.dom.el('gate').textContent, sentence || DEAD, label + ': the page did not say the one plain sentence');
   ok(!/\bhide\b/.test(run.dom.el('gate').className), label + ': the sentence is not visible');
   ok(/\bhide\b/.test(run.dom.el('app').className), label + ': the page kept its own furniture on screen');
   eq(run.dom.el('list').innerHTML, '', label + ': a job list was painted for a link that is not good');
@@ -171,11 +171,12 @@ async function refusedLink(label, bootOptions, expectedCalls) {
 }
 
 (async function suite() {
-  /* a. no link at all */
-  await refusedLink('missing link', {}, 0);
+  /* a. no link at all - opnlink-1.0.0: known on the page, so it says so
+        instead of "no longer active" (which sent surgeons to ask for a new one) */
+  await refusedLink('missing link', {}, 0, 'Open this page from the link in your op-note email.');
   /* b. a malformed one — refused with ZERO requests, so a guessed value never
         even reaches the server to be counted against a rate limit */
-  await refusedLink('malformed link', { k: 'not-a-real-value' }, 0);
+  await refusedLink('malformed link', { k: 'not-a-real-value' }, 0, 'This link is incomplete. Open it straight from the email, or ask for a new one.');
   /* c. a WELL-FORMED one the server refuses: expired, revoked, unknown — all
         three are the same sentence to a surgeon, and none of them leaks which */
   for (const status of [401, 403, 404]) {

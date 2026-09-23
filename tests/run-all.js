@@ -2737,7 +2737,11 @@ const tests = [
      NEXT glow is the brief's next patient and never a tab or the x, Settings
      tabs read left, the patient bar shares the workspace column, Display
      offers one truthfully named taskbar field, and the phone dock fills its bar. */
-  'screens-say-what-is-true-runtime.test.js'
+  'screens-say-what-is-true-runtime.test.js',
+  /* opphone-1.0.0 (b1304): the phone op-note room shows the whole day with no
+     note open and clears the taskbar; Settings names real places (Tools →
+     Custom widget, where templates live) and the Templates default truthfully. */
+  'opnote-room-phone-and-settings-words-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

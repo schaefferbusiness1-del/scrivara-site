@@ -1533,10 +1533,20 @@ async function runtime() {
         } else {
           ok(s.railRect.bottom <= s.editorRect.y + 1,
             `at ${w}x${h} the rail must be a TOP STRIP, but it ends at ${s.railRect.bottom} and the pane starts at ${s.editorRect.y}`);
-          ok(s.railRect.h <= Math.round(h * 0.45),
-            `at ${w}x${h} the top strip is ${s.railRect.h}px of a ${h}px window — it has eaten the note`);
-          ok(s.editorRect.h >= 200,
-            `at ${w}x${h} the note pane is only ${s.editorRect.h}px tall`);
+          /* opphone-1.0.0 (b1304): on a phone with NO note open the room is
+             one page that scrolls once - the whole day, then the pick card -
+             because a 34vh strip showed one patient of the day and gave the
+             screen to an empty pane. There is no note to eat until one is
+             open; from then on the strip is capped exactly as before. */
+          const phoneList = w <= 620 && /^(list|empty)$/.test(s.state);
+          if (!phoneList) {
+            ok(s.railRect.h <= Math.round(h * 0.45),
+              `at ${w}x${h} the top strip is ${s.railRect.h}px of a ${h}px window — it has eaten the note`);
+            ok(s.editorRect.h >= 200,
+              `at ${w}x${h} the note pane is only ${s.editorRect.h}px tall`);
+          } else {
+            ok(s.editorRect.h > 0, `at ${w}x${h} with no note open the pick card no longer follows the day list`);
+          }
         }
         assert.deepStrictEqual(small, [],
           `at ${w}x${h} these controls are under the 40px tap-target floor: ${JSON.stringify(small)}`);

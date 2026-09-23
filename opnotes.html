@@ -10,7 +10,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <script src="sensitive-workflow-bootstrap.js?v=20260718" data-query-keys="k" data-fragment-keys="k" referrerpolicy="no-referrer"></script>
 <script src="vendor/mammoth.browser-1.12.0.min.js?v=5d4c0e7c9165d70b"></script>
-<title>Your op notes · MLS</title>
+<title>Your op notes · MLS Scribe</title>
 <!-- build: opnote-svc-1.0.0 2026-09-11 -->
 <style>
   /* The same palette the clinical app uses, so a surgeon who sees both does not
@@ -49,7 +49,7 @@
 <body>
 <div data-mls-phi-notice="1" role="note" aria-label="Confidential patient information" style="box-sizing:border-box;width:calc(100% - 24px);max-width:920px;margin:12px auto 0;padding:10px 12px;background:#F7F3E8;border:1px solid #E8DCC0;border-radius:10px;color:#5E5138;font:600 13px/1.45 system-ui,-apple-system,Segoe UI,Arial,sans-serif;text-align:center"><strong>Confidential patient information.</strong> These are real operative notes. Do not forward this page, and do not pass on the code you signed in with.</div>
 <div class="wrap">
-  <div class="brand"><span class="mark">+</span> <span>MLS</span></div>
+  <div class="brand"><span class="mark">+</span> <span>MLS Scribe</span></div>
 
   <div id="gate" class="card hide"></div>
 
@@ -739,7 +739,13 @@ async function opnOpenApp(client, who) {
 }
 
 async function opnBoot() {
-  if (!OPN_SHAPE.test(K)) { opnDead(); return; }
+  /* opnlink-1.0.0: no link, or a cut-off one, is known right here - telling
+     the surgeon their link "is no longer active" sent them to ask for a new
+     one when all they had to do was open the email's link whole. Nothing
+     about the server's answer is revealed: only a well-formed link is ever
+     sent, and every refusal of it still reads the one dead-link sentence. */
+  if (!K) { opnStopped('Open this page from the link in your op-note email.'); return; }
+  if (!OPN_SHAPE.test(K)) { opnStopped('This link is incomplete. Open it straight from the email, or ask for a new one.'); return; }
   opnSessLoad();
   var who;
   try {

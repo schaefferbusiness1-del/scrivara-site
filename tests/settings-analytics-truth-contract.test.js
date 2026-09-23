@@ -51,10 +51,12 @@ assert(connect.includes("badge: '✅ Tour complete'"), 'tour finish badge claims
 assert(!connect.includes("badge: '✅ Ready', title: 'That’s everything — you’re ready'"), 'static setup-ready claim is back');
 assert(connect.includes('Setup status is live in Settings → Integrations'), 'tour does not point at the live setup status');
 
-/* Help text: Templates route is Menu → Templates in both shells. */
+/* Help text: the Calm shell's Tools menu has no Templates row (measured
+   b1304), so the Settings note names where templates really are. */
 assert(!app.includes('More tools → Templates'), 'production help text points at the retired More-tools location');
 assert(!staging.includes('More tools → Templates'), 'staging help text points at the retired More-tools location');
-assert(app.includes('manage templates under Menu → 📄 Templates'), 'production help text lost the real Templates route');
+assert(!app.includes('manage templates under Menu → 📄 Templates'), 'production help text points at a Templates menu row that does not exist');
+assert(app.includes('Visit templates are under Notes &amp; AI; op-note templates are under 📄 Templates in the op-note room.'), 'production help text lost the real Templates locations');
 
 /* Assistant navigation: template requests route to the Templates modal, never
    to AI Studio, and the registry separates the three assistant surfaces. */
