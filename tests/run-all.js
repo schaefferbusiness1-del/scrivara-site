@@ -2777,7 +2777,12 @@ const tests = [
      Assistant hides its chat box on Schedule and works from the keyboard, a
      failed widget design says so in the builder, Escape on a confirm spares
      the builder, and the phone Tools menu stays above the taskbar. */
-  'assistant-and-widgets-answer-runtime.test.js'
+  'assistant-and-widgets-answer-runtime.test.js',
+  /* errfix-1.0.0 (b1318): errors name their action and are shown when they
+     answer a press, orders survive a patient switch, Practice is not caught
+     by the AI Studio lock, one Practice heading, clean letterheads, and phone
+     titles ellipsize. */
+  'errors-reach-the-doctor-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

@@ -242,6 +242,9 @@
 "  #mlsRdRailBtn{ display:flex; }",
 "  #mlsRdTop{ padding:0 14px; gap:10px; }",
 "  #mlsRdTitle{ font-size:17px; max-width:160px; }",
+/* errfix-1.0.0: the title is a flex row [mark][text]; the ellipsis has to
+   live on the text span, or "Recommendations" is cut mid-letter. */
+"  #mlsRdTitle .rd-titletext{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }",
 "}",
 "@media (prefers-reduced-motion: reduce){ #mlsRdNav{ transition:none; } }",
 

@@ -29219,7 +29219,7 @@ Return ONLY valid JSON (no fences) with this shape:
     } else {
       toast('Document analysis for '+(pF.name||'a previous patient')+' finished — saved to that chart (not the one now open).','');
     }
-  }catch(err){ toast(friendlyError(err),'err'); }
+  }catch(err){ toast(friendlyError(err,'analyze the document'),'err'); }
   finally{ btn.disabled=false; btn.innerHTML='✨ Analyze with AI'; }
 }
 function mergeListInto(existing,additions){
@@ -34790,7 +34790,7 @@ async function generateNote(){
       toast(outcomeMessage,'err');
     }else{
       outcomeCode=(err&&err.mlsAi&&err.mlsAi.code)||'generation-failed';
-      outcomeMessage=friendlyError(err);
+      outcomeMessage=friendlyError(err,'generate the note');
       toast(outcomeMessage,'err');
     }
     try{
@@ -35238,7 +35238,7 @@ function mapOpioidName(raw){
   const f=MME_FACTORS.find(x=>x.key===s); return f?f.key:'';
 }
 
-function friendlyError(err){
+function friendlyError(err,what){
   const m=(err&&err.message)||String(err);
   if(err&&err.mlsAi&&err.mlsAi.code==='draft_quality_failed') return mlsDraftFailureMessage(err);
   if(err&&err.mlsStructuredNoteQuality) return 'Note generation could not finish its safety checks. Your prior draft was retained if one was already open. Please retry.';
@@ -35258,7 +35258,15 @@ function friendlyError(err){
   if(/401|unauthorized|session expired|not authenticated/i.test(m)) return backendMode() ? 'Your session expired — please log in again to keep working.' : 'That API key looks invalid. Check it in Settings.';
   if(/invalid|incorrect api key/i.test(m)) return 'That API key looks invalid. Check it in Settings.';
   if(/network|failed to fetch|load failed/i.test(m)) return 'Network problem reaching OpenAI. Check your internet connection.';
-  return 'Could not generate the note: '+m;
+  /* errfix-1.0.0: the catch-all said "Could not generate the note: 503" for
+     EVERY caller - Recommendations, the widget designer, a metrics load - and
+     callers that add their own lead read "Could not load metrics: Could not
+     generate the note: ...". It names the caller's action when given one, and
+     says what a bare 5xx means. */
+  const lead=what?('Could not '+what+': '):'';
+  if(/\b5\d\d\b|service unavailable|bad gateway|gateway time-?out/i.test(m))
+    return lead?(lead+'the MLS server did not answer - try again in a moment.'):'The MLS server did not answer - try again in a moment.';
+  return lead?(lead+m):m;
 }
 
 /* ---- Standards block reused by both prompts ---- */
@@ -37919,7 +37927,7 @@ Return ONLY valid JSON (no markdown fences) with this exact shape (each value an
     renderRecommendations();
     toast('Recommendations ready — advisory only; use clinical judgment.','ok');
   }catch(err){
-    if(recResultStillSafe()) toast(friendlyError(err),'err');
+    if(recResultStillSafe()) toast(friendlyError(err,'generate recommendations'),'err');
   }finally{
     btn.disabled=false; btn.innerHTML='✨ Generate Recommendations';
   }
@@ -40131,7 +40139,7 @@ function buildOrdersPrintHTML(){
          b805 export fix, so this is the pattern catching up, not a new one. The
          vendor strings remain only as the last resort for a wholly unconfigured
          account, which is what renders today. -->
-    <div class="brand">${esc(getPracticeName()||'MLS')}<small>${esc(getSpec()||'Physical Medicine &amp; Rehabilitation')}</small></div>
+    <div class="brand">${esc(getPracticeName()||'MLS')}<small>${esc(getSpec()||'Physical Medicine & Rehabilitation')}</small></div>
     <div class="meta">
       <div><b>Patient:</b> ${esc(patient)}</div>
       ${ptMeta?('<div>'+esc(ptMeta)+'</div>'):''}
@@ -40472,7 +40480,7 @@ function buildPriorAuthPrintHTML(){
          b805 export fix, so this is the pattern catching up, not a new one. The
          vendor strings remain only as the last resort for a wholly unconfigured
          account, which is what renders today. -->
-    <div class="brand">${esc(getPracticeName()||'MLS')}<small>${esc(getSpec()||'Physical Medicine &amp; Rehabilitation')}</small></div>
+    <div class="brand">${esc(getPracticeName()||'MLS')}<small>${esc(getSpec()||'Physical Medicine & Rehabilitation')}</small></div>
     <div class="meta">
       <div><b>Patient:</b> ${esc(patient)}</div>
       ${ptMeta?('<div>'+esc(ptMeta)+'</div>'):''}
@@ -41989,7 +41997,7 @@ function printProcNote(){
          b805 export fix, so this is the pattern catching up, not a new one. The
          vendor strings remain only as the last resort for a wholly unconfigured
          account, which is what renders today. -->
-    <div class="brand">${esc(getPracticeName()||'MLS')}<small>${esc(getSpec()||'Physical Medicine &amp; Rehabilitation')}</small></div>
+    <div class="brand">${esc(getPracticeName()||'MLS')}<small>${esc(getSpec()||'Physical Medicine & Rehabilitation')}</small></div>
     <div class="meta">
       <div><b>Patient:</b> ${esc(patient)}</div>
       <div><b>Provider:</b> ${esc(docName)}${spec?' · '+esc(spec):''}</div>
@@ -42649,7 +42657,7 @@ function printHandout(){
          specialty. The heading stays (it names the document, which is right for a
          patient) and the sub-line becomes the practice the patient is dealing
          with. -->
-    <div class="brand">Your Home Care Plan<small>${esc(getPracticeName()||getSpec()||'Physical Medicine &amp; Rehabilitation')}</small></div>
+    <div class="brand">Your Home Care Plan<small>${esc(getPracticeName()||getSpec()||'Physical Medicine & Rehabilitation')}</small></div>
     <div class="meta">Patient: ${esc(patient)} · Provider: ${esc(docName)} · ${esc(now)}</div>
   </div>
   <pre>${esc(text)}</pre>
@@ -47816,10 +47824,7 @@ The "prompt" is the instruction executed on EVERY visit against the clinical not
        generate the note: 503"), and the notice went only to the Activity tray
        behind this dialog - the press looked like it did nothing. The builder
        now says it, in its own words. */
-    let _m=friendlyError(err);
-    if(/^Could not generate the note: /.test(_m)) _m=/\b5\d\d\b|unavailable|timed? ?out/i.test(String(err&&err.message||err))
-      ? 'The widget designer did not answer (the MLS server is unavailable). Nothing was saved - try again in a moment.'
-      : 'The widget could not be designed: '+_m.replace(/^Could not generate the note: /,'')+' Nothing was saved.';
+    const _m=friendlyError(err,'design the widget')+' Nothing was saved.';
     const _cwSay2=document.getElementById('cwDesignStatus'); if(_cwSay2){ _cwSay2.textContent=_m; _cwSay2.hidden=false; }
     toast(_m,'err');
   }
@@ -49393,7 +49398,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1317';
+  window.__MLS_AV='b1318';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
@@ -56837,11 +56842,20 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
     var br;
     try { br = box.getBoundingClientRect(); } catch (e2) { return false; }
     var top = vh - br.height - 16, left = vw - br.width - 16;
-    /* Sit ABOVE a bottom bar rather than on top of it. */
-    if (r && r.height > 0) top = Math.max(8, r.top - br.height - 12);
     if (bottomBar) left = r.left;
     box.style.left = Math.max(8, Math.round(left)) + 'px';
-    box.style.top = Math.max(8, Math.round(top)) + 'px';
+    /* Sit ABOVE a bottom bar rather than on top of it - anchored by its
+       BOTTOM edge (dockfix-1.0.0), so opening "Why" or a late font grows the
+       strip upward. Anchored by its top it grew down over the taskbar's own
+       Copilot and Ask buttons. */
+    if (r && r.height > 0 && r.top > vh / 2) {
+      box.style.top = 'auto';
+      box.style.bottom = Math.max(8, Math.round(vh - r.top + 12)) + 'px';
+    } else {
+      if (r && r.height > 0) top = Math.max(8, r.top - br.height - 12);
+      box.style.bottom = 'auto';
+      box.style.top = Math.max(8, Math.round(top)) + 'px';
+    }
     return true;
   }
   function paintNudge() { ensureNudge(); }
@@ -61395,6 +61409,17 @@ html body .toast[data-mls-quiet="action"].show{ transform:none !important; }
   var installed = false;
   var counts = { action: 0, outcome: 0, info: 0, debug: 0 };
 
+  var lastPress = 0;
+  safe(function () {
+    document.addEventListener('pointerdown', function () { lastPress = Date.now(); }, true);
+    document.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') lastPress = Date.now(); }, true);
+  });
+  function answersAPress() { return Date.now() - lastPress < 20000; }
+  function trayOffScreen() {
+    var t = el('mlsTray'); if (!t) return true;
+    var r = safe(function () { return t.getBoundingClientRect(); }, null);
+    return !r || r.width <= 0 || r.height <= 0;
+  }
   function install() {
     var fn = window.toast;
     if (typeof fn !== 'function' || fn.__mlsQuietWrapped) return false;
@@ -61404,6 +61429,11 @@ html body .toast[data-mls-quiet="action"].show{ transform:none !important; }
       counts[kind]++;
       if (kind === 'debug') return null;
       if (kind === 'action') return showAction(msg, type, base);
+      /* errfix-1.0.0: an error is the ANSWER to a press the doctor made moments
+         ago (Generate, Export, Build...) - filed only to the tray, the press
+         looked dead. And on a phone the tray is not on screen at all. Either
+         way it is shown; the classification itself is unchanged. */
+      if (S(type) === 'err' && (answersAPress() || trayOffScreen())) return showAction(msg, type, base);
       toTray(msg, type);
       return null;
     };

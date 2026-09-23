@@ -513,7 +513,10 @@ for (const shell of SHELLS) {
 for (const shell of SHELLS) {
   const html = read(shell);
   const body = between(html, 'function renderHistory(', 'function attachNoteToActive(', shell + ' renderHistory');
-  const iTotal = body.indexOf('const total=ordered.length;');
+  /* histfix-1.0.0 (b1313): the total leaves chart-import receipts out (they
+     are not visits), so it is no longer the bare ordered.length - the pin
+     keeps its point: one un-narrowed total, taken before every narrowing. */
+  const iTotal = body.indexOf('const total=');
   const iCollapse = body.indexOf('_importNotes=ordered.filter(_isImportNote)');
   const iSearch = body.indexOf('if(q){ ordered=ordered.filter');
   const iMatched = body.indexOf('const matchedTotal=ordered.length;');

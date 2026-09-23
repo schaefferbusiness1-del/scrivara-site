@@ -58,6 +58,20 @@ const srv = http.createServer((q, r) => {
     assert.ok(asked || seen.every((s) => s.side !== 'bottom'), 'the bottom taskbar still asks its question: ' + JSON.stringify({ before, seen: seen.slice(-3) }));
     assert.ok(seen.every((s) => !(s.nudge && s.card)), 'the question and the phone card are never on screen together: ' + JSON.stringify(seen));
 
+    /* 1b. dockfix-1.0.0: opening "Why" grows the strip UPWARD - anchored by its
+       top edge it grew down over the taskbar's own Copilot and Ask buttons */
+    if (asked) {
+      const grown = await page.evaluate(async () => {
+        const n = document.getElementById('mlsDockNudge'), d = document.getElementById('mlsDock');
+        const w = n && n.querySelector('.mlsDockNudgeWhy'); if (!n || !d || !w) return null;
+        w.open = true; await new Promise((r) => setTimeout(r, 150));
+        const nr = n.getBoundingClientRect(), dr = d.getBoundingClientRect();
+        w.open = false;
+        return { nudgeBottom: Math.round(nr.bottom), dockTop: Math.round(dr.top) };
+      });
+      if (grown) assert.ok(grown.nudgeBottom <= grown.dockTop, 'with "Why" open the question still sits above the taskbar: ' + JSON.stringify(grown));
+    }
+
     /* 2. answered, the card may come back - and still never beside the question */
     if (asked) {
       await page.click('#mlsDockNudgeNo'); await page.waitForTimeout(500);

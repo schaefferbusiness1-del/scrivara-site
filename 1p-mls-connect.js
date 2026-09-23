@@ -7047,6 +7047,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function ensureGlyph(v) {
     var title = v.querySelector(":scope > .ax-title");
     if (title) {
+      /* errfix-1.0.0: the stand-alone row made before the tile grid existed
+         stayed beside the grid's own title - two "Analysis" headings, and the
+         row took a whole tile cell. */
+      var stray = v.querySelector(":scope > .anp-glyph-row"); if (stray) stray.parentNode.removeChild(stray);
       if (title.querySelector(".anp-glyph-row")) return;
       var h1 = title.querySelector("h1");
       if (!h1) return;
@@ -21164,6 +21168,18 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         var r = window.saveDraft();
         if (r === false) { _preserveRefused = true; return; }
         if (r === true) api.preserved++;
+        return;
+      }
+      /* errfix-1.0.0: ORDERS ALONE ARE UNSAVED WORK TOO. With no transcript
+         and no note, saveDraft() refuses, so orders built for this patient
+         were cleared by the switch with no word. saveOrdersToHistory is the
+         app's own "save orders without a note" path; it tags the record to
+         the CURRENT (old) patient, which is why this runs before the switch. */
+      var orders = safe(function () { return (typeof currentOrders !== 'undefined' && Array.isArray(currentOrders)) ? currentOrders.length : 0; }, 0);
+      if (orders && !isAlreadySigned() && typeof window.saveOrdersToHistory === 'function') {
+        var r2 = window.saveOrdersToHistory();
+        if (r2 === false) { _preserveRefused = true; return; }
+        api.preserved++;
       }
     });
   }
@@ -45229,9 +45245,19 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           sv.insertBefore(makeLock(), sv.firstChild);
         }
         var ctrls = sv.querySelectorAll('textarea,button,input,select,[contenteditable]');
+        /* errfix-1.0.0: this lock covers AI Studio's Copilot and custom widgets
+           (see its header). Practice - the old Analysis view - was hoisted INTO
+           #studioView by the Studio merge and got locked with it: every tile,
+           even Key trends and Baseline, and the tab that switches to it. It
+           keeps its own per-tile premium gating. */
+        var exempt = function (n) { return !!(n.closest && (n.closest('#analysisView') || n.closest('#mlsSmTabs'))); };
         for (var i=0;i<ctrls.length;i++){
           var el = ctrls[i];
           if (el.closest && el.closest('#'+LOCK_ID)) continue;
+          if (exempt(el)) {
+            if (el.hasAttribute('data-mls-prem-dis')) { el.removeAttribute('data-mls-prem-dis'); try { el.disabled = false; } catch(e){} el.style.pointerEvents = ''; }
+            continue;
+          }
           if (!el.hasAttribute('data-mls-prem-dis')) {
             el.setAttribute('data-mls-prem-dis','1');
             try { el.disabled = true; } catch(e){}
@@ -45242,6 +45268,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         for (var j=0;j<kids.length;j++){
           var c = kids[j];
           if (c.id === LOCK_ID) continue;
+          if (c.id === 'analysisView' || c.id === 'mlsSmTabs') {
+            if (c.getAttribute('data-mls-prem-dim')) { c.removeAttribute('data-mls-prem-dim'); c.style.opacity = ''; }
+            continue;
+          }
           if (c.getAttribute('data-mls-prem-dim')) continue;
           c.setAttribute('data-mls-prem-dim','1');
           c.style.opacity = '0.5';
