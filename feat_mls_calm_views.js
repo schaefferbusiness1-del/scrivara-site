@@ -56,6 +56,7 @@
   var STYLE_ID = 'mlsCalmViewsCss';
 
   function safe(fn, dflt) { try { return fn(); } catch (e) { return dflt; } }
+  function samplePreview() { return safe(function () { return !!(W.__MLS_PUBLIC_PREVIEW && W.__MLS_PUBLIC_PREVIEW.enabled === true); }, false); }
   function byId(id) { return safe(function () { return D.getElementById(id); }); }
   function qs(sel, root) { return safe(function () { return (root || D).querySelector(sel); }); }
   function qsa(sel, root) {
@@ -119,11 +120,20 @@
            AT A GLANCE". Measured on a running page, not assumed. Narrow
            viewports mount it at the top of the view instead. */
         anchorNarrow: '#calendarView',
+        /* cvdate-1.0.0: in the sample workspace this hero is blocked (it
+           would read athenaOne), and it sat greyed while still promising to
+           read "that day's appointments from athenaOne". It says what is true
+           there instead - one owner of its words, so nothing repaints over it. */
         label: function () {
+          if (samplePreview()) return 'Pulling is off in the sample';
           var d = calRefDate();
           return d ? ('Pull ' + d.label) : 'Pull this day’s schedule';
         },
-        sub: 'Reads that day’s appointments from athenaOne. Nothing is written.',
+        sub: function () {
+          return samplePreview()
+            ? 'The sample schedule is invented - Reload sample day on the Visit tab resets it.'
+            : 'Reads that day’s appointments from athenaOne. Nothing is written.';
+        },
         available: function () {
           return !!(qs('#mlsT3Empty .t3e-pull') || typeof W.pullScheduleViaAssist === 'function');
         },
@@ -525,7 +535,7 @@
     }
     var big = el.querySelector('.mls-cv-big'), sub = el.querySelector('.mls-cv-sub');
     if (big && big.textContent !== label) big.textContent = label;
-    var subText = String(v.primary.sub || '');
+    var subText = String((typeof v.primary.sub === 'function' ? safe(v.primary.sub, '') : v.primary.sub) || '');
     if (sub && sub.textContent !== subText) sub.textContent = subText;
     syncNextGlowName(el);
     if (el.parentElement !== host || host.firstChild !== el) host.insertBefore(el, host.firstChild);
@@ -753,8 +763,15 @@
       var host = qs('#calendarView .card.cx-agenda, #calendarView .card') || root;
       safe(function () { host.parentNode ? host.parentNode.insertBefore(el, host) : root.insertBefore(el, root.firstChild); });
     }
+    /* cvdate-1.0.0: the strip printed the raw key ("Next appointment
+       2026-09-23") under a calendar that writes every date as "Wed, Sep 23". */
+    var nextLabel = st.next ? safe(function () {
+      var today = typeof W._acctTodayKey === 'function' ? String(W._acctTodayKey() || '').slice(0, 10) : '';
+      if (st.next === today) return 'today';
+      return new Date(st.next + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+    }, st.next) : '';
     var label = st.next
-      ? ('Next appointment ' + st.next + (st.count > 1 ? (' · ' + st.count + ' on the calendar') : ''))
+      ? ('Next appointment ' + (nextLabel || st.next) + (st.count > 1 ? (' · ' + st.count + ' on the calendar') : ''))
       : (st.count ? (st.count + ' past appointment' + (st.count === 1 ? '' : 's') + ' · none upcoming') : 'No appointments on this calendar');
     el.setAttribute('data-sig', st.sig);
     el.innerHTML = '<span class="cvpt-name">' + escHtml(st.name) + '</span>' +
