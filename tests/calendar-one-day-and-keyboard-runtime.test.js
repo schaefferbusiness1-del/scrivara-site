@@ -19,6 +19,8 @@ const srv=http.createServer((q,r)=>{let p=decodeURIComponent(q.url.split('?')[0]
   await pg.waitForFunction(()=>(window._calAppts||[]).length>0&&typeof window.showView==='function',null,{timeout:60000}); await pg.waitForTimeout(2500);
   await pg.evaluate(()=>{ showView('calendar'); }); await pg.waitForTimeout(1200);
   await pg.evaluate(()=>{ calSetMode('day'); calToday(); }); await pg.waitForTimeout(1200);
+  /* the exact-layout pass places blocks on its own tick; under load give it time */
+  await pg.waitForFunction(()=>{ const b=[...document.querySelectorAll('#calGrid [data-appt]')]; return b.length>0 && b.every(x=>getComputedStyle(x).display!=='none'&&x.getBoundingClientRect().height>0); },null,{timeout:15000}).catch(()=>{});
   // 1. a Day block opens its appointment by pointer
   const day=await pg.evaluate(async()=>{ const e=document.querySelector('#calGrid [data-appt]'); if(!e) return null;
     const bg=e.parentElement.closest('[onclick]'); e.click(); await new Promise(r=>setTimeout(r,500));

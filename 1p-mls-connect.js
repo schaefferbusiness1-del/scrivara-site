@@ -22430,8 +22430,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var hits = pts.filter(agrees);
     return hits.length === 1 && String(hits[0].id) === String(p.id);
   }
-  function dobLabel(a) { var d = dobOf(a); return d ? ('🎂 ' + esc(d)) : '🎂 DOB —'; }
-  function dobLabelPlain(a) { var d = dobOf(a); return d ? ('DOB ' + esc(d)) : 'DOB —'; }
+  /* dobfmt-1.0.0: shown as MM/DD/YYYY like the patient banner; dobOf stays
+     raw because identity checks compare it. */
+  function dobShown(d) { var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(d)); return m ? (m[2] + '/' + m[3] + '/' + m[1]) : d; }
+  function dobLabel(a) { var d = dobOf(a); return d ? ('🎂 ' + esc(dobShown(d))) : '🎂 DOB —'; }
+  function dobLabelPlain(a) { var d = dobOf(a); return d ? ('DOB ' + esc(dobShown(d))) : 'DOB —'; }
   function nextPatient() {
     var rows = dayRows(visitDay()).filter(function (a) { return !isSeen(a); });
     if (!rows.length) return null;
@@ -30918,8 +30921,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   function visitType(a) { return (a && (a.reason || '').trim()) || (a && a.source === 'staff' ? 'Office visit' : 'Visit'); }
   function dobOf(a) { var d = (a && a.dob) || ''; return d ? String(d).trim() : ''; }
-  function dobLabel(a) { var d = dobOf(a); return d ? ('🎂 ' + esc(d)) : '🎂 DOB —'; }
-  function dobLabelPlain(a) { var d = dobOf(a); return d ? ('DOB ' + esc(d)) : 'DOB —'; }
+  /* dobfmt-1.0.0: shown as MM/DD/YYYY like the patient banner; dobOf stays
+     raw because identity checks compare it. */
+  function dobShown(d) { var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(d)); return m ? (m[2] + '/' + m[3] + '/' + m[1]) : d; }
+  function dobLabel(a) { var d = dobOf(a); return d ? ('🎂 ' + esc(dobShown(d))) : '🎂 DOB —'; }
+  function dobLabelPlain(a) { var d = dobOf(a); return d ? ('DOB ' + esc(dobShown(d))) : 'DOB —'; }
   function nextPatient() {
     var rows = dayRows(todayLocal()).filter(function (a) { return !isSeen(a); });
     if (!rows.length) return null;
@@ -33154,8 +33160,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   function visitType(a) { return (a && (a.reason || '').trim()) || (a && a.source === 'staff' ? 'Office visit' : 'Visit'); }
   function dobOf(a) { var d = (a && a.dob) || ''; return d ? String(d).trim() : ''; }
-  function dobLabel(a) { var d = dobOf(a); return d ? ('🎂 ' + esc(d)) : '🎂 DOB —'; }
-  function dobLabelPlain(a) { var d = dobOf(a); return d ? ('DOB ' + esc(d)) : 'DOB —'; }
+  /* dobfmt-1.0.0: shown as MM/DD/YYYY like the patient banner; dobOf stays
+     raw because identity checks compare it. */
+  function dobShown(d) { var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(d)); return m ? (m[2] + '/' + m[3] + '/' + m[1]) : d; }
+  function dobLabel(a) { var d = dobOf(a); return d ? ('🎂 ' + esc(dobShown(d))) : '🎂 DOB —'; }
+  function dobLabelPlain(a) { var d = dobOf(a); return d ? ('DOB ' + esc(dobShown(d))) : 'DOB —'; }
   function nextPatient() {
     var rows = dayRows(todayLocal()).filter(function (a) { return !isSeen(a); });
     if (!rows.length) return null;
@@ -35146,8 +35155,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   function visitType(a) { return (a && (a.reason || '').trim()) || (a && a.source === 'staff' ? 'Office visit' : 'Visit'); }
   function dobOf(a) { var d = (a && a.dob) || ''; return d ? String(d).trim() : ''; }
-  function dobLabel(a) { var d = dobOf(a); return d ? ('🎂 ' + esc(d)) : '🎂 DOB —'; }
-  function dobLabelPlain(a) { var d = dobOf(a); return d ? ('DOB ' + esc(d)) : 'DOB —'; }
+  /* dobfmt-1.0.0: shown as MM/DD/YYYY like the patient banner; dobOf stays
+     raw because identity checks compare it. */
+  function dobShown(d) { var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(d)); return m ? (m[2] + '/' + m[3] + '/' + m[1]) : d; }
+  function dobLabel(a) { var d = dobOf(a); return d ? ('🎂 ' + esc(dobShown(d))) : '🎂 DOB —'; }
+  function dobLabelPlain(a) { var d = dobOf(a); return d ? ('DOB ' + esc(dobShown(d))) : 'DOB —'; }
   function nextPatient() {
     var rows = dayRows(todayLocal()).filter(function (a) { return !isSeen(a); });
     if (!rows.length) return null;

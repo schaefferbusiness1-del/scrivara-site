@@ -99,8 +99,39 @@ function serve() {
     const rgb = (qtp.match(/\d+/g) || []).map(Number);
     assert.ok(rgb.length >= 3 && rgb[0] + rgb[1] + rgb[2] < 300, 'the dialog title is dark on its white card: ' + qtp);
 
+    /* 5. one DOB format on one screen (dobfmt-1.0.0) */
+    await page.evaluate(() => window.showView('visit'));
+    await page.waitForTimeout(1200);
+    const dob = await page.evaluate(() => ({ bar: (document.querySelector('.mlsctx-meta') || {}).textContent || '', card: (document.querySelector('.mls-idmeta') || {}).textContent || '' }));
+    for (const t of [dob.bar, dob.card]) {
+      if (/DOB/.test(t)) assert.match(t, /DOB \d{2}\/\d{2}\/\d{4}/, 'every DOB reads MM/DD/YYYY: ' + JSON.stringify(dob));
+    }
+
+    /* 6. phone month: the count badge fits its day cell (calnav-1.1.0) */
+    const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    await phone.route(/^https?:\/\/(?!127\.0\.0\.1)/, (r) => r.fulfill({ status: 503, body: 'offline' }));
+    await phone.goto(page.url(), { waitUntil: 'load' });
+    await phone.waitForFunction(() => (window._calAppts || []).length > 0 && typeof window.showView === 'function', null, { timeout: 60000 });
+    await phone.waitForTimeout(2500);
+    await phone.evaluate(() => { window.showView('calendar'); window.calSetMode('month'); });
+    await phone.waitForTimeout(1500);
+    const badges = await phone.evaluate(() => {
+      const out = { cells: 0, badges: 0, clipped: [] };
+      document.querySelectorAll('#calGrid > div > div[onclick^="calOpenDay"]').forEach((c) => {
+        out.cells++;
+        const cr = c.getBoundingClientRect();
+        const nums = Array.prototype.filter.call(c.querySelectorAll('*'), (e) => e.children.length === 0 && /^\d+$/.test(e.textContent.trim()));
+        if (nums.length > 1) out.badges++;
+        nums.forEach((k) => { const kr = k.getBoundingClientRect(); if (kr.width && (kr.right > cr.right + 0.5 || kr.left < cr.left - 0.5)) out.clipped.push(c.textContent.trim().slice(0, 8)); });
+      });
+      return out;
+    });
+    assert.ok(badges.cells >= 28, 'the phone month grid rendered: ' + JSON.stringify(badges));
+    assert.deepStrictEqual(badges.clipped, [], 'no count badge is cut off by its day cell: ' + JSON.stringify(badges));
+    await phone.close();
+
     assert.deepStrictEqual(errors, [], 'no page errors: ' + errors.join(' | '));
-    console.log('PASS calendar and chrome say one thing: no empty rail track, no false "Back to the calendar", the status line names its day, the header says Calendar and Today, the brief says whose appointments it counts, tabs have no dangling dot, and the paste-notes title is readable');
+    console.log('PASS calendar and chrome say one thing: no empty rail track, no false "Back to the calendar", the status line names its day, the header says Calendar and Today, the brief says whose appointments it counts, tabs have no dangling dot, the paste-notes title is readable, DOBs share one format, and phone month badges fit their cells');
   } finally {
     await browser.close();
     server.close();

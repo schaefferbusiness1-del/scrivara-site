@@ -287,7 +287,8 @@ assert.strictEqual(bar.querySelector('.mlsctx-actions'), null, 'an action row re
 assert.strictEqual(bar.querySelectorAll('button').length, 0, 'the banner rendered a button');
 
 assert.strictEqual(bar.querySelector('.mlsctx-name').textContent, 'Bernard P Brooks');
-assert(/^\d{1,3}y M {2}· {2}DOB 06-13-1951 {2}· {2}MRN 8292441$/
+/* dobfmt-1.0.0: the banner prints the app's one DOB format, MM/DD/YYYY */
+assert(/^\d{1,3}y M {2}· {2}DOB 06\/13\/1951 {2}· {2}MRN 8292441$/
   .test(bar.querySelector('.mlsctx-meta').textContent),
   'meta line must be identity only — age/sex, DOB, MRN — got: ' +
   JSON.stringify(bar.querySelector('.mlsctx-meta').textContent));

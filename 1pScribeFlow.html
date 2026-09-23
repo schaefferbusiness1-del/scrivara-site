@@ -4598,7 +4598,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
         <input type="month" id="calJump" aria-label="Jump to month" onchange="calJump(this.value)" style="margin-left:10px;border:1px solid var(--line);border-radius:10px;padding:6px 9px;font-size:13px" title="Jump to a month">
         <select id="calProvFilter" aria-label="Filter calendar by provider" onchange="renderCalendar()" style="border:1px solid var(--line);border-radius:10px;padding:6px 9px;font-size:13px"><option value="">Default schedule</option></select>
         <button class="btn-ghost" onclick="cleanupDuplicateAppointments(this)" style="font-size:13px;padding:6px 11px;margin-left:auto;color:#a12c2c;border-color:#e8b7b7" title="Scan the whole calendar and remove duplicate appointments (same patient, same day & time) — keeps one of each">🧹 Remove duplicates</button>
-        <button class="btn-ghost" onclick="loadCalendar()" style="font-size:13px;padding:6px 11px">↻ Refresh</button>
+        <button class="btn-ghost" onclick="_calUserRefresh(this, loadCalendar())" style="font-size:13px;padding:6px 11px">↻ Refresh</button>
       </div>
       <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:8px;font-size:11.5px;color:var(--muted)">
         <span><span style="display:inline-block;width:10px;height:10px;border-radius:10px;background:#eef4fc;border:1px solid #cfe2f8;vertical-align:middle"></span> Booked</span>
@@ -16868,6 +16868,25 @@ function calSetMode(m){ _calMode=m; var jump=document.getElementById('calJump');
    evaluated as arithmetic (preview - appt - 01), threw ReferenceError, and
    no appointment could be opened from Day, Week or Month. Numbers stay
    bare, so every numeric comparison downstream is unchanged. */
+/* calnav-1.1.0: A REFRESH THAT SAYS WHAT IT DID. Re-reading an unchanged
+   schedule re-rendered identical markup, so the press looked dead (and the
+   calendar-territory suite's "every visible control answers" rule only passed
+   on unrelated background repaints). The label shows the read in progress and
+   the result is said once, including a failure. */
+function _calUserRefresh(btn, pending){
+  var lbl='↻ Refresh';
+  try{ if(btn){ lbl=btn.textContent||lbl; btn.textContent='↻ Refreshing…'; btn.setAttribute('aria-busy','true'); } }catch(e){}
+  Promise.resolve(pending).then(function(r){
+    try{ if(btn){ btn.textContent=lbl; btn.removeAttribute('aria-busy'); } }catch(e){}
+    if(!r||typeof toast!=='function') return;
+    if(r.applied) toast('Calendar updated · '+r.count+' appointment'+(r.count===1?'':'s')+'.', 'ok');
+    else if(r.error==='session_expired') return;
+    else if(r.error) toast('The calendar could not be refreshed just now. What is on screen may be out of date.', 'err');
+  },function(){
+    try{ if(btn){ btn.textContent=lbl; btn.removeAttribute('aria-busy'); } }catch(e){}
+    try{ if(typeof toast==='function') toast('The calendar could not be refreshed just now. What is on screen may be out of date.', 'err'); }catch(e2){}
+  });
+}
 function _calIdJs(id){ var s=String(id==null?'':id); return /^\d+$/.test(s)?s:"'"+s.replace(/[^A-Za-z0-9_.:-]/g,'')+"'"; }
 function _calStatusColor(s){ s=s||''; if(s==='completed') return {bg:'#e7f6ee',fg:'#11643f'}; if(s==='cancelled'||s==='no_show') return {bg:'#fdeaea',fg:'#a12c2c'}; if(s==='checked_in'||s==='arrived') return {bg:'#fff4e0',fg:'#9a6b00'}; if(s==='roomed') return {bg:'#e8eefc',fg:'#2E6A4B'}; return {bg:'#eef4fc',fg:'#2E6A4B'}; }
 function _calLabelOf(a){ return a.name||a.label||a.patient||a.title||'Appointment'; }
@@ -48495,7 +48514,11 @@ function _ptGroupSort(mode){
     var p = parseDob(dob);
     if (!p) return dob ? String(dob) : '';
     var mm = ('0'+p.m).slice(-2), dd = ('0'+p.d).slice(-2);
-    return mm+'-'+dd+'-'+p.y;
+    /* dobfmt-1.0.0: MM/DD/YYYY, the app's one DOB format (the DOB input,
+       profile cards, scheduler and timeline). This printed MM-DD-YYYY and a
+       late module (feat_mls_ctxbar_dob_slash.js) rewrote it to slashes after
+       the first click, so the banner changed format while in use. */
+    return mm+'/'+dd+'/'+p.y;
   }
   /* The bar no longer prints a visit count or a last-visit date, so it no
      longer reads the note store on every refresh — those facts live on the
@@ -49377,9 +49400,15 @@ function _ptGroupSort(mode){
     } catch (e) { return false; }
   }
 
+  /* calnav-1.1.0: never while a menu or dialog is open. The card is CSS-hidden
+     then, so the covered-control check measured a 0x0 box, kept the card, and
+     it surfaced over "Choose patient" once the menu closed. */
+  function menuOrModalOpen() {
+    try { return !!(document.body && document.body.matches('[data-mls-clunky-menu="1"],[data-mls-clunky-modal="1"]')); } catch (e) { return false; }
+  }
   function eligible() {
     return !isHandheld() && !isStandalone() && !dismissed() && signedIn() &&
-           !phoneCardOwnsScreen() && !hintOwnsCorner();
+           !phoneCardOwnsScreen() && !hintOwnsCorner() && !menuOrModalOpen();
   }
 
   /* ===========================================================================
@@ -66449,6 +66478,10 @@ html #calendarView[data-cal-mode="month"] .cx-card.cx-mini{ display:none !import
   html #calendarView #calGrid [draggable="true"][onclick*="calApptPeek("]:not([data-appt]){ display:none !important; }
   html #calendarView #calGrid [onclick*="stopPropagation"][onclick*="calOpenDay("]{ display:none !important; }
   html #calendarView #calGrid > div > div[onclick^="calOpenDay"]{ min-height:52px !important; padding:5px 4px !important; }
+  /* calnav-1.1.0: below 600px the count badge is the only sign a day has
+     appointments, and beside the day number it overflowed the 36px cell and
+     was clipped ("4" cut in half). Stack it under the number. */
+  html #calendarView #calGrid > div > div[onclick^="calOpenDay"] > div:first-child{ flex-direction:column; align-items:flex-start; gap:2px; }
 }
 </style>
 <script>
