@@ -2722,7 +2722,12 @@ const tests = [
   /* menufocus-1.0.x (b1299): the Account, mode and Recent menus answer Escape
      and the arrows and close when focus leaves; Settings keeps Tab inside
      itself (but not over its own sub-layers) and returns focus on close. */
-  'header-menus-and-settings-keyboard-runtime.test.js'
+  'header-menus-and-settings-keyboard-runtime.test.js',
+  /* ptlist-1.0.0 (b1300): a phone tap on a patient opens them, the Visit card
+     follows every switch, patient rows work from the keyboard, the chart's
+     next appointment is the next one, History counts each note once and keeps
+     every merged note's text, and sample allergies are not rewritten. */
+  'patient-list-and-chart-truth-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

@@ -417,7 +417,24 @@
     '@media (max-width:700px){',
     'body.mls-calm #ptSplitWrap.px-has-profile #ptList{display:none!important}',
     'body.mls-calm #ptSplitWrap.px-has-profile .pt-search:focus-within ~ #ptList{display:block!important}',
+    /* pvfix-1.0.0 (hunt:patient F1): the ONLY thing holding the list open was
+       the search box's focus, and a tap on a row takes that focus away
+       BEFORE the click: measured at 390x844, touchend -> mousedown -> focusout
+       (list display:none) -> mouseup -> click on #ptSplitWrap. The row a doctor
+       tapped was gone by the time the click landed, so no patient could ever
+       be opened from this list on a phone - and the dock's Patient button,
+       named above as the second route, did nothing on the tab it was on.
+       px-list-open is the list's own open state: set by a press inside the
+       list or by the dock's Patient button, cleared when a patient opens or
+       the doctor leaves the tab (ptListOpen() below). */
+    'body.mls-calm #ptSplitWrap.px-has-profile.px-list-open #ptList{display:block!important}',
     '}',
+    /* ...and KEYBOARD focus on a row holds it open too, so ArrowDown from the
+       search box lands on a row that is still there. :focus-visible, not
+       :focus - a finger that opened a patient leaves its row focused, and
+       that must not pin the list over the chart it just opened. A rule of its
+       own: a browser without :has() drops only this line. */
+    '@media (max-width:700px){body.mls-calm #ptSplitWrap.px-has-profile #ptList:has(:focus-visible){display:block!important}}',
     'body.mls-calm .ez3fl-transcript.mls-empty{display:none!important}',
     /* pt-2.0.0 - the patient card measured 4,005px: five phone screens for one
        patient. The single largest duplication is the prep summary. prepRows()
@@ -1614,8 +1631,12 @@
     if (!d) return;
     var tab = destTarget(d);
     if (!tab) return;
+    var fromTab = currentTabId();
     tab.click();
     markViewEnter();
+    /* pvfix-1.0.0: Patient pressed while already ON the patient list tab is
+       the way back to the list the phone folded under an open chart. */
+    if (d.id === 'patient' && fromTab === 'nav_patients') safe(revealPtList);
     /* Re-run AFTER the view has actually switched. The document-level click hook
        fires in capture phase - before showView() reveals the new view - so a
        screen that produces no further mutations (a loaded patient profile is
@@ -3340,6 +3361,49 @@
     observeRoot(qs('#patientsView'), { childList: true, subtree: true }, ['patient']);
   }
 
+  /* pvfix-1.0.0 (hunt:patient F1): the phone patient list's open state. See
+     the px-list-open rule in CSS above for the measured failure. */
+  function ptListOpen(on) {
+    var w = D.getElementById('ptSplitWrap');
+    if (w && w.classList.contains('px-list-open') !== !!on) w.classList.toggle('px-list-open', !!on);
+  }
+  function revealPtList() {
+    var w = D.getElementById('ptSplitWrap');
+    if (!w || !w.classList.contains('px-has-profile')) return;
+    if (!(W.matchMedia && W.matchMedia('(max-width:700px)').matches)) return;
+    ptListOpen(true);
+    var row = D.getElementById('ptSearchRow');
+    if (row && row.scrollIntoView) row.scrollIntoView({ block: 'center' });
+  }
+  /* A press INSIDE the list keeps it open through the focus change that
+     follows (pointerdown comes before mousedown/focusout on touch and mouse
+     alike). Capture phase, and nothing is prevented or stopped. */
+  function onPtListPress(e) {
+    var t = e && e.target;
+    if (t && t.closest && t.closest('#ptSplitWrap.px-has-profile #ptList')) ptListOpen(true);
+  }
+  /* A row's own click has run by the time this bubbles to the document, so
+     the list folds back behind the chart that click opened - also when it was
+     the patient already open, which changes no active patient. The row's
+     Record and delete buttons do not count as opening it. */
+  function onPtListClick(e) {
+    var t = e && e.target;
+    if (!t || !t.closest || !t.closest('#ptList .pt-item') || t.closest('button')) return;
+    ptListOpen(false);
+  }
+  /* A patient opened from the search box (the picker, or Enter) leaves the
+     focus in that box, which by itself keeps the phone list open over the
+     chart that was just opened - and the keyboard up. Let it go. */
+  function foldPtSearch() {
+    var sb = D.getElementById('ptSearch');
+    if (!sb || D.activeElement !== sb || currentTabId() !== 'nav_patients') return;
+    if (W.matchMedia && W.matchMedia('(max-width:700px)').matches) sb.blur();
+  }
+  /* Leaving the tab closes the list; so does any patient opening. Their own
+     listeners, so the shell's route/patient repair lanes stay exactly as they
+     were (shell-passes-write-only-on-change pins them). */
+  function onPtListView() { if (currentTabId() !== 'nav_patients') ptListOpen(false); }
+  function onPtListPatient() { ptListOpen(false); safe(foldPtSearch); }
   function onViewChanged() { markDirty('route'); queuePass(); }
   function onActivePatientChanged() { markDirty('patient'); markDirty('bar'); queuePass(); }
   function onSessionBoundary() { markAll(); queuePass(); }
@@ -3348,6 +3412,11 @@
     safe(function () { W[fn]('mls:view-changed', onViewChanged); });
     safe(function () { W[fn]('mls:active-patient-changed', onActivePatientChanged); });
     safe(function () { W[fn]('mls:session-boundary', onSessionBoundary); });
+    safe(function () { W[fn]('mls:view-changed', onPtListView); });
+    safe(function () { W[fn]('mls:active-patient-changed', onPtListPatient); });
+    safe(function () { D[fn]('pointerdown', onPtListPress, true); });
+    safe(function () { D[fn]('click', onPtListClick, false); });
+    if (!on) safe(function () { ptListOpen(false); });
   }
 
   /* --------------------------------------------- returning from classic */

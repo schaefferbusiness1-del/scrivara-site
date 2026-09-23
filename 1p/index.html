@@ -22696,7 +22696,15 @@ function _ptItemHtml(p, activeId){
   chips+='<span style="'+chip+'">'+esc(lastTxt)+'</span>';
   if(noteCount) chips+='<span style="'+chip+'">'+noteCount+' note'+(noteCount===1?'':'s')+'</span>';
   if(docs) chips+='<span style="'+chip+'">'+docs+' doc'+(docs===1?'':'s')+'</span>';
-  return `<div class="pt-item ${isActive?'active':''}" data-patient-id="${esc(p.id)}" onclick="selectPatient('${p.id}')" title="Open ${esc(p.name)}'s chart">
+  /* pvfix-1.0.0 (hunt:patient F3): the row was a <div onclick> with no
+     tabindex, so Tab never reached a patient and a keyboard could open no
+     chart; and because nothing inside it could take focus, the
+     .pt-item:focus-within rule that reveals Record and 🗑 could never fire
+     either. The row is focusable now, and Enter/Space open it (the handler
+     below). role=group, not button: the row CONTAINS the Record and 🗑
+     buttons, and a button inside a button is not a control a screen reader
+     can reach - the calnav-1.0.0 rule for the calendar grid, applied here. */
+  return `<div class="pt-item ${isActive?'active':''}" data-patient-id="${esc(p.id)}" onclick="selectPatient('${p.id}')" title="Open ${esc(p.name)}'s chart" tabindex="0" role="group" aria-label="${esc(p.name)}" aria-keyshortcuts="Enter">
       <div class="pt-avatar">${esc(ptInitials(p.name))}${p.photo?`<img src="${esc(p.photo)}" alt="" onerror="this.remove()">`:''}</div>
       <div class="pt-main" style="min-width:0">
         <div class="t" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">${esc(p.name)}${isActive?'<span class="pt-active-badge" style="font-size:10.5px;color:#fff;background:var(--brand);font-weight:700;border-radius:999px;padding:1px 8px;letter-spacing:.3px">ACTIVE</span>':''}</div>
@@ -22711,6 +22719,25 @@ function _ptItemHtml(p, activeId){
     </div>`;
 }
 function ptQuickVisit(id){ try{ setActivePtId(id); renderProfile(); renderPatients(); renderPatientBar(); if(typeof goNewVisitForPatient==='function') goNewVisitForPatient(); }catch(e){} }
+/* pvfix-1.0.0: keyboard for the patient list. Enter or Space on a focused
+   row does exactly what a click on it does. ArrowDown/ArrowUp walk the rows
+   (ArrowUp off the first row returns to the search box, where ArrowDown comes
+   back in - feat_patient_picker owns that side). Only a focused ROW answers:
+   keys pressed on its Record or 🗑 button keep their native behaviour. */
+(function(){
+  function rows(){ var l=document.getElementById('ptList'); return l?Array.prototype.filter.call(l.querySelectorAll('.pt-item[data-patient-id]'),function(r){ return r.offsetParent!==null; }):[]; }
+  document.addEventListener('keydown',function(e){
+    var t=e.target; if(!t||!t.classList||!t.classList.contains('pt-item')||!t.closest||!t.closest('#ptList')) return;
+    if(e.altKey||e.ctrlKey||e.metaKey) return;
+    if(e.key==='Enter'||e.key===' '){ e.preventDefault(); t.click(); return; }
+    if(e.key!=='ArrowDown'&&e.key!=='ArrowUp') return;
+    var list=rows(), i=list.indexOf(t); if(i<0) return;
+    e.preventDefault();
+    if(e.key==='ArrowDown'){ if(list[i+1]) list[i+1].focus(); return; }
+    if(list[i-1]){ list[i-1].focus(); return; }
+    var sb=document.getElementById('ptSearch'); if(sb&&sb.offsetParent!==null) sb.focus();
+  },false);
+})();
 var PROC_MAP={ '64483':'Epidural injection (TFESI)','64484':'Epidural injection (TFESI)','62321':'Epidural injection (ILESI)','62322':'Epidural injection (ILESI)','62323':'Epidural injection (ILESI)','62311':'Epidural injection','64490':'Facet joint injection','64491':'Facet joint injection','64492':'Facet joint injection','64493':'Facet joint injection','64494':'Facet joint injection','64495':'Facet joint injection','64633':'Radiofrequency ablation','64634':'Radiofrequency ablation','64635':'Radiofrequency ablation','64636':'Radiofrequency ablation','20610':'Joint injection (major)','20611':'Joint injection (major)','20605':'Joint injection (intermediate)','20600':'Joint injection (small)','27096':'Sacroiliac joint injection','64451':'Sacroiliac nerve injection','20552':'Trigger point injection','20553':'Trigger point injection','64405':'Occipital nerve block','64640':'Nerve block / ablation','63650':'Spinal cord stimulator trial','63685':'Spinal cord stimulator implant','62380':'Endoscopic decompression' };
 function _ptProcedure(p){
   try{
@@ -61938,7 +61965,28 @@ body.pvr-on #mlsVisitHistoryExt .mlsxh-list .pvr-hidden{display:none!important}
     }
     return '';
   }
-  function noteDate(n) { return ymd(n && (n.date || n.note_date || n.created_at || n.created)); }
+  /* pvfix-1.0.0 (hunt:patient F5): this read only n.date / note_date /
+     created_at / created. An MLS-recorded note carries its day in visitDate
+     (the field every visit-binding path writes) and `created` is an epoch
+     NUMBER, which ymd() cannot read - so every recorded note came back
+     undated, never met the same-day merge below, and opened a second
+     "Date not documented" entry: two notes on two stored visits read
+     "4 visits". Read the visit day first; an epoch is turned into the
+     PRACTICE day (the tzcarry rule), never the UTC one. */
+  function noteDate(n) {
+    if (!n) return '';
+    var d = ymd(n.date || n.visitDate || n.visit_date || n.note_date || n.noteDate || n.created_at);
+    if (d) return d;
+    var t = n.visitTimestamp || n.created;
+    if (typeof t === 'number' || /^\d{11,}$/.test(trim(t))) {
+      var ms = Number(t); if (ms > 0 && ms < 1e11) ms *= 1000; /* an epoch in seconds */
+      var at = new Date(ms);
+      if (isNaN(at.getTime())) return '';
+      var k = safe(function () { return isFn(window._acctDateKeyOf) ? str(window._acctDateKeyOf(at)) : ''; }, '');
+      return /^\d{4}-\d{2}-\d{2}$/.test(k) ? k : at.toISOString().slice(0, 10);
+    }
+    return ymd(t);
+  }
 
   /* ---------------------------------------------------------------- scrubbing
      The timeline body is captured Athena frame text and carries page debris
@@ -62043,22 +62091,34 @@ body.pvr-on #mlsVisitHistoryExt .mlsxh-list .pvr-hidden{display:none!important}
     }
     var nn = notesOf(p);
     out.notes = nn.length;
+    /* pvfix-1.0.0 (review of hunt:patient F5): once noteDate() dated MLS
+       notes, the same-day merge below started to fire for real - and it was
+       LOSSY. It overwrote noteRow, so a second note on a day replaced the
+       first, and it never told the renderer the entry held a note BESIDES its
+       own row. The day stays ONE entry (that is the count fix), but it now
+       keeps every note it absorbs, in arrival order, in noteRows; noteRow is
+       still the first, so no reader of it changes. */
+    function absorb(entry, note) {
+      entry.hasNote = true;
+      if (!entry.noteRow) entry.noteRow = note;
+      (entry.noteRows || (entry.noteRows = [])).push(note);
+    }
     for (i = 0; i < nn.length; i++) {
       var n = nn[i]; if (!n) continue;
       d = noteDate(n);
       var known = d ? byDay[d] : null;
-      if (known) { known.hasNote = true; known.noteRow = n; if (!known.summary) known.summary = trim(n.summary || n.cc || ''); continue; }
+      if (known) { absorb(known, n); if (!known.summary) known.summary = trim(n.summary || n.cc || ''); continue; }
       e = push({
         key: d ? ('d:' + d) : ('n:' + str(n.id) + ':' + i),
-        date: d, rawDate: str(n.date || n.created_at || ''), type: trim(n.type || n.visitType) || 'Visit recorded in MLS',
+        date: d, rawDate: str(n.date || n.visitDate || n.created_at || ''), type: trim(n.type || n.visitType) || 'Visit recorded in MLS',
         source: 'note', summary: trim(n.summary || n.cc || ''), body: scrub(n.text || n.note || n.soap || ''),
         visitId: '', noteId: str(n.id), fromStore: 'notes', hasNote: true,
         /* histview-1.0.0: same reason as `row` above - the renderer reads the
            note it was actually given, never one it looked up again. */
-        noteRow: n
+        noteRow: n, noteRows: [n]
       });
       if (created) out.sources.note = (out.sources.note || 0) + 1;
-      else e.hasNote = true;
+      else absorb(e, n);
     }
     order.sort(function (a, b) {
       if (a.date && b.date) return a.date < b.date ? 1 : (a.date > b.date ? -1 : 0);
@@ -65176,6 +65236,11 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
 #mlsHxSection .hx-btn:hover{background:var(--soft,#EAF1EC)}
 #mlsHxSection .hx-btn.hx-go{border-color:var(--brand,#2E6A4B);color:var(--brand,#2E6A4B)}
 #mlsHxSection .hx-btn[disabled]{opacity:.55;cursor:default}
+/* pvfix-1.0.0: "Show more" sets [hidden] on itself once pressed, but the app's
+   own button styling (computed display:inline-flex) outranks the UA's [hidden]
+   rule, so the spent button stayed on screen offering lines that were already
+   shown. The same guard every other part of this section already carries. */
+#mlsHxSection .hx-btn[hidden]{display:none!important}
 #mlsHxSection .hx-all{min-height:40px;font-size:12.5px;font-weight:700;border:1px solid var(--line,#dfe6e1);
   background:transparent;color:var(--ink,#1A211C);border-radius:999px;padding:9px 15px;cursor:pointer;margin:2px 0 4px}
 #mlsHxSection .hx-all:hover{background:var(--soft,#EAF1EC)}
@@ -65467,6 +65532,17 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
     if (t === 'note' || t === 'manual' || t === 'user' || t === 'mls' || t.indexOf('mls') >= 0) return 'MLS';
     return 'Imported';
   }
+  function linesOf(sections) {
+    var lines = 0;
+    for (var i = 0; i < sections.length; i++) {
+      lines += 1;
+      for (var k = 0; k < sections[i].parts.length; k++) {
+        var part = sections[i].parts[k];
+        lines += part.list ? part.list.length : 1;
+      }
+    }
+    return lines;
+  }
   function finish(rec) {
     var j = junkOf(rec.rawBody);
     rec.junk = j.flagged;
@@ -65475,19 +65551,50 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
     rec.junkRemoved = j.removed;
     rec.readable = rec.indexOnly ? '' : j.text;
     rec.sections = sectionsOf(rec);
-    rec.lines = 0;
-    for (var i = 0; i < rec.sections.length; i++) {
-      rec.lines += 1;
-      for (var k = 0; k < rec.sections[i].parts.length; k++) {
-        var part = rec.sections[i].parts[k];
-        rec.lines += part.list ? part.list.length : 1;
-      }
+    rec.lines = linesOf(rec.sections);
+    return rec;
+  }
+  function rowBody(row) { return S(row && (row.raw || row.detail || row.text || row.soap || row.note || '')); }
+  /* pvfix-1.0.0 (review of hunt:patient F5): an entry can carry MLS notes
+     BESIDES its own row - the ones pvr-1.0.0 merged into a day the chart
+     already knew (a note written during a pulled visit, a second note on the
+     same day). This adapter read `e.row || e.noteRow` and nothing else, so
+     every one of those notes vanished from the card, from its Copy and from
+     "Copy all ... full notes", while the tally still said "with the full
+     note". Each is now appended under its own heading, after whatever the
+     entry's own row says. When that row has no readable text of its own
+     (index only / not legible) its state is kept as a plain line ABOVE the
+     note instead of hiding the note behind it: an encounter whose clinician
+     note MLS holds is not an unread encounter. The Athena re-read stays
+     offered (athenaReread). Display only - the count is pvr-1.0.0's. */
+  var MLS_NOTE_HEAD = 'Note recorded in MLS';
+  function withMergedNotes(rec, e, row) {
+    var list = arr(e.noteRows), extra = [], add = [], texts = [], i;
+    if (!list.length && e.noteRow) list = [e.noteRow];
+    for (i = 0; i < list.length; i++) if (list[i] && list[i] !== row && extra.indexOf(list[i]) < 0) extra.push(list[i]);
+    for (i = 0; i < extra.length; i++) {
+      var one = finish({ row: extra[i], rawBody: rowBody(extra[i]), indexOnly: false, indexText: '' });
+      if (one.illegible || !one.sections.length) continue;
+      var who = providerOf(extra[i]);
+      if (!rec.provider && who) rec.provider = who;
+      add.push({ label: MLS_NOTE_HEAD + (who && who !== rec.provider ? ' — ' + who : ''), parts: [] });
+      add = add.concat(one.sections);
+      texts.push(one.readable);
     }
+    if (!add.length) return rec;
+    var lead = rec.sections;
+    if (rec.indexOnly) lead = [{ label: 'From athenaOne', parts: [{ text: INDEX_LINE }].concat(rec.indexText ? [{ text: rec.indexText }] : []) }];
+    else if (rec.illegible) lead = [{ label: 'From athenaOne', parts: [{ text: JUNK_LINE }] }];
+    rec.athenaReread = !!(rec.indexOnly || rec.illegible);
+    rec.indexOnly = false; rec.illegible = false; rec.junk = false;
+    rec.readable = [rec.readable].concat(texts).filter(function (t) { return !!trim(t); }).join('\n\n');
+    rec.sections = lead.concat(add);
+    rec.lines = linesOf(rec.sections);
     return rec;
   }
   function fromEntry(entry) {
     var e = entry || {}, row = e.row || e.noteRow || null;
-    var body = row ? S(row.raw || row.detail || row.text || row.soap || row.note || '') : S(e.body);
+    var body = row ? rowBody(row) : S(e.body);
     var rec = {
       key: S(e.key), date: ymd(e.date), dateLabel: dateLabel(e.date), monthLabel: monthLabel(e.date),
       type: tidy(e.type) || 'Visit', provider: providerOf(row || { raw: body }) || '',
@@ -65495,7 +65602,7 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
       indexOnly: !!(row && row.indexOnly === true),
       indexText: tidy(row && row.textHead), summary: tidy(e.summary), origin: 'chart'
     };
-    return finish(rec);
+    return withMergedNotes(finish(rec), e, row);
   }
   function fromLegalItem(item) {
     var it = item || {};
@@ -65573,7 +65680,7 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
     var o = opts || {}, hidden = o.hidden === true, open = o.open !== false;
     var body = bodyHtml(record);
     var acts = '<div class="hx-acts"><button type="button" class="hx-btn" data-hx-copy="' + esc(record.key) + '">📋 Copy</button>';
-    if (record.indexOnly || record.illegible) {
+    if (record.indexOnly || record.illegible || record.athenaReread) {
       /* pullone-1.0.0: one verb everywhere. This routes through
          __mlsChartField.read, which now delegates to the app's own
          pullPatientChartViaAssist, so it is the same engine and the same status

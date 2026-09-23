@@ -5281,11 +5281,24 @@
        allergens is a coherent, common chart state); collapse to ['NKDA']
        only when nothing but negation/furniture is present. */
     var cleaned = cleanList(v, keepAllergy, 20);
-    var NEG_LINE = /^(?:nkda|nka|no known (?:drug |food )?allerg(?:y|ies)|denies allerg(?:y|ies)|no allergies)\b[\s.]*$/i;
-    var real = [];
-    for (var i = 0; i < cleaned.length; i++) { if (!NEG_LINE.test(trim(S(cleaned[i])))) real.push(cleaned[i]); }
-    if (!real.length) return hasNeg ? ['NKDA'] : cleaned;
-    if (hasNeg) { var outA = ['NKDA'].concat(real); return outA.slice(0, 20); }
+    /* pvfix-1.0.0 (hunt:patient F6): NEG_LINE matched only a BARE negation,
+       so "NKDA (sample)" - or "NKDA (verified 01/2026)" - counted as a real
+       allergen while hasNeg was also true, and the field was rewritten to
+       "NKDA\nNKDA (sample)" on every upsert: the chart listed the negation
+       twice. A negation carrying one trailing parenthetical is still a
+       negation. When it is the whole list it is kept VERBATIM (the qualifier
+       is part of what was documented), which also makes this a no-op on the
+       stored record instead of a rewrite. A bare negation still reads NKDA. */
+    var NEG_LINE = /^(?:nkda|nka|no known (?:drug |food )?allerg(?:y|ies)|denies allerg(?:y|ies)|no allergies)\b[\s.]*(\([^()]{1,60}\)[\s.]*)?$/i;
+    var real = [], negQual = [];
+    for (var i = 0; i < cleaned.length; i++) {
+      var negM = NEG_LINE.exec(trim(S(cleaned[i])));
+      if (!negM) real.push(cleaned[i]);
+      else if (negM[1]) negQual.push(trim(S(cleaned[i])));
+    }
+    var negOut = negQual.length ? negQual : ['NKDA'];
+    if (!real.length) return hasNeg ? negOut : cleaned;
+    if (hasNeg) { var outA = negOut.concat(real); return outA.slice(0, 20); }
     return real.slice(0, 20);
   }
 

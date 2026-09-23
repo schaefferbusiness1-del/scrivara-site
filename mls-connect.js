@@ -2485,8 +2485,30 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   // way openOpPrepForPatient() already does from window._calAppts (read-only -
   // never writes, never touches Athena; _calAppts is populated by the app's own
   // backend-driven calendar and/or an Athena day-pull that already ran).
+  /* pvfix-1.0.0: the practice clock the calendar already uses (apptclock-1.0.0,
+     _calDateOf, _acctTodayKey) - a device in another time zone must never move
+     which day an appointment is on, or which day "today" is. */
+  function apptStartMs(a) {
+    try { var d = window.__mlsApptClock && window.__mlsApptClock.instant(a && a.start_at); if (d) return d.getTime(); } catch (e) {}
+    var t = Date.parse(S(a && a.start_at)); return isNaN(t) ? NaN : t;
+  }
+  function apptDayKey(a) {
+    try { if (isFn(window._calDateOf)) { var k = S(window._calDateOf(a)); if (k) return k; } } catch (e) {}
+    return S((a && (a.appt_date || a.start_at)) || '').slice(0, 10);
+  }
+  function apptTodayKey() {
+    try { if (isFn(window._acctTodayKey)) { var k = S(window._acctTodayKey()); if (k) return k; } } catch (e) {}
+    var n = new Date(); return n.getFullYear() + '-' + ('0' + (n.getMonth() + 1)).slice(-2) + '-' + ('0' + n.getDate()).slice(-2);
+  }
+  /* "Thu 9/24" from a practice day key - built with UTC arithmetic from the
+     Y-M-D itself, so no local-midnight parse can shift the weekday. */
+  function apptDayLabel(k) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(S(k)); if (!m) return S(k);
+    var dow = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])).getUTCDay()];
+    return dow + ' ' + (+m[2]) + '/' + (+m[3]);
+  }
   function apptContext(p) {
-    var out = { time: '', reason: '' };
+    var out = { time: '', reason: '', date: '' };
     try {
       var appts = (window._calAppts || []) || [];
       var pDob = trim(p && p.dob);
@@ -2515,10 +2537,33 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           pool = (distinctDobs > 1) ? [] : byName;
         }
       }
-      var match = pool.sort(function (a, b) { return S(b.start_at).localeCompare(S(a.start_at)); })[0];
+      /* pvfix-1.0.0 (hunt:patient F4): this sorted the pool NEWEST-first and
+         took [0], i.e. the LAST appointment the calendar happened to hold, and
+         printed its time with no date. Measured at 7:00 AM: the chart's
+         "Next appt" said "11:10 AM" (Thursday's slot) while the Visit tab said
+         8:10 AM today. The answer is the EARLIEST appointment that has not
+         already passed - one that began within the last 30 minutes still
+         counts, the same "happening now" window the Visit tab's timeContext()
+         uses - and a slot on any other day says which day it is. A patient
+         whose appointments are all in the past has no next one. */
+      var nowMs = Date.now(), soonMs = nowMs - 30 * 60000, today = apptTodayKey();
+      var ahead = pool.filter(function (a) {
+        var t = apptStartMs(a);
+        if (!isNaN(t)) return t >= soonMs;
+        var k = apptDayKey(a); return !!k && !!today && k >= today;
+      });
+      ahead.sort(function (a, b) {
+        var ta = apptStartMs(a), tb = apptStartMs(b);
+        if (!isNaN(ta) && !isNaN(tb)) return ta - tb;
+        return (apptDayKey(a) + S(a.start_at)).localeCompare(apptDayKey(b) + S(b.start_at));
+      });
+      var match = ahead[0];
       if (match) {
         out.reason = S(match.reason || p.reason || '');
         try { out.time = isFn(window._fmtApptTime) ? window._fmtApptTime(match.start_at) : S(match.start_at); } catch (e) {}
+        var mDay = apptDayKey(match);
+        out.date = mDay;
+        if (out.time && mDay && today && mDay !== today) out.time = apptDayLabel(mDay) + ' · ' + out.time;
       } else {
         out.reason = S(p.reason || '');
       }
@@ -22855,7 +22900,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     '.ez3-prow.open{border-color:rgba(47,109,246,.55);background:rgba(47,109,246,.08);}',
     '.ez3-prow>.hd{display:flex;align-items:center;gap:12px;padding:13px 15px;cursor:pointer;}',
     '.ez3-prow .who{flex:1;min-width:0;}',
-    '.ez3-prow .nm{font-weight:800;font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
+    /* pvfix-1.0.0 (hunt:phone-dock): .nm is a <span>, and overflow/ellipsis
+       do not apply to an inline box - so on a 390px phone a long name ran
+       out of the 146px .who column and under the appointment time (39px of
+       overlap on Choose patient). As a block it is clipped to .who and ends
+       in an ellipsis; .dob beside it was already a block, so the row keeps
+       its two lines. */
+    '.ez3-prow .nm{display:block;font-weight:800;font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
     '.ez3-prow .dob{display:block;font-size:11.5px;color:#EAF1EE;margin-top:2px;}',
     '.ez3-prow .meta{display:flex;flex-direction:column;align-items:flex-end;gap:4px;}',
     '.ez3-prow .tm{font-weight:700;font-size:13.5px;color:#EAF1EE;white-space:nowrap;}',
@@ -23393,7 +23444,20 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           if (S.activationRefusalWarn) {
             S.activationRefusalWarn = ''; S.lastWarn = '';
             try { render(); } catch (eR0) {}
+            return;
           }
+          /* pvfix-1.0.0 (hunt:patient F2): with no binding to release this
+             returned without painting, and the home hero (which renders from
+             activePatient()) was left to the 700 ms homeSig poll to notice
+             the new banner patient. The sealed sample workspace never starts
+             that poll, so from the SECOND switch on the Visit card kept
+             offering the previous patient - Start Recording included - under
+             the new patient's header. The patient change is the event; the
+             home repaints on it, and only when what it shows actually moved.
+             No poll, timer or network call is added. */
+          try {
+            if (S.mode === 'doctor' && S.screen === 'home' && homeSig() !== S._homeSig) render();
+          } catch (eR1) {}
           return;
         }
         if (nextId && visitBindingOwnsPatient(nextId)) return;
@@ -43883,7 +43947,15 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     dd.style.cssText='position:static;margin:6px 0 2px;background:#1E2B24;border:1px solid rgba(143,216,190,.35);border-radius:12px;box-shadow:0 16px 44px rgba(0,0,0,.45);max-height:min(220px,30vh);overflow:auto;display:none;color:#EAF1EC;font:13px system-ui,-apple-system,"Segoe UI",sans-serif';
     if(host && host.parentNode) host.parentNode.insertBefore(dd, host.nextSibling);
     else if(host) host.appendChild(dd);
-    function hide(){ dd.style.display='none'; }
+    function hide(){ dd.style.display='none'; sel=-1; }
+    /* pvfix-1.0.0: the row the arrow keys are on (-1 = none). */
+    var sel=-1, shown=[];
+    function mark(){
+      Array.prototype.forEach.call(dd.querySelectorAll('.mls-pick-row'),function(el,i){
+        var on=(i===sel); el.style.background=on?'rgba(120,150,240,.22)':'transparent'; el.setAttribute('aria-selected',on?'true':'false');
+        if(on){ try{ el.scrollIntoView({block:'nearest'}); }catch(e){} }
+      });
+    }
     function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
     function render(q){
       var list=ensure(); q=(q||'').trim().toLowerCase();
@@ -43899,7 +43971,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var rows = list.filter(function(p){ return (p.name||'').toLowerCase().indexOf(q)>=0 || (p.dob||'').toLowerCase().indexOf(q)>=0; });
       rows.sort(function(a,b){ return (b.last||'').localeCompare(a.last||''); });
       rows=rows.slice(0,14);
-      if(!rows.length){ dd.innerHTML='<div style="padding:12px 14px;opacity:.6">No pulled patient matches — the app will search normally.</div>'; dd.style.display='block'; return; }
+      shown=rows; sel=-1;
+      if(!rows.length){ shown=[]; dd.innerHTML='<div style="padding:12px 14px;opacity:.6">No pulled patient matches — the app will search normally.</div>'; dd.style.display='block'; return; }
       dd.innerHTML='<div style="padding:7px 14px;font-size:11px;opacity:.55;border-bottom:1px solid rgba(143,216,190,.15)">'+list.length+' pulled patients · pick one</div>'+rows.map(function(p,i){
         return '<div class="mls-pick-row" data-i="'+i+'" style="padding:9px 14px;cursor:pointer;display:flex;justify-content:space-between;gap:10px;border-bottom:1px solid rgba(143,216,190,.08)">'
           +'<div><div style="font-weight:700">'+esc(p.name)+'</div><div style="font-size:11px;opacity:.6">'+(p.dob?('DOB '+esc(p.dob)):'DOB —')+(p.reason?(' · '+esc(p.reason)):'')+'</div></div>'
@@ -43908,7 +43981,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       dd.style.display='block';
       Array.prototype.forEach.call(dd.querySelectorAll('.mls-pick-row'),function(el){
         el.onmouseenter=function(){ el.style.background='rgba(120,150,240,.15)'; };
-        el.onmouseleave=function(){ el.style.background='transparent'; };
+        el.onmouseleave=function(){ el.style.background=(+el.getAttribute('data-i')===sel)?'rgba(120,150,240,.22)':'transparent'; };
         el.onmousedown=function(ev){ ev.preventDefault(); var p=rows[+el.getAttribute('data-i')]; choose(p); };
       });
     }
@@ -43918,14 +43991,66 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if(dob && !dob.value && p.dob){dob.value=p.dob; dob.dispatchEvent(new Event('input',{bubbles:true})); dob.dispatchEvent(new Event('change',{bubbles:true})); }
       ps.value=p.name;
       ps.dispatchEvent(new Event('input',{bubbles:true}));
-      ps.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));
-      ps.dispatchEvent(new KeyboardEvent('keyup',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));
       hide();
+      /* pvfix-1.0.0 (hunt:patient F1/F3): this used to fire a synthetic
+         Enter at #ptSearch for "the app's native selectPatient() flow" to
+         resolve - and no such Enter handler exists anywhere, so picking a
+         person only filtered the list and never opened anyone (tap and
+         keyboard alike). A pick whose appointment names a chart this app
+         holds opens THAT chart, by id - never by name. A pick with no chart
+         stays what it was: the filtered list, for the doctor to choose from. */
+      var pid=String(p.pid||'');
+      var pt=null; try{ pt=(pid&&typeof window.findPatient==='function')?window.findPatient(pid):null; }catch(e){}
+      if(pt&&typeof window.selectPatient==='function'){ try{ window.selectPatient(pid); }catch(e){} }
+    }
+    /* Enter with no picked row opens the FIRST row of the patient list the
+       doctor is looking at. The list repaints on a 150 ms debounce, so it is
+       brought up to date with the box first - Enter right after typing must
+       not open whoever matched the previous keystroke. */
+    function listRows(){
+      var l=document.getElementById('ptList');
+      return l?Array.prototype.slice.call(l.querySelectorAll('.pt-item[data-patient-id]')):[];
+    }
+    function openFirst(){
+      try{ if(typeof window.renderPatients==='function') window.renderPatients(); }catch(e){}
+      var r=listRows()[0]; if(!r) return false;
+      var id=r.getAttribute('data-patient-id'); if(!id||typeof window.selectPatient!=='function') return false;
+      hide(); try{ window.selectPatient(id); }catch(e){} return true;
     }
     ps.addEventListener('focus',function(){ ALL=patients(); render(ps.value); });
     ps.addEventListener('input',function(){ render(ps.value); });
-    ps.addEventListener('keydown',function(e){ if(e.key==='Escape') hide(); });
-    document.addEventListener('mousedown',function(e){ if(e.target!==ps && !dd.contains(e.target)) hide(); });
+    /* pvfix-1.0.0 (hunt:patient F3): the box ignored ArrowDown and Enter, so a
+       keyboard could type a name and go no further. ArrowDown/ArrowUp walk the
+       picker's rows while it is open; with nothing to walk, ArrowDown steps
+       into the patient list itself. Enter opens the picked row, else the first
+       match in the list. IME composition keeps its own Enter. */
+    ps.addEventListener('keydown',function(e){
+      if(e.key==='Escape'){ hide(); return; }
+      if(e.altKey||e.ctrlKey||e.metaKey||e.isComposing) return;
+      var open=dd.style.display!=='none'&&shown.length>0;
+      if(e.key==='ArrowDown'||e.key==='ArrowUp'){
+        if(open){
+          e.preventDefault();
+          if(e.key==='ArrowDown') sel=Math.min(shown.length-1,sel+1); else sel=Math.max(-1,sel-1);
+          mark(); return;
+        }
+        if(e.key==='ArrowDown'){ var r=listRows()[0]; if(r&&r.offsetParent!==null){ e.preventDefault(); hide(); r.focus(); } }
+        return;
+      }
+      if(e.key!=='Enter') return;
+      if(open&&sel>=0&&shown[sel]){ e.preventDefault(); choose(shown[sel]); return; }
+      if(String(ps.value||'').trim()&&openFirst()) e.preventDefault();
+    });
+    /* pvfix-1.0.0 (hunt:patient F1): dismiss on the CLICK, not the mousedown.
+       The panel sits in the flow above #ptList (rowclick-1.0.0), so closing it
+       at mousedown pulled every row up by its height between mousedown and
+       mouseup: the press began on one row and ended on another (or on the gap
+       beside them), and the click went to their common ancestor - nobody was
+       opened. Measured at 390x844 with "Three" typed: mouseup and click both on
+       #ptSplitWrap. By the click, its target is settled; closing then moves
+       nothing under the finger. Capture phase, so a handler that stops the
+       click cannot leave the panel open. */
+    document.addEventListener('click',function(e){ if(e.target!==ps && !dd.contains(e.target)) hide(); },true);
     return true;
   }
   if(!build()){ var n=0, iv=setInterval(function(){ if(build()||++n>40) clearInterval(iv); }, 1000); }
