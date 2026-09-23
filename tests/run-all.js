@@ -2699,7 +2699,10 @@ const tests = [
   /* opnsvc-1.0.0 (b1293): a value the surgeon types reaches the note, the
      owner's read-back places any value still beside it, and the owner sends
      the template that drafted the note, not the one the dropdown shows now. */
-  'opnote-surgeon-values-and-template-runtime.test.js'
+  'opnote-surgeon-values-and-template-runtime.test.js',
+  /* opblank-2.0.0 (b1294): the canonical op-note blank parser is linear-time
+     and returns exactly what the original regexes did. */
+  'opnote-blank-parser-linear-time.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

@@ -24705,8 +24705,20 @@ function opNoteBlankTokens(text){
     out.push({ key:k, label:label||k.replace(/_/g,' ').replace(/\b\w/g,function(c){ return c.toUpperCase(); }) }); }
   var re1=/\[\[\s*([a-z0-9_]+)\s*\]\]/gi;
   while((m=re1.exec(s))) add(m[1]);
-  var re2=/\[FILL:\s*([^\]]+?)\s*\]/gi;
-  while((m=re2.exec(s))) add(m[1].toLowerCase().replace(/[^a-z0-9]+/g,'_'), m[1]);
+  /* opblank-2.0.0: NO BACKTRACKING. The [FILL: x] and double-brace patterns
+     put a lazy group between two \s* runs, which takes CUBIC time on an
+     unclosed "[FILL:" or double brace followed by spaces - a returned
+     surgeon note could freeze this tab. Both are linear scans returning the
+     same captures; the service's copy (opnoteBlanks.js) is fuzz-checked
+     against the original regexes. */
+  var head=/\[FILL:/gi, from=0, f, open, close, inner;
+  for(;;){
+    head.lastIndex=from; f=head.exec(s); if(!f) break;
+    open=f.index+6; close=s.indexOf(']',open); if(close<0) break;
+    if(close===open){ from=f.index+1; continue; }
+    inner=s.slice(open,close); inner=inner.trim()||inner.slice(-1);
+    add(inner.toLowerCase().replace(/[^a-z0-9]+/g,'_'), inner); from=close+1;
+  }
   var nd=0, re3=/\[not dictated\]/gi;
   while((m=re3.exec(s))){ nd++; add('not_dictated_'+nd, 'Not dictated #'+nd); }
   var bl=0, re4=/(^|[^_])_{3,}(?!_)/g;
@@ -24717,8 +24729,18 @@ function opNoteBlankTokens(text){
      and a key already counted above de-dupes rather than double-counting. */
   var re5=/\[(?!\[)([A-Z][A-Z0-9 \/&-]{1,28}[A-Z0-9])\](?!\])/g;
   while((m=re5.exec(s))) add(m[1].toLowerCase().replace(/[^a-z0-9]+/g,'_'), m[1]);
-  var re6=/\{\{\s*([A-Za-z0-9_ -]+?)\s*\}\}/g;
-  while((m=re6.exec(s))) add(m[1].toLowerCase().replace(/[^a-z0-9]+/g,'_'), m[1]);
+  var at, j, cap, core; from=0;
+  for(;;){
+    at=s.indexOf('{{',from); if(at<0) break;
+    j=at+2; while(j<s.length && /[\sA-Za-z0-9_ -]/.test(s.charAt(j))) j++;
+    cap=null;
+    if(s.slice(j,j+2)==='}}'){
+      inner=s.slice(at+2,j); core=inner.trim();
+      if(core){ if(/^[A-Za-z0-9_ -]+$/.test(core)) cap=core; } else if(inner.indexOf(' ')>=0) cap=' ';
+    }
+    if(cap===null){ from=at+1; continue; }
+    add(cap.toLowerCase().replace(/[^a-z0-9]+/g,'_'), cap); from=j+2;
+  }
   return out;
 }
 function opNoteBlankCount(text){ return opNoteBlankTokens(text).length; }
@@ -48762,7 +48784,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1293';
+  window.__MLS_AV='b1294';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
