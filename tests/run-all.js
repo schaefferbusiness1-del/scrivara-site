@@ -2793,7 +2793,13 @@ const tests = [
      does nothing), says a refused file in the records card, keeps the
      Activity chip under the sheet, and names exports without the "1p" tag. */
   'legal-workspace-keeps-the-draft-runtime.test.js',
-  'patients-and-settings-tell-the-truth-runtime.test.js'
+  'patients-and-settings-tell-the-truth-runtime.test.js',
+  'patient-portal-shows-the-records-runtime.test.js',
+  'appointment-tells-the-real-state-runtime.test.js',
+  'booking-offered-times-and-dob-runtime.test.js',
+  'intake-says-what-went-wrong-runtime.test.js',
+  'patient-portal-keyboard-and-plain-messages-runtime.test.js',
+  'public-pages-fit-phones-and-say-true-names-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

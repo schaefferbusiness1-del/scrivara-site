@@ -8,7 +8,7 @@
 <meta name="referrer" content="no-referrer">
 <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
 <meta http-equiv="Pragma" content="no-cache">
-<script src="sensitive-workflow-bootstrap.js?v=20260718" data-query-keys="token t code invite" data-fragment-keys="token code invite" referrerpolicy="no-referrer"></script>
+<script src="sensitive-workflow-bootstrap.js?v=20260923sw1" data-query-keys="token t code invite" data-fragment-keys="token code invite" referrerpolicy="no-referrer"></script>
 <title>Book an appointment · MLS</title>
 <!-- build: booking-v1 2026-06-09 -->
 <style>
@@ -43,12 +43,19 @@
    a phone. At 9px/4px padding and 13px text these were about 34px tall with
    4px between them - under the 44px minimum, and packed in a grid where the
    neighbouring slot is half a thumb away. A mis-tap here books the wrong time. */
-.slot{min-height:46px;display:flex;align-items:center;justify-content:center;padding:10px 8px;border:1px solid var(--line);border-radius:10px;background:#fff;font-size:15px;font-weight:600;text-align:center;cursor:pointer;color:var(--ink);user-select:none;touch-action:manipulation}
+.slot{min-height:46px;display:flex;align-items:center;justify-content:center;padding:10px 8px;border:1px solid var(--line);border-radius:10px;background:#fff;font-size:15px;font-weight:600;text-align:center;cursor:pointer;color:var(--ink);user-select:none;touch-action:manipulation;font-family:inherit;width:100%;-webkit-appearance:none;appearance:none}
   .slot:hover{border-color:var(--brand)}
   .slot.sel{background:var(--brand);color:#fff;border-color:var(--brand)}
   .slot.taken{background:#f1f3f6;color:#b9c2cf;cursor:not-allowed;text-decoration:line-through}
   .slot.taken:hover{border-color:var(--line)}
   .google{display:none;margin:10px 0 2px;text-decoration:none;border:1px solid var(--line);border-radius:10px;padding:10px 12px;color:var(--brand-dk);font-weight:700;text-align:center;background:#fff}
+  /* pagesfix-1.0.0 (2026-09-23): the times were divs that Tab never reached,
+     while the office needs a time to book. They are real buttons now, so the
+     ring shows which time has keyboard focus. A time that has passed is not
+     "booked", so it is not struck through. */
+  .slot:focus-visible{outline:3px solid var(--brand-dk);outline-offset:2px}
+  .slot.past{text-decoration:none;font-weight:500}
+  .fielderr{color:#a12c2c;font-size:13px;margin:6px 0 0}
 
   /* ---- mls motion kit (b581) ---- */
   @media (prefers-reduced-motion: no-preference){
@@ -128,7 +135,8 @@
         </div>
         <div>
           <label for="dob">Date of birth</label>
-          <input id="dob" type="date">
+          <input id="dob" type="date" aria-describedby="dobErr">
+          <p id="dobErr" class="fielderr hide" role="alert"></p>
         </div>
       </div>
 
@@ -143,19 +151,19 @@
         </div>
       </div>
 
-      <label for="bookDate">Pick a date</label>
-      <input id="bookDate" type="date" onchange="loadSlots()">
+      <label for="bookDate">Pick a date *</label>
+      <input id="bookDate" type="date" aria-required="true" onchange="loadSlots()">
       <p id="openDaysHint" class="note" style="margin-top:4px"></p>
       <div id="slotWrap" class="hide" style="margin-top:8px">
-        <label style="margin-top:6px">Available times</label>
-        <div id="slotGrid" class="slotgrid"></div>
+        <label id="slotLabel" style="margin-top:6px">Available times *</label>
+        <div id="slotGrid" class="slotgrid" role="group" aria-labelledby="slotLabel"></div>
         <p id="slotMsg" class="note" role="status" aria-live="polite" aria-atomic="true" style="margin-top:6px"></p>
       </div>
 
       <label for="reason">Reason for visit</label>
       <textarea id="reason" placeholder="e.g. follow-up, new back pain, injection follow-up…"></textarea>
 
-      <div id="formErr" class="err hide"></div>
+      <div id="formErr" class="err hide" role="alert"></div>
       <button id="submitBtn" class="btn" type="submit">Request appointment</button>
       <p class="note">🔒 Your information is encrypted and only shared with the office you're booking with.</p>
     </form>
@@ -211,7 +219,11 @@ function init(){
       });
       window.AVAIL = j.availability || { days: [], tz: '', slotMin: 30 };
       // Only let people pick today or later, and hint which days are open.
-      try { document.getElementById('bookDate').min = new Date().toISOString().slice(0,10); } catch(e){}
+      /* pagesfix-1.0.0 (2026-09-23): "today" was the UTC date, so on a US
+         evening today could not be picked. Use the patient's own date, or the
+         office's date when that is earlier; times already gone come back from
+         the server marked as passed. */
+      try { var today = ymdLocal(), office = window.AVAIL.tz ? ymdIn(window.AVAIL.tz) : ''; document.getElementById('bookDate').min = (office && office < today) ? office : today; } catch(e){}
       var hint = document.getElementById('openDaysHint');
       if(hint){ hint.textContent = openDaysMsg(true); }
       show('formCard');
@@ -219,7 +231,34 @@ function init(){
     .catch(function(){ show('trouble'); });
 }
 
-var selectedSlot = '';
+var selectedSlot = '', selectedDate = '', slotSeq = 0;
+function ymdLocal(){ var d=new Date(), p=function(n){ return (n<10?'0':'')+n; }; return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()); }
+function ymdIn(tz){
+  try { var o={}; new Intl.DateTimeFormat('en-US',{timeZone:tz,year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date()).forEach(function(x){ o[x.type]=x.value; });
+    return (o.year && o.month && o.day) ? o.year+'-'+o.month+'-'+o.day : ''; } catch(e){ return ''; }
+}
+/* pagesfix-1.0.0 (2026-09-23): 2031-05-05 and 20255-01-01 were sent as a date
+   of birth. It must be a real date, not in the future, and not before 1880
+   (the same rule the office applies). Blank is fine: it is optional. */
+function dobProblem(el){
+  var v = String(el.value || '').trim();
+  if(!v) return (el.validity && el.validity.badInput) ? 'Please finish the date of birth (month, day and year), or clear it.' : '';
+  var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
+  if(!m) return 'Please check the date of birth. The year should have four digits.';
+  var y=+m[1], mo=+m[2], d=+m[3];
+  /* a two-digit year typed into the date field arrives as 0085 */
+  if(y < 1000) return 'Please type the full four-digit year of birth.';
+  if(y < 1880) return 'Please check the date of birth. The year is too early.';
+  var dt=new Date(0); dt.setUTCFullYear(y, mo-1, d);
+  if(dt.getUTCFullYear()!==y || dt.getUTCMonth()!==mo-1 || dt.getUTCDate()!==d) return 'Please check the date of birth. That day does not exist.';
+  if(v > ymdLocal()) return 'Please check the date of birth. It cannot be in the future.';
+  return '';
+}
+function setDobErr(msg){
+  var e=document.getElementById('dobErr'), f=document.getElementById('dob');
+  e.textContent = msg || ''; e.classList.toggle('hide', !msg);
+  if(msg) f.setAttribute('aria-invalid','true'); else f.removeAttribute('aria-invalid');
+}
 function fmt12(hhmm){ var p=hhmm.split(':'); var h=+p[0]; var ap=h>=12?'PM':'AM'; var h12=((h+11)%12)+1; return h12+':'+p[1]+' '+ap; }
 function openDaysMsg(asHint){
   var names=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
@@ -230,7 +269,12 @@ function openDaysMsg(asHint){
 }
 // Show available appointment slots for the chosen date/provider (availability minus taken).
 function loadSlots(){
-  selectedSlot='';
+  selectedSlot=''; selectedDate='';
+  /* pagesfix-1.0.0 (2026-09-23): a slow answer for the date picked before
+     used to land after the new date's times and replace them, and tapping one
+     booked a time never offered for the date in the field. Only the answer to
+     the latest request may fill the list. */
+  var seq=++slotSeq;
   var date=document.getElementById('bookDate').value;
   var wrap=document.getElementById('slotWrap');
   if(!date){ wrap.classList.add('hide'); return; }
@@ -248,6 +292,7 @@ function loadSlots(){
     if(r.ok) return r.json().then(function(j){ return {ok:true, j:j}; }, function(){ return {ok:false}; });
     return {ok:false};
   }, function(){ return {ok:false}; }).then(function(res){
+    if(seq!==slotSeq) return;
     grid.innerHTML='';
     if(!res.ok){
       document.getElementById('slotMsg').textContent = 'We could not load times for this day — this is a connection problem, not a full schedule. Please try again.';
@@ -261,15 +306,32 @@ function loadSlots(){
     var slots=j.slots||[];
     if(!slots.length){ document.getElementById('slotMsg').textContent=openDaysMsg(false); return; }
     slots.forEach(function(s){
-      var b=document.createElement('div');
-      b.className='slot'+(s.taken?' taken':'');
+      var b=document.createElement('button');
+      b.type='button';
+      b.className='slot'+(s.taken?' taken':'')+(s.past?' past':'');
       b.textContent=fmt12(s.time);
-      if(!s.taken){ b.onclick=function(){ selectedSlot=s.time; var cs=grid.children; for(var i=0;i<cs.length;i++) cs[i].classList.remove('sel'); b.classList.add('sel'); }; }
+      b.setAttribute('aria-pressed','false');
+      if(s.taken){
+        b.disabled=true;
+        b.title = s.past ? 'This time has passed' : 'Already booked';
+        b.setAttribute('aria-label', fmt12(s.time)+(s.past ? ', this time has passed' : ', already booked'));
+      } else {
+        b.onclick=function(){
+          selectedSlot=s.time; selectedDate=date;
+          var cs=grid.querySelectorAll('.slot');
+          for(var i=0;i<cs.length;i++){ cs[i].classList.remove('sel'); cs[i].setAttribute('aria-pressed','false'); }
+          b.classList.add('sel'); b.setAttribute('aria-pressed','true');
+        };
+      }
       grid.appendChild(b);
     });
-    var anyOpen=slots.some(function(s){return !s.taken;});
-    document.getElementById('slotMsg').textContent = anyOpen ? 'Tap an open time to select it.' : 'Every time that day is booked — please try another date.';
-  }).catch(function(){ grid.innerHTML='<p class="note">Couldn\'t load times — please try another date.</p>'; });
+    var open=slots.filter(function(s){return !s.taken;}).length, past=slots.filter(function(s){return s.past;}).length;
+    document.getElementById('slotMsg').textContent =
+      open ? 'Choose one of the open times.'+(past ? ' Earlier times that day have already passed.' : '')
+      : past === slots.length ? 'All of the times that day have passed — please pick a later date.'
+      : past ? 'No open times are left that day — please pick another date.'
+      : 'Every time that day is booked — please try another date.';
+  }).catch(function(){ if(seq!==slotSeq) return; grid.innerHTML='<p class="note">Couldn\'t load times — please try another date.</p>'; });
 }
 function submitBooking(ev){
   if(ev && ev.preventDefault) ev.preventDefault();
@@ -277,19 +339,26 @@ function submitBooking(ev){
   var errBox = document.getElementById('formErr');
   errBox.classList.add('hide');
   if(!name){ errBox.textContent = 'Please enter your name.'; errBox.classList.remove('hide'); return false; }
+  var dobEl = document.getElementById('dob'), dobMsg = dobProblem(dobEl);
+  setDobErr(dobMsg);
+  if(dobMsg){ errBox.textContent = 'Please check the date of birth.'; errBox.classList.remove('hide'); try{ dobEl.focus(); }catch(e){} return false; }
+  /* pagesfix-1.0.0 (2026-09-23): a date AND a time are needed to book. This
+     used to say "Please pick an available time, or clear the date." - and with
+     the date cleared the office answered "Please choose an appointment time." */
   var bDate = document.getElementById('bookDate').value;
-  if(bDate && !selectedSlot){ errBox.textContent = 'Please pick an available time, or clear the date.'; errBox.classList.remove('hide'); return false; }
+  if(!bDate){ errBox.textContent = 'Please pick a date, then one of its open times. A date and a time are both needed to book.'; errBox.classList.remove('hide'); try{ document.getElementById('bookDate').focus(); }catch(e){} return false; }
+  if(!selectedSlot || selectedDate !== bDate){ errBox.textContent = 'Please pick one of the open times for that date. A time is needed to book.'; errBox.classList.remove('hide'); try{ var s1=document.querySelector('#slotGrid .slot:not([disabled]):not(.taken)'); (s1||document.getElementById('bookDate')).focus(); }catch(e){} return false; }
   var btn = document.getElementById('submitBtn');
   btn.disabled = true; btn.textContent = 'Sending…';
   var payload = {
     name: name,
-    dob: document.getElementById('dob').value || '',
+    dob: dobEl.value || '',
     phone: document.getElementById('phone').value || '',
     email: document.getElementById('email').value || '',
     reason: document.getElementById('reason').value || '',
     doctor_user_id: document.getElementById('doctor').value || null,
-    date: (bDate && selectedSlot) ? bDate : null,
-    time: (bDate && selectedSlot) ? selectedSlot : null
+    date: bDate,
+    time: selectedSlot
   };
   mlsSensitiveFetch(BACKEND_URL + '/api/schedule/public/' + encodeURIComponent(token) + '/book', {
     method: 'POST',
@@ -316,7 +385,9 @@ function submitBooking(ev){
         var serverMsg = (res.j && typeof res.j.error === 'string' && res.j.error.trim()) ? res.j.error.trim() : '';
         errBox.textContent = serverMsg || 'We could not send your request. Check the details and try again, or call the office.';
         errBox.classList.remove('hide');
-        try{ if(serverMsg && /just booked|open hours/i.test(serverMsg) && typeof loadSlots==='function'){ loadSlots(); } }catch(e){}
+        /* pagesfix-1.0.0: a refused date of birth is said next to that field too. */
+        if(res.j && res.j.field === 'dob'){ setDobErr(serverMsg || 'Please check the date of birth.'); try{ dobEl.focus(); }catch(e){} }
+        try{ if(serverMsg && /just booked|open hours|already passed/i.test(serverMsg) && typeof loadSlots==='function'){ loadSlots(); } }catch(e){}
         btn.disabled = false; btn.textContent = 'Request appointment';
       }
     })
@@ -329,6 +400,13 @@ function submitBooking(ev){
 }
 
 document.getElementById('troubleRetry').addEventListener('click', init);
+/* Checked when the field is left and on submit. Chrome fires 'change' on every
+   keystroke in a date field, so 'change' only clears an error already shown
+   (never adds one while the patient is still typing the year). */
+(function(){ var f=document.getElementById('dob');
+  f.addEventListener('blur', function(){ setDobErr(dobProblem(this)); });
+  f.addEventListener('change', function(){ var e=document.getElementById('dobErr'); if(e && !e.classList.contains('hide') && !dobProblem(this)) setDobErr(''); });
+})();
 init();
 </script>
 </body>

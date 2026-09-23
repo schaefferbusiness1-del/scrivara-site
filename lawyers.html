@@ -283,6 +283,19 @@ footer{background:var(--alt);border-color:var(--line)}
   .stat:nth-child(2){border-right:0}.stat:nth-child(-n+2){border-bottom:1px solid var(--line)}
 }
 @media(max-width:640px){section{padding:62px 0}.wrap{padding:0 20px}.sec-head h2{font-size:34px}.req-wrap{padding:26px 20px}}
+/* pagesfix-1.0.0 (2026-09-23): on a phone the footer links were 23px tall, the
+   FAQ questions 27px and the header links 34-38px: too short for a thumb. Each
+   gets at least 44px to tap. The FAQ keeps its row height by moving padding
+   from the row into the question. Desktop is untouched. */
+@media(max-width:720px){
+  .nav .brand,.foot .brand{min-height:44px}
+  .nav .signin{display:inline-flex;align-items:center;min-height:44px}
+  .foot .links{gap:0 22px}
+  .foot .links a{display:inline-flex;align-items:center;min-height:44px}
+  details{padding:8px 0}
+  details summary{padding:10px 0}
+  .dir-statebar select{min-height:44px}
+}
 </style>
 </head>
 <body id="top">
@@ -553,11 +566,35 @@ function showDirectoryHeld(){
     +'<p style="margin-top:16px"><a class="btn btn-primary btn-sm" href="#request">Read evaluation limits</a></p>';
 }
 
-function expertCard(e){
-  const name=field(e,['name','display_name','doctor_name','full_name'])||'Physician profile';
-  const cred=String(field(e,['credentials'])||'')
+function cardCredentials(e){
+  return String(field(e,['credentials'])||'')
     .replace(/\s*\(sample profile;\s*edit your board certifications here\)\s*/ig,' ')
     .replace(/\s{2,}/g,' ').trim();
+}
+/* pagesfix-1.0.0 (2026-09-23): search reads the values a card shows. It used to
+   search JSON.stringify(e), so the KEY names matched too: typing "id", "states"
+   or "headline" returned every profile, and so did a raw rate in cents. */
+function cardSearchText(e){
+  const states=expertStates(e);
+  const depo=money(field(e,['depo_rate_cents']));
+  const trial=money(field(e,['trial_rate_cents']));
+  return [
+    field(e,['name','display_name','doctor_name','full_name']),
+    cardCredentials(e),
+    field(e,['specialty','expert_specialty']),
+    field(e,['subspecialty']),
+    field(e,['jurisdiction','expert_jurisdiction']),
+    states.join(' '),
+    states.map(function(s){ return STATE_NAMES[s]||''; }).join(' '),
+    depo?('Deposition '+depo):'',
+    trial?('Trial '+trial):'',
+    field(e,['headline','bio','expert_bio','cv_text'])
+  ].map(function(v){ return String(v==null?'':v); }).join(' ').toLowerCase();
+}
+
+function expertCard(e){
+  const name=field(e,['name','display_name','doctor_name','full_name'])||'Physician profile';
+  const cred=cardCredentials(e);
   const spec=field(e,['specialty','expert_specialty']);
   const sub=field(e,['subspecialty']);
   const juris=field(e,['jurisdiction','expert_jurisdiction']);
@@ -653,7 +690,7 @@ function applyFilters(){
   const spec=document.getElementById('dirSpec').value;
   let list=ALL_EXPERTS.slice();
   if(spec) list=list.filter(e=>String(field(e,['specialty','expert_specialty']))===spec);
-  if(q) list=list.filter(e=>JSON.stringify(e).toLowerCase().includes(q));
+  if(q) list=list.filter(e=>cardSearchText(e).includes(q));
   updateStateNote();
   renderExperts(list);
 }

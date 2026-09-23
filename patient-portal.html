@@ -8,7 +8,7 @@
 <meta name="referrer" content="no-referrer" />
 <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
 <meta http-equiv="Pragma" content="no-cache" />
-<script src="sensitive-workflow-bootstrap.js?v=20260718" data-query-keys="invite token code" data-fragment-keys="session claim setup token code invite" referrerpolicy="no-referrer"></script>
+<script src="sensitive-workflow-bootstrap.js?v=20260923sw1" data-query-keys="invite token code" data-fragment-keys="session claim setup token code invite" referrerpolicy="no-referrer"></script>
 <title>MLS Patient Portal</title>
 <link rel="stylesheet" href="fonts/fonts.css">
 <style>
@@ -104,6 +104,9 @@
   .msg.sys{align-self:center;color:var(--muted);font-size:12.5px;background:none}
   .chips{display:flex;flex-wrap:wrap;gap:7px;margin:10px 2px 4px}
   .chip{font-size:12.5px;background:#fff;border:1px solid var(--line);color:var(--blue-d);border-radius:999px;padding:6px 11px;cursor:pointer}
+  /* portalfix-1.0.0: the suggested questions were 33px <span>s a keyboard could
+     not reach; they are buttons now, at least 40px tall. */
+  button.chip{font-family:inherit;min-height:40px;display:inline-flex;align-items:center;text-align:left;line-height:1.3}
   .chip:hover{background:var(--soft)}
   .composer{display:flex;gap:8px;margin-top:10px;border-top:1px solid var(--line);padding-top:12px}
   .composer input{flex:1;margin:0}
@@ -116,6 +119,7 @@
   ul.list li.li-x{padding:0;cursor:pointer;-webkit-tap-highlight-color:rgba(46,106,75,.08)}
   .li-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 2px}
   li.li-x:active .li-head{background:var(--soft);border-radius:8px}
+  li.li-x .li-head:focus-visible{outline:2px solid #2E6A4B;outline-offset:2px;border-radius:8px}
   .li-chev{color:var(--muted);font-size:13px;transition:transform .18s;flex:none;padding-left:6px}
   li.li-x[data-exp="1"] .li-chev{transform:rotate(90deg)}
   /* No max-height transition. It animates a LAYOUT property — reflowing the
@@ -238,7 +242,8 @@
   <div class="wrap">
     <div id="demoBanner" class="demo-banner hide">👀 You're viewing <b>sample demo data</b> — this is not a real patient. Sign in to see your own records.</div>
 
-    <div class="card" style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:16px"><div><b>Need to be seen again?</b><div style="font-size:13px;opacity:.75">Send a request and your practice will confirm the exact time.</div></div><button id="bookingBtn" type="button" style="border:0;cursor:pointer;background:#204034;color:#fff;font-weight:800;border-radius:999px;padding:13px 20px;box-shadow:0 8px 20px -8px rgba(32,64,52,.6)">📅 Request an appointment</button></div>
+    <!-- portalfix-1.0.0: this card had no padding, so its text sat 1px from the border -->
+    <div class="card" style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:16px;padding:16px 18px"><div><b>Need to be seen again?</b><div style="font-size:13px;opacity:.75">Send a request and your practice will confirm the exact time.</div></div><button id="bookingBtn" type="button" style="border:0;cursor:pointer;background:#204034;color:#fff;font-weight:800;border-radius:999px;padding:13px 20px;box-shadow:0 8px 20px -8px rgba(32,64,52,.6)">📅 Request an appointment</button></div>
 
     <div class="grid">
       <!-- LEFT: records -->
@@ -270,10 +275,10 @@
         <h2>💬 Ask about your records</h2>
         <div class="log" id="chatLog"></div>
         <div class="chips" id="chips">
-          <span class="chip">What medications am I taking?</span>
-          <span class="chip">When is my next appointment?</span>
-          <span class="chip">Summarize my last visit.</span>
-          <span class="chip">What are my active health problems?</span>
+          <button type="button" class="chip">What medications am I taking?</button>
+          <button type="button" class="chip">When is my next appointment?</button>
+          <button type="button" class="chip">Summarize my last visit.</button>
+          <button type="button" class="chip">What are my active health problems?</button>
         </div>
         <form class="composer" id="chatForm">
           <input id="q" type="text" aria-label="Ask a question about your health" placeholder="Ask a question about your health…" autocomplete="off" />
@@ -358,6 +363,16 @@
     }
     return rows;
   }
+  /* portalfix-1.0.0: dates came through as "2026-10-01T14:00:00.000Z" */
+  function fmtWhen(v){
+    var s=String(v==null?"":v), m=s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/);
+    if(!m) return s;
+    try{
+      if(m[4]!=null){ var d=new Date(s); if(!isNaN(d.getTime())) return d.toLocaleString([], {weekday:"short",month:"short",day:"numeric",year:"numeric",hour:"numeric",minute:"2-digit"}); }
+      var d2=new Date(+m[1],+m[2]-1,+m[3]); if(!isNaN(d2.getTime())) return d2.toLocaleDateString([], {weekday:"short",month:"short",day:"numeric",year:"numeric"});
+    }catch(e){}
+    return s;
+  }
   function itemHTML(it){
     if(it==null) return "";
     if(typeof it === "string"){ return '<li><div class="li-head"><div class="li-title">'+esc(it)+'</div></div></li>'; }
@@ -366,22 +381,28 @@
        information instead of repeating the title and meta back at the patient. */
     var used = {};
     var title = "";
-    ["name","title","description","problem","medication","drug","reason","type","chief_complaint","summary"].some(function(k){
+    ["name","title","description","problem","medication","drug","reason","type","visit_type","chief_complaint","summary"].some(function(k){
       if(it[k]==null || it[k]==="") return false;
       title = it[k]; used[k] = 1; return true;
     });
     var metaParts = [];
     ["date","start","when","time","provider","doctor","status","dose","dosage","sig","frequency","code","icd10","location"].forEach(function(k){
-      if(it[k]!=null && it[k]!=="" && String(it[k])!==title){ metaParts.push(esc(String(it[k]))); used[k]=1; }
+      if(it[k]==null || it[k]==="" || String(it[k])===title) return;
+      /* a start time already carries its date */
+      if(k==="date" && it.start && String(it.start).slice(0,10)===String(it.date).slice(0,10)){ used[k]=1; return; }
+      var v=(k==="date"||k==="start"||k==="when")?fmtWhen(it[k]):String(it[k]);
+      metaParts.push(esc(v)); used[k]=1;
     });
+    if(!title && (it.start || (it.date && it.status))){ title = "Appointment"; }
     if(!title){
-      var vals=[]; for(var k in it){ if(it.hasOwnProperty(k) && !PORTAL_HIDE.test(k) && (typeof it[k]==="string"||typeof it[k]==="number")){ vals.push(esc(String(it[k]))); if(vals.length<=2) used[k]=1; } }
+      var vals=[]; for(var k in it){ if(it.hasOwnProperty(k) && !PORTAL_HIDE.test(k) && (typeof it[k]==="string"||typeof it[k]==="number") && String(it[k]).trim()!==""){ vals.push(fmtWhen(it[k])); if(vals.length<=2) used[k]=1; } }
       title = vals.slice(0,2).join(" — ") || "Record";
     }
     var meta = metaParts.length ? '<div class="li-meta">'+metaParts.slice(0,3).join(" · ")+'</div>' : "";
     var detail = detailHTML(it, used);
     if(!detail){ return '<li><div class="li-head"><div><div class="li-title">'+esc(title)+'</div>'+meta+'</div></div></li>'; }
-    return '<li class="li-x" data-exp="0"><div class="li-head"><div><div class="li-title">'+esc(title)+'</div>'+meta+'</div><span class="li-chev">▸</span></div>'+
+    /* portalfix-1.0.0: the row head is a keyboard control (Enter/Space, aria-expanded) */
+    return '<li class="li-x" data-exp="0"><div class="li-head" role="button" tabindex="0" aria-expanded="false"><div><div class="li-title">'+esc(title)+'</div>'+meta+'</div><span class="li-chev" aria-hidden="true">▸</span></div>'+
            '<div class="li-detail"><div class="li-detail-in">'+detail+'</div></div></li>';
   }
 
@@ -416,7 +437,7 @@
     return mlsSensitiveFetch(API+path, opts);
   }
 
-  function enterApp(){ hide($("login")); show($("app")); }
+  function enterApp(){ hide($("login")); show($("app")); try{ window.dispatchEvent(new Event("mls:portal-signed-in")); }catch(e){} }
 
   function loadRecords(){
     return api("/api/patient/history").then(function(r){
@@ -426,7 +447,10 @@
       j = j || {};
       /* BEFORE renderPatient, so the practice name is already resolved for every
          string it draws rather than arriving after them. */
-      noteServerOffice(j.practice);
+      /* portalfix-1.0.0: noteServerOffice lives in the requests script below
+         (its own scope); calling it by name threw here, so NO record ever
+         rendered for a signed-in patient. It is reached through one hook. */
+      try{ if(typeof window.__mlsPortalNoteOffice==="function") window.__mlsPortalNoteOffice(j.practice); }catch(eOf){}
       var patient = Object.assign({}, j.patient || j, {
         medications: j.medications || (j.patient && j.patient.medications) || [],
         problems: j.problems || (j.patient && j.patient.problems) || [],
@@ -452,10 +476,15 @@
     api("/api/patient/me").then(function(r){
       if(r.ok){
         enterApp(); loadRecords().catch(function(){}); addSys("Hi! Ask me anything about your records below.");
-        r.json().then(function(j){ noteServerOffice(j && j.practice); }, function(){});
+        r.json().then(function(j){ try{ if(typeof window.__mlsPortalNoteOffice==="function") window.__mlsPortalNoteOffice(j && j.practice); }catch(eOf){} }, function(){});
       }
       else if(r.status===401 && PSESS){ setSess(null); } // stale bearer token — clear so a fresh sign-in starts clean
-    }).catch(function(){});
+    }).catch(function(){
+      /* portalfix-1.0.0: requests now give up after 15 s; a returning patient
+         whose check hit a cold start gets one more try instead of being left
+         on the sign-in form (signing in again still works meanwhile) */
+      if(PSESS && !checkSession._retried){ checkSession._retried=true; setTimeout(checkSession, 4000); }
+    });
   }
 
   $("loginForm").addEventListener("submit", function(e){
@@ -464,6 +493,11 @@
     btn.disabled=true; var old=btn.textContent; btn.innerHTML='<span class="spin"></span> Signing in…';
     var body = { username:$("u").value.trim(), password:$("p").value, dob:$("d").value };
     function fail(msg){ errBox.textContent = msg || "Sign in failed. Please try again."; show(errBox); }
+    /* portalfix-1.0.0: a sentence the server wrote for the patient (never a code like "bad request") */
+    function serverSays(j){
+      var m = j && typeof j.message==="string" && j.message.trim() ? j.message : (j && typeof j.error==="string" && /^[A-Z].*\s/.test(j.error) ? j.error : "");
+      return String(m||"").trim().slice(0,300);
+    }
     function sessionBlocked(){
       try{ console.warn('[patient portal] sign-in completed without a usable browser session'); }catch(e){}
       errBox.textContent = "We couldn't finish signing you in on this device. Open the latest portal link from your care team, or ask them to send a new one.";
@@ -482,7 +516,11 @@
              and date of birth were wrong when the server had simply failed -
              and they would sit there re-checking details that were correct. */
           if(res.status===401||res.status===403){
-            fail("We couldn't sign you in. Check your username, password, and date of birth, then try again.");
+            fail("We couldn't sign you in. Check your email, password, and date of birth, then try again.");
+          } else if(res.status===400){
+            /* portalfix-1.0.0: a 400 is the server answering, not an outage - it
+               used to read "We couldn't reach the portal just now". */
+            fail(serverSays(res.j) || "We couldn't sign you in. Check your email, password, and date of birth, then try again.");
           } else if(res.status===429){
             fail("Too many sign-in attempts. Please wait a minute and try again — your details may well be correct.");
           } else {
@@ -571,7 +609,7 @@
       return "I can't handle prescription or refill requests here. Please call the office and the care team will take care of it — this chat can only explain what's already in your records.";
     if(/(my (husband|wife|spouse|son|daughter|mother|father|mom|dad|child|kid|brother|sister|grandm|grandf|friend|neighbor)|another patient|someone else|other patient|for a family member)/.test(s))
       return "This portal can only discuss your own records — I can't answer questions about anyone else, even family. They can reach out to their own care team or portal.";
-    if(/(do i have\b|what.?s wrong with me|diagnos(e|is)|is (this|it) (cancer|serious|dangerous|normal)|am i (dying|sick|ok)|should i (take|stop|start|double|skip)|what (disease|condition|illness) (do|could|might))/.test(s))
+    if(/(do i have\b(?!\s+(an?\s+|any\s+|my\s+|the\s+)?(next\s+|upcoming\s+|new\s+)?(appointment|visit|follow[- ]?up|refill|message|copay|balance|bill|lab|test result|result|record|portal)s?\b)|what.?s wrong with me|diagnos(e|is)|is (this|it) (cancer|serious|dangerous|normal)|am i (dying|sick|ok)|should i (take|stop|start|double|skip)|what (disease|condition|illness) (do|could|might))/.test(s))
       return "I can't give medical advice or make new diagnoses — I can only explain what your care team has already written in your records. For medical questions, please contact the office directly.";
     return null;
   }
@@ -602,11 +640,22 @@
   $("chips").addEventListener("click", function(e){ if(e.target.classList.contains("chip")) ask(e.target.textContent); });
 
   // Tap a record (visit, problem, medication, appointment) to expand its full detail.
+  function toggleRow(head){
+    var li = head.closest("li.li-x"); if(!li) return;
+    var open = li.getAttribute("data-exp")!=="1";
+    li.setAttribute("data-exp", open ? "1" : "0");
+    head.setAttribute("aria-expanded", open ? "true" : "false");
+  }
   document.addEventListener("click", function(e){
     var head = e.target && e.target.closest ? e.target.closest("li.li-x .li-head") : null;
-    if(!head) return;
-    var li = head.closest("li.li-x");
-    if(li) li.setAttribute("data-exp", li.getAttribute("data-exp")==="1" ? "0" : "1");
+    if(head) toggleRow(head);
+  });
+  /* portalfix-1.0.0: record rows could only be opened with a mouse or a tap */
+  document.addEventListener("keydown", function(e){
+    if(e.key!=="Enter" && e.key!==" " && e.key!=="Spacebar") return;
+    var head = e.target && e.target.closest ? e.target.closest("li.li-x .li-head") : null;
+    if(!head || head!==e.target) return;
+    e.preventDefault(); toggleRow(head);
   });
 
   /* ---------- first-time password setup (invite-link flow) ----------
@@ -754,7 +803,8 @@
       try{ var st=res.j&&(res.j.session||res.j.token); if(res.ok&&st&&window.__mlsPortalSess) window.__mlsPortalSess.set(st); }catch(e){}
       if(res.ok){ pwForm(res.j&&res.j.username); return; }
       try{ console.warn('[patient portal] invite claim declined',res.status,res.j||{}); }catch(e){}
-      if(res.status===404){ body('This setup link cannot be completed. Sign in with the <b>username and password</b> from your care team, or ask them for a new invite.'+OKBTN); return; }
+      /* portalfix-1.0.0: the sign-in field says Email, so this does too */
+      if(res.status===404){ body('This setup link cannot be completed. Sign in with your <b>email and password</b> if you already have a password, or ask your care team for a new invite.'+OKBTN); return; }
       /* "Expired or already used" is a verdict, and only the server may reach
          it. Every non-404 used to land here, so a 500 or a 502 from a cold
          backend told the patient their one-time invite was spent - and since
@@ -843,7 +893,10 @@
     var name=String(p.name||"").trim(), phone=String(p.phone||"").trim(), address=String(p.address||"").trim();
     if(!name && !phone && !address) return;
     SERVER_OFFICE = { name:name, phone:phone, address:address };
+    /* the requests card is drawn at sign-in, often before this arrives */
+    try{ var nm=office().practice; Array.prototype.forEach.call(document.querySelectorAll("[data-mls-office-name]"), function(el){ el.textContent=nm; }); }catch(e){}
   }
+  window.__mlsPortalNoteOffice = noteServerOffice;
   function tel(p){ return String(p||"").replace(/[^0-9+]/g,""); }
   function requestId(){
     try{ if(window.crypto&&typeof window.crypto.randomUUID==="function") return "portal:"+window.crypto.randomUUID(); }catch(e){}
@@ -870,6 +923,7 @@
     ".mlsm-back{position:fixed;inset:0;background:rgba(20,33,28,.55);z-index:70;display:flex;align-items:center;justify-content:center;padding:16px}"+
     ".mlsm{background:#fff;border-radius:16px;max-width:460px;width:100%;max-height:92vh;overflow:auto;padding:22px 22px;box-shadow:0 12px 44px rgba(0,0,0,.32)}"+
     ".mlsm h3{margin:0 0 4px;color:var(--blue-d);font-size:18px}"+
+    ".mlsm:focus{outline:none}"+
     ".mlsm .safe{background:#FCF8EF;border:1px solid #EFE4CE;color:#B07636;border-radius:10px;padding:10px 12px;font-size:12.5px;margin:10px 0}"+
     ".mlsm label{margin-top:12px}"+
     ".mlsm textarea{width:100%;min-height:74px;padding:15px 16px;border:1px solid #E2E6E2;border-radius:14px;font-size:15.5px;font-family:inherit;background:#F7F8F7;color:var(--ink);resize:vertical}"+
@@ -887,7 +941,10 @@
     ".reqreceipt b{color:var(--blue-d)}.reqreceipt .rr-meta{color:var(--muted);margin-top:2px}";
   document.head.appendChild(st);
 
-  /* ---- the request-type definitions ---- */
+  /* ---- the request-type definitions ----
+     portalfix-1.0.0: each free-text field carries the length the server keeps
+     (TYPES in the backend's patientRequest.js), so nothing typed is cut off
+     without the patient seeing it. */
   var TYPES={
     refill:{ icon:"💊", title:"Request a prescription refill", cat:"Refill request",
       safe:"Your care team reviews and approves every refill — refills are never approved automatically here. For controlled or pain medication, the office may ask you to come in. If this is urgent, please call.",
@@ -900,9 +957,9 @@
            the name. A refill request could never be sent for anything the
            portal did not already list. */
         return '<label for="mReqMed">Which medication?</label><select id="mReqMed" onchange="var o=document.getElementById(\'mReqOtherWrap\'); if(o) o.style.display = this.value===\'__other\' ? \'block\' : \'none\';">'+opts+'</select>'+
-               '<div id="mReqOtherWrap" style="display:none"><label for="mReqOther">What is it called?</label><input id="mReqOther" placeholder="the name on the bottle or box"></div>'+
-               '<label for="mReqPharm">Pharmacy (name &amp; location)</label><textarea id="mReqPharm" placeholder="e.g. CVS on Main St, Anytown"></textarea>'+
-               '<label for="mReqNote">Anything the office should know? (optional — no need for sensitive detail)</label><textarea id="mReqNote" placeholder="e.g. down to my last few doses"></textarea>';
+               '<div id="mReqOtherWrap" style="display:none"><label for="mReqOther">What is it called?</label><input id="mReqOther" maxlength="400" placeholder="the name on the bottle or box"></div>'+
+               '<label for="mReqPharm">Pharmacy (name &amp; location)</label><textarea id="mReqPharm" maxlength="300" placeholder="e.g. CVS on Main St, Anytown"></textarea>'+
+               '<label for="mReqNote">Anything the office should know? (optional — no need for sensitive detail)</label><textarea id="mReqNote" maxlength="1000" placeholder="e.g. down to my last few doses"></textarea>';
       },
       collect:function(){ var med=$("mReqMed").value; if(med==="__other"){ var o=$("mReqOther"); med=(o&&o.value||"").trim(); } return { medication:med, pharmacy:($("mReqPharm").value||"").trim(), note:($("mReqNote").value||"").trim() }; },
       valid:function(d){ return !!(d.medication || d.note); }, need:"Please choose your medication, or type its name below." },
@@ -911,7 +968,7 @@
       safe:"This sends a request — a team member confirms the exact time with you. For a medical emergency, call 911.",
       extra:'<div style="margin-top:12px;font-size:13px">Your practice will review this request and contact you to confirm a time.</div>',
       fields:function(){
-        return '<label for="mReqReason">Reason for the visit (briefly)</label><textarea id="mReqReason" placeholder="What would you like to be seen for?"></textarea>'+
+        return '<label for="mReqReason">Reason for the visit (briefly)</label><textarea id="mReqReason" maxlength="1000" placeholder="What would you like to be seen for?"></textarea>'+
                '<label for="mReqWhen">Preferred time of day</label><select id="mReqWhen"><option>Any time</option><option>Morning</option><option>Afternoon</option><option>Evening</option></select>'+
                '<label for="mReqUrg">How soon? </label><select id="mReqUrg"><option>Routine</option><option>As soon as possible (non-emergency)</option></select>';
       },
@@ -921,9 +978,9 @@
     injection:{ icon:"💉", title:"Ask about injection timing", cat:"Injection-timing question",
       safe:"MLS can’t tell you when your next injection should be — the timing of injections is decided by your care team based on your plan and history. This sends your question to the office; they’ll advise you.",
       fields:function(){
-        return '<label for="mReqProc">Which injection / procedure?</label><textarea id="mReqProc" placeholder="e.g. lumbar epidural steroid injection"></textarea>'+
+        return '<label for="mReqProc">Which injection / procedure?</label><textarea id="mReqProc" maxlength="200" placeholder="e.g. lumbar epidural steroid injection"></textarea>'+
                '<label for="mReqLast">Approximate date of your last one (optional)</label><input type="date" id="mReqLast" style="width:100%;padding:14px 15px;border:1px solid #E2E6E2;border-radius:14px;font-size:15.5px;background:#F7F8F7">'+
-               '<label for="mReqQ">Your question</label><textarea id="mReqQ" placeholder="e.g. am I due for my next one? how long should I wait?"></textarea>';
+               '<label for="mReqQ">Your question</label><textarea id="mReqQ" maxlength="1000" placeholder="e.g. am I due for my next one? how long should I wait?"></textarea>';
       },
       collect:function(){ return { procedure:($("mReqProc").value||"").trim(), lastDate:$("mReqLast").value, question:($("mReqQ").value||"").trim() }; },
       valid:function(d){ return !!(d.procedure || d.question); }, need:"Please add the injection/procedure or your question." },
@@ -931,7 +988,7 @@
     pain:{ icon:"🩹", title:"Pain-medicine question", cat:"Pain-medicine request",
       safe:"⚠️ For safety, pain-medicine and controlled-substance decisions are made only by your care team — never through this portal or its AI. This routes your message to the office. If you are in a medical emergency or crisis, call 911 now.",
       fields:function(){
-        return '<label for="mReqPain">How can the office help? (please don’t include sensitive detail)</label><textarea id="mReqPain" placeholder="e.g. I have a question about my pain-management plan"></textarea>';
+        return '<label for="mReqPain">How can the office help? (please don’t include sensitive detail)</label><textarea id="mReqPain" maxlength="1000" placeholder="e.g. I have a question about my pain-management plan"></textarea>';
       },
       collect:function(){ return { message:($("mReqPain").value||"").trim() }; },
       valid:function(d){ return !!d.message; }, need:"Please add a short message for the office." },
@@ -939,25 +996,35 @@
     message:{ icon:"✉️", title:"Message the office", cat:"Office message",
       safe:"A team member will read this and follow up. Please don’t include sensitive medical, financial, or ID details — just enough to route your message. For emergencies call 911.",
       fields:function(){
-        return '<label for="mReqMsg">Your message</label><textarea id="mReqMsg" placeholder="How can we help?"></textarea>';
+        return '<label for="mReqMsg">Your message</label><textarea id="mReqMsg" maxlength="2000" placeholder="How can we help?"></textarea>';
       },
       collect:function(){ return { message:($("mReqMsg").value||"").trim() }; },
       valid:function(d){ return !!d.message; }, need:"Please type a message." }
   };
 
   /* ---- modal ---- */
-  var back=null, openClientRequestId="";
-  function closeModal(){ if(back){ back.remove(); back=null; } openClientRequestId=""; }
+  var back=null, openClientRequestId="", reqOpener=null;
+  function closeModal(){
+    if(back){ back.remove(); back=null; }
+    openClientRequestId="";
+    /* keyboard users land back on the button that opened the pop-up */
+    var o=reqOpener; reqOpener=null;
+    try{ if(o && o.focus && document.body.contains(o)) o.focus(); }catch(e){}
+  }
+  /* portalfix-1.0.0: the request pop-up did not close on Escape */
+  document.addEventListener("keydown", function(e){ if(back && (e.key==="Escape"||e.key==="Esc") && !e.isComposing){ var sb=document.getElementById("mReqSend"); if(sb && sb.disabled) return; closeModal(); } });
   function openReq(key, prefillMsg){
     var T=TYPES[key]; if(!T) return;
+    var opener=document.activeElement;
     closeModal();
+    reqOpener=(opener && opener!==document.body) ? opener : null;
     openClientRequestId=requestId();
     back=document.createElement("div"); back.className="mlsm-back";
     back.addEventListener("click", function(e){ if(e.target===back) closeModal(); });
     var pre = prefillMsg ? '<div style="font-size:13px;color:var(--muted);margin-top:8px">Prefilled from your message: “'+esc(prefillMsg)+'”</div>' : '';
     back.innerHTML=
-      '<div class="mlsm" role="dialog" aria-modal="true">'+
-      '<h3>'+T.icon+' '+esc(T.title)+'</h3>'+
+      '<div class="mlsm" role="dialog" aria-modal="true" aria-labelledby="mReqTitle" tabindex="-1">'+
+      '<h3 id="mReqTitle">'+T.icon+' '+esc(T.title)+'</h3>'+
       '<div class="safe">'+T.safe+'</div>'+ pre +
       '<div id="mReqFields">'+T.fields()+'</div>'+ (T.extra||'') +
       '<div id="mReqRes"></div>'+
@@ -965,9 +1032,10 @@
       '<button class="btn go" type="button" id="mReqSend">Send to '+esc(office().practice)+'</button></div>'+
       '</div>';
     document.body.appendChild(back);
+    try{ back.firstChild.focus({preventScroll:true}); }catch(e){}
     if(prefillMsg){ // seed the main free-text field where present
       var seed=$("mReqNote")||$("mReqReason")||$("mReqQ")||$("mReqPain")||$("mReqMsg");
-      if(seed && !seed.value) seed.value=prefillMsg;
+      if(seed && !seed.value) seed.value=seed.maxLength>0 ? String(prefillMsg).slice(0,seed.maxLength) : prefillMsg;
     }
     $("mReqCancel").addEventListener("click", closeModal);
     $("mReqSend").addEventListener("click", function(){ submitReq(key); });
@@ -1005,6 +1073,10 @@
           return;
         }
         if(x.status===401){ res.className="res warn"; res.textContent="Your session ended — please sign in again, then resend."; btn.disabled=false; btn.textContent=old; return; }
+        /* portalfix-1.0.0: a 400 is the server answering (e.g. a field over its
+           length limit), not an outage: show what it said; the text stays. */
+        var said=x.status===400 && x.j ? (typeof x.j.message==="string" && x.j.message.trim() ? x.j.message : (typeof x.j.error==="string" && /^[A-Z].*\s/.test(x.j.error) ? x.j.error : "")) : "";
+        if(said){ res.className="res warn"; res.textContent=String(said).trim().slice(0,300); btn.disabled=false; btn.textContent=old; return; }
         // 404 (route not deployed) or other error -> graceful office fallback
         officeFallback(res, key, payload); btn.disabled=false; btn.textContent=old;
       })
@@ -1065,7 +1137,7 @@
     card.className="card sec"; card.id="mlsReqCard"; card.style.marginBottom="16px";
     card.innerHTML=
       '<h2 style="font-size:14px;letter-spacing:.2px;color:var(--blue-d);margin:0 0 4px;display:flex;align-items:center;gap:8px">🙋 Requests &amp; messages</h2>'+
-      '<p style="color:var(--muted);font-size:13px;margin:0 0 12px">Ask for a refill, appointment, or send the office a note. Everything here goes to <b>'+esc(office().practice)+'</b> — a real person reviews it. Nothing is approved automatically, and MLS never gives medical advice.</p>'+
+      '<p style="color:var(--muted);font-size:13px;margin:0 0 12px">Ask for a refill, appointment, or send the office a note. Everything here goes to <b data-mls-office-name>'+esc(office().practice)+'</b> — a real person reviews it. Nothing is approved automatically, and MLS never gives medical advice.</p>'+
       '<div class="reqgrid">'+
         '<button class="reqbtn" data-req="refill"><span class="ic">💊</span><span>Refill<small>Request a prescription refill</small></span></button>'+
         '<button class="reqbtn" data-req="appointment"><span class="ic">📅</span><span>Appointment<small>Request / schedule a visit</small></span></button>'+
@@ -1094,7 +1166,7 @@
     { key:"pain",        re:/\b(pain ?(med|medicine|medication|pill|management|contract)|narcotic|opioid|oxycodone|oxycontin|percocet|vicodin|hydrocodone|norco|tramadol|morphine|adderall|xanax|valium|ativan|klonopin|benzo|controlled substance)\b/i },
     { key:"injection",   re:/\b(injection|cortisone|steroid shot|epidural|nerve block|when.*(shot|injection)|due for.*(shot|injection)|next (shot|injection))\b/i },
     { key:"appointment", re:/\b((book|schedule|make|set ?up|request|need|get) (an? |my )?(appointment|visit|follow ?up)|be seen|come in for)\b/i },
-    { key:"message",     re:/\b(should i (take|stop|start|increase|decrease|change|split|double)|increase|decrease|adjust|change) (my )?(dose|dosage|medication|meds?)\b|\b(prescribe|diagnos|what'?s wrong with me|do i have|is (this|it) (normal|serious|dangerous)|are these symptoms)\b/i }
+    { key:"message",     re:/\b(should i (take|stop|start|increase|decrease|change|split|double)|increase|decrease|adjust|change) (my )?(dose|dosage|medication|meds?)\b|\b(prescribe|diagnos|what'?s wrong with me|do i have\b(?!\s+(an?\s+|any\s+|my\s+|the\s+)?(next\s+|upcoming\s+|new\s+)?(appointment|visit|follow[- ]?up|refill|message|copay|balance|bill|lab|test result|result|record|portal)s?\b)|is (this|it) (normal|serious|dangerous)|are these symptoms)\b/i }
   ];
   function sensitiveOf(text){ for(var i=0;i<GUARD.length;i++){ if(GUARD[i].re.test(text)) return GUARD[i].key; } return null; }
 
@@ -1369,7 +1441,16 @@
       });
   }
   function avStart(){
-    if(isDemo()){ avMsg("Sample preview only — sign in to do your real pre-visit check-in.","ai"); return; }
+    /* portalfix-1.0.0: this note went into the check-in chat, which stays
+       hidden in the preview, so the button looked dead. It shows under the
+       button instead. */
+    if(isDemo()){
+      var dn=$("mlsAvNote"); if(!dn) return;
+      dn.style.cssText="margin:10px 0 0;padding:9px 12px;font-size:13px;background:#FCF8EF;border:1px solid #EFE4CE;color:#8A5A22;border-radius:14px";
+      dn.textContent="Sample preview only — sign in to do your real pre-visit check-in.";
+      try{ dn.scrollIntoView({block:"nearest"}); }catch(e){}
+      return;
+    }
     var intro=$("mlsAvIntro"); if(intro) intro.style.display="none";
     var chat=$("mlsAvChat"); if(chat) chat.style.display="block";
     avTurn("");
@@ -1384,6 +1465,7 @@
       '<div id="mlsAvIntro">'+
         '<p style="color:var(--muted);font-size:13px;margin:0 0 12px">Have a short conversation with <b>'+esc(office().practice)+'</b>’s assistant before your visit — it speaks its questions out loud and listens to your answers, so there’s no typing needed (though you can always type instead). Your answers go only to your care team. It never gives medical advice — and if anything is urgent, call the office or 911 instead.</p>'+
         '<button type="button" class="btn" id="mlsAvStart">Start check-in</button>'+
+        '<div id="mlsAvNote" role="status"></div>'+
       '</div>'+
       '<div id="mlsAvChat" style="display:none">'+
         '<div id="mlsAvHead"><div id="mlsAvFace">🧑‍⚕️</div><div id="mlsAvName" style="flex:1">Check-in assistant</div>'+
@@ -1725,9 +1807,11 @@
 
   if(document.readyState === "loading") document.addEventListener("DOMContentLoaded", function(){ setTimeout(boot, 400); });
   else setTimeout(boot, 400);
-  /* the portal renders its signed-in view asynchronously after auth */
+  /* the portal renders its signed-in view asynchronously after auth; a sign-in
+     that took longer than these first looks used to get no card at all */
   setTimeout(boot, 1800);
   setTimeout(boot, 4000);
+  window.addEventListener("mls:portal-signed-in", function(){ setTimeout(boot, 300); });
 })();
 </script>
 

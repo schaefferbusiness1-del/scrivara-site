@@ -8,7 +8,7 @@
 <meta name="referrer" content="no-referrer">
 <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
 <meta http-equiv="Pragma" content="no-cache">
-<script src="sensitive-workflow-bootstrap.js?v=20260718" data-query-keys="t token code invite" data-fragment-keys="token code invite" referrerpolicy="no-referrer"></script>
+<script src="sensitive-workflow-bootstrap.js?v=20260923sw1" data-query-keys="t token code invite" data-fragment-keys="token code invite" referrerpolicy="no-referrer"></script>
 <title>Your appointment · MLS</title>
 <!-- build: appointment-v1 2026-06-12 -->
 <style>
@@ -27,6 +27,7 @@
   .pill.req{background:#fff6e6;color:#9a6b00}
   .pill.conf{background:#e7f6ee;color:#11643f}
   .pill.cancel{background:#fdeaea;color:#a12c2c}
+  .pill.past{background:#eef0ee;color:#4b554e}
   .row{margin:12px 0;padding:12px 0;border-top:1px solid var(--line)}
   .k{font-size:12.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em}
   .v{font-size:16px;font-weight:600}
@@ -107,13 +108,16 @@
 
     <div id="confirmWrap">
       <button id="confirmBtn" class="btn" onclick="confirmAppt()">Confirm I'll be there</button>
-      <button class="btn ghost" onclick="cancelAppt()">Cancel this appointment</button>
+      <button class="btn ghost" onclick="cancelAppt(this)">Cancel this appointment</button>
     </div>
     <div id="confirmedMsg" class="hide center" style="margin-top:14px">
       <div class="big">✅</div>
       <p class="sub">You're confirmed. We look forward to seeing you. You can close this page.</p>
-      <button class="btn ghost" onclick="cancelAppt()" style="margin-top:6px">Need to cancel?</button>
+      <button class="btn ghost" onclick="cancelAppt(this)" style="margin-top:6px">Need to cancel?</button>
     </div>
+    <!-- pagesfix-1.0.0 (2026-09-23): a visit that is under way, over, or whose
+         time has passed shows what happened instead of Confirm / Cancel. -->
+    <div id="closedMsg" class="row hide"><div class="v" id="closedText"></div></div>
 
     <div id="apptErr" class="err hide" role="status" aria-live="polite" aria-atomic="true"></div>
     <p class="note" data-office-call="🔒 This secure page is just for you — no password needed. Please don&#39;t include medical details. For anything urgent, {{call}} or 911.">🔒 This secure page is just for you — no password needed. Please don't include medical details. For anything urgent, call the office or 911.</p>
@@ -122,7 +126,7 @@
   <div id="cancelled" class="card hide">
     <div class="center"><div class="big">🗓️</div>
       <h1>Appointment cancelled</h1>
-      <p class="sub" data-office-call="We&#39;ve let the office know. If this was a mistake, please book again or {{call}}.">We've let the office know. If this was a mistake, please book again or call the office.</p>
+      <p class="sub" id="cancelledText" data-office-call="This appointment is cancelled. If you have questions or would like a new time, please {{call}}.">This appointment is cancelled. If you have questions or would like a new time, please call the office.</p>
     </div>
   </div>
 </div>
@@ -140,28 +144,108 @@ var OFFICE_PHONE = '';
 function callOffice(prefix){
   return (prefix || 'call the office') + (OFFICE_PHONE ? (' at ' + OFFICE_PHONE) : '');
 }
+/* the static copy, once the number is known - and every line set later
+   (pagesfix-1.0.0) goes through the same {{call}} template, so the number is
+   resolved in one place */
+function fillOfficeCall(){
+  document.querySelectorAll('[data-office-call]').forEach(function(el){
+    var t = el.getAttribute('data-office-call');
+    el.textContent = t.replace('{{call}}', function(){ return callOffice(); });
+  });
+}
+function setOfficeCall(id, t){ document.getElementById(id).setAttribute('data-office-call', t); fillOfficeCall(); }
 function render(a){
   OFFICE_PHONE = String((a && a.practice_phone) || '').trim();
   document.getElementById('whenText').textContent = a.when || a.date || 'Time to be confirmed';
   document.getElementById('providerText').textContent = a.provider ? ('with ' + a.provider) : '';
   document.getElementById('practiceText').textContent = a.practice || 'your care team';
-  /* the static copy, once the number is known */
-  document.querySelectorAll('[data-office-call]').forEach(function(el){
-    var t = el.getAttribute('data-office-call');
-    el.textContent = t.replace('{{call}}', callOffice());
-  });
+  fillOfficeCall();
   if(a.name){ document.getElementById('hello').textContent = 'Hi ' + a.name.split(' ')[0] + ', your appointment'; }
   if(a.reason){ document.getElementById('reasonText').textContent = a.reason; } else { document.getElementById('reasonRow').classList.add('hide'); }
   var pill = document.getElementById('statusPill');
-  if(a.status === 'cancelled'){ show('cancelled'); return; }
-  if(a.confirmed){
+  if(a.status === 'cancelled'){ showCancelled(false); return; }
+  /* render() also runs again after the server refuses a button, so it sets
+     every part of the view rather than assuming the first paint. */
+  hideMsg(); disarmCancel();
+  var cb = document.getElementById('confirmBtn'); cb.disabled = false; cb.textContent = "Confirm I'll be there";
+  var closed = closedState(a);
+  document.getElementById('closedMsg').classList.toggle('hide', !closed);
+  if(closed){
+    pill.className='pill past'; pill.textContent=closed.pill;
+    setOfficeCall('closedText', closed.text);
+    document.getElementById('confirmWrap').classList.add('hide');
+    document.getElementById('confirmedMsg').classList.add('hide');
+  } else if(a.confirmed){
     pill.className='pill conf'; pill.textContent='Confirmed';
     document.getElementById('confirmWrap').classList.add('hide');
     document.getElementById('confirmedMsg').classList.remove('hide');
   } else {
     pill.className='pill req'; pill.textContent='Requested';
+    document.getElementById('confirmWrap').classList.remove('hide');
+    document.getElementById('confirmedMsg').classList.add('hide');
   }
   show('view');
+}
+
+/* pagesfix-1.0.0 (2026-09-23): a visit the office has checked in, completed
+   or marked missed - or whose time has simply passed (the server's `closed`) -
+   used to read "Requested" with Confirm / Cancel buttons the server refuses.
+   Say what happened, give the office number, offer no buttons. */
+function closedState(a){
+  var st = String(a.status || '');
+  if(st === 'completed' || st === 'done') return { pill:'Visit completed', text:'This visit has already taken place. If something needs to change, please {{call}}.' };
+  if(st === 'checked_in' || st === 'roomed') return { pill:'Checked in', text:'You were checked in for this visit, so there is nothing to confirm or cancel here. If something needs to change, please {{call}}.' };
+  if(st === 'no_show') return { pill:'Missed', text:'This appointment time has passed, and the office has it marked as missed. If you would like a new time, please {{call}}.' };
+  if(a.closed) return { pill:'Time passed', text:'This appointment time has passed. If something needs to change, please {{call}}.' };
+  return null;
+}
+
+/* pagesfix-1.0.0: "We've let the office know" is only true when THIS page just
+   cancelled it. Cancelled before the link was opened (often by the office),
+   or already cancelled when the tap arrived, the office was not told anything. */
+function showCancelled(justNow){
+  setOfficeCall('cancelledText', justNow
+    ? "We've let the office know. If this was a mistake, please book again or {{call}}."
+    : 'This appointment is cancelled. If you have questions or would like a new time, please {{call}}.');
+  show('cancelled');
+}
+
+/* A confirm / cancel reply, with its HTTP status kept: the body alone could
+   not tell a refusal from an outage. 4xx `error` text is written for patients. */
+function readReply(r){
+  return r.json().catch(function(){ return {}; }).then(function(j){
+    j = j || {};
+    var reason = (r.status >= 400 && r.status < 500 && typeof j.error === 'string') ? j.error.trim() : '';
+    return { status:r.status, body:j, reason:reason };
+  });
+}
+
+/* pagesfix-1.0.0: a 409 means the appointment is no longer in a state this
+   button can change (cancelled by the office, visit over, time passed).
+   "Please try again" offered a retry that could never work. Show the
+   server's reason, take the buttons away, and re-read the appointment so the
+   page shows what is true now. */
+function refusedByServer(reason){
+  disarmCancel();
+  /* the pill showed the state the server just refused; neutral until the re-read lands */
+  try{ var pl=document.getElementById('statusPill'); if(pl){ pl.className='pill past'; pl.textContent='Checking…'; } }catch(e){}
+  document.getElementById('confirmWrap').classList.add('hide');
+  document.getElementById('confirmedMsg').classList.add('hide');
+  showErr(reason);
+  fetchAppointment()
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(j){
+      if(!(j && j.ok && j.appointment)) return;
+      render(j.appointment);
+      /* still an open appointment on screen: keep the server's words beside it */
+      if(!document.getElementById('view').classList.contains('hide') && document.getElementById('closedMsg').classList.contains('hide')) showErr(reason);
+    })
+    .catch(function(){ /* the reason stays on screen, with no buttons */ })
+    .then(function(){ try{ var pl=document.getElementById('statusPill'); if(pl && pl.textContent==='Checking…') pl.classList.add('hide'); }catch(e){} });
+}
+
+function fetchAppointment(){
+  return mlsSensitiveFetch(BACKEND_URL + '/api/appointments/public/' + encodeURIComponent(ptoken));
 }
 
 /* Only the server may declare this link dead. A parsed answer means the office
@@ -173,7 +257,7 @@ function render(a){
 function init(){
   if(!ptoken){ show('reopen'); return; }
   show('loading');
-  mlsSensitiveFetch(BACKEND_URL + '/api/appointments/public/' + encodeURIComponent(ptoken))
+  fetchAppointment()
     .then(function(r){
       if(r.ok) return r.json().then(function(j){ return {kind:'answered', body:j}; }, function(){ return {kind:'trouble'}; });
       if(r.status === 404 || r.status === 410) return {kind:'gone'};
@@ -188,12 +272,17 @@ function init(){
 }
 
 function confirmAppt(){
+  if(_cancelBusy) return;                           /* a cancel is already on its way */
+  disarmCancel(); hideMsg();
   var btn=document.getElementById('confirmBtn'); btn.disabled=true; btn.textContent='Confirming…';
   mlsSensitiveFetch(BACKEND_URL + '/api/appointments/public/' + encodeURIComponent(ptoken) + '/confirm', { method:'POST' })
-    .then(function(r){ return r.json().catch(function(){ return {}; }); })
-    .then(function(j){
-      if(j && j.ok){ document.getElementById('confirmWrap').classList.add('hide'); document.getElementById('confirmedMsg').classList.remove('hide'); var p=document.getElementById('statusPill'); p.className='pill conf'; p.textContent='Confirmed'; }
-      else { showErr('Could not confirm. Please try again.'); btn.disabled=false; btn.textContent="Confirm I'll be there"; }
+    .then(readReply)
+    .then(function(res){
+      var j = res.body;
+      if(j && j.ok){ document.getElementById('confirmWrap').classList.add('hide'); document.getElementById('confirmedMsg').classList.remove('hide'); var p=document.getElementById('statusPill'); p.className='pill conf'; p.textContent='Confirmed'; return; }
+      if(res.status === 409){ refusedByServer(res.reason || 'This appointment can no longer be confirmed from this page.'); return; }
+      if(res.status === 404 || res.status === 410){ show('notfound'); return; }
+      showErr(res.reason || 'Could not confirm. Please try again.'); btn.disabled=false; btn.textContent="Confirm I'll be there";
     })
     .catch(function(){ showErr("We couldn't reach the office. Check your connection and try again."); btn.disabled=false; btn.textContent="Confirm I'll be there"; });
 }
@@ -209,28 +298,50 @@ function confirmAppt(){
    deliberate re-tap speed and above every accidental one. */
 var CANCEL_ARM_MIN_MS = 600, CANCEL_ARM_MAX_MS = 6000;
 var _cancelArmedAt = 0, _cancelBusy = false, _cancelPromptTimer = null;
-function cancelAppt(){
+/* pagesfix-1.0.0 (2026-09-23): the prompt said 'Tap "Cancel" once more' beside
+   a button reading "Need to cancel?". The armed button now reads the words the
+   prompt quotes, and reads normally again when the window closes. Disarming
+   also stops the timer, which used to wipe a later error off the screen. */
+var CANCEL_ARMED_LABEL = 'Yes, cancel it';
+function disarmCancel(){
+  _cancelArmedAt = 0;
+  if(_cancelPromptTimer){ clearTimeout(_cancelPromptTimer); _cancelPromptTimer = null; }
+  document.querySelectorAll('button[data-label]').forEach(function(b){ b.textContent = b.getAttribute('data-label'); b.removeAttribute('data-label'); });
+}
+function cancelAppt(btn){
   if(_cancelBusy) return;
   if(_cancelArmedAt && Date.now() - _cancelArmedAt < CANCEL_ARM_MIN_MS){
-    showPrompt('Tap "Cancel" once more to confirm — the office will be notified.');
+    showPrompt('Tap "' + CANCEL_ARMED_LABEL + '" once more to confirm — the office will be notified.');
     return;
   }
   if(Date.now() - _cancelArmedAt > CANCEL_ARM_MAX_MS){
+    disarmCancel();
     _cancelArmedAt = Date.now();
-    showPrompt('Tap "Cancel" once more within 6 seconds to confirm — the office will be notified.');
-    if(_cancelPromptTimer) clearTimeout(_cancelPromptTimer);
+    if(btn){ btn.setAttribute('data-label', btn.textContent); btn.textContent = CANCEL_ARMED_LABEL; }
+    showPrompt('Tap "' + CANCEL_ARMED_LABEL + '" within 6 seconds to confirm — the office will be notified.');
     _cancelPromptTimer = setTimeout(function(){
       if(_cancelBusy) return;                       /* a real cancel is in flight */
       if(Date.now() - _cancelArmedAt < 6000) return; /* re-armed since */
-      _cancelArmedAt = 0; hideMsg();
+      disarmCancel(); hideMsg();
     }, 6200);
     return;
   }
+  if(_cancelPromptTimer){ clearTimeout(_cancelPromptTimer); _cancelPromptTimer = null; }
   _cancelArmedAt = 0; _cancelBusy = true;
+  try{ document.getElementById('confirmBtn').disabled = true; }catch(e){}
+  if(btn) btn.textContent = 'Cancelling…';
   mlsSensitiveFetch(BACKEND_URL + '/api/appointments/public/' + encodeURIComponent(ptoken) + '/cancel', { method:'POST' })
-    .then(function(r){ return r.json().catch(function(){ return {}; }); })
-    .then(function(j){ _cancelBusy = false; if(j && j.ok){ show('cancelled'); } else { showErr('Could not cancel. Please ' + callOffice() + '.'); } })
-    .catch(function(){ _cancelBusy = false; showErr("We couldn't reach the office. Check your connection and try again, or " + callOffice() + '.'); });
+    .then(readReply)
+    .then(function(res){
+      _cancelBusy = false;
+      var j = res.body;
+      /* already:true = it was cancelled before this tap; the office was not told now */
+      if(j && j.ok){ showCancelled(!j.already); return; }
+      if(res.status === 409){ refusedByServer(res.reason || 'This appointment can no longer be cancelled from this page.'); return; }
+      if(res.status === 404 || res.status === 410){ show('notfound'); return; }
+      disarmCancel(); showErr(res.reason || ('Could not cancel. Please ' + callOffice() + '.'));
+    })
+    .catch(function(){ _cancelBusy = false; disarmCancel(); showErr("We couldn't reach the office. Check your connection and try again, or " + callOffice() + '.'); });
 }
 
 function showErr(t){ var e=document.getElementById('apptErr'); e.textContent=t; e.className='err'; }

@@ -117,11 +117,18 @@ a.cta:focus-visible,button.cta:focus-visible{outline:3px solid #8FD8BE;outline-o
         </div>
       </div>
     </div>
+    <!-- pagesfix-1.0.0 (2026-09-23): this note used to call the small app
+         "MLS Scribe" and the recording app "the full MLS workspace", while the
+         phone card's big "Open MLS Scribe" button opens the recording app and
+         calls app.html "the small read-only app". One name per app, the same
+         on both cards: the MLS Scribe phone app, and the small read-only app. -->
     <div class="note">
-      <b>Two apps, one account.</b> <b>MLS Scribe</b> is the small phone app — your day, your patients,
-      and the pull. The full <b>MLS</b> workspace is also reachable on a phone when you need to record
-      a visit and write the note. Either way the athenaOne reading happens on your office computer,
-      the one with the MLS Assist extension: leave it on with MLS open and the results sync back.
+      <b>Two apps, one account.</b> On the phone, the big green button opens the
+      <b>MLS Scribe phone app</b>, which does everything: your day, each patient, recording the
+      visit and writing the note. Under it is a <b>small read-only app</b> that only pulls the
+      schedule and shows a patient's chart; it cannot record. Either way the athenaOne reading
+      happens on your office computer, the one with the MLS Assist extension: leave it on with
+      MLS open and the results sync back.
     </div>
   </section>
 
@@ -140,9 +147,9 @@ a.cta:focus-visible,button.cta:focus-visible{outline:3px solid #8FD8BE;outline-o
   <section class="card hide" id="openCard">
     <span class="eyebrow">Step 1 of 2 · on this phone</span>
     <h2>Open MLS Scribe</h2>
-    <p>Sign in with the same email and password you use on your office computer. This is the whole
-       thing: your day, each patient, record the visit, write the note, and pull the schedule from
-       athenaOne.</p>
+    <p>Sign in with the same email and password you use on your office computer. This is the
+       MLS Scribe phone app, and it does everything: your day, each patient, record the visit,
+       write the note, and pull the schedule from athenaOne.</p>
     <a class="cta" id="openApp" href="ScribeFlow.html?phone=1">Open MLS Scribe →</a>
     <a class="cta quiet" id="openFull" href="app.html">Just the schedule — open the small read-only app</a>
   </section>
@@ -337,7 +344,7 @@ a.cta:focus-visible,button.cta:focus-visible{outline:3px solid #8FD8BE;outline-o
   window.addEventListener('appinstalled', function () {
     var b = $('installNow'); if (b) b.classList.add('hide');
     $('installEyebrow').textContent = 'Done';
-    $('installTitle').textContent = '✓ MLS is on your Home Screen';
+    $('installTitle').textContent = '✓ MLS Scribe is on your Home Screen';
     $('installWhy').textContent = 'Open it from the icon next time — it starts straight into your day.';
     $('installSteps').innerHTML = '';
   });

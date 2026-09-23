@@ -50,6 +50,7 @@ const visible = (page, id) => page.evaluate((x) => !document.getElementById(x).c
         return route.fulfill({ status: 200, contentType: 'application/json',
           body: JSON.stringify({ ok: true, practice: { name: 'Synthetic Spine Clinic' }, doctors: [], availability: { days: [1, 2, 3], tz: 'UTC', slotMin: 30 } }) });
       }
+      if (u.pathname === `/api/schedule/public/${TOKEN}/slots`) return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, slots: [{ time: '09:00', taken: false }] }) });
       if (u.pathname === `/api/schedule/public/${TOKEN}/book`) {
         if (book === 'limited') return route.fulfill({ status: 429, contentType: 'text/html', body: 'Too many requests, please try again later.' });
         return route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
@@ -69,6 +70,7 @@ const visible = (page, id) => page.evaluate((x) => !document.getElementById(x).c
     assert.strictEqual(await page.textContent('#practiceBrand'), 'Synthetic Spine Clinic', 'Try again must load the form in place');
 
     await page.fill('#name', 'Synthetic Patient');
+    await page.fill('#bookDate', '2030-01-07'); await page.click('#slotGrid .slot');
     await page.click('#submitBtn');
     await page.waitForFunction(() => !document.getElementById('formErr').classList.contains('hide'));
     const limited = await page.textContent('#formErr');

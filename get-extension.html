@@ -36,6 +36,11 @@ h1{font-family:'Newsreader',Georgia,serif;font-weight:600;letter-spacing:-.015em
 .divider span{padding:0 12px}
 @media (prefers-reduced-motion:reduce){.store{transition:none}.store:hover{transform:none}}
 #status{margin:14px 0 0;font-size:13.5px;color:var(--muted);text-align:left}
+/* pagesfix-1.0.0 (2026-09-23): the digest is one 64-character word, so on a
+ * 390px phone it ran off the card and the page scrolled sideways. It may now
+ * break inside itself, but only when it cannot fit a line of its own, so a
+ * desktop still shows it on one line. */
+#status b{overflow-wrap:break-word;overflow-wrap:anywhere}
 .note{margin-top:18px;background:#fcf8ef;border:1px solid #efe4ce;border-radius:9px;padding:11px 13px;font-size:12.5px;color:#7a5527}
 </style>
 </head>

@@ -52,11 +52,41 @@
   captured.fragment = Object.freeze(captured.fragment);
   window.__mlsSensitiveUrl = Object.freeze(captured);
 
+  /* portalfix-1.0.0 (2026-09-23): fetch has no timeout of its own, so a backend
+   * that never answered (a cold start that stalls, a proxy holding the socket)
+   * left intake, booking and appointment on "Loading..." with no button, for
+   * good. A read (GET/HEAD) now gives up after 15 s - the timer also covers
+   * reading the body - and rejects like a lost connection, which every page
+   * already turns into its "could not reach the office / Try again" state.
+   * A write keeps waiting unless the caller sets init.timeoutMs (0 = no limit):
+   * an op-note rewrite can legitimately run longer, and abandoning a booking
+   * that did land would invite a duplicate. A caller's own init.signal still
+   * cancels the request. */
+  var READ_TIMEOUT_MS = 15000;
   window.mlsSensitiveFetch = function (input, init) {
     var options = {};
     Object.keys(init || {}).forEach(function (key) { options[key] = init[key]; });
+    var method = String(options.method || (input && typeof input === 'object' && input.method) || 'GET').toUpperCase();
+    var timeoutMs = ('timeoutMs' in options) ? Number(options.timeoutMs)
+      : ((method === 'GET' || method === 'HEAD') ? READ_TIMEOUT_MS : 0);
+    delete options.timeoutMs;
     options.cache = 'no-store';
     options.referrerPolicy = 'no-referrer';
+    var later = window.setTimeout, Controller = window.AbortController;
+    if (!(timeoutMs > 0) || typeof later !== 'function' || typeof Controller !== 'function') {
+      return window.fetch.call(window, input, options);
+    }
+    var controller = new Controller(), callerSignal = options.signal;
+    if (callerSignal) {
+      if (callerSignal.aborted) controller.abort(callerSignal.reason);
+      else if (callerSignal.addEventListener) callerSignal.addEventListener('abort', function () { controller.abort(callerSignal.reason); });
+    }
+    options.signal = controller.signal;
+    later.call(window, function () {
+      var reason;
+      try { reason = new DOMException('The request took too long.', 'TimeoutError'); } catch (_) { reason = undefined; }
+      controller.abort(reason);
+    }, timeoutMs);
     return window.fetch.call(window, input, options);
   };
 })();

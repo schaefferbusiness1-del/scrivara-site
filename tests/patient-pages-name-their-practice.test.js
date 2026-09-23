@@ -124,19 +124,22 @@ function fnBlock(src, name) {
     'the local preview override must still win — it is how a doctor checks their own portal');
 
   /* and the value is actually FED from the two responses that carry it */
-  assert(/noteServerOffice\(j && j\.practice\)/.test(portal),
+  /* portalfix-1.0.0: the main script reaches noteServerOffice (which lives in
+     the requests script's own scope) through window.__mlsPortalNoteOffice -
+     calling it by name threw and no record ever rendered */
+  assert(/__mlsPortalNoteOffice\(j && j\.practice\)/.test(portal),
     '/api/patient/me is fetched on load and its practice is not read — the portal is asking and ' +
     'discarding the answer');
-  assert(/noteServerOffice\(j\.practice\);/.test(portal),
+  assert(/__mlsPortalNoteOffice\(j\.practice\);/.test(portal),
     'the history response carries the practice too and must be read BEFORE renderPatient, or the ' +
     'name arrives after the strings that need it');
   /* Comments stripped before any ORDER check. The comment explaining why the
      call sits before renderPatient names renderPatient to do so, so a raw
      indexOf finds the prose first and inverts the verdict. */
   const load = stripComments(fnBlock(portal, 'loadRecords'));
-  assert(/noteServerOffice/.test(load) && /renderPatient/.test(load),
+  assert(/__mlsPortalNoteOffice/.test(load) && /renderPatient/.test(load),
     'comment stripping removed the code it was meant to expose');
-  assert(load.indexOf('noteServerOffice') < load.indexOf('renderPatient'),
+  assert(load.indexOf('__mlsPortalNoteOffice') < load.indexOf('renderPatient'),
     'the practice must be recorded before renderPatient draws the strings that use it');
 
   /* no dead second copy of checkSession left behind */
@@ -225,7 +228,8 @@ function fnBlock(src, name) {
     'the two STATIC copy lines must both carry a template for the rewriter');
   assert.strictEqual((appt.match(/callOffice\(\)/g) || []).length, 3,
     'expected the rewriter plus the two cancel-failure lines to resolve the number');
-  assert(/el\.textContent = t\.replace\('\{\{call\}\}', callOffice\(\)\)/.test(appt),
+  /* a function replacer: a phone number holding $& or $' is not read as a pattern */
+  assert(/el\.textContent = t\.replace\('\{\{call\}\}', function\(\)\{ return callOffice\(\); \}\)/.test(appt),
     'the static lines must be rewritten as text, not markup');
 
   /* The #notfound copy is deliberately NOT wired. It renders when the

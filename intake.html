@@ -8,7 +8,7 @@
 <meta name="referrer" content="no-referrer">
 <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
 <meta http-equiv="Pragma" content="no-cache">
-<script src="sensitive-workflow-bootstrap.js?v=20260718" data-query-keys="token intake code invite" data-fragment-keys="token code invite" referrerpolicy="no-referrer"></script>
+<script src="sensitive-workflow-bootstrap.js?v=20260923sw1" data-query-keys="token intake code invite" data-fragment-keys="token code invite" referrerpolicy="no-referrer"></script>
 <title>Pre-Visit Intake — MLS</title>
 <!-- Standalone PUBLIC patient intake page. Reached via a per-doctor link:
      /intake.html?token=<token>. Validates the token, lets the patient fill the
@@ -42,6 +42,7 @@
   @media(max-width:520px){.grid2{grid-template-columns:1fr}}
   .pain-row{display:flex;align-items:center;gap:12px}
   .pain-row input[type=range]{flex:1}
+  .pain-none{min-height:40px;padding:6px 14px;border:1px solid #E2E6E2;border-radius:999px;background:#fff;font:inherit;font-size:13px;cursor:pointer;white-space:nowrap}
   .pain-val{font-weight:800;font-size:20px;color:var(--brand-dk);min-width:42px;text-align:center}
   .btn{display:flex;align-items:center;justify-content:center;width:100%;background:var(--brand);color:#fff;border:none;border-radius:999px;padding:16px 20px;min-height:52px;font-size:17px;font-weight:700;cursor:pointer;margin-top:14px;box-shadow:0 8px 20px -8px rgba(32,64,52,.6)}
   .btn:disabled{opacity:.55;cursor:default}
@@ -51,6 +52,9 @@
   .state .big{font-size:46px}
   .state h2{margin:10px 0 6px}
   .err{color:#B23B3B;font-size:14px;margin-top:8px;text-align:center;min-height:18px}
+  /* portalfix-1.0.0: a problem with one answer is said under that answer */
+  .fielderr{color:#B23B3B;font-size:13px;margin:6px 0 0}
+  input[aria-invalid=true]{border-color:#B23B3B}
   .hide{display:none!important}
   .lock{color:var(--muted);font-size:12px;text-align:center;margin-top:18px}
 
@@ -114,7 +118,7 @@
         <h3>👤 About you</h3>
         <div class="grid2">
           <div class="field"><label for="name">Full name <span class="req">*</span></label><input id="name" required></div>
-          <div class="field"><label for="dob">Date of birth <span class="req">*</span></label><input id="dob" type="date" required></div>
+          <div class="field"><label for="dob">Date of birth <span class="req">*</span></label><input id="dob" type="date" required aria-describedby="dobErr"><p id="dobErr" class="fielderr hide"></p></div>
           <div class="field"><label for="sex">Sex</label>
             <select id="sex"><option value=""></option><option>Female</option><option>Male</option><option>Other</option></select>
           </div>
@@ -142,7 +146,7 @@
           <!-- Untouched, this used to submit 0 - "no pain" - as if the patient
                had said it. A slider at rest is an unanswered question, not an
                answer of zero. It reads "—" until the patient actually moves it. -->
-          <div class="pain-row"><input id="pain" type="range" min="0" max="10" step="1" value="0" data-touched="0" aria-label="Current pain level, 0 means none and 10 means worst" aria-valuetext="Not answered yet" aria-describedby="painVal" oninput="this.setAttribute('data-touched','1');this.setAttribute('aria-valuetext',this.value);document.getElementById('painVal').textContent=this.value"><span class="pain-val" id="painVal">—</span></div>
+          <div class="pain-row"><input id="pain" type="range" min="0" max="10" step="1" value="0" data-touched="0" aria-label="Current pain level, 0 means none and 10 means worst" aria-valuetext="Not answered yet" aria-describedby="painVal" oninput="this.setAttribute('data-touched','1');this.setAttribute('aria-valuetext',this.value);document.getElementById('painVal').textContent=this.value"><span class="pain-val" id="painVal">—</span><button type="button" id="painNone" class="pain-none">No pain (0)</button></div>
         </div>
         <div class="field"><label for="painLoc">Where is the pain / problem?</label><input id="painLoc" placeholder="e.g. lower back, right leg"></div>
         <div class="grid2">
@@ -171,8 +175,10 @@
            patient's form is worse than no section. Mirrors the in-app kiosk's
            #ikCustomSection / #ikCustomWrap pair so both surfaces ask the same
            questions in the same order. -->
+      <!-- portalfix-1.0.0 (2026-09-23): an H3 like the other section headers;
+           as an H2 it rendered at 24px among 16px ones. -->
       <div class="card sec" id="ikCustomSection" style="display:none">
-        <h2 id="ikCustomHead">A few questions from your care team</h2>
+        <h3 id="ikCustomHead">A few questions from your care team</h3>
         <div id="ikCustomWrap"></div>
       </div>
 
@@ -303,6 +309,59 @@
 
   function val(id){ var e=$(id); return e?String(e.value||'').trim():''; }
 
+  /* portalfix-1.0.0 (2026-09-23): 2031-05-05 and 20255-01-01 were sent as a
+     date of birth. It must be a real calendar date, not in the future and not
+     before 1880 (the rule the office applies), and the problem is said under
+     the field - where the patient has to fix it. */
+  function todayLocal(){ var d=new Date(), p=function(n){ return (n<10?'0':'')+n; }; return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()); }
+  function dobProblem(el){
+    var v=String(el.value||'').trim();
+    /* a finished but impossible date (Feb 31) also reads as badInput */
+    if(!v) return (el.validity&&el.validity.badInput) ? 'Please check the date of birth: month, day and year, and a day that exists.' : 'Please enter your date of birth.';
+    var m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
+    if(!m) return 'Please check the date of birth. The year should have four digits.';
+    var y=+m[1], mo=+m[2], d=+m[3];
+    /* a two-digit year typed into the date field arrives as 0085 */
+    if(y<1000) return 'Please type the full four-digit year of birth.';
+    if(y<1880) return 'Please check the date of birth. The year is too early.';
+    var dt=new Date(0); dt.setUTCFullYear(y,mo-1,d);
+    if(dt.getUTCFullYear()!==y||dt.getUTCMonth()!==mo-1||dt.getUTCDate()!==d) return 'Please check the date of birth. That day does not exist.';
+    if(v>todayLocal()) return 'Please check the date of birth. It cannot be in the future.';
+    return '';
+  }
+  function setDobErr(msg){
+    var e=$('dobErr'), f=$('dob'); if(!e||!f) return;
+    e.textContent=msg||''; e.classList.toggle('hide',!msg);
+    if(msg) f.setAttribute('aria-invalid','true'); else f.removeAttribute('aria-invalid');
+  }
+  /* Checked when the field is left and on submit. Chrome fires 'change' on
+     every keystroke in a date field, so 'change' only clears an error already
+     shown - never adds one while the year is still being typed. */
+  $('dob').addEventListener('blur',function(){
+    /* tabbing past an empty field is not an error yet; submit says so */
+    var started=!!this.value||!!(this.validity&&this.validity.badInput);
+    setDobErr(started?dobProblem(this):'');
+  });
+  $('dob').addEventListener('change',function(){
+    var e=$('dobErr'); if(e&&!e.classList.contains('hide')&&!dobProblem(this)) setDobErr('');
+  });
+
+  /* portalfix-1.0.0 (2026-09-23): the slider rests at 0 and reads "—" until it
+     is used, so a patient with NO pain could not answer 0 (moving to 0 from 0
+     fires no input event). Only a real answer counts: moving the slider, a
+     keyboard key on it, or the "No pain (0)" button. A tap on the track is not
+     an answer - an iPhone does not move the thumb for it, so treating the tap
+     as one recorded an invented 0. */
+  (function(){
+    var p=$('pain'); if(!p) return;
+    function answered(){ p.setAttribute('data-touched','1'); p.setAttribute('aria-valuetext',p.value); $('painVal').textContent=p.value; }
+    p.addEventListener('keydown',function(e){
+      if(/^(Home|End|PageUp|PageDown|ArrowLeft|ArrowRight|ArrowUp|ArrowDown)$/.test(e.key)) setTimeout(answered,0);
+    });
+    var none=$('painNone');
+    if(none) none.addEventListener('click',function(){ p.value='0'; answered(); });
+  })();
+
   // Optional face photo — resized small, travels with the submission and lands on the
   // patient's avatar when the doctor attaches it in the app.
   var facePhoto='';
@@ -338,7 +397,9 @@
     e.preventDefault();
     var name=val('name'), dob=val('dob'), chief=val('chief');
     if(!name){ $('formErr').textContent='Please enter your full name.'; return; }
-    if(!dob){ $('formErr').textContent='Please enter your date of birth.'; return; }
+    var dobMsg=dobProblem($('dob'));
+    setDobErr(dobMsg);
+    if(dobMsg){ $('formErr').textContent=dob?'Please check the date of birth.':dobMsg; try{ $('dob').focus(); }catch(e){} return; }
     if(!chief){ $('formErr').textContent='Please tell us the main reason for your visit.'; return; }
     $('formErr').textContent='';
     /* Only send a pain score the patient actually gave. An untouched slider is
@@ -358,26 +419,46 @@
       custom:customAnswers()
     };
     var btn=$('submitBtn'); btn.disabled=true; btn.textContent='Sending…';
+    /* portalfix-1.0.0: a send gives up after 30 s rather than reading
+       "Sending…" for good. Safe to send again: the office keeps one copy of an
+       identical intake. Longer than the 15 s page load, because a patient who
+       took a while over the form can wake a sleeping server. */
     mlsSensitiveFetch(BACKEND_URL+'/api/intake/public/'+encodeURIComponent(token)+'/submit',{
-      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({data:data})
+      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({data:data}), timeoutMs:30000
     }).then(function(r){
       /* A rate-limit or gateway answer is plain text; parsing it used to throw
          into the "connection issue" branch below. */
       return r.json().catch(function(){ return {}; }).then(function(j){ return {ok:r.ok, status:r.status, j:j}; });
     })
       .then(function(res){
-        if(res.ok && res.j && res.j.ok){ show('done'); }
-        else if(res.status===429){
-          btn.disabled=false; btn.textContent='Submit to my care team';
-          $('formErr').textContent='Too many tries in a short time. Your answers are still here; wait a minute and submit again, '+contactLine();
+        if(res.ok && res.j && res.j.ok){ show('done'); return; }
+        btn.disabled=false; btn.textContent='Submit to my care team';
+        /* portalfix-1.0.0 (2026-09-23): a dead link, an over-long form and an
+           office server that did not answer all read "Check your entries and
+           try again" - advice the entries cannot act on. Say what happened, in
+           the server's words when it gives them. The answers stay on the form
+           in every case. */
+        /* only a sentence written for people (capital, a space, an end stop) -
+           a bare code like "Not found" or "forbidden" is not shown */
+        var said=(res.j&&typeof res.j.error==='string'&&/^[A-Z][^]*\s[^]*[.!?]$/.test(res.j.error.trim()))?res.j.error.trim().slice(0,300):'';
+        var msg;
+        if(res.status===429){
+          msg='Too many tries in a short time. Your answers are still here; wait a minute and submit again, '+contactLine();
+        } else if(res.j&&res.j.field==='dob'){
+          msg=said||'Please check the date of birth.';
+          setDobErr(msg); try{ $('dob').focus(); }catch(e){}
+        } else if(res.status===404||res.status===410){
+          msg=(said||'This pre-visit link is no longer active.')+(OFFICE_PHONE?(' Please call the office at '+OFFICE_PHONE+' for a new link.'):' Please ask the office for a new link.');
+        } else if(res.status===413){
+          msg='Your answers are too long to send. Please shorten the longest ones'+(facePhoto?' or remove the photo':'')+', then submit again. Everything you typed is still here.';
+        } else if(res.status>=500){
+          msg=(said?said+' ':"The office's system did not answer. ")+'Your answers are still here. Please try again in a moment, '+contactLine();
+        } else {
+          msg=(said?said+' ':'We could not send your intake. ')+'Check your entries and try again, '+contactLine();
         }
-        else {
-          try{ if(res.j&&res.j.error) console.warn('[intake] submission declined:',res.j.error); }catch(e){}
-          btn.disabled=false; btn.textContent='Submit to my care team';
-          $('formErr').textContent='We could not send your intake. Check your entries and try again, '+contactLine();
-        }
+        $('formErr').textContent=msg;
       })
-      .catch(function(){ btn.disabled=false; btn.textContent='Submit to my care team'; $('formErr').textContent='Connection issue — please check your signal and try again.'; });
+      .catch(function(){ btn.disabled=false; btn.textContent='Submit to my care team'; $('formErr').textContent="The office's system did not answer. Your answers are still here. Please check your signal and try again in a moment, "+contactLine(); });
   });
 })();
 </script>
