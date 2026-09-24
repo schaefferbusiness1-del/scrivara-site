@@ -120,7 +120,10 @@ const PREEXISTING = {
                   //          1p-mls-connect.js 1, cloned-mls-connect.js 1, and
                   //          0 in every 1p-feat_*.js and cloned-feat_*.js.
   '#6B756E': 1,   // "b756"
-  '#B07636': 65,  // "b076" — -4 on 2026-09-22: feat_mls_month_pull.js (loaded by no
+  '#B07636': 62,  // "b076" — -3 on 2026-09-24 (b1335): the in-app "Send portal
+                  //          login" result sets its warning colour once instead
+                  //          of in two branches (1p-mls-connect.js and its two
+                  //          derived copies, 1 each). -4 on 2026-09-22: feat_mls_month_pull.js (loaded by no
                   //          shell) was deleted with the other dead modules;
                   //          those were its 4 occurrences. Earlier:
                   //          +3 on 2026-08-06 (the 3.0.45 candidate's
