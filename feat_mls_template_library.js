@@ -59,7 +59,7 @@
      name that happens to look unique in this panel: two clinicians can share
      it, and a stale picker from another account must never reach a write. */
   function accountKey(){try{return S(window.__mlsSessionAccount||((window.bkUser||{}).id)||((window.bkUser||{}).email)||((window.bkUser||{}).username)||((isFn(window.bkToken)&&window.bkToken())||'')).trim();}catch(e){return '';}}
-  function resetAccountScopedState(){if(activeOperation)activeOperation.cancel('Account changed.');state.sets=[];state.activeSetId='';state.selectedSetId='';state.activeVersion=0;state.activeTemplates=[];state.hydrated=false;state.pending=null;state.conflict=null;state.draftScope='account';state.providerId='';state.providerName='';state.providerStableKey='';}
+  function resetAccountScopedState(){if(activeOperation)activeOperation.cancel('Account changed.');state.sets=[];state.activeSetId='';state.selectedSetId='';state.activeVersion=0;state.activeTemplates=[];state.hydrated=false;state.pending=null;state.conflict=null;state.draftScope='account';state.providerId='';state.providerName='';state.providerStableKey='';letterHints=Object.create(null);}
   function ensureAccount(){var key=accountKey();if(!state.accountKey){state.accountKey=key;return false;}if(key!==state.accountKey){state.accountKey=key;resetAccountScopedState();status('Account changed. Any uncommitted template selection was cleared.',false);return true;}return false;}
   function roster(){var r=window.__mlsProviderRoster;return r&&r.installed&&isFn(r.list)&&isFn(r.resolve)?r:null;}
   function scopeFor(custom){
@@ -306,7 +306,15 @@
          <button>, hence the child-combinator selector); still sticky, still
          full width, still reachable at any batch size. */
       '#tplMultiResult>.tpl-split-actions{position:sticky;bottom:0;z-index:2;width:100%;margin-top:9px}',
-      '#tplMultiResult>button{position:sticky;bottom:0;z-index:2;width:100%;margin-top:9px}'
+      '#tplMultiResult>button{position:sticky;bottom:0;z-index:2;width:100%;margin-top:9px}',
+      /* tplsort-1.2.0 (2026-09-24): ON A PHONE NOTHING COVERS A ROW. At
+         390x844 the review list's own scroller was a few rows tall and the
+         Save/Discard pair, two lines high there, rode over the rows - a row's
+         "Goes to" select slid under it as the list scrolled. On a narrow
+         screen the list is not a scroller of its own: it is part of the
+         panel's one scroll, and Save/Discard sit after the last row, in the
+         flow, where they cover nothing. */
+      '@media(max-width:640px){#tplMultiResult:not(:empty){max-height:none;overflow:visible;padding-right:0}#tplMultiResult>.tpl-split-actions,#tplMultiResult>button{position:static}}'
     ].join('\n');(document.head||document.documentElement).appendChild(st);
   }
 
@@ -413,15 +421,27 @@
      proposals the doctor had already accepted or refused (autoKw/autoKind)
      came back. Carry those device fields over by id. The "still the
      suggestion" marks survive only while the value is unchanged. */
+  /* tplsort-1.3.0 (2026-09-24): the texts this device just sent as kind
+     'letter' (commitPending). A library server that predates the kind answers
+     a new letter with no kind and a new id, so the id match below cannot
+     find it; its text can. Only for templates the device has no copy of. */
+  var letterHints=Object.create(null);
+  function letterKey(t){return S(t&&t.text).replace(/\s+/g,' ').trim();}
   function keepDeviceFields(applied){
     var local={};currentLocal().forEach(function(t){if(t&&t.id)local[t.id]=t;});
     return applied.map(function(t){
-      var l=t&&t.id&&local[t.id];if(!l)return t;
+      var l=t&&t.id&&local[t.id];
+      if(!l){if(t&&!S(t.kind).trim()&&letterHints[letterKey(t)])t.kind='letter';return t;}
       if(!Array.isArray(t.revisions)&&Array.isArray(l.revisions)&&l.revisions.length)t.revisions=cloneTemplates(l.revisions);
       if(!t.created&&l.created)t.created=l.created;
       if(t.autoKw===undefined&&l.autoKw)t.autoKw=l.autoKw;
       if(t.autoKind===undefined&&l.autoKind)t.autoKind=l.autoKind;
       if(t.kindSuggested===undefined&&l.kindSuggested&&S(t.kind)===S(l.kind))t.kindSuggested=l.kindSuggested;
+      /* tplsort-1.3.0: a library server that predates kind 'letter' answers a
+         letter with no kind, and with no kind a consent form competes to
+         draft op notes. The device keeps it a letter until the server
+         names a kind of its own. */
+      if(!S(t.kind).trim()&&S(l.kind)==='letter')t.kind='letter';
       if(t.kwSuggested===undefined&&l.kwSuggested&&JSON.stringify(t.keywords||[])===JSON.stringify(l.keywords||[]))t.kwSuggested=l.kwSuggested;
       return t;
     });
@@ -520,6 +540,7 @@
     ensureAccount();if(!state.pending)return Promise.resolve(false);var pending=state.pending,body=JSON.parse(JSON.stringify(pending.body)),activate=byId('tlActivateAfter');var bound;try{bound=requireScope(body);}catch(scopeError){status(scopeError.message,true);return Promise.reject(scopeError);}body.scope=bound.scope;body.providerId=bound.providerId;body.providerName=bound.providerName;body.activate=!!(activate&&activate.checked);
     if(body.templates.length>SERVER_IMPORT_LIMIT){var limitErr=operationError('Cloud template imports support up to '+SERVER_IMPORT_LIMIT+' templates per save. Select '+SERVER_IMPORT_LIMIT+' or fewer before saving.','TEMPLATE_IMPORT_BATCH_LIMIT');status(limitErr.message,true);return Promise.reject(limitErr);}
     var resultBoxId=pending.fromForm?'tplFormResult':'tplMultiResult';
+    (body.templates||[]).forEach(function(t){if(S(t&&t.kind)==='letter'){var k=letterKey(t);if(k)letterHints[k]=1;}});
     /* Once sent, a save can succeed even if fetch is aborted. Do not offer a
        cosmetic undo; duplicate clicks share the same idempotent save. */
     var op=beginOperation('commit');var handle=providedHandle||progressStart({key:'template-import-commit:'+pending.idempotencyKey,kind:'template_import',label:'Importing templates',stages:COMMIT_STAGES,total:body.templates.length,timeoutMs:180000,replace:true,cancelable:false,retry:function(next){commitPending(next).catch(function(){});}});op.handle=handle;
@@ -569,8 +590,10 @@
     if(isFn(window.openTemplates)&&!window.openTemplates.__tl){originals.openTemplates=window.openTemplates;var openWrap=function(){var out=originals.openTemplates.apply(this,arguments);ensurePanel();refresh();return out;};openWrap.__tl=true;window.openTemplates=openWrap;}
     if(isFn(window.tplAddSplit)&&!window.tplAddSplit.__tl){originals.tplAddSplit=window.tplAddSplit;var addWrap=function(){
       if(!hosted())return originals.tplAddSplit.apply(this,arguments);
-      var self=this,args=arguments,btn=null;
-      try{var box=byId('tplMultiResult');btn=box?box.querySelector('button[onclick*="tplAddSplit"]'):null;if(btn){btn.disabled=true;btn.textContent='⏳ Adding templates…';}}catch(e){}
+      var self=this,args=arguments,btn=null,btnLabel='➕ Add selected to my templates';
+      /* tplsort-1.1.0 (2026-09-24): the review list's one Save
+         (tplAddSplitSorted) is found here too; it gets its own label back. */
+      try{var box=byId('tplMultiResult');btn=box?box.querySelector('button[onclick*="tplAddSplit"]'):null;if(btn){btnLabel=btn.textContent||btnLabel;btn.disabled=true;btn.textContent='⏳ Adding templates…';}}catch(e){}
       /* tl-1.6.0 — ADD MEANS ADD. The owner imported 77 templates, read
          "added: 77" on the card and walked away — but the card was a PREVIEW
          and the 77 sat unsaved behind "Commit one recoverable version"
@@ -597,9 +620,11 @@
            review rows and tell the user exactly how to continue instead of
            silently falling back to a device-only add with misleading copy. */
         if(isCanceled(error)||error&&['TEMPLATE_IMPORT_BATCH_LIMIT','TEMPLATE_OPERATION_BUSY'].indexOf(error.code)>=0)return null;
-        try{if(isFn(window.toast))window.toast('Cloud sync unavailable — saving templates on this device instead.','ok');}catch(e){}
+        /* tplsort-1.1.0: under the one Save the fallback is said in its
+           single summary instead of a second toast */
+        try{window.__mlsTplSortFellBack=true;if(isFn(window.toast)&&!window.__mlsTplSortQuiet)window.toast('Cloud sync unavailable — saving templates on this device instead.','ok');}catch(e){}
         return originals.tplAddSplit.apply(self,args);
-      }).finally(function(){try{if(btn&&btn.isConnected){btn.disabled=false;btn.textContent='➕ Add selected to my templates';}}catch(e){}});
+      }).finally(function(){try{if(btn&&btn.isConnected){btn.disabled=false;btn.textContent=btnLabel;}}catch(e){}});
     };addWrap.__tl=true;window.tplAddSplit=addWrap;}
     /* tl-1.1.0 — SAVE SAVES. THE PREVIEW ROUND-TRIP IS GONE FROM THIS PATH.
        What shipped before: this wrapper refused the device save whenever
@@ -625,8 +650,15 @@
        setTemplates wrapper above still schedules the cloud snapshot when a set
        is genuinely active — so hosted users keep syncing without the round-trip
        standing between the doctor and their own template. */
+    /* tplsort-1.1.0 (2026-09-24): this wrapper used to start by emptying
+       window._tplPendingSplit and renaming the import's source files to
+       'Manual template entry' - leftovers from the preview round-trip removed
+       above, which read both. Nothing on this path reads them now, but the
+       bulk review list still does: saving one typed template while that list
+       was on screen emptied the rows behind it, so its Save then found
+       nothing. The typed template and the reviewed batch are separate jobs;
+       this one no longer touches the other's state. */
     if(isFn(window.saveTemplateFromForm)&&!window.saveTemplateFromForm.__tl){originals.saveTemplateFromForm=window.saveTemplateFromForm;var saveWrap=function(){
-      try{state.sourceFilenames=['Manual template entry'];window._tplPendingSplit=[];}catch(e){}
       var out=originals.saveTemplateFromForm.apply(this,arguments);
       try{state.editingId='';}catch(e){}
       return out;};saveWrap.__tl=true;window.saveTemplateFromForm=saveWrap;}

@@ -18682,6 +18682,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   /* template -> class. Prefer b61's classifier; fall back to a local test. */
   function classifyTemplate(t) {
     if (!t) return "unknown";
+    /* tplsort-1.3.0: a letter or other document never drafts an op note,
+       with or without b61 loaded */
+    try { if (isFn(window._mlsTplKindOf) && window._mlsTplKindOf(t) === "letter") return "unknown"; } catch (eLetter) {}
     var g = b61();
     if (g && isFn(g.classifyTemplate)) {
       try { var c = g.classifyTemplate(t); if (c) return c; } catch (e) {}
@@ -30442,12 +30445,19 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     try { k = isFn(window._mlsTplKindOf) ? window._mlsTplKindOf(t) : ""; } catch (e) { k = ""; }
     if (k === "op") return "procedure";
     if (k === "soap" || k === "insurance") return "office";
+    /* tplsort-1.3.0: a letter or other document (a consent form, a patient
+       handout) declares that it drafts NO note */
+    if (k === "letter") return "letter";
     return "";
   }
   /* template -> class (name + keywords + body) */
   function classifyTemplate(t) {
     if (!t) return "unknown";
     var declared = declaredClass(t);
+    /* tplsort-1.3.0: "unknown" never auto-picks - a consent form whose name
+       says "epidural steroid injection" must not be read as a procedure
+       template by the name heuristic below */
+    if (declared === "letter") return "unknown";
     if (declared) return declared;
     var name = S(t.name), kws = (t.keywords || []).join(" ");
     var head = name + " " + kws;
@@ -36383,15 +36393,6 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if(!saw){ S.forEach(function(s){ b[s.k]=''; }); b._unsorted=''; var parts=String(text||'').replace(/\n+/g,' ').split(/([.!?])\s+/), sents=[]; for(var a=0;a<parts.length;a+=2){ var seg=(parts[a]||'')+(parts[a+1]||''); if(seg.trim()) sents.push(seg.trim()); } sents.forEach(function(s){ var k=classifySentence(s)||'_unsorted'; b[k]+=(b[k]?' ':'')+s; }); }
     Object.keys(b).forEach(function(k){ b[k]=b[k].replace(/^\s+|\s+$/g,''); }); return b;
   }
-  function mapAi(v){
-    var b={_unsorted:''}; S.forEach(function(s){ b[s.k]=''; });
-    function keyFor(n){ var k=classify(String(n)); if(k) return k; var s=String(n).toLowerCase(); for(var i=0;i<S.length;i++){ if(S[i].h.some(function(h){return s.indexOf(h)>-1;})) return S[i].k; } return null; }
-    function put(n,x){ if(!x) return; var k=keyFor(n)||'_unsorted'; b[k]+=(b[k]?'\n':'')+String(x).trim(); }
-    if(Array.isArray(v)){ v.forEach(function(it){ if(it&&typeof it==='object') put(it.section||it.name||it.label||it.title,it.text||it.content||it.body||it.value); }); }
-    else if(v&&typeof v==='object'){ Object.keys(v).forEach(function(kk){ put(kk, typeof v[kk]==='string'?v[kk]:(v[kk]&&(v[kk].text||v[kk].content))); }); }
-    else return null;
-    return Object.keys(b).some(function(k){return b[k];})?b:null;
-  }
   var conf={};
   var CS='border:1px solid rgba(143,216,190,.22);border-radius:8px;color:#EAF1EC;padding:8px 10px;font:13px/1.5 system-ui';
   function count(host){ var n=0; S.forEach(function(s){ if(conf[s.k]) n++; }); var c=host.querySelector('#emrCount'); if(c) c.textContent=n+' / '+S.length+' sections confirmed'; }
@@ -36409,21 +36410,25 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var host=document.createElement('div'); host.id='emrPanel';
     host.style.cssText='position:fixed;inset:0;z-index:100000;background:rgba(6,10,24,.72);display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:24px';
     var B='border:1px solid rgba(143,216,190,.3);border-radius:10px;cursor:pointer';
-    host.innerHTML='<div style="max-width:760px;width:100%;background:#1E2B24;border:1px solid rgba(143,216,190,.3);border-radius:16px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.5);margin:0 auto"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:6px"><div style="font-size:17px;font-weight:800;color:#EAF1EC">MLS draft sections - review &amp; confirm</div><div style="display:flex;gap:8px"><button id="emrAi" style="background:#7A5CC0;border:none;color:#fff;'+B+';padding:6px 12px;font-weight:700">AI sort</button><button id="emrClose" style="background:transparent;color:#EAF1EC;'+B+';padding:6px 10px">Close</button></div></div><div id="emrHint" style="font-size:12.5px;color:#B9CEC2;margin-bottom:12px"></div><div id="emrBody"></div><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap"><span id="emrCount" style="font-size:13px;color:#B9CEC2"></span><div style="display:flex;gap:10px;flex-wrap:wrap"><button id="emrAll" style="background:transparent;color:#EAF1EC;'+B+';padding:10px 14px;font-weight:700">Confirm all</button><button id="emrIns" style="background:#2E6A4B;border:none;color:#fff;border-radius:10px;cursor:pointer;padding:10px 16px;font-weight:800">Update local MLS draft</button></div></div><div style="font-size:11.5px;color:#B9CEC2;margin-top:8px"><b>This updates only the local MLS note draft; it never writes or sends anything to Athena.</b> Use Review Athena actions afterward to see exactly what goes where.</div></div>';
+    host.innerHTML='<div style="max-width:760px;width:100%;background:#1E2B24;border:1px solid rgba(143,216,190,.3);border-radius:16px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.5);margin:0 auto"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:6px"><div style="font-size:17px;font-weight:800;color:#EAF1EC">MLS draft sections - review &amp; confirm</div><div style="display:flex;gap:8px"><button id="emrAi" aria-disabled="true" aria-describedby="emrAiWhy" title="Not available for a patient note" style="background:transparent;color:#B9CEC2;'+B+';padding:6px 12px;font-weight:700;opacity:.75">AI sort</button><button id="emrClose" style="background:transparent;color:#EAF1EC;'+B+';padding:6px 10px">Close</button></div></div><div id="emrAiWhy" role="note" style="display:none;font-size:12.5px;color:#ffcf8f;margin-bottom:8px">AI sort is not available for a patient note. The sections below were sorted by their headings - move anything that landed in the wrong section, then confirm it.</div><div id="emrHint" style="font-size:12.5px;color:#B9CEC2;margin-bottom:12px"></div><div id="emrBody"></div><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap"><span id="emrCount" style="font-size:13px;color:#B9CEC2"></span><div style="display:flex;gap:10px;flex-wrap:wrap"><button id="emrAll" style="background:transparent;color:#EAF1EC;'+B+';padding:10px 14px;font-weight:700">Confirm all</button><button id="emrIns" style="background:#2E6A4B;border:none;color:#fff;border-radius:10px;cursor:pointer;padding:10px 16px;font-weight:800">Update local MLS draft</button></div></div><div style="font-size:11.5px;color:#B9CEC2;margin-top:8px"><b>This updates only the local MLS note draft; it never writes or sends anything to Athena.</b> Use Review Athena actions afterward to see exactly what goes where.</div></div>';
     document.body.appendChild(host);
     fill(host,organize(noteText()));
     host.addEventListener('change',function(e){ var k=e.target.getAttribute&&e.target.getAttribute('data-k'); if(k){ conf[k]=e.target.checked; count(host); } });
     host.querySelector('#emrClose').onclick=function(){ host.remove(); };
     host.addEventListener('click',function(e){ if(e.target===host) host.remove(); });
     host.querySelector('#emrAll').onclick=function(){ S.forEach(function(s){ conf[s.k]=true; }); host.querySelectorAll('input[data-k]').forEach(function(c){ c.checked=true; }); count(host); };
+    /* tplsort-1.3.0 (2026-09-24): A PATIENT NOTE NEVER GOES INTO THE
+       TEMPLATES. This button passed the note to window.tplAiSplit - the
+       "Add templates" splitter. The note was sent to it, staged on the
+       template intake's review list with AI-placed destinations, and one
+       Save there would have stored it as a visit note format; the button
+       still read "AI n/a", because that call returns nothing. There is no AI
+       sort for a patient note in this panel, so the button says so, plainly,
+       and does nothing else. The sections come from the heading sorter
+       (organize) the panel opened with. */
     host.querySelector('#emrAi').onclick=function(){
-      var btn=this;
-      if(typeof window.tplAiSplit!=='function'||(typeof window.hasAI==='function'&&!window.hasAI())){ btn.textContent='AI unavailable'; setTimeout(function(){btn.textContent='AI sort';},1600); return; }
-      btn.textContent='Sorting...'; btn.disabled=true;
-      var done=function(ok){ btn.disabled=false; btn.textContent=ok?'AI sorted':'AI n/a - heuristic'; setTimeout(function(){btn.textContent='AI sort';},1700); };
-      try{ var r=window.tplAiSplit(noteText()); var p=(r&&typeof r.then==='function')?r:Promise.resolve(r);
-        Promise.race([p,new Promise(function(_,x){setTimeout(function(){x(0);},25000);})]).then(function(v){ var m=mapAi(v); if(m){ conf={}; fill(host,m); done(true); } else done(false); }).catch(function(){ done(false); });
-      }catch(e){ done(false); }
+      var why=host.querySelector('#emrAiWhy');
+      if(why) why.style.display='';
     };
     host.querySelector('#emrIns').onclick=function(){
       var parts=[]; S.forEach(function(s){ if(!conf[s.k]) return; var ta=host.querySelector('textarea[data-t="'+s.k+'"]'); var v=ta?ta.value.trim():''; parts.push(s.label.toUpperCase()+':\n'+(v||'(none)')); });

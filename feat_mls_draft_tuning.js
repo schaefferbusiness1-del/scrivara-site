@@ -789,7 +789,11 @@
         if (!ctx) return null;
         return clone(activeSectionProfile(id, ctx.family.profiles, ctx.family.activeProfile));
       },
-      add: function (input) {
+      /* tplsort-1.1.0: add(input, { activate: false }) stores the new format
+         WITHOUT making it the one in use - one write, so there is never a
+         moment in which the doctor's own format has lost its place. Every
+         existing caller passes one argument and is unchanged. */
+      add: function (input, options) {
         var ctx = current(); if (!ctx) return false;
         var profiles = ctx.family.profiles.slice();
         if (profiles.length >= MAX_SECTION_PROFILES) return false;
@@ -806,7 +810,15 @@
         if (!input.sectionMode) input.sectionMode = (activeSectionProfile(id, profiles, ctx.family.activeProfile) || {}).sectionMode;
         if (!input.templateMode) input.templateMode = SECTION_TEMPLATE_DEFAULT;
         profiles.push(input);
-        return persist(ctx, profiles, candidateId);
+        var keepCurrent = !!(options && typeof options === 'object' && options.activate === false);
+        var saved = persist(ctx, profiles, keepCurrent ? ctx.family.activeProfile : candidateId);
+        /* persist() answers with the ACTIVE format; the caller that kept the
+           current one in use still needs to know what was stored. */
+        if (saved && keepCurrent) {
+          var after = current(), stored = after ? after.family.profiles : [];
+          saved = clone(stored.filter(function (row) { return row.id === candidateId; })[0] || saved);
+        }
+        return saved;
       },
       update: function (profile, changes) {
         var ctx = current(); if (!ctx) return false;
@@ -2099,6 +2111,118 @@
     }
     return false;
   }
+  /* tplsort-1.1.0 (2026-09-24) - THE VISIT HALF OF "ADD ALL TEMPLATES".
+     The Templates panel's one place to add every template sorts each one to
+     a section and hands the visit ones here. Each is stored exactly as the
+     rows below store a template: profileEditor(section).add, then ONE
+     visitTemplateResync per section, so the Settings snapshot, the account
+     sync and these rows all follow and generation reads it with no new
+     reader. Limits are refused per row, never cut: a template longer than
+     MAX_SECTION_TEMPLATE characters, or a section already holding
+     MAX_SECTION_PROFILES saved formats, comes back in `refused` with the
+     reason. WHICH ONE IS IN USE: the new format becomes the one in use only
+     when the section's current format has no template text (the shipped
+     starting formats have none); otherwise the doctor's own format stays in
+     charge and the new one waits in the picker. Of several new ones for an
+     empty section, the first becomes the one in use.
+     THE DOCTOR'S OWN WORK IN PROGRESS WINS (tplsort-1.2.0).
+     - A format the doctor has just added with "+ Add" (visitPendingAdd) and
+       not yet filled is the doctor's, not an empty starting format: it stays
+       in use, and an import never takes over from it. Its pending record is
+       KEPT, so Cancel on that row still does what it always did - takes the
+       empty new format back out and restores the format in use before it.
+     - A row whose "Paste or upload a template" editor is open with unsaved
+       typing (its text or name differs from what is stored) keeps it: the
+       import does not change which format is in use under it, the editor
+       stays open with every typed word, and the row's status says where the
+       imported template went. An open editor with nothing typed is closed
+       when the import changes the format in use, so its Save cannot write
+       the old text over the new one. */
+  function visitTemplateTitle(family) {
+    var hit = VISIT_TEMPLATE_SECTIONS.filter(function (row) { return row[0] === family; })[0];
+    return hit ? hit[1] : '';
+  }
+  function visitTemplateUniqueLabel(rows, wanted) {
+    var taken = {};
+    (rows || []).forEach(function (row) { taken[String(row.label || '').trim().toLowerCase()] = 1; });
+    var base = String(wanted || '').slice(0, 72).trim(), label = base, n = 2;
+    while (taken[label.toLowerCase()] && n < 100) label = base + ' (' + (n++) + ')';
+    return label;
+  }
+  function importVisitTemplates(rows) {
+    var out = { saved: [], refused: [], sections: {} };
+    var order = [], byFamily = {};
+    (Array.isArray(rows) ? rows : []).forEach(function (row, index) {
+      row = row && typeof row === 'object' && !Array.isArray(row) ? row : {};
+      var family = visitTemplateFamily(row.family);
+      if (!family) { out.refused.push({ index: index, family: String(row.family || ''), reason: 'not-visit' }); return; }
+      var full = cleanTemplate(row.text, 1000000);
+      if (!full) { out.refused.push({ index: index, family: family, reason: 'empty' }); return; }
+      if (full.length > MAX_SECTION_TEMPLATE) {
+        out.refused.push({ index: index, family: family, reason: 'too-long', length: full.length, limit: MAX_SECTION_TEMPLATE });
+        return;
+      }
+      if (!byFamily[family]) { byFamily[family] = []; order.push(family); }
+      byFamily[family].push({ index: index, text: full, label: row.label });
+    });
+    order.forEach(function (family) {
+      var editor = profileEditor(family), title = visitTemplateTitle(family);
+      if (!editor) {
+        byFamily[family].forEach(function (item) { out.refused.push({ index: item.index, family: family, reason: 'failed' }); });
+        return;
+      }
+      var before = editor.active() || {};
+      var pend = visitPendingAdd[family];
+      var pendingInUse = !!(pend && pend.id && String(before.id || '') === String(pend.id));
+      var selector = q('mlsVnTplProfile_' + family);
+      var shownBefore = selector ? String(selector.value || '') : '';
+      var host = q('mlsVnTplEditor_' + family);
+      var editing = false;
+      if (host && host.getAttribute('data-open') === '1') {
+        var shown = editor.list().filter(function (row) { return String(row.id || '') === shownBefore; })[0] || before;
+        var textBox = q('mlsVnTplText_' + family), nameBox = q('mlsVnTplName_' + family);
+        var typed = textBox ? String(textBox.value || '').replace(/\r\n?/g, '\n').trim() : '';
+        var stored = String(shown.templateText || '').replace(/\r\n?/g, '\n').trim();
+        editing = typed !== stored || (!!nameBox && String(nameBox.value || '').trim() !== String(shown.label || VISIT_TEMPLATE_PROFILE_LABEL).trim());
+      }
+      var priorHasText = !!String(before.templateText || '').trim() || pendingInUse || editing;
+      var inUse = priorHasText, added = 0, lastLabel = '';
+      byFamily[family].forEach(function (item) {
+        var existing = editor.list();
+        if (existing.length >= MAX_SECTION_PROFILES) {
+          out.refused.push({ index: item.index, family: family, reason: 'full', limit: MAX_SECTION_PROFILES, count: existing.length });
+          return;
+        }
+        var label = visitTemplateUniqueLabel(existing, cleanReusableText(item.label, 72) || (title + ' template'));
+        var saved = editor.add({ id: 'imported', label: label, when: '', templateText: item.text, templateMode: SECTION_TEMPLATE_DEFAULT }, { activate: !inUse });
+        if (!saved) { out.refused.push({ index: item.index, family: family, reason: 'failed' }); return; }
+        inUse = true; added++; lastLabel = String(saved.label || label);
+        out.saved.push({ index: item.index, family: family, id: String(saved.id || ''), label: lastLabel });
+      });
+      var now = editor.active() || {};
+      out.sections[family] = {
+        added: added,
+        activeId: String(now.id || ''),
+        activeLabel: String(now.label || ''),
+        newInUse: added > 0 && !priorHasText,
+        keptLabel: priorHasText ? String(before.label || '') : '',
+        keptEditing: added > 0 && editing
+      };
+      /* the row's picker paints from its own current value; when a new
+         format has just become the one in use, point it there first */
+      if (added && !priorHasText) {
+        var picker = q('mlsVnTplProfile_' + family);
+        if (picker) { try { picker.value = String(now.id || ''); } catch (ePick) {} }
+      }
+      if (added) {
+        var pickedNow = selector ? String(selector.value || '') : '';
+        if (host && host.getAttribute('data-open') === '1' && pickedNow !== shownBefore && !editing) visitTemplateEditorClose(family);
+        visitTemplateResync(family);
+        if (editing) visitTemplateStatus('Your unsaved typing in ' + title + ' is still in its editor. The imported template was saved as “' + lastLabel + '” - pick it under Saved format when you are done.');
+      }
+    });
+    return out;
+  }
   function visitTemplateEditorClose(family) {
     visitUploadRequest++;
     var host = q('mlsVnTplEditor_' + family);
@@ -2346,6 +2470,10 @@
     sec.innerHTML =
       '<p class="set-head">📋 Visit note templates</p>' +
       '<p class="set-desc">These shape your visit notes: Whole visit / SOAP, HPI, ROS, Exam, Assessment, Plan. Operative note templates are separate - find them under Templates.</p>' +
+      '<div id="mlsVnTplIntakeRow" style="display:flex;gap:8px 12px;align-items:center;flex-wrap:wrap;margin:-4px 0 10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px">' +
+        '<button type="button" class="btn-green" id="mlsVnTplIntake">＋ Add templates</button>' +
+        '<span class="mini" style="flex:1 1 220px;min-width:0;color:var(--muted)">Have several? Paste or upload them all at once - MLS puts each one in the right section below, or with your operative notes and letters, and shows you where before saving. When it is not sure, it asks.</span>' +
+      '</div>' +
       '<button type="button" class="btn-ghost" id="mlsVnTplOpNoteLink" style="margin:-4px 0 12px">Open operative note templates</button>' +
       '<div id="mlsVnTplRows"></div>' +
       '<p class="mini" id="mlsVnTplStatus" role="status" style="margin:6px 0 0;color:var(--muted)"></p>' +
@@ -2356,6 +2484,15 @@
     sec.querySelector('#mlsDtCloudKeep').addEventListener('click', function () { resolveCloud('local'); });
     sec.querySelector('#mlsDtCloudUse').addEventListener('click', function () { resolveCloud('remote'); });
     paintCloudStatus();
+    /* tplsort-1.1.0: the one place to add every template; it opens over
+       Settings, headed "Add templates". */
+    var intake = sec.querySelector('#mlsVnTplIntake');
+    if (intake) intake.addEventListener('click', function () {
+      var opened = false;
+      try { opened = typeof window.openTemplateIntake === 'function' && window.openTemplateIntake() !== false; }
+      catch (eIntake) { opened = false; }
+      if (!opened) visitTemplateStatus('The place to add templates could not be opened. Reload MLS and try again.', true);
+    });
     var link = sec.querySelector('#mlsVnTplOpNoteLink');
     if (link) link.addEventListener('click', function () {
       try { if (typeof window.openTemplates === 'function') window.openTemplates(); }
@@ -2669,6 +2806,9 @@
     mountVisitTemplates: mountVisitTemplates,
     openVisitTemplates: openVisitTemplates,
     visitTemplateSections: VISIT_TEMPLATE_SECTIONS.map(function (row) { return row[0]; }),
+    /* tplsort-1.1.0: the Templates panel's one place to add every template */
+    importVisitTemplates: importVisitTemplates,
+    visitTemplateLimits: { characters: MAX_SECTION_TEMPLATE, formats: MAX_SECTION_PROFILES },
     beginSettings: beginSettings,
     saveFromUi: saveFromUi,
     cloudSync: function (opts) { return cloudRun('sync', opts); },

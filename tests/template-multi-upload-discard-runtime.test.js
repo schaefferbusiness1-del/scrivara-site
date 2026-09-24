@@ -53,7 +53,8 @@ for (const shell of SHELLS) {
   const renderSrc = lift(src, '_renderTplSplitPreview');
   assert.ok(/class="tpl-split-actions"/.test(renderSrc), shell + ': the review actions are no longer grouped for the sticky footer');
   assert.ok(/onclick="_tplDiscardSplit\(\)"/.test(renderSrc), shell + ': the review list has no Discard control');
-  assert.ok(/onclick="tplAddSplit\(\)"/.test(renderSrc), shell + ': the review list lost its Add control');
+  /* tplsort-1.1.0: the review's one Save sorts each row to its place (tplAddSplitSorted - the name keeps "tplAddSplit" so the template library still finds and holds the button during a signed-in save); operative rows and letters still go through tplAddSplit(). */
+  assert.ok(/onclick="tplAddSplitSorted\(\)"/.test(renderSrc), shell + ': the review list lost its Save control');
 
   const addSrc = lift(src, 'tplAddSplit');
   assert.ok(/_tplDiscardSplit\(\)/.test(addSrc), shell + ': a successful Add no longer resets through the shared _tplDiscardSplit()');
@@ -110,7 +111,7 @@ for (const shell of SHELLS) {
   {
     const h = harness({ _tplPendingSplit: [{ name: 'Right knee arthroscopy', text: 'PROCEDURE NOTE', keep: true }] });
     h.context._renderTplSplitPreview();
-    assert.ok(h.box.innerHTML.includes('onclick="tplAddSplit()"'), shell + ': rendered review list lost its Add button');
+    assert.ok(h.box.innerHTML.includes('onclick="tplAddSplitSorted()"'), shell + ': rendered review list lost its Save button');
     assert.ok(h.box.innerHTML.includes('onclick="_tplDiscardSplit()"'), shell + ': rendered review list lost its Discard button');
     assert.ok(h.box.innerHTML.includes('Right knee arthroscopy'), shell + ': rendered review list dropped the pending template row');
   }

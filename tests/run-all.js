@@ -2814,7 +2814,15 @@ const tests = [
   'typed-visit-notes-reach-the-phone-runtime.test.js',
   /* capsaved-1.0.0 (MLS Assist 3.0.114): a capture the server did not save
      never reads as Captured */
-  'extension-capture-says-when-nothing-was-saved.test.js'
+  'extension-capture-says-when-nothing-was-saved.test.js',
+  /* tplsort-1.2.0: one place to add every template - the AI splits and
+     sorts, the heading reader only offers a best guess. tplsort-1.3.0: the
+     browser never cuts; the server cuts at the lines the model names */
+  'template-destination-sorter.test.js',
+  'template-intake-sorts-everything-runtime.test.js',
+  /* tplsort-1.3.0: a letter saved from "Add templates" is kind letter and no
+     picker - the op-note room's auto-match above all - ever drafts from it */
+  'template-letters-never-draft-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

@@ -247,7 +247,11 @@
     var list = $('opPrepList'); if (!list || !list.parentNode) return;
     if (tplPickers().length < 2) return;                 /* only in multi-patient (all-day) mode */
     css();
-    var tpls = templates();
+    /* tplsort-1.3.0 (2026-09-24): a letter or other document (kind letter)
+       never drafts an op note, so it is not offered for every patient */
+    var tpls = templates().filter(function (t) {
+      return !(t && safe(function () { return isFn(window._mlsTplKindOf) ? window._mlsTplKindOf(t) : S(t.kind).trim().toLowerCase(); }, '') === 'letter');
+    });
     var opts = '<option value="">— choose a procedure template —</option>' + tpls.map(function (t) {
       return '<option value="' + esc(t.id) + '">' + esc(t.name || t.id) + '</option>';
     }).join('');

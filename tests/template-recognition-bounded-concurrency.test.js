@@ -57,31 +57,25 @@ const SOURCE = [
   decl(/var _tplAiInFlight=[^\n]*;/, 'the pool state'),
   fn('_tplAppendUnreadableRows'),
   fn('_tplMultiStatus'),
-  fn('_tplFormHeaderCount'),
-  fn('_looksMultiForm'),
   fn('_tplParseMeta'),
-  fn('_tplTypeName'),
-  /* tplharness-1.0.0 (2026-08-28): tplMultiFile grew a call to
-     _tplSuggestLibrary() and this lift list never followed it, so every run
-     died with "ReferenceError: _tplSuggestLibrary is not defined" INSIDE the
-     first case - which means this suite has not actually checked bounded
-     concurrency, slot leaks or the wait queue since that call landed. The
-     function is self-contained: its only dependency, _tplStore(), is already
-     inside its own try/catch and degrades to an empty library here. */
+  /* tplharness-1.0.0 (2026-08-28): _tplSuggestLibrary is self-contained: its
+     only dependency, _tplStore(), is inside its own try/catch and degrades to
+     an empty library here. */
   fn('_tplSuggestLibrary'),
   fn('_tplSeedKeywords'),
-  fn('_tplChunk'),
   fn('_tplDedupeTemplatesInfo'),
   fn('_tplDedupeTemplates'),
   fn('_tplAiSlot'),
   fn('_tplAiRelease'),
   fn('_tplPool'),
-  fn('_tplSplitChunk'),
+  /* tplsort-1.2.0 (2026-09-24): every file goes to the splitter once
+     (_tplSplitCall, no chunking); the rows come from the tplsort block. */
+  fn('_tplSplitCall'),
+  fn('_tplFoundWords'),
   fn('_tplFoundSoFar'),
-  fn('_tplSplitOneInto'),
-  fn('_tplPerFileFallback'),
   fn('tplMultiFile'),
   fn('tplAiSplit'),
+  (function () { const a = html.indexOf('var TPL_SORT_FAMILIES='); const b = html.indexOf('/* Retroactively rename ALREADY-saved', a); assert(a > 0 && b > a, 'ScribeFlow.html must still carry the tplsort block'); return html.slice(a, b); })(),
 ].join('\n');
 
 /* `responder(text, callIndex)` returns { status, templates, after } — `after`
@@ -97,8 +91,9 @@ function harness(responder) {
   let resolved = 0;
 
   const ctx = {
-    console, Math, Date, JSON, Promise, String, Number, Array, Object, RegExp, setTimeout,
-    document: { getElementById: id => nodes[id] || null },
+    console, Math, Date, JSON, Promise, String, Number, Array, Object, RegExp, setTimeout, WeakSet,
+    esc: s => String(s),
+    document: { getElementById: id => nodes[id] || null, querySelector: () => null },
     backendMode: () => true,
     bkToken: () => 'token',
     bkBase: () => 'https://api.test',
@@ -137,8 +132,8 @@ function harness(responder) {
   };
 }
 
-/* A file long enough and header-dense enough that _looksMultiForm sends it to
-   the AI splitter — that is the path the 90-file batch actually took. */
+/* A long operative-report file. tplsort-1.2.0: every file goes to the
+   splitter now; this is the shape the 90-file batch actually took. */
 function multiFormFile(i) {
   const body = ('Operative Report\nPatient Name: Case ' + i + '\n' +
     'Date of Procedure: 2026-08-05\n' + 'clinical narrative text '.repeat(60) + '\n\n')
@@ -187,18 +182,16 @@ async function run(label, body) {
     assert.strictEqual(order, '0,1,2,3,4,5,6,7', 'rows must be in file order, got ' + order);
   });
 
-  await run('chunk order within one file survives out-of-order answers', async () => {
-    /* One long file on the 1-2 file path. The parts are separated by form
-       feeds so _tplChunk lands exactly one marker per chunk — a bare blob is
-       hard-split at 6000 chars and would straddle them. */
-    const one = { name: 'big.txt', __text: Array.from({ length: 4 }, (_, c) => 'PART' + c + ' ' + 'x'.repeat(5000)).join('\f') };
-    const h = harness(text => {
-      const c = Number((text.match(/PART(\d)/) || [])[1]);
-      return { after: (4 - c) * 2, templates: [{ name: 'p' + c, text: 'PART' + c + ' recovered' }] };
-    });
+  await run('one long file is ONE splitter call - never chunked', async () => {
+    /* tplsort-1.2.0: the old 6,000-character chunking cut templates in two
+       at arbitrary points; each file now goes to the splitter whole (up to
+       its 40,000-character limit), and the splitter finds the templates. */
+    const one = { name: 'big.txt', __text: Array.from({ length: 4 }, (_, c) => 'PART' + c + ' ' + 'x '.repeat(2500)).join('\n\n') };
+    const h = harness(text => ({ templates: [{ name: 'whole', text }] }));
     await h.upload([one]);
-    const order = h.ctx._tplPendingSplit.map(t => Number((t.text.match(/PART(\d)/) || [])[1])).join(',');
-    assert.strictEqual(order, '0,1,2,3', 'chunk rows must stay in chunk order, got ' + order);
+    assert.strictEqual(h.calls.length, 1, 'a long file was chunked into ' + h.calls.length + ' calls');
+    assert.ok(h.calls[0].text === one.__text.trim(), 'the splitter did not get the whole file');
+    assert.strictEqual(h.ctx._tplPendingSplit.length, 1);
   });
 
   await run('progress counts tick on completion, never on dispatch', async () => {

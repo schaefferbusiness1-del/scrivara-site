@@ -1050,6 +1050,21 @@
   #oprPanelTpls #templatesModal h3 .tpl-ctx-op{ display:inline; }
   #oprPanelTpls #templatesModal .tpl-ctx-visit{ display:none; }
   #oprPanelTpls #templatesModal .modal-x{ display:none; }
+  /* tplsort-1.1.0 (2026-09-24): reached from Settings' "+ Add templates" the
+     panel opens on its own, over Settings (openTemplateIntake), headed "Add
+     templates" and showing only the one place to add them - not the op-note
+     room's "Prep op notes". */
+  #templatesModal .tpl-ctx-intake{ display:none; }
+  /* one step above the Settings it opens over, whatever order the two sit in */
+  #templatesModal.tpl-intake{ z-index:9401; }
+  #templatesModal.tpl-intake .tpl-ctx-intake{ display:block; }
+  #templatesModal.tpl-intake h3 .tpl-ctx-intake{ display:inline; }
+  /* the op-note templates look (feat_mls_opnote_templates_ui.js) turns any
+     span in this h3 into a small capitals kicker; this one IS the title */
+  #templatesModal.tpl-intake .modal > h3 > span.tpl-ctx-intake{ font-size:inherit!important; font-weight:inherit!important; letter-spacing:inherit!important; text-transform:none!important; color:inherit!important; }
+  #templatesModal.tpl-intake .tpl-ctx-visit,#templatesModal.tpl-intake .tpl-ctx-op{ display:none!important; }
+  #templatesModal.tpl-intake > .modal > :not(.modal-x):not(h3):not(.tpl-ctx-intake):not(#tplIntakeCard):not(.tpl-close-row){ display:none!important; }
+  #templatesModal.tpl-intake .tpl-intake-lead{ display:none!important; }
   @media (max-width:900px){
     #oprPanelProcs{ grid-template-columns:1fr; grid-template-rows:auto minmax(0,1fr); }
     #oprDayRail{ border-right:0; border-bottom:1px solid var(--line); }
@@ -6000,9 +6015,10 @@ html:has(> body > #intakeView[style*="display: block"]) body > :not(#intakeView)
          There, "optional output formatting" and the visit-note switches read as
          if they controlled op notes; they do not. Each context gets its own
          words (CSS in the op-note room block picks which is shown). -->
-    <h3><span class="tpl-ctx-visit">📄 Templates <span style="font-weight:400;font-size:14px;color:var(--muted)">(optional output formatting)</span></span><span class="tpl-ctx-op">📄 Op-note templates</span></h3>
+    <h3><span class="tpl-ctx-visit">📄 Templates <span style="font-weight:400;font-size:14px;color:var(--muted)">(optional output formatting)</span></span><span class="tpl-ctx-op">📄 Op-note templates</span><span class="tpl-ctx-intake">📥 Add templates</span></h3>
     <p class="note tpl-ctx-visit">Import a blank template/form (PDF or image). When enabled, MLS formats the generated note to match the template's structure and fields. Templates are stored locally on this device. On by default; when off, generation is unchanged.</p>
     <p class="note tpl-ctx-op">Each op note is drafted from the template that matches its procedure. Upload, edit, or add standard lines here. How closely drafts follow them is set on the Procedures tab.</p>
+    <p class="note tpl-ctx-intake">Add your visit note templates (whole visit note, HPI, ROS, Exam, Assessment, Plan), your operative and procedure note templates, and letters or other documents. Upload them or paste them below - MLS sorts each one into its place and shows you where, and why, before anything is saved.</p>
 
     <div class="field" style="margin-top:4px">
       <div class="tpl-ctx-op" style="font-weight:700;font-size:13px;margin:0 0 6px">Visit-note formatting <span style="font-weight:400;color:var(--muted)">— these two switches do not change op notes</span></div>
@@ -6025,14 +6041,35 @@ html:has(> body > #intakeView[style*="display: block"]) body > :not(#intakeView)
     <hr style="border:none;border-top:1px solid var(--line);margin:14px 0">
 
     <!-- Multi-template PDF splitter -->
-    <div style="background:linear-gradient(135deg,#eef4ff,#f3ecff);border:1px solid #EAF1EE;border-radius:10px;padding:13px 14px;margin-bottom:14px">
-      <div style="font-weight:700;font-size:14px">✨ Have several forms / templates to import?</div>
-      <div style="font-size:12.5px;color:var(--muted);margin:3px 0 9px">Drop one big PDF with many forms, OR drop a whole batch of files at once (Word, PDF, images, text). MLS recognizes and splits out every template — even 50–100 of them.</div>
+    <!-- tplsort-1.1.0 (2026-09-24): THE ONE PLACE TO ADD EVERY TEMPLATE (owner:
+         "one stop to add all templates that then all get auto sorted"). The
+         same card, the same one file input and drop zone, plus a paste box
+         that goes down the same path as a file. A file or paste holding
+         several templates is cut into them; each one is then sorted to Whole
+         visit note / SOAP, HPI, ROS, Exam, Assessment, Plan, Operative note or
+         Letters & other documents - or left for the doctor to choose when MLS
+         is not sure - shown with the reason, and saved with one press. -->
+    <div id="tplIntakeCard" style="background:linear-gradient(135deg,#eef4ff,#f3ecff);border:1px solid #EAF1EE;border-radius:10px;padding:13px 14px;margin-bottom:14px">
+      <div class="tpl-intake-lead" style="font-weight:700;font-size:14px">✨ Add all your templates here, in one go</div>
+      <div class="tpl-intake-lead" style="font-size:12.5px;color:var(--muted);margin:3px 0 9px">Visit note templates (whole visit note, HPI, ROS, Exam, Assessment, Plan), operative and procedure note templates, and letters - a file, a batch of files, or pasted text. MLS finds each template in a file, sorts each one into its place and shows you where, and why, before anything is saved.</div>
       <button class="btn-primary" style="font-size:13px;padding:8px 14px" onclick="document.getElementById('tplMultiFileInput').click()">📑 Upload templates (one PDF or many files)</button>
       <input type="file" id="tplMultiFileInput" aria-label="Upload templates: one PDF or many files" accept=".txt,.text,.md,.markdown,.rtf,.csv,.tsv,.json,.html,.htm,.doc,.docx,.odt,.pdf,.png,.jpg,.jpeg,.webp,.gif,.bmp,.heic,.heif,.tiff,.jfif,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/*" multiple style="display:none" onchange="tplMultiFile(event)">
-      <div id="tplMultiDrop" ondragover="_tplMultiDragOver(event,true)" ondragleave="_tplMultiDragOver(event,false)" ondrop="_tplMultiDrop(event)" onclick="document.getElementById('tplMultiFileInput').click()" style="margin-top:8px;border:2px dashed #EAF1EE;border-radius:10px;padding:14px;text-align:center;color:var(--muted);font-size:12.5px;background:#fbfbff;cursor:pointer;transition:all .12s">⬇ Drag &amp; drop your forms here (one multi-form PDF, or many files at once)</div>
+      <div id="tplMultiDrop" ondragover="_tplMultiDragOver(event,true)" ondragleave="_tplMultiDragOver(event,false)" ondrop="_tplMultiDrop(event)" onclick="document.getElementById('tplMultiFileInput').click()" style="margin-top:8px;border:2px dashed #EAF1EE;border-radius:10px;padding:14px;text-align:center;color:var(--muted);font-size:12.5px;background:#fbfbff;cursor:pointer;transition:all .12s">⬇ Drag &amp; drop your template files here (one file or many at once)</div>
+      <!-- tplsort-1.1.0: the paste box folds under one line, so the saved
+           library below still starts on the first screen of this tab
+           (tests/templates-tab-layout-proved.test.js); openTemplateIntake()
+           opens it. The inline font-size:12.5px is deliberate - the op-note
+           room gives this card's 12.5px children one reading measure, so the
+           paste box lines up with the drop zone above it. -->
+      <details id="tplIntakePasteWrap" style="font-size:12.5px;margin-top:10px">
+        <summary style="cursor:pointer;font-weight:650;font-size:13px;color:var(--ink,#1a211c);padding:4px 0">✍️ Or paste a template instead</summary>
+        <label for="tplIntakePaste" style="display:block;font-size:12.5px;color:var(--muted);margin:6px 0 4px">Paste one template or several, then press Sort these. MLS finds where each template starts and sorts each one. Add more the same way - each one joins the list below.</label>
+        <textarea id="tplIntakePaste" placeholder="Paste a template here" style="width:100%;box-sizing:border-box;min-height:96px;font-size:13px"></textarea>
+        <div class="row" style="margin-top:6px;gap:8px;flex-wrap:wrap"><button type="button" class="btn-ghost" id="tplIntakeSortBtn" style="font-size:13px;padding:8px 14px" onclick="tplSortPasted()">Sort these</button></div>
+      </details>
       <div id="tplMultiStatus" class="mini" style="color:var(--muted);margin-top:8px"></div>
       <div id="tplMultiResult" style="margin-top:8px"></div>
+      <div id="tplSortKept"></div>
     </div>
 
     <h4 style="margin:0 0 8px">Add a template</h4>
@@ -6078,7 +6115,7 @@ html:has(> body > #intakeView[style*="display: block"]) body > :not(#intakeView)
       </div>
     </div>
 
-    <div class="row" style="margin-top:14px">
+    <div class="row tpl-close-row" style="margin-top:14px">
       <button class="btn-ghost" onclick="closeTemplates()" style="flex:1">Close</button>
     </div>
   </div>
@@ -24112,10 +24149,24 @@ async function extractPdfText(file){
   try{
     const pdf=await task.promise;
     let out='';
+    /* tplsort-1.1.0 (2026-09-24): the text keeps its LINES. Every item used to
+       be joined with a space, so each page came out as one long line and a
+       template's headings were no longer lines - a whole H&P read as a
+       template with one heading. A line ends where pdf.js says it does
+       (hasEOL) or where the text moves to a new baseline. */
     for(let i=1;i<=pdf.numPages;i++){
       const page=await pdf.getPage(i);
       const content=await page.getTextContent();
-      out+=content.items.map(it=>it.str).join(' ')+'\n\n';
+      const lines=[]; let cur=[], lastY=null;
+      for(const it of content.items){
+        if(!it||typeof it.str!=='string') continue;
+        const y=(it.transform&&it.transform.length>5)?it.transform[5]:null;
+        if(cur.length&&it.str&&y!==null&&lastY!==null&&Math.abs(y-lastY)>1.5){ lines.push(cur.join(' ')); cur=[]; }
+        if(it.str){ cur.push(it.str); if(y!==null) lastY=y; }
+        if(it.hasEOL){ lines.push(cur.join(' ')); cur=[]; lastY=null; }
+      }
+      if(cur.length) lines.push(cur.join(' '));
+      out+=lines.map(l=>l.replace(/\s+$/,'')).join('\n').replace(/\n{3,}/g,'\n\n')+'\n\n';
     }
     return out.trim();
   }finally{
@@ -24810,6 +24861,10 @@ try{ window._tplSameNameGroups=_tplSameNameGroups; window.archiveTemplateCopies=
 /* ===== end tpldups-1.0.0 ===== */
 function dedupeSavedTemplates(announce){
   try{
+    /* tplsort-1.1.0: while the one Save (tplAddSplitSorted) adds templates,
+       the list re-renders through here; its single summary toast speaks for
+       the whole save, so this one stays quiet */
+    if(window.__mlsTplSortQuiet) announce=false;
     var list=(typeof getTemplates==='function'?getTemplates():[])||[];
     /* 1p, 2026-08-18 (op-notes press test): PRESSED, IT SAID NOTHING. `announce`
        is the flag that means "a doctor clicked this", and the only branch that
@@ -25119,7 +25174,9 @@ function opPrepRender(){
      function repaints on nearly every control in the room. The option markup is
      identical for every row apart from which one carries `selected`, so it is
      built once and the selection is marked with one splice. */
-  var _tplsNow=_tplStore();
+  /* tplsort-1.3.0: a letter or other document is never an op note's
+     template, so it is not offered here */
+  var _tplsNow=_tplStore().filter(function(t){ return !(typeof _mlsTplKindOf==='function'&&_mlsTplKindOf(t)==='letter'); });
   if(!_tplsNow.length){ box.innerHTML='<div class="mini" style="color:#b4231e">Upload your operative-note templates on the <b>Templates</b> tab first — MLS adapts them into each patient’s report.</div>'; box.__opPrepHtml=''; return; }
   var _optHead='<option value="">— pick a template —</option>';
   var _optParts=_tplsNow.map(function(t){ return { id:String(t.id), html:'<option value="'+t.id+'"' }; });
@@ -26950,13 +27007,16 @@ function opPrepSave(i){
 }
 
 function openTemplates(){
+  /* tplsort-1.1.0: an ordinary open is never the Settings "Add templates"
+     view (openTemplateIntake adds that back after calling this) */
+  try{ document.getElementById('templatesModal').classList.remove('tpl-intake'); }catch(eIntake){}
   document.getElementById('tplUseToggle').checked=useTemplatesOn();
   document.getElementById('tplAutoChoose').checked=templateAutoOn();
   renderTemplateList();
   renderTemplateActiveSelect();
   document.getElementById('templatesModal').classList.add('show');
 }
-function closeTemplates(){ document.getElementById('templatesModal').classList.remove('show'); }
+function closeTemplates(){ var tm=document.getElementById('templatesModal'); var wasIntake=tm.classList.contains('tpl-intake'); tm.classList.remove('show'); tm.classList.remove('tpl-intake'); /* tplsort-1.2.0: "Add templates" opened from inside the op-note room returns to the room */ if(wasIntake&&typeof _tplSortBackToRoom==='function') _tplSortBackToRoom(); }
 
 function onTplToggleChange(){
   localStorage.setItem(uns('useTemplates'),document.getElementById('tplUseToggle').checked?'1':'0');
@@ -27073,7 +27133,8 @@ function renderTplDetail(){
        template left on "Any note kind" competes for every kind, which is what
        every template in an existing library already does. */
     '<div class="field" style="margin:0 0 8px"><label for="tplDetKind">Note kind this template is for</label><select id="tplDetKind" class="sf-select" onchange="tplDetailDirty()">'+
-      ['','soap','insurance','op'].map(function(k){ return '<option value="'+esc(k)+'"'+(kindValue===k?' selected':'')+'>'+esc(_mlsTplKindLabel(k))+'</option>'; }).join('')+
+      /* tplsort-1.3.0: a letter keeps its kind when it is edited here */
+      ['','soap','insurance','op','letter'].map(function(k){ return '<option value="'+esc(k)+'"'+(kindValue===k?' selected':'')+'>'+esc(_mlsTplKindLabel(k))+'</option>'; }).join('')+
     '</select><div style="font-size:11.5px;color:var(--muted);margin-top:4px">Pick a kind and this template is only ever offered for that kind of note. Leave it on <b>Any note kind</b> and it stays available to all of them.</div><div id="tplDetKindWhy" style="font-size:11.5px;color:#8A5A00;margin-top:4px;display:none"></div></div>'+
     '<textarea id="tplDetText" aria-label="Template content" style="min-height:220px;width:100%;font:12.5px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace" oninput="tplDetailDirty()">'+esc(t.text||'')+'</textarea>'+
     '<div id="tplDetStatus" role="status" style="font-size:12px;color:var(--muted);margin:6px 0">No unsaved changes</div>'+
@@ -27472,6 +27533,62 @@ async function _extractDocxText(file){
   const out=await m.extractRawText({arrayBuffer:buf});
   return ((out&&out.value)||'').trim();
 }
+/* tplsort-1.1.0 (2026-09-24): .ODT IS READ, NOT DECODED AS TEXT. Both template
+   pickers offered .odt (LibreOffice / OpenOffice Writer), but no branch of the
+   reader handled it: it fell through to file.text(), which decodes the zip's
+   raw bytes - the stored part names and XML fragments pass the 40-letter bar,
+   so the review list could show binary junk as a template. An .odt keeps its
+   words in one zip part, content.xml. This walks the zip's central directory
+   to that part, inflates it with the browser's own DecompressionStream, and
+   reads the paragraphs and headings out of the XML, one per line. Anything it
+   cannot read throws, and the caller answers '' with the "save it as .docx or
+   PDF" advice, exactly like every other unreadable file. */
+async function _extractOdtText(file){
+  const u8=new Uint8Array(await file.arrayBuffer());
+  const dv=new DataView(u8.buffer,u8.byteOffset,u8.byteLength);
+  let eocd=-1;
+  for(let i=u8.length-22;i>=Math.max(0,u8.length-65557);i--){ if(dv.getUint32(i,true)===0x06054b50){ eocd=i; break; } }
+  if(eocd<0) throw new Error('not a zip');
+  let off=dv.getUint32(eocd+16,true);
+  const count=dv.getUint16(eocd+10,true), dec=new TextDecoder('utf-8');
+  for(let n=0;n<count&&off+46<=u8.length;n++){
+    if(dv.getUint32(off,true)!==0x02014b50) break;
+    const method=dv.getUint16(off+10,true), size=dv.getUint32(off+20,true);
+    const nameLen=dv.getUint16(off+28,true), extraLen=dv.getUint16(off+30,true), noteLen=dv.getUint16(off+32,true), local=dv.getUint32(off+42,true);
+    const name=dec.decode(u8.subarray(off+46,off+46+nameLen));
+    off+=46+nameLen+extraLen+noteLen;
+    if(name!=='content.xml') continue;
+    if(dv.getUint32(local,true)!==0x04034b50) throw new Error('bad local header');
+    const start=local+30+dv.getUint16(local+26,true)+dv.getUint16(local+28,true);
+    const raw=u8.subarray(start,start+size);
+    let xml='';
+    if(method===0) xml=dec.decode(raw);
+    else if(method===8){
+      if(typeof DecompressionStream!=='function') throw new Error('no inflater');
+      xml=await new Response(new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text();
+    } else throw new Error('unsupported compression');
+    const doc=new DOMParser().parseFromString(xml,'application/xml');
+    if(doc.getElementsByTagName('parsererror').length) throw new Error('bad xml');
+    const body=doc.getElementsByTagNameNS('*','body')[0]||doc.documentElement;
+    let out='';
+    const walk=function(node){
+      for(let c=node.firstChild;c;c=c.nextSibling){
+        if(c.nodeType===3){ out+=c.nodeValue; continue; }
+        if(c.nodeType!==1) continue;
+        const tag=c.localName;
+        if(tag==='tab'){ out+='\t'; continue; }
+        if(tag==='line-break'){ out+='\n'; continue; }
+        if(tag==='s'){ out+=' '.repeat(Math.max(1,Math.min(40,parseInt(c.getAttribute('text:c')||'1',10)||1))); continue; }
+        if(tag==='note'||tag==='annotation'||tag==='tracked-changes') continue;
+        walk(c);
+        if(tag==='p'||tag==='h') out+='\n';
+      }
+    };
+    walk(body);
+    return out.replace(/[ \t]+\n/g,'\n').replace(/\n{3,}/g,'\n\n').trim();
+  }
+  throw new Error('no content.xml');
+}
 function saveTemplateFromForm(){
   const name=document.getElementById('tplName').value.trim();
   const text=document.getElementById('tplText').value.trim();
@@ -27511,6 +27628,9 @@ function _tplAppendUnreadableRows(){
        recorded for this exact file, not one fixed sentence for all of them.
        A file read through a stubbed or older reader carries no reason and
        still gets the shipped sentence, unchanged. */
+    /* tplsort-1.3.0: a paste that cannot be used is named as the paste and
+       keeps every word that was pasted */
+    if(u.pasted){ _tplPendingSplit.push({ name:'Your paste — couldn’t use', text:String(u.text||'').trim()||'(Nothing was pasted.)', keep:false, unreadable:true, pasted:true, reason:String(u.reason||'') }); continue; }
     _tplPendingSplit.push({ name:String(u.name||'File').replace(/\.[^.]+$/,'')+' — couldn’t read', text:(u.text&&u.text.trim())||('(No readable text could be extracted from “'+String(u.name||'this file')+'”. '+_tplReadAdvice(u.reason)+')'), keep:false, unreadable:true, reason:String(u.reason||'') });
   }
   _tplUnreadableRows=[];
@@ -27721,6 +27841,12 @@ var _TPL_READ_ADVICE={
   'no-text-layer':'This PDF is a scan (a picture of a page), so it carries no text to extract. Upload the original document (.docx is best), or sign in to MLS and upload a photo of the page so the picture reader can read it.',
   'legacy-doc':'This is an old Word .doc. Re-save it as .docx or PDF and upload it again.',
   'docx-empty':'This .docx opened but held almost no text. Check that the template text is in the document body itself, not only inside a text box or a pasted picture.',
+  'odt-unreadable':'MLS could not read the text inside this OpenDocument (.odt) file. Save it as .docx or PDF and upload it again.',
+  /* tplsort-1.3.0: text that WAS read but is not a template - said as it
+     is. A .txt file or a paste is never told "no text could be extracted". */
+  'too-little-text':'It holds only a few words - too few to be a template. Add the whole template and try again.',
+  'not-text':'Much of it is not readable text (stray symbols or unreadable characters), so it cannot be used as a template. If it came from a Word or PDF file, save that file as .docx or PDF and add it again.',
+  'empty-file':'This file is empty - there is no text in it.',
   'unreadable':'MLS could not extract any text from this file. Re-save it as .docx or PDF and upload it again.'
 };
 function _tplReadAdvice(reason){ return _TPL_READ_ADVICE[String(reason||'')]||_TPL_READ_ADVICE.unreadable; }
@@ -27732,9 +27858,11 @@ function _tplUnreadableWhy(rows){
   return n===1?_tplReadAdvice(only):'Each row below says why that file could not be read.';
 }
 function _tplLetters(t){ return (String(t||'').match(/[A-Za-z]/g)||[]).length; }
-/* The SAME 40-letter bar tplMultiFile judges by, so a recorded reason can never
-   disagree with the verdict it is there to explain: text that passes clears the
-   reason, text that does not keeps it. */
+/* A reader's own reason for a file that read as little or nothing (a scanned
+   PDF, an old .doc) - recorded under 40 letters and cleared above it.
+   tplsort-1.3.0: tplMultiFile no longer judges by this bar
+   (_tplSortReadVerdict does); it says this reason only for a file the
+   verdict refuses, so the reason can never be said of a file that read. */
 function _tplReadDone(reason,text){ _tplReadReason=(_tplLetters(text)>=40)?'':String(reason||''); return text; }
 async function _tplReadAnyFile(file){
   var lower=(file.name||'').toLowerCase(), mime=(file.type||'').toLowerCase();
@@ -27746,20 +27874,16 @@ async function _tplReadAnyFile(file){
     if(!backendMode()||!bkToken()) return _tplReadDone('needs-sign-in','');
     try{ var dataUrl=await readFileAsDataUrl(file); var rv=await fetch(bkBase()+'/api/vision',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},body:JSON.stringify({image:dataUrl,mimetype:mime||'image/png'})}); var jv={}; try{ jv=await rv.json(); }catch(e){} return _tplReadDone('vision-refused', rv.ok?((jv.text||'').trim()):''); }catch(e){ return _tplReadDone('vision-refused',''); }
   }
-  try{ return _tplReadDone('unreadable', _cleanExtractedText(await file.text(), lower)); }catch(e){ return _tplReadDone('unreadable',''); }
+  /* tplsort-1.1.0: an .odt is a zip, and the plain-text fallback below
+     decoded its raw bytes as text. See _extractOdtText. */
+  if(lower.endsWith('.odt')||mime==='application/vnd.oasis.opendocument.text'){ try{ return _tplReadDone('odt-unreadable', await _extractOdtText(file)); }catch(e){ return _tplReadDone('odt-unreadable',''); } }
+  /* tplsort-1.4.0: pasted text is sent and saved as typed - the cleaner
+     below squeezes indents and blank runs, which flattened a nested Plan */
+  try{ var raw=await file.text(); return _tplReadDone('unreadable', (typeof _tplSortIsPasted==='function'&&_tplSortIsPasted(file))?raw.replace(/\r\n?/g,'\n'):_cleanExtractedText(raw, lower)); }catch(e){ return _tplReadDone('unreadable',''); }
 }
-/* Count how many SEPARATE notes a blob holds — by counting note TITLES / per-note "Patient:" lines,
-   NOT section headers (a single op note has many section headers but is still one form). */
-function _tplFormHeaderCount(text){
-  try{ var s=String(text||'');
-    var titles=(s.match(/\boperative\s+(report|note)\b/gi)||[]).length;
-    var patients=(s.match(/\bpatient(\s*name)?\s*[:#]/gi)||[]).length;
-    var dop=(s.match(/\bdate\s+of\s+(procedure|surgery|operation)\s*[:#]/gi)||[]).length;
-    return Math.max(titles, patients, dop);
-  }catch(e){ return 0; }
-}
-/* Only treat a file as multi-form if it clearly holds 2+ separate notes (and is long enough). */
-function _looksMultiForm(text){ return _tplFormHeaderCount(text)>=2 && String(text||'').length>4000; }
+/* tplsort-1.2.0 (2026-09-24): _tplFormHeaderCount / _looksMultiForm, the
+   pattern test that decided which files went to the splitter, are gone:
+   every file and every paste now goes to it (tplMultiFile). */
 /* NAME A TEMPLATE BY THE TYPE OF NOTE (the procedure), NOT the patient. Pulls the procedure /
    operation line and tidies it into a clean label (side · levels · type). Strips patient names. */
 /* Explicit template metadata: leading "Name:" / "Keywords:" lines are template
@@ -27772,13 +27896,19 @@ function _tplParseMeta(text){
   var lines=String(text||'').replace(/\r\n?/g,'\n').split('\n');
   var meta={name:'',keywords:[],body:String(text||'')};
   var i=0, guard=0, name='', keywords=null;
+  /* tplsort-1.3.0: a metadata value that is really a blank to fill in -
+     underscores, an empty or placeholder bracket, no letter or digit */
+  var blank=function(v){ var s=String(v==null?'':v).trim(); return !s||/_{3,}|\[\s*\]/.test(s)||/^\[[^\]]*\]$/.test(s)||!/[A-Za-z0-9]/.test(s); };
   while(i<lines.length && guard<6){
     var t=lines[i].trim();
     if(!t){ i++; continue; }
     var m=t.match(/^(?:template\s+name|name|title)\s*:\s*(.+)$/i);
     var k=t.match(/^(?:keywords?|tags)\s*:\s*(.+)$/i);
-    if(m && !name){ name=m[1].trim(); i++; guard++; continue; }
-    if(k && keywords===null){ keywords=k[1].split(/[,;]/).map(function(s){ return s.trim().toLowerCase(); }).filter(Boolean); i++; guard++; continue; }
+    /* tplsort-1.3.0: "Name: ______", "Name: [ ]" or "Name: ____ DOB: ____"
+       is a form's blank field for the patient, not the template's name -
+       the line stays in the form, and the form is not declared one template */
+    if(m && !name){ if(blank(m[1])) break; name=m[1].trim(); i++; guard++; continue; }
+    if(k && keywords===null){ if(blank(k[1])) break; keywords=k[1].split(/[,;]/).map(function(s){ return s.trim().toLowerCase(); }).filter(Boolean); i++; guard++; continue; }
     break;
   }
   var patientish=/^[A-Z][a-z]+,\s*[A-Z][a-z]+$/.test(name);
@@ -27887,7 +28017,10 @@ function _tplSeedKeywords(t,library){
      stood out in, so an import can still never land with zero keywords. */
   var sug=null;
   try{ sug=_mlsTplSuggestFor(t,library||_tplStore()); }catch(_tplSeedError){ sug=null; }
-  if(sug&&!_mlsTplKindOf(t)&&sug.kind){ t.kind=sug.kind; t.kindSuggested=1; }
+  /* tplsort-1.2.0: a row the one Save has already given its kind (kindLocked:
+     op, insurance only when the splitter said so, or none) takes no
+     suggested kind on top */
+  if(sug&&!_mlsTplKindOf(t)&&sug.kind&&!t.kindLocked){ t.kind=sug.kind; t.kindSuggested=1; }
   if(sug&&sug.terms.length){ t.keywords=sug.terms.slice(0,MLS_TPL_SUGGEST_MAX); t.kwSuggested=1; return; }
   var stop={'the':1,'and':1,'with':1,'without':1,'for':1,'into':1,'onto':1,'under':1,'over':1,'from':1,'variant':1,'template':1,'note':1,'notes':1,'report':1,'operative':1,'procedure':1,'guided':1,'guidance':1};
   t.keywords=String(t.name||'').toLowerCase()
@@ -27938,31 +28071,83 @@ async function _tplPool(items, limit, task){
   await Promise.all(runners);
   return out;
 }
-/* One slot-limited /api/templates/split round-trip. Returns the rows it found,
-   [] when it found none, or null when the AI is unavailable for this account. */
-async function _tplSplitChunk(chunk){
-  if(_tplAiOff) return null;
+/* tplsort-1.3.0 (2026-09-24): ONE /api/templates/split round-trip, for one
+   WHOLE file or one WHOLE paste - never a piece of either. The splitter's
+   model names the line each template STARTS on and the server cuts the
+   document itself (backend src/routes/templateSplit.js): every line after
+   the first start is kept, each template's text is the document's own
+   lines, and the only thing ever left out is a short cover page it
+   reports. Each template comes back with "goes" (where it belongs) and
+   "why". The server is the one source of truth for the cut; this only
+   checks that the answer IS a cut of the text sent (_tplSortVerify), so a
+   server that predates the cut can never put rewritten or shortened text
+   on the list.
+   Answers { templates:[{name,text,goes,why,insurance}], cover, prefix }, or
+   { fail } when the splitter could not be asked or did not answer, or could
+   not sort the text: 'too-long' (never sent - the server refuses it too),
+   'too-many', 'bad-answer'. The caller then keeps the text whole for the
+   doctor to place. Slot-limited: at most _TPL_AI_LIMIT requests on the wire
+   across the whole upload; requests finish in any order while the rows stay
+   in file order (the caller's pool keeps input order). */
+async function _tplSplitCall(text){
+  if(_tplAiOff) return { fail:'no-ai' };
+  var sent=_tplSortDoc(text);
+  if(sent.length>TPL_SORT_SPLIT_MAX) return { fail:'too-long' };
   await _tplAiSlot();
   try{
-    if(_tplAiOff) return null;
-    var r=await fetch(bkBase()+'/api/templates/split',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},body:JSON.stringify({text:chunk})});
-    var d=await r.json().catch(function(){return {};});
-    /* 403 = this account has no AI split. The serial loop broke out of the
-       file's remaining chunks and let the keep-fallback own the file; the
-       latch spares the REST of the batch the same refusal. Every file still
-       lands through its own fallback, so the rows are identical — just without
-       89 more round-trips to be told no. Reset per run, never sticky. */
-    if(r.status===403){ _tplAiOff=true; return null; }
-    if(r.ok && d.templates && d.templates.length) return d.templates;
-    return [];
-  }catch(e){ return []; }
+    if(_tplAiOff) return { fail:'no-ai' };
+    var r=await fetch(bkBase()+'/api/templates/split',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},body:JSON.stringify({text:sent})});
+    var d=await r.json().catch(function(){ return {}; });
+    /* 403 = this account has no AI split. Latched for the rest of this upload:
+       every file still lands whole for the doctor to place, without 89 more
+       round-trips to be told no. Reset per run, never sticky. */
+    if(r.status===403){ _tplAiOff=true; return { fail:'no-ai' }; }
+    if(r.status===401) return { fail:'signed-out' };
+    if(r.status===429) return { fail:'busy' };
+    if(!r.ok) return { fail:'server' };
+    var refused=String((d&&d.splitRefused)||'');
+    if(refused) return { fail:(refused==='too-long'||refused==='too-many')?refused:'bad-answer' };
+    var checked=_tplSortVerify(sent,(d&&Array.isArray(d.templates))?d.templates:[],d&&d.cover);
+    if(checked.refused) return { fail:'bad-answer' };
+    return { templates:checked.templates, cover:checked.cover, prefix:checked.prefix };
+  }catch(e){
+    var off=false; try{ off=typeof navigator!=='undefined'&&navigator.onLine===false; }catch(eNav){ off=false; }
+    return { fail:off?'offline':'unreachable' };
+  }
   finally{ _tplAiRelease(); }
+}
+/* tplsort-1.1.0: "Found N" counts what THIS upload or paste found - rows
+   already on the list from an earlier one are said separately - and a paste
+   is called a paste, not "1 file". `files` are the read files ({pasted}) or
+   just the segments. */
+function _tplFoundWords(found,total,files){
+  found=Math.max(0,found|0); files=files||[];
+  var pasted=files.length>0&&files.every(function(f){ return f&&typeof f==='object'&&f.pasted; });
+  var where=pasted?(files.length===1?' in your paste':' in your pastes'):(files.length>1?(' across '+files.length+' files'):'');
+  return 'Found '+found+' template'+(found===1?'':'s')+where+(total>found?(' - '+total+' on the list now'):'');
 }
 /* Truthful running total while sinks are still detached from _tplPendingSplit. */
 function _tplFoundSoFar(out){ return out===_tplPendingSplit ? out.length : (_tplRecogFound+out.length); }
+/* tplsort-1.2.0 (2026-09-24): EVERY FILE AND EVERY PASTE GOES DOWN ONE PATH.
+   Each one is read and sent to the splitter ONCE, WHOLE (tplsort-1.3.0: no
+   cut is made here at all - not on a ---, === or *** line either, which is
+   an Epic blank or a divider inside one template far more often than a
+   break between two). The splitter answers with the templates it holds and
+   where each one goes. Signed out, offline, in the sample workspace, when
+   the splitter does not answer or cannot sort it, each file or paste is
+   kept WHOLE as one row for the doctor to place, and the list says once why
+   it was not sorted. Nothing is saved until the doctor presses Save. */
 async function tplMultiFile(ev){
   var files=ev.target&&ev.target.files?Array.prototype.slice.call(ev.target.files):[]; try{ ev.target.value=''; }catch(e){}
   if(!files.length) return;
+  /* tplsort-1.1.0: the session this upload belongs to. A sign-out or account
+     switch while files are still being read or sorted ends it: nothing it
+     read may land in the next account's review list. */
+  var sortEpoch=(typeof _tplSortEpoch==='number')?_tplSortEpoch:0;
+  var stale=function(){ return typeof _tplSortEpoch==='number'&&sortEpoch!==_tplSortEpoch; };
+  /* tplsort-1.1.0: rows kept aside while an operative import card waited
+     join this review instead of being left behind */
+  try{ if(typeof _tplSortKeptRows!=='undefined'&&_tplSortKeptRows.length&&!_tplSortImportWaiting()){ _tplPendingSplit=_tplSortKeptRows.concat(_tplPendingSplit); _tplSortKeptRows=[]; _tplSortRenderKept(); } }catch(eKept){}
   /* snapshot whatever is already staged-but-not-added before this drop's
      resets run, so a second drag-in ADDS to the review list instead of
      erasing the first drop's unreviewed rows. */
@@ -27976,11 +28161,23 @@ async function tplMultiFile(ev){
        are strictly sequential here (one await per file), so the reason read
        back immediately after the await is this file's and no other's. */
     var t=''; _tplReadReason=''; try{ t=await _tplReadAnyFile(files[fi]); }catch(e){}
+    if(stale()) return;
     var rsn=String(_tplReadReason||'');
-    // Guard against binary garbage (e.g. an old .doc that didn't extract) — needs real letters.
-    var letters=(String(t).match(/[A-Za-z]/g)||[]).length;
-    if(t && t.trim() && letters>=40){ perFileText.push({ name:(files[fi].name||('Template '+(fi+1))).replace(/\.[^.]+$/,''), text:t.trim() }); }
-    else if(files[fi]){ unreadable++; _tplUnreadableRows.push({ name:files[fi].name||('File '+(fi+1)), text:String(t||'').trim(), reason:rsn }); }
+    var pastedFile=(typeof _tplSortIsPasted==='function')&&_tplSortIsPasted(files[fi]);
+    /* tplsort-1.3.0: ONE rule for files and pastes (_tplSortReadVerdict): a
+       short section template and a fill-in-the-blank form read; a few
+       letters only, or text that is not text, do not. The reason said is
+       the TRUE one: a file reader's own reason (a scanned PDF, an old .doc)
+       when it had one, else what is wrong with the text itself - a .txt or
+       a paste is never told that no text could be extracted. */
+    var verdict=(typeof _tplSortReadVerdict==='function')?_tplSortReadVerdict(t):(_tplSortReadable(t)?'':'not-text');
+    if(!verdict){ perFileText.push({ name:(files[fi].name||('Template '+(fi+1))).replace(/\.[^.]+$/,''), text:String(t).trim(), pasted:pastedFile }); }
+    else if(files[fi]){
+      var why=rsn;
+      if(pastedFile||!why||why==='unreadable') why=(verdict==='empty')?(pastedFile?'too-little-text':(rsn||'empty-file')):verdict;
+      if(why==='unreadable'&&/\.(txt|text|md|markdown|csv|tsv|json|html?|rtf)$/i.test(String(files[fi].name||''))) why='empty-file';
+      unreadable++; _tplUnreadableRows.push({ name:files[fi].name||('File '+(fi+1)), text:String(t||'').trim(), reason:why, pasted:pastedFile });
+    }
   }
   if(!perFileText.length){
     /* b940 — an all-unreadable batch used to DEAD-END here ("No readable text
@@ -27991,91 +28188,42 @@ async function tplMultiFile(ev){
        and say THAT instead of guessing "old .doc files?" at a batch of scans or
        at a signed-out device the picture reader could not be asked. */
     var whyAll=_tplUnreadableWhy(_tplUnreadableRows);
+    var allPasted=_tplUnreadableRows.every(function(u){ return u&&u.pasted; });
+    var nUnread=_tplUnreadableRows.length;
     _tplPendingSplit=_tplPendingCarry.slice(); _tplAppendUnreadableRows();
-    _tplMultiStatus(_tplPendingSplit.length+' file'+(_tplPendingSplit.length===1?'':'s')+' couldn’t be read as text. '+whyAll+' Each is listed below so nothing is lost:','#b4231e');
+    /* tplsort-1.3.0: a paste is called a paste, and the count is of what
+       could not be used - not of the rows already on the list */
+    _tplMultiStatus((allPasted?'Your paste could not be used as a template. ':(nUnread+' file'+(nUnread===1?'':'s')+' couldn’t be read as text. '))+whyAll+(allPasted?' What you pasted is kept below.':' Each is listed below so nothing is lost:'),'#b4231e');
     _renderTplSplitPreview();
     return;
   }
-  if(perFileText.length>=3){
-    // BATCH of files → EACH file is ONE template (named by note TYPE). Only AI-split a file that
-    // genuinely holds multiple forms — so 50 op-note files reliably become up to 50 templates.
-    _tplPendingSplit=_tplPendingCarry.slice();
-    /* b889 — this loop used to run SILENT: the status froze on "Reading
-       files… N/N" while any file that looked multi-form went through the
-       serial AI splitter for minutes. Every file now announces itself, and
-       _tplPhaseTick lets the template-library progress card draw the
-       recognition bar.
-       b940 — the files are recognized through the bounded pool. The counters
-       below tick on COMPLETION, never on dispatch: with several files in
-       flight, "42/90" has to mean 42 files finished, not 42 files started. */
-    var recDone=0, recTotal=perFileText.length;
-    var recTick=function(label){
-      _tplMultiStatus('✨ Recognizing templates… '+recDone+'/'+recTotal+(label?(' ('+label+')'):'')+' · '+_tplRecogFound+' found so far');
-      try{ if(window._tplPhaseTick) window._tplPhaseTick('recognize', recDone, recTotal, label||'file', _tplRecogFound); }catch(e){}
-    };
-    recTick(perFileText[0].name);
-    var fileSinks=await _tplPool(perFileText, _TPL_AI_LIMIT, async function(p){
-      var sink=[];
-      try{
-        var meta=_tplParseMeta(p.text);
-        if(meta.name){ sink.push({ name:meta.name, keywords:meta.keywords, text:meta.body, keep:true, explicit:true }); }
-        else if(_looksMultiForm(p.text)){ await _tplSplitOneInto(p.text, p.name, sink); }
-        else { sink.push({ name:_tplTypeName(p.text, p.name), text:p.text, keep:true }); }
-      }catch(e){}
-      /* b889's law holds under concurrency too: a file that recognized to
-         nothing is kept whole, never dropped. */
-      if(!sink.length && String(p.text||'').trim()){
-        var nm=p.name; try{ nm=_tplTypeName(p.text, p.name); }catch(e){}
-        sink.push({ name:nm, text:p.text, keep:true });
-      }
-      recDone++; _tplRecogFound+=sink.length; recTick(p.name);
-      return sink;
-    });
-    fileSinks.forEach(function(sink){ if(sink&&sink.length) Array.prototype.push.apply(_tplPendingSplit, sink); });
-    _tplPendingSplit.forEach(function(t){ if(!t.explicit) t.name=_tplTypeName(t.text, t.name); _tplSeedKeywords(t,_tplSuggestLibrary(_tplPendingSplit)); });   // name by type (explicit metadata names win)
-    var batchInfo=_tplDedupeTemplatesInfo(_tplPendingSplit);
-    _tplPendingSplit=batchInfo.list;
-    _tplAppendUnreadableRows();
-    _tplMultiStatus('Found '+_tplPendingSplit.length+' template'+(_tplPendingSplit.length===1?'':'s')+' across '+perFileText.length+' file'+(perFileText.length===1?'':'s')+(batchInfo.dropped.length?(' · '+batchInfo.dropped.length+' duplicate'+(batchInfo.dropped.length===1?'':'s')+' skipped ('+batchInfo.dropped.slice(0,3).join(', ')+(batchInfo.dropped.length>3?'…':'')+')'):'')+(unreadable?(' · '+unreadable+' unreadable listed unchecked below'):'')+'. Review and add:','#1c7a43');
-    _renderTplSplitPreview();
-  } else {
-    /* 1-2 files: process EVERY file separately so no file can silently vanish
-       into a joined blob — each file yields at least one reviewable row, and
-       duplicates are reported instead of dropped. */
-    if(!backendMode()||!bkToken()){ _tplPerFileFallback(perFileText.map(function(p){ return p.text; }).join('\n\f\n')); return; }
-    _tplPendingSplit=_tplPendingCarry.slice();
-    var pairDone=0, pairTotal=perFileText.length;
-    var pairTick=function(label){
-      _tplMultiStatus('✨ Recognizing templates… file '+pairDone+'/'+pairTotal+(label?(' ('+label+')'):'')+' ('+_tplRecogFound+' found so far)');
-      try{ if(window._tplPhaseTick) window._tplPhaseTick('recognize', pairDone, pairTotal, label||'file', _tplRecogFound); }catch(e){}
-    };
-    pairTick(perFileText[0].name);
-    var pairSinks=await _tplPool(perFileText, _TPL_AI_LIMIT, async function(p){
-      var sink=[];
-      try{ await _tplSplitOneInto(p.text, p.name, sink); }catch(e){}
-      pairDone++; _tplRecogFound+=sink.length; pairTick(p.name);
-      return sink;
-    });
-    pairSinks.forEach(function(sink){ if(sink&&sink.length) Array.prototype.push.apply(_tplPendingSplit, sink); });
-    _tplPendingSplit.forEach(function(t){ if(!t.explicit) t.name=_tplTypeName(t.text, t.name); _tplSeedKeywords(t,_tplSuggestLibrary(_tplPendingSplit)); });
-    var pairInfo=_tplDedupeTemplatesInfo(_tplPendingSplit);
-    _tplPendingSplit=pairInfo.list;
-    if(!_tplPendingSplit.length){ _tplPerFileFallback(perFileText.map(function(p){ return p.text; }).join('\n\f\n')); return; }
-    _tplAppendUnreadableRows();
-    _tplMultiStatus('Found '+_tplPendingSplit.length+' template'+(_tplPendingSplit.length===1?'':'s')+' across '+perFileText.length+' file'+(perFileText.length===1?'':'s')+(pairInfo.dropped.length?(' · '+pairInfo.dropped.length+' duplicate'+(pairInfo.dropped.length===1?'':'s')+' skipped ('+pairInfo.dropped.slice(0,3).join(', ')+(pairInfo.dropped.length>3?'…':'')+')'):'')+(unreadable?(' · '+unreadable+' unreadable listed unchecked below'):'')+'. Review and add:','#1c7a43');
-    _renderTplSplitPreview();
-  }
-}
-/* Break long text so the AI never drops templates from one giant blob. Splits on page
-   breaks / blank lines, hard-splitting anything still oversized. */
-function _tplChunk(text, size){
-  text=String(text||''); size=size||6000;
-  if(text.length<=size) return [text];
-  var parts=[], buf='', segs=text.split(/\f|\n{3,}/);
-  for(var i=0;i<segs.length;i++){ var s=segs[i]; if((buf+s).length>size && buf){ parts.push(buf); buf=s; } else { buf+=(buf?'\n\n':'')+s; } }
-  if(buf.trim()) parts.push(buf);
-  var out=[]; parts.forEach(function(p){ if(p.length<=size*1.5){ out.push(p); } else { for(var k=0;k<p.length;k+=size){ out.push(p.slice(k,k+size)); } } });
-  return out;
+  var ai=_tplSortAiState();
+  /* b889/b940 — every file announces itself and the counts tick on
+     COMPLETION, never on dispatch: with several files in flight, "42/90" has
+     to mean 42 files finished. _tplPhaseTick draws the library's bar. */
+  var recDone=0, recTotal=perFileText.length;
+  var recTick=function(label){
+    _tplMultiStatus((ai.ok?'✨ Sorting templates… ':'Reading templates… ')+recDone+'/'+recTotal+(label?(' ('+label+')'):'')+' · '+_tplRecogFound+' found so far');
+    try{ if(window._tplPhaseTick) window._tplPhaseTick('recognize', recDone, recTotal, label||'file', _tplRecogFound); }catch(e){}
+  };
+  recTick(perFileText[0].name);
+  var sinks=await _tplPool(perFileText, _TPL_AI_LIMIT, async function(p){
+    var sink=[];
+    try{ sink=await _tplSortUnitRows(p, ai); }catch(e){ sink=[]; }
+    /* b889's law holds under concurrency too: a file that sorted to nothing
+       is kept whole, never dropped. */
+    if(!(sink&&sink.length)&&String(p.text||'').trim()){ var whole=_tplSortWholeRow(p, p.text, 'unreachable'); whole.name=_tplSortName(whole,p); _tplSortApply(whole); sink=[whole]; }
+    recDone++; _tplRecogFound+=sink.length; recTick(p.name);
+    return sink;
+  });
+  if(stale()) return;
+  _tplPendingSplit=_tplPendingCarry.slice();
+  sinks.forEach(function(sink){ if(sink&&sink.length) Array.prototype.push.apply(_tplPendingSplit, sink); });
+  var batchInfo=_tplDedupeTemplatesInfo(_tplPendingSplit);
+  _tplPendingSplit=batchInfo.list;
+  _tplAppendUnreadableRows();
+  _tplMultiStatus(_tplFoundWords(_tplPendingSplit.length-_tplPendingCarry.length-unreadable,_tplPendingSplit.length,perFileText)+(batchInfo.dropped.length?(' · '+batchInfo.dropped.length+' duplicate'+(batchInfo.dropped.length===1?'':'s')+' skipped ('+batchInfo.dropped.slice(0,3).join(', ')+(batchInfo.dropped.length>3?'…':'')+')'):'')+(unreadable?(' · '+unreadable+' could not be read - listed below with the reason'):'')+'. Check where each one is going below, then press Save.','#1c7a43');
+  _renderTplSplitPreview();
 }
 /* Dedupe with ACCOUNTING: every selected file/template must end up either in
    the list or in the reported "dropped" duplicates — never silently gone. */
@@ -28094,97 +28242,95 @@ function _tplDedupeTemplatesInfo(arr){
 function _tplDedupeTemplates(arr){
   return _tplDedupeTemplatesInfo(arr).list;
 }
-/* Split ONE document's text (chunked) and push results into _tplPendingSplit. */
-/* `sink` (b940) is the caller's private accumulator; omit it and this writes
-   straight into _tplPendingSplit exactly as it always has. */
-async function _tplSplitOneInto(text, fallbackName, sink){
-  var out=sink||_tplPendingSplit;
-  /* Explicit Name:/Keywords: metadata makes the file self-describing — one
-     template, named by its metadata, body cleaned; no AI round-trip needed. */
-  var meta=_tplParseMeta(text);
-  if(meta.name){ out.push({ name:meta.name, keywords:meta.keywords, text:meta.body, keep:true, explicit:true }); return; }
-  var chunks=_tplChunk(text, 6000);
-  var before=out.length;
-  /* b889 — a single long file splits into many chunks and each was a serial AI
-     round-trip; without a status per part, one big file reads as a total stall.
-     b940 — the parts run through the same globally-bounded pool, and their rows
-     are appended in CHUNK order afterwards, so a fast part 7 can never jump
-     ahead of a slow part 2 in the reviewed list. */
-  var parts=await _tplPool(chunks, _TPL_AI_LIMIT, async function(chunk, ci){
-    if(chunks.length>1) _tplMultiStatus('✨ Recognizing templates… '+String(fallbackName||'file')+' · part '+(ci+1)+'/'+chunks.length+' ('+_tplFoundSoFar(out)+' found so far)');
-    try{ if(window._tplPhaseTick) window._tplPhaseTick('recognize-part', ci, chunks.length, String(fallbackName||'file'), _tplFoundSoFar(out)); }catch(e){}
-    return await _tplSplitChunk(chunk);
-  });
-  parts.forEach(function(rows){
-    if(!rows) return;   // null = AI unavailable (403); the keep-fallback below owns the file
-    rows.forEach(function(t){ out.push({ name:String(t.name||fallbackName||('Template '+(out.length+1))), text:String(t.text||''), keep:true }); });
-  });
-  // If the AI found nothing in this file, keep the file itself as a single template.
-  if(out.length===before && text.trim()){ out.push({ name:fallbackName||('Template '+(out.length+1)), text:text.trim(), keep:true }); }
-}
-/* No AI available (signed out / server unreachable): each uploaded file becomes ONE template
-   (files were joined with \f) — never a dead end that demands a sign-in. */
-function _tplPerFileFallback(text){
-  _tplPendingSplit=_tplPendingCarry.concat(String(text||'').split('\f').map(function(seg){return seg.trim();}).filter(Boolean).map(function(seg,i){
-    var meta=_tplParseMeta(seg);
-    if(meta.name) return { name:meta.name, keywords:meta.keywords, text:meta.body, keep:true, explicit:true };
-    var row={ name:_tplTypeName(seg,'Template '+(i+1)), text:seg, keep:true };
-    _tplSeedKeywords(row,_tplSuggestLibrary(null));
-    return row;
-  }));
-  var fbInfo=_tplDedupeTemplatesInfo(_tplPendingSplit);
-  _tplPendingSplit=fbInfo.list;
-  _tplAppendUnreadableRows();
-  if(!_tplPendingSplit.length){ _tplMultiStatus('No readable text found in those files.','#b4231e'); return; }
-  _tplMultiStatus('Found '+_tplPendingSplit.length+' template'+(_tplPendingSplit.length===1?'':'s')+' (one per file)'+(fbInfo.dropped.length?(' · '+fbInfo.dropped.length+' duplicate'+(fbInfo.dropped.length===1?'':'s')+' skipped'):'')+'. Review and add:','#1c7a43');
-  _renderTplSplitPreview();
-}
+/* tplsort-1.2.0: TEMPLATE text handed in by another part of the app goes
+   down exactly the path a paste takes: one plain-text file into
+   tplMultiFile, so it is split and sorted by the same splitter and lands on
+   the same review list. tplsort-1.3.0: nothing may hand a PATIENT NOTE in
+   here - a note must never become a saved format. The EMR sections panel's
+   "AI sort", which used to, no longer calls this (cloned-mls-connect.js). */
 async function tplAiSplit(text){
-  if(!backendMode()||!bkToken()){ _tplPerFileFallback(text); return; }
-  var chunks=_tplChunk(text, 6000);
-  _tplPendingSplit=_tplPendingCarry.slice(); _tplAiOff=false; _tplRecogFound=0;
-  /* b940 — one giant PDF is many chunks and every chunk was its own serial
-     round-trip. Same bounded pool, same chunk-ordered append. */
-  var aiDone=0;
-  var aiTick=function(ci){
-    _tplMultiStatus('✨ Recognizing templates… part '+aiDone+'/'+chunks.length+' ('+_tplRecogFound+' found so far)');
-    try{ if(window._tplPhaseTick) window._tplPhaseTick('recognize', aiDone, chunks.length, 'part '+((ci||0)+1), _tplRecogFound); }catch(e){}
-  };
-  aiTick(0);
-  var aiParts=await _tplPool(chunks, _TPL_AI_LIMIT, async function(chunk, ci){
-    var rows=await _tplSplitChunk(chunk);
-    aiDone++; _tplRecogFound+=(rows&&rows.length)||0; aiTick(ci);
-    return rows;
-  });
-  aiParts.forEach(function(rows){
-    if(!rows) return;   // null = AI unavailable (403) → _tplPerFileFallback below
-    rows.forEach(function(t){ _tplPendingSplit.push({ name:String(t.name||('Template '+(_tplPendingSplit.length+1))), text:String(t.text||''), keep:true }); });
-  });
-  _tplPendingSplit.forEach(function(t){ if(!t.explicit) t.name=_tplTypeName(t.text, t.name); _tplSeedKeywords(t,_tplSuggestLibrary(_tplPendingSplit)); });   // name by note TYPE, not patient (explicit metadata names win)
-  var aiInfo=_tplDedupeTemplatesInfo(_tplPendingSplit);
-  _tplPendingSplit=aiInfo.list;
-  if(!_tplPendingSplit.length){ _tplPerFileFallback(text); return; }   // AI found nothing → keep each file as one template
-  _tplMultiStatus('Found '+_tplPendingSplit.length+' template'+(_tplPendingSplit.length===1?'':'s')+(aiInfo.dropped.length?(' · '+aiInfo.dropped.length+' duplicate'+(aiInfo.dropped.length===1?'':'s')+' skipped'):'')+'. Review and add the ones you want:','#1c7a43');
-  _renderTplSplitPreview();
+  var s=String(text==null?'':text);
+  if(!s.trim()) return;
+  var file=null;
+  try{ file=new File([s],'Pasted templates.txt',{ type:'text/plain', lastModified:Date.now() }); }catch(eFile){ file=null; }
+  if(!file) return;
+  try{ if(_tplSortPastedFiles) _tplSortPastedFiles.add(file); file._mlsTplPasted=true; }catch(eMark){}
+  return (typeof window.tplMultiFile==='function'?window.tplMultiFile:tplMultiFile)({ target:{ files:[file], value:'' } });
 }
 function _renderTplSplitPreview(){
   var box=document.getElementById('tplMultiResult'); if(!box) return;
   if(!_tplPendingSplit.length){ box.innerHTML=''; return; }
+  /* tplsort-1.2.0: every row says WHERE it is going and WHY - the splitter's
+     answer - with one control to change it or skip it. A row the splitter
+     was not sure of, or could not sort, reads "Choose where it goes", with
+     the best guess its headings suggest marked in the list and one button to
+     take it; a best guess never places anything by itself. Every row opens
+     to its full text, exactly as it will be saved. A harness without the
+     sorter still renders every row. */
+  if(typeof _tplSortAssign==='function'){ try{ _tplSortAssign(_tplPendingSplit); }catch(eSort){} }
+  var DEST=[['soap','Whole visit note / SOAP'],['hpi','HPI'],['ros','ROS'],['exam','Exam'],['assessment','Assessment'],['plan','Plan'],['op','Operative note'],['letters','Letters & other documents'],['skip','Skip - do not save']];
+  var titleOf=function(d){ for(var k=0;k<DEST.length;k++) if(DEST[k][0]===d) return DEST[k][1]; return ''; };
+  var focusId=''; try{ var ae=document.activeElement; if(ae&&ae.id&&box.contains(ae)) focusId=ae.id; }catch(eAe){}
+  var tally={}, waiting=0, guesses=0, groups={}, groupOrder=[], unsorted={}, unsortedN=0;
   var rows=_tplPendingSplit.map(function(t,i){
-    return '<label style="display:flex;gap:9px;align-items:flex-start;border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-bottom:7px;background:var(--card,#fff);cursor:pointer">'
-      +'<input type="checkbox" '+(t.keep?'checked':'')+' onchange="_tplPendingSplit['+i+'].keep=this.checked" style="width:auto;margin:3px 0 0">'
-      +'<span style="flex:1"><span style="font-weight:600;font-size:13.5px">'+esc(t.name)+'</span> <span style="font-size:11px;color:var(--muted)">('+(t.text||'').length+' chars)</span>'
-      +'<div style="font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:520px;margin-top:2px">'+esc((t.text||'').replace(/\s+/g,' ').slice(0,90))+'…</div></span></label>';
+    var dest=String(t.dest||''), guess=dest?'':String(t.guess||'');
+    /* tplsort-1.4.0: a file too long (or holding too many templates) to sort
+       is shown with its best guess, but never placed by one tap: one tap put
+       70 op notes into ONE op template. The doctor picks it in the list. */
+    var wholeFile=t.notSorted==='too-long'||t.notSorted==='too-many';
+    if(dest) tally[dest]=(tally[dest]||0)+1; else { waiting++; if(guess&&!wholeFile) guesses++; }
+    var g=t.group;
+    if(g&&g.count>1&&typeof _tplSortGroups!=='undefined'&&_tplSortGroups[g.id]){ if(!groups[g.id]){ groups[g.id]={ from:String(g.from||''), count:g.count, here:0 }; groupOrder.push(g.id); } groups[g.id].here++; }
+    /* tplsort-1.3.0: too long, or too many templates in it, is about THAT
+       row, so the row says it; every other reason is said once, above */
+    if(t.notSorted&&t.notSorted!=='too-long'&&t.notSorted!=='too-many'&&!t.unreadable){ unsorted[t.notSorted]=(unsorted[t.notSorted]||0)+1; unsortedN++; }
+    var opts='<option value=""'+(dest?'':' selected')+'>Choose where it goes…</option>'+DEST.map(function(d){ return '<option value="'+d[0]+'"'+(dest===d[0]?' selected':'')+'>'+d[1]+(guess===d[0]?' - best guess':'')+'</option>'; }).join('');
+    var note=''; if(typeof _tplSortRowNote==='function'){ try{ note=_tplSortRowNote(t,i)||''; }catch(eNote){ note=''; } }
+    var full=''; if(!t.unreadable&&typeof _tplSortFullText==='function'){ try{ full=_tplSortFullText(t); }catch(eFull){ full=''; } }
+    /* tplsort-1.3.0: the lines the splitter read as a cover page. On a
+       file that held ONE template they are put back at its top; with
+       several they are left out. Either way the doctor can change it: put
+       them back at the top, leave them out, or make them a template. */
+    var coverLines=t.cover?String(t.cover).split(/\n/).filter(function(l){ return l.trim(); }).length:0;
+    var cbtn=function(how,label){ return ' <button type="button" class="btn-ghost tpl-sort-cover-'+how+'" style="font-size:12px;padding:3px 8px" onclick="_tplSortCover('+i+',\''+how+'\')">'+label+'</button>'; };
+    var them=coverLines===1?'it':'them';
+    var cover=!coverLines?'':'<div class="tpl-sort-cover" style="font-size:12px;margin-top:5px;color:var(--muted)">'+(t.coverAt==='top'
+      ?((coverLines===1?'The first line':'The first '+coverLines+' lines')+' read as a cover page; '+(coverLines===1?'it is':'they are')+' kept at the top of this template.'+cbtn('out','Leave '+them+' out')+cbtn('own','Add '+them+' as a template'))
+      :((coverLines===1?'The line':'The '+coverLines+' lines')+' before the first template read as a cover page, so '+(coverLines===1?'it was':'they were')+' left out.'+cbtn('top','Put '+them+' back at the top')+cbtn('own','Add '+them+' as a template')))+'</div>';
+    var use=(guess&&!wholeFile)?'<button type="button" class="btn-green tpl-sort-use" style="font-size:12.5px;padding:5px 10px;margin:6px 6px 0 0" onclick="_tplSortUseGuess('+i+')">Put it in '+esc(titleOf(guess))+'</button>':'';
+    var split=((dest==='soap'||!dest)&&t.sectionCount>=2&&!t.unreadable)?'<button type="button" class="btn-ghost tpl-sort-split" style="font-size:12.5px;padding:5px 10px;margin-top:6px" onclick="_tplSortSplit('+i+')">Split into sections ('+esc(t.sectionNames||'')+')</button>':'';
+    var from=(g&&g.count>1)?'<div class="tpl-sort-from" style="font-size:11.5px;color:var(--muted);margin-top:2px">Template '+esc(String(g.index||''))+' of '+esc(String(g.count))+' from '+(g.from==='your paste'?'your paste':'“'+esc(g.from)+'”')+'</div>':'';
+    return '<div class="tpl-sort-row" data-tpl-row="'+i+'" data-tpl-dest="'+esc(dest||'choose')+'"'+(guess?' data-tpl-guess="'+esc(guess)+'"':'')+' style="border:1px solid '+(dest?'var(--line)':'#d9a441')+';border-radius:10px;padding:8px 10px;margin-bottom:7px;background:var(--card,#fff);scroll-margin-bottom:96px">'
+      +'<div style="display:flex;gap:6px 12px;align-items:flex-start;flex-wrap:wrap">'
+      +'<div style="flex:1 1 220px;min-width:0"><span class="tpl-sort-name" style="font-weight:600;font-size:13.5px;overflow-wrap:anywhere">'+esc(t.name)+'</span> <span style="font-size:11px;color:var(--muted)">('+(t.text||'').length+' chars)</span>'
+      +from
+      +'<div style="font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px">'+esc((t.text||'').replace(/\s+/g,' ').slice(0,90))+'…</div></div>'
+      +'<label style="flex:1 1 190px;max-width:260px;min-width:0;font-size:11.5px;font-weight:650;color:var(--muted)">Goes to'
+      +'<select id="tplSortDest_'+i+'" class="sf-select" aria-label="Where “'+esc(t.name)+'” goes" onchange="_tplSortSetDest('+i+',this.value)"'+(t.unreadable?' disabled':'')+' style="display:block;width:100%;margin-top:3px">'+opts+'</select></label>'
+      +'</div>'
+      +(t.why?'<div class="tpl-sort-why" style="font-size:12px;margin-top:5px;color:'+(dest?'var(--muted)':'#8A5A00')+'">'+esc(t.why)+'</div>':'')
+      +cover+note+use+split+full+'</div>';
   }).join('');
+  var said=[]; DEST.forEach(function(d){ if(tally[d[0]]) said.push((d[0]==='skip'?'Skipped':d[1])+': '+tally[d[0]]); });
+  if(waiting) said.push('Waiting for you to choose: '+waiting);
+  var head='<div class="tpl-sort-head" style="font-size:12.5px;font-weight:650;margin:0 0 7px">Where each one is going - '+esc(said.join(' · '))+'</div>'
+    +((unsortedN&&typeof _tplSortUnsortedLine==='function')?_tplSortUnsortedLine(unsorted,unsortedN):'')
+    +groupOrder.map(function(id){ var gg=groups[id]; return '<div class="tpl-sort-several" style="font-size:12.5px;margin:0 0 6px;color:var(--ink,#1a211c)">'+(gg.from==='your paste'?'Your paste':'“'+esc(gg.from)+'”')+' held '+gg.count+' templates - each one is its own row below. <button type="button" class="btn-ghost tpl-sort-together" style="font-size:12px;padding:3px 8px" onclick="_tplSortKeepTogether('+id+')">Keep it as one template</button></div>'; }).join('')
+    +(guesses>=2?'<button type="button" class="btn-ghost tpl-sort-use-all" style="font-size:12.5px;padding:5px 10px;margin:0 0 8px" onclick="_tplSortUseAllGuesses()">Use every best guess ('+guesses+')</button>':'');
   /* tpldisc-1.0.0: both controls live in ONE wrapper now (was a bare
      <button>) so the sticky-footer CSS (feat_mls_template_library.js
      #tplMultiResult>.tpl-split-actions) can pin them together at the bottom
      of the scrollable review list; see _tplDiscardSplit() below for why a
-     dismiss control exists at all. */
-  box.innerHTML=rows+'<div class="tpl-split-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;background:var(--card,#fff)">'
-    +'<button class="btn-green" style="font-size:13px;padding:8px 14px" onclick="tplAddSplit()">➕ Add selected to my templates</button>'
+     dismiss control exists at all.
+     tplsort-1.1.0: the one Save stores each row where it is going
+     (tplAddSplitSorted - the name keeps "tplAddSplit" so the template
+     library holds this button while a signed-in save runs); operative rows
+     and letters still go through tplAddSplit(). */
+  box.innerHTML=head+rows+'<div class="tpl-split-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;background:var(--card,#fff)">'
+    +'<button class="btn-green" id="tplSortSaveBtn" style="font-size:13px;padding:8px 14px" onclick="tplAddSplitSorted()">💾 Save each to its place</button>'
     +'<button class="btn-ghost" style="font-size:13px;padding:8px 14px" onclick="_tplDiscardSplit()">Discard these</button>'
     +'</div>';
+  if(focusId){ try{ var back=document.getElementById(focusId); if(back) back.focus({ preventScroll:true }); }catch(eBack){} }
 }
 /* tpldisc-1.0.0 (owner 2026-09-11): "Review and add" had no way to be
    dismissed without adding - _tplPendingSplit is a plain module-level
@@ -28241,13 +28387,1272 @@ function tplAddSplit(){
     list.unshift(row);
   });
   setTemplates(list);
-  if(!getActiveTemplateId() && list[0]) localStorage.setItem(uns('templateActive'),list[0].id);
+  /* tplsort-1.3.0: the first template that can draft a note becomes the
+     default for new notes - never a letter or other document, nor a letter
+     to an insurer (kind insurance drafts only an insurance-ready note) */
+  /* tplsort-1.4.0: only a row THIS save added (list.unshift put them first,
+     last-kept first) - never an older template the doctor did not pick */
+  if(!getActiveTemplateId()){ var firstDraft=list.slice(0,keep.length).reverse().filter(function(x){ var k=_mlsTplKindOf(x); return k!=='letter'&&k!=='insurance'; })[0]; if(firstDraft) localStorage.setItem(uns('templateActive'),firstDraft.id); }
   /* tpldisc-1.0.0: the SAME reset _tplDiscardSplit() performs, so a success
      here and an explicit Discard can never clear a different set of variables. */
   _tplDiscardSplit(); _tplMultiStatus('✓ Added '+keep.length+' template'+(keep.length>1?'s':'')+' to your dropdown.','#1c7a43');
   renderTemplateList(); renderTemplateActiveSelect();
   try{ if(typeof _syncSpecialtyPresetTemplates==='function') _syncSpecialtyPresetTemplates(); }catch(e){}
-  try{ toast('Added '+keep.length+' templates.','ok'); }catch(e){}
+  /* tplsort-1.1.0: the one Save (tplAddSplitSorted) says what went where in
+     ONE toast; this one would be a second */
+  try{ if(!window.__mlsTplSortQuiet) toast('Added '+keep.length+' templates.','ok'); }catch(e){}
+}
+/* ===== tplsort-1.2.0 (2026-09-24) - ONE PLACE TO ADD EVERY TEMPLATE =====
+   Owner: "YOU SHOULD BE ABLE TO ADD templates and it should auto sort into the
+   correct places" / "like one stop to add all templates that then all get
+   auto sorted".
+
+   The upload card above is the one place. Files and pastes go down the same
+   path (tplMultiFile). THE AI SPLITS AND SORTS: each file or paste goes to
+   /api/templates/split once, WHOLE (tplsort-1.3.0: nothing is cut here any
+   more). Its model names the line each template starts on, the server cuts
+   the document at those lines - every line after the first start is kept -
+   and each template comes back with where it goes ("goes": whole visit
+   note, HPI, ROS, Exam, Assessment, Plan, operative note, letter - or
+   "unsure") and why. _tplSortVerify checks the answer is a cut of the text
+   sent; one that is not, or a refusal (too long, too many templates, an
+   answer that could not be used), keeps the text whole, one row, with the
+   reason said once.
+
+   Round 2 read the text with pattern rules here and was rejected twice for
+   cutting one template into pieces, merging several into one and placing
+   templates in the wrong section with reasons that were not true. None of
+   that is left. What this file still reads for itself:
+     - the headings, to offer ONE best guess on a row the splitter was not
+       sure of or could not sort ("Put it in Plan") - a guess never places a
+       row by itself;
+     - the sections, when the doctor asks for "Split into sections".
+   Every row is shown with where it is going and why, can be changed or
+   skipped, and nothing is saved until the one Save (tplAddSplitSorted):
+     - visit rows: window.__mlsDraftTuning.importVisitTemplates(), which is
+       profileEditor(section).add plus the same visitTemplateResync the
+       Settings rows use, so generation reads them exactly as if typed there;
+     - operative rows and letters: tplAddSplit() - the versioned cloud library
+       when signed in, the device library otherwise. An operative row is kind
+       op; a letter is kind insurance only when the splitter said it is
+       written to an insurer, otherwise kind letter (tplsort-1.3.0) - a kind
+       every template picker leaves out, so a consent form or a handout never
+       drafts an op note or a visit note.
+   A kind the doctor declared on a row (kind op or insurance, not a
+   suggestion) wins over the splitter. ===== */
+var TPL_SORT_FAMILIES=['soap','hpi','ros','exam','assessment','plan'];
+var TPL_SORT_TITLES={soap:'Whole visit note / SOAP',hpi:'HPI',ros:'ROS',exam:'Exam',assessment:'Assessment',plan:'Plan',op:'Operative note',letters:'Letters & other documents',skip:'Skip'};
+var TPL_SORT_MAX_CHARS=2000;
+/* the most the splitter reads in one call (backend TEMPLATE_SPLIT_MAX_INPUT) */
+var TPL_SORT_SPLIT_MAX=40000;
+/* the splitter's "goes" -> this list's destination; anything else is unsure */
+var TPL_SORT_GOES={visit:'soap',hpi:'hpi',ros:'ros',exam:'exam',assessment:'assessment',plan:'plan',op:'op',letter:'letters'};
+/* THE HEADING READER's names - used for a best guess, for "Split into
+   sections" and to leave a one-section template's own heading off. The line
+   shape is read the way the shell already reads a template heading
+   (_mlsTemplateHeadingParts: list, number, markdown and bold markers peeled,
+   the label is what comes before the colon); the name is matched here.
+     hx  past medical / surgical history, medications, allergies, social and
+         family history - part of the HPI / Subjective section
+     ap  one combined Assessment & Plan heading
+     op  an operative field that merely ends in "diagnosis"
+   A "weak" name counts as a section only when it stands as a block heading
+   (nothing after its colon, or ALL CAPS). */
+var TPL_SORT_SECTION_NAMES=[
+  ['op',/(?:^| )(?:pre|post) ?(?:op|operative|procedure|procedural) diagnos[ie]s$/,0],
+  ['ap',/(?:^| )(?:assessment|assessments|impressions?|a) (?:and )?(?:plan|plans|p|recommendations?)$/,0],
+  ['hx',/(?:^| )(?:past medical history|past medical hx|medical history|pmh|pmhx|past surgical history|past surgical hx|surgical history|past surgeries|psh|pshx|past history|social history|social hx|sh|shx|family history|family hx|fh|fhx|medications?|current medications?|home medications?|meds|allergies|allergy|drug allergies|medication allergies|immunizations|substance use|tobacco use)$/,1],
+  ['hpi',/(?:^| )(?:hpi|history of (?:the )?present illness|present illness|interval history|interval hx|chief complaints?|cc|subjective|reason for (?:the )?(?:visit|referral|consult|consultation|appointment)|presenting complaints?)$/,0],
+  ['ros',/(?:^| )(?:ros|review of systems?|systems review)$/,0],
+  ['exam',/(?:^| )(?:exam|exams|examination|physical exam|physical examination|pe|objective)$/,0],
+  ['exam',/(?:^| )(?:vitals?|vital signs|labs?|laboratory|lab results|imaging|studies|results|diagnostics|radiology|x rays?|xrays?)$/,1],
+  ['assessment',/(?:^| )(?:assessment|assessments|impressions?|clinical impression|diagnos[ie]s|working diagnos[ie]s|differential(?: diagnos[ie]s)?|ddx|mdm|medical decision making|decision making|data reviewed)$/,0],
+  ['plan',/(?:^| )(?:plan|plans|treatment plan|plan of care|care plan|recommendations?)$/,0],
+  ['plan',/(?:^| )(?:follow ?up|followup|disposition|orders|next steps?)$/,1]
+];
+/* Operative and procedure-note fields (a best guess only). */
+var TPL_SORT_OP_STRONG=/^(?:(?:name|title|description|details|type) of (?:the )?(?:procedure|operation|surgery)|(?:procedures?|operations?)(?: performed| done)?|procedure (?:note|details|description|technique|summary)|technique|complications?|anesthesia|anesthetic|sedation|fluoroscopy(?: time)?|contrast|needle|injectate|medications? injected|ebl|estimated blood loss|blood loss|specimens?|closure|implants?|tourniquet(?: time)?|time ?out|(?:pre|post) ?(?:op|operative|procedure|procedural) (?:diagnos[ie]s|pain))$/;
+/* A section's OWN heading - the name the section itself already carries.
+   Left inside a template saved to that section it would become a heading MLS
+   must write INSIDE the section (_mlsRequiredTemplateHeadings reserves only
+   the short names), so it is left off; what followed its colon stays. */
+var TPL_SORT_OWN={
+  hpi:/^(?:hpi|history of (?:the )?present illness|present illness|subjective|s)$/,
+  ros:/^(?:ros|review of systems?|systems review)$/,
+  exam:/^(?:exam|exams|examination|physical exam|physical examination|pe|objective|o)$/,
+  assessment:/^(?:assessment|assessments|impressions?|clinical impression|a)$/,
+  plan:/^(?:plan|plans|treatment plan|plan of care|care plan|p)$/,
+  ap:/^(?:assessment|assessments|impressions?|a) (?:and )?(?:plan|plans|p|recommendations?)$/
+};
+/* A heading that names a PART of a section ("Chief complaint", "Vitals",
+   "Medical decision making") - never the section's own heading. */
+var TPL_SORT_SUBPART=/(?:^| )(?:chief complaints?|cc|interval history|interval hx|reason for|presenting complaints?|vitals?|vital signs|labs?|laboratory|lab results|imaging|studies|results|diagnostics|radiology|x rays?|xrays?|data reviewed|data|mdm|medical decision making|decision making|differential|ddx|diagnos[ie]s|problem list|problems|follow ?up|followup|disposition|orders|next steps?|recommendations?)(?: |$)/;
+/* A vital sign one per line ("T: [ ]", "BP: [ ]") - the neighbour that makes
+   "P: [ ]" a pulse, not a Plan. */
+var TPL_SORT_VITAL=/^\s*(?:[-*•]\s*)?(?:t|temp|temperature|r|rr|resp|bp|hr|spo2|sp02|o2 ?sat|sao2|wt|weight|ht|height|bmi)\s*[:=]/i;
+function _tplSortNorm(s){
+  if(typeof _mlsVnTplNorm==='function') return _mlsVnTplNorm(s);
+  return String(s==null?'':s).toLowerCase().replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();
+}
+function _tplSortTitle(dest){ return TPL_SORT_TITLES[dest]||''; }
+function _tplSortIsVisit(dest){ return TPL_SORT_FAMILIES.indexOf(String(dest||''))>=0; }
+function _tplSortIsLibrary(dest){ return dest==='op'||dest==='letters'; }
+/* one normalized name -> [family, weak] or null */
+function _tplSortNameFamily(n){
+  n=String(n||'');
+  if(!n) return null;
+  for(var i=0;i<TPL_SORT_SECTION_NAMES.length;i++){ var row=TPL_SORT_SECTION_NAMES[i]; if(row[1].test(n)) return [row[0],!!row[2]]; }
+  return null;
+}
+/* A heading's name -> family, reading "HPI - Knee" by the part before the
+   dash and "HPI / Subjective" or "Objective/Exam" part by part. */
+function _tplSortFamilyOf(name){
+  var raw=String(name==null?'':name);
+  var hit=_tplSortNameFamily(_tplSortNorm(raw));
+  if(hit) return hit;
+  var dash=raw.split(/\s+[-–—]+\s*|\s*[-–—]+\s+/)[0];
+  if(dash&&dash!==raw){ hit=_tplSortNameFamily(_tplSortNorm(dash)); if(hit&&!hit[1]) return hit; }
+  var parts=raw.split(/\s*(?:\/|&|\+|,|\band\b)\s*/i).map(_tplSortNorm).filter(Boolean);
+  if(parts.length<2) return null;
+  var fams=[], weak=true;
+  for(var i=0;i<parts.length;i++){
+    var f=_tplSortNameFamily(parts[i]); if(!f) return null;
+    var fam=f[0]==='hx'?'hpi':f[0];
+    if(fams.indexOf(fam)<0) fams.push(fam);
+    if(!f[1]) weak=false;
+  }
+  if(fams.length===1) return [fams[0],weak];
+  if(fams.every(function(f){ return f==='assessment'||f==='plan'||f==='ap'; })) return ['ap',weak];
+  return null;
+}
+/* ONE line -> a heading record, or null when the line is not shaped like a
+   heading at all:
+     fam     'hpi' 'hx' 'ros' 'exam' 'assessment' 'plan' 'ap' 'op', or '' for
+             a heading MLS does not know ("Onset:", "Knee Joint Injection")
+     key     the normalized name, brackets removed
+     label   the name as the doctor wrote it
+     rest    what follows the colon on the same line
+     block   nothing follows the colon
+     caps    written in capitals
+     weak    a name that counts only as a block heading
+     letter  S, O, A or P for a one-letter SOAP heading
+   Shapes: "Label:" (with or without text after it), a short ALL CAPS line, a
+   markdown or bold heading, a short Title Case line. */
+function _tplSortHeading(line){
+  var raw=String(line==null?'':line);
+  if(!raw.trim()) return null;
+  var marked=/^\s*(?:#{1,6}\s|\*\*|__)/.test(raw), bullet=/^\s*(?:[-*•▪◦·>]\s+|\(?\d{1,2}[.)]\s+)/.test(raw);
+  var t=raw.trim(), was='';
+  while(t!==was){ was=t; t=t.replace(/^(?:#{1,6}\s*|[-*•▪◦·>]\s+|\(?\d{1,2}[.)]\s+)/,'').replace(/^(?:\*\*|__|`+)/,'').trim(); }
+  t=t.replace(/\*\*|__/g,'').trim();
+  if(!t||!/^[A-Za-z]/.test(t)) return null;
+  var sl=/^([SOAP])\s*:\s*(.*)$/.exec(t);
+  if(sl){
+    var lf={S:'hpi',O:'exam',A:'assessment',P:'plan'}[sl[1]];
+    return { fam:lf, key:sl[1].toLowerCase(), label:sl[1], rest:sl[2].trim(), block:!sl[2].trim(), caps:true, weak:false, letter:sl[1], colon:true, line:raw };
+  }
+  var ci=t.indexOf(':'), head, rest='', colon=false;
+  if(ci>0&&ci<=72){ head=t.slice(0,ci); rest=t.slice(ci+1).replace(/^[\s*_]+/,'').replace(/\s+$/,''); colon=true; }
+  else { if(t.length>72) return null; head=t; }
+  head=head.replace(/\s+/g,' ').trim();
+  if(!head||/[.?!,;]$/.test(head)) return null;
+  var bare=head.replace(/\([^)]*\)/g,' ').replace(/\[[^\]]*\]/g,' ').replace(/\s+/g,' ').trim();
+  if(!bare||!/^[A-Za-z]/.test(bare)) return null;
+  var words=bare.split(' ');
+  if(words.length>7) return null;
+  var caps=/[A-Z]/.test(bare)&&bare===bare.toUpperCase();
+  if(!colon){
+    var titled=/^[A-Z]/.test(bare)&&words.every(function(w){ return w.length<4||/^[A-Z0-9(&\/-]/.test(w); });
+    if(words.length>6||!(caps||marked||titled)) return null;
+  }
+  var hit=_tplSortFamilyOf(bare);
+  return { fam:hit?hit[0]:'', key:_tplSortNorm(bare), label:head.slice(0,60), rest:rest, block:!rest, caps:caps, weak:!!(hit&&hit[1]), letter:'', colon:colon, bullet:bullet, line:raw };
+}
+/* Is this heading a visit SECTION heading (not an inner label)? */
+function _tplSortIsSection(h,useLetters){
+  if(!h||!h.fam||h.fam==='op') return false;
+  if(h.letter) return !!useLetters;
+  if(h.weak&&(h.bullet||(!h.block&&!h.caps))) return false;
+  return true;
+}
+/* The same names read whole: "Plan", "Treatment plan", "History of present
+   illness" - but not "Asthma action plan" or "PHQ-9 depression assessment",
+   which only END in a section's name. A best guess asks for this. */
+var TPL_SORT_EXACT=TPL_SORT_SECTION_NAMES.map(function(row){ return [row[0],new RegExp('^'+row[1].source.replace(/^\(\?:\^\| \)/,'')),row[2]]; });
+function _tplSortExactFamily(key){
+  for(var i=0;i<TPL_SORT_EXACT.length;i++){ if(TPL_SORT_EXACT[i][1].test(String(key||''))) return TPL_SORT_EXACT[i][0]; }
+  return '';
+}
+function _tplSortOpField(h){
+  if(!h||!h.key) return '';
+  if(TPL_SORT_OP_STRONG.test(h.key)||h.fam==='op') return 'strong';
+  return '';
+}
+/* The text as lines. PDF-shaped text - several sections run together on one
+   long line - is broken before each inline section heading, so the heading
+   reader sees the sections. Only the READER's view: the saved text is never
+   re-broken. */
+function _tplSortLines(text){
+  var out=[];
+  String(text==null?'':text).replace(/\r\n?/g,'\n').split('\n').forEach(function(line){
+    if(line.length<=160){ out.push(line); return; }
+    var cuts=[], re=/:/g, m;
+    while((m=re.exec(line))){
+      var start=Math.max(0,m.index-72), before=line.slice(start,m.index).replace(/\s+$/,'');
+      var toks=[], tr=/\S+/g, tm;
+      while((tm=tr.exec(before))) toks.push(tm.index);
+      for(var k=Math.min(6,toks.length);k>=1;k--){
+        var from=toks[toks.length-k], cand=before.slice(from);
+        if(!/^[A-Z]/.test(cand)||/[:\[\]]/.test(cand)) continue;
+        var h=_tplSortHeading(cand.replace(/\s+/g,' ')+':');
+        if(!h) continue;
+        if((h.fam&&h.fam!=='op'&&!(h.weak&&!h.caps))||(h.caps&&_tplSortOpField(h)==='strong')){
+          var at=start+from;
+          if(at===0||/\s/.test(line.charAt(at-1))) cuts.push(at);
+          break;
+        }
+      }
+    }
+    if(cuts.length<2){ out.push(line); return; }
+    var pos=0;
+    cuts.forEach(function(c){ if(c>pos){ out.push(line.slice(pos,c).replace(/\s+$/,'')); pos=c; } });
+    out.push(line.slice(pos));
+  });
+  return out;
+}
+/* One-letter headings (S:, O:, A:, P:) that really are SOAP sections: in
+   S-O-A-P order, and never a vital sign - "P: [ ]" between "T: [ ]" and
+   "R: [ ]" inside the O: block is a pulse, not a Plan. */
+function _tplSortLetterHeads(lines,heads){
+  var ok={}, order={S:0,O:1,A:2,P:3}, idx=[];
+  heads.forEach(function(h,i){ if(h&&h.letter) idx.push(i); });
+  var near=function(i,step){ for(var k=i+step;k>=0&&k<lines.length;k+=step){ if(String(lines[k]).trim()) return String(lines[k]); } return ''; };
+  idx.forEach(function(i,n){
+    var h=heads[i];
+    if(h.letter==='P'&&(TPL_SORT_VITAL.test(near(i,-1))||TPL_SORT_VITAL.test(near(i,1)))) return;
+    /* a later letter heading that comes earlier in S-O-A-P means this one is
+       out of order ("P:" in the vitals, then "A:", then the real "P:") */
+    for(var k=n+1;k<idx.length;k++){ if(order[heads[idx[k]].letter]<order[h.letter]) return; }
+    ok[i]=1;
+  });
+  /* "A/P:" or "A&P:" stands for both A and P */
+  var seen={}, n2=0, mark=function(l){ if(!seen[l]){ seen[l]=1; n2++; } };
+  Object.keys(ok).forEach(function(i){ mark(heads[i].letter); });
+  heads.forEach(function(h){ if(h&&h.fam==='ap'&&/^a (?:and )?p$/.test(h.key)){ mark('A'); mark('P'); } });
+  if(n2<3) return {};
+  return ok;
+}
+/* The document read as visit sections (for "Split into sections", a best
+   guess and nothing else). Each section heading owns the lines up to the
+   next section heading; inner labels ("Onset:", "General:") and headings MLS
+   does not know stay inside the section that holds them. Text before the
+   first heading is kept, at the top of the first part.
+     - HPI gathers chief complaint, HPI, interval history, subjective and the
+       past history / medications / allergies / social / family history;
+     - an Assessment & Plan written as ONE heading, or problem by problem,
+       stays ONE part and goes to Plan - never torn into problem names;
+     - a part made of ONE block drops its own heading line and keeps what
+       followed the colon; a part made of several blocks keeps each block's
+       heading line - once - and only an empty wrapper heading above them
+       ("SUBJECTIVE:" over "Chief complaint:") is left off. The saved text
+       then leaves the section's own heading off (_tplSortStripOwnHeading). */
+function _tplSortSections(text){
+  var lines=_tplSortLines(text), heads=lines.map(_tplSortHeading), i;
+  var letterOk=_tplSortLetterHeads(lines,heads);
+  var useLetters=Object.keys(letterOk).length>0;
+  var isSec=function(k){ var h=heads[k]; if(!h) return false; if(h.letter) return !!letterOk[k]; return _tplSortIsSection(h,false); };
+  var blocks=[], pre=[], cur=null;
+  for(i=0;i<lines.length;i++){
+    var h=heads[i];
+    if(isSec(i)){
+      cur={ fam:h.fam, key:h.key, label:h.label, head:lines[i], rest:h.rest, lines:[], at:i, letter:h.letter, caps:h.caps, weak:h.weak, inner:[] };
+      blocks.push(cur);
+    } else if(cur){
+      cur.lines.push(lines[i]);
+      if(h&&!h.fam&&h.block&&h.caps&&!_tplSortOpField(h)&&cur.inner.length<6) cur.inner.push(h.label);
+    } else pre.push(lines[i]);
+  }
+  blocks.forEach(function(b){ b.single=!b.lines.some(function(l){ return String(l).trim(); }); });
+  var mapFam=function(f){ return f==='hx'?'hpi':f; };
+  var families=[];
+  blocks.forEach(function(b){
+    (b.fam==='ap'?['assessment','plan']:[mapFam(b.fam)]).forEach(function(f){ if(families.indexOf(f)<0) families.push(f); });
+  });
+  var dec=blocks.filter(function(b){ return b.fam==='assessment'||b.fam==='plan'||b.fam==='ap'; });
+  var turns=0; for(i=1;i<dec.length;i++) if(dec[i].fam!==dec[i-1].fam) turns++;
+  var hasAp=dec.some(function(b){ return b.fam==='ap'; });
+  var problemOriented=!hasAp&&turns>=2&&dec.filter(function(b){ return b.fam==='assessment'; }).length>=2;
+  var firstAp=-1; for(i=0;i<blocks.length;i++) if(blocks[i].fam==='ap'){ firstAp=i; break; }
+  /* the whole history-then-decision sequence starting over: more than one
+     note, which "Split into sections" must never merge */
+  var cycles=0, side='';
+  blocks.forEach(function(b){
+    var f=mapFam(b.fam);
+    if((f==='hpi'&&b.fam!=='hx')||f==='ros'){ if(side==='decision'||side==='') { if(side==='decision') cycles++; side='history'; } }
+    else if(f==='assessment'||f==='plan'||f==='ap'){ if(side==='history') side='decision'; }
+  });
+  var partOf=function(b){
+    var f=mapFam(b.fam);
+    if(problemOriented&&(f==='assessment'||f==='plan')) return 'ap';
+    if(hasAp&&(f==='plan'||(f==='assessment'&&blocks.indexOf(b)>firstAp))) return 'ap';
+    return f;
+  };
+  var order=[], byPart={};
+  blocks.forEach(function(b){
+    var p=partOf(b);
+    if(!byPart[p]){ byPart[p]={ part:p, blocks:[] }; order.push(byPart[p]); }
+    byPart[p].blocks.push(b);
+  });
+  var preText=pre.join('\n').replace(/^\s+|\s+$/g,'');
+  var tidy=function(s){ return String(s||'').replace(/^(?:[ \t]*\n)+/,'').replace(/\n{3,}/g,'\n\n').trimEnd(); };
+  var parts=order.map(function(g){
+    var out=[];
+    if(g.blocks.length===1){
+      var b=g.blocks[0];
+      if(b.rest) out.push(b.rest);
+      out=out.concat(b.lines);
+    } else {
+      g.blocks.forEach(function(b,bi){
+        var wrapper=bi===0&&!b.rest&&b.single;
+        if(!wrapper) out.push(b.head);
+        out=out.concat(b.lines);
+      });
+    }
+    var body=tidy(out.join('\n'));
+    var firstInDoc=g.blocks[0]===blocks[0];
+    if(firstInDoc&&preText) body=tidy(preText+'\n'+body);
+    var inner=[]; g.blocks.forEach(function(b){ b.inner.forEach(function(x){ if(inner.indexOf(x)<0) inner.push(x); }); });
+    return {
+      dest:g.part==='ap'?'plan':g.part,
+      families:g.part==='ap'?['assessment','plan']:[g.part],
+      label:g.blocks[0].label, labels:g.blocks.map(function(b){ return b.label; }),
+      text:body, blocks:g.blocks.length,
+      history:g.blocks.filter(function(b){ return b.fam==='hx'; }).map(function(b){ return b.label; }),
+      preamble:firstInDoc&&!!preText, inner:inner, ap:g.part==='ap'
+    };
+  });
+  return { lines:lines, heads:heads, blocks:blocks, pre:preText, families:families, parts:parts, letters:useLetters, problemOriented:problemOriented, hasAp:hasAp, restarts:cycles };
+}
+/* A heading as a person reads it: "PREOPERATIVE DIAGNOSIS" -> "Preoperative
+   diagnosis". */
+function _tplSortShowLabel(label){
+  var l=String(label||'').replace(/\s*\([^)]*\)/g,'').replace(/\s+/g,' ').trim();
+  if(l&&l===l.toUpperCase()&&l.length>3) l=l.charAt(0)+l.slice(1).toLowerCase();
+  return l;
+}
+/* The first non-empty line. */
+function _tplSortFirstLine(lines){
+  /* tplsort-1.4.0: a rule line (---, ===, ***, ____) is never a title */
+  for(var i=0;i<lines.length;i++){ var l=String(lines[i]).trim(); if(l&&/[A-Za-z0-9]/.test(l)) return l; }
+  return '';
+}
+/* A made-up name ("Pasted template 3", "Template 2") says nothing. */
+function _tplSortGenericName(name){
+  var n=String(name==null?'':name).trim();
+  return !n||/^(pasted templates?( \d+)?|pasted|template \d+|templates?|untitled( template)?|operative note template|file \d+|split result)$/i.test(n);
+}
+/* A file name that SUGGESTS one place - a best guess only. */
+function _tplSortNameHint(name){
+  var n=' '+_tplSortNorm(name)+' ';
+  if(!n.trim()) return '';
+  var hits=[], hit=function(dest,re){ if(re.test(n)&&hits.indexOf(dest)<0) hits.push(dest); };
+  hit('letters',/ (?:letter|letters|work note|school note|handout|instructions|consent) /);
+  hit('soap',/ (?:follow up visit|followup visit|new patient|new pt|established|est pt|consult|consultation|h p|h and p|history and physical|soap|progress note|office visit|office note|clinic note|visit note|whole visit|visit) /);
+  hit('plan',/ (?:plan|treatment plan|a p|assessment and plan|assessment plan) /);
+  hit('hpi',/ (?:hpi|history of present illness|present illness|chief complaint) /);
+  hit('ros',/ (?:ros|review of systems) /);
+  hit('exam',/ (?:exam|examination|physical exam|physical examination|pe) /);
+  hit('assessment',/ (?:assessment|impression) /);
+  hit('op',/ (?:op note|op report|operative|operation|procedure note|procedure report) /);
+  if(hits.indexOf('plan')>=0&&hits.indexOf('assessment')>=0) hits.splice(hits.indexOf('assessment'),1);
+  return hits.length===1?hits[0]:'';
+}
+/* THE BEST GUESS - for a row the splitter was not sure of or could not
+   sort, offered as ONE tap ("Put it in Plan"). It NEVER places a row by
+   itself. Read from the headings: the section a one-section template's
+   headings name, a whole visit note when its headings run from history to a
+   decision, an operative note from two operative fields; else a letter that
+   opens with a greeting; else the file name. Returns {dest, why} or null. */
+function _tplSortBestGuess(row){
+  row=(row&&typeof row==='object')?row:{};
+  var text=String(row.text||'');
+  if(!text.trim()) return null;
+  var parsed=null; try{ parsed=_tplSortSections(text); }catch(eParse){ parsed=null; }
+  if(!parsed) return null;
+  /* past history, vitals, "Follow up" and other weak labels never decide */
+  var strong=parsed.blocks.filter(function(b){ return !b.weak; }), fams=[];
+  /* a single line like "Impression: [x]" under an exam never decides -
+     unless every section is written that way ("CC: [ ]", "HPI: [ ]"...) */
+  var oneLine=function(b){ return b.single&&!!b.rest; };
+  if(strong.some(function(b){ return !oneLine(b); })) strong=strong.filter(function(b,ix){ return ix===0||!oneLine(b); });
+  strong.forEach(function(b){ (b.fam==='ap'?['assessment','plan']:[b.fam]).forEach(function(f){ if(fams.indexOf(f)<0) fams.push(f); }); });
+  var labels=function(list){ var out=[]; list.forEach(function(b){ var l='“'+_tplSortShowLabel(b.label)+'”'; if(out.length<3&&out.indexOf(l)<0) out.push(l); }); return out.join(', '); };
+  var history=fams.indexOf('hpi')>=0||fams.indexOf('ros')>=0, decision=fams.indexOf('assessment')>=0||fams.indexOf('plan')>=0;
+  var greets=/^\s*(?:dear\b|to whom it may concern)/im.test(text), you=(text.match(/\byou(?:r|rs)?\b/gi)||[]).length;
+  if((greets||you>=3)&&!(history&&decision)) return { dest:'letters', why:greets?'it opens like a letter':'it speaks to the patient (“you”)' };
+  if(history&&decision&&(parsed.letters||fams.length>=3)) return { dest:'soap', why:'its headings ('+labels(strong)+') run from the history to the plan' };
+  var opFields=[]; parsed.heads.forEach(function(h){ if(_tplSortOpField(h)&&opFields.indexOf(h.key)<0) opFields.push(h.key); });
+  if(opFields.length>=2&&!history) return { dest:'op', why:'it has operative note headings' };
+  /* one section: only when the template STARTS with that section's own name */
+  var firstLine=_tplSortFirstLine(parsed.lines), fh=_tplSortHeading(firstLine), exact=fh?(fh.letter?'':_tplSortExactFamily(fh.key)):'';
+  var firstFam=exact==='hx'?'hpi':exact;
+  if(fams.length===1&&firstFam===fams[0]) return { dest:fams[0], why:'it starts with '+labels([strong[0]])+' and has no other section' };
+  if(fams.length===2&&!history&&decision&&(firstFam==='assessment'||firstFam==='plan'||firstFam==='ap')) return { dest:'plan', why:'it has Assessment and Plan headings - one Assessment & Plan template' };
+  var hint=_tplSortGenericName(row.src)?'':_tplSortNameHint(row.src||'');
+  if(hint) return { dest:hint, why:'its file name “'+String(row.src).slice(0,60)+'” suggests it' };
+  return null;
+}
+/* The text as the splitter reads it (backend templateSplitDocument): line
+   endings unified, blank lines at either end dropped. The limit and the cut
+   check are measured on this. */
+function _tplSortDoc(text){
+  return String(text==null?'':text).replace(/\r\n?/g,'\n').replace(/^(?:[ \t\f\v]*\n)+/,'').trimEnd();
+}
+/* TEXT THAT IS TEXT (tplsort-1.3.0). A short section template ("ROS: /
+   Eyes: [ ] / Skin: [ ]") and a fill-in-the-blank form (a work status
+   report that is mostly ______ blanks, a school excuse note) are templates,
+   so there is no share-of-letters rule any more: what is refused is a few
+   letters only, or text that is not text (a binary file decoded as
+   characters). The same rule for files and pastes. '' when it reads, else
+   why not: 'empty', 'too-little-text' or 'not-text'. */
+var TPL_SORT_MIN_LETTERS=12;
+function _tplSortReadVerdict(text){
+  var s=String(text==null?'':text).replace(/\s+/g,'');
+  if(!s) return 'empty';
+  var junk=(s.match(/[\u0000-\u001F\u007F-\u009F\uFFFD\uE000-\uF8FF]/g)||[]).length;
+  if(junk*10>s.length) return 'not-text';
+  var letters=(s.match(/[A-Za-z\u00C0-\u024F]/g)||[]).length;
+  return letters<TPL_SORT_MIN_LETTERS?'too-little-text':'';
+}
+function _tplSortReadable(text){ return !_tplSortReadVerdict(text); }
+/* IS THE ANSWER A CUT OF WHAT WAS SENT? The server cuts the document at the
+   lines its model named (backend src/routes/templateSplit.js - the one
+   source of truth for where the cuts go). This only checks that what came
+   back is that: each template is whole lines of the text sent, exactly, in
+   order; nothing but blank lines lies between two templates or after the
+   last; and before the first there is nothing, or exactly the cover page
+   the server reported. A rewritten, shortened, reordered or overlapping
+   answer - a server that predates the cut - is { refused }. Answers
+   { templates, cover, prefix } with prefix the sent text before the first
+   template (the cover page as it stood, with the line that set it apart). */
+function _tplSortVerify(doc,list,cover){
+  doc=String(doc==null?'':doc); list=Array.isArray(list)?list:[];
+  if(!list.length||list.length>30) return { refused:'bad-answer' };
+  var starts=[0]; for(var p=doc.indexOf('\n');p>=0;p=doc.indexOf('\n',p+1)) starts.push(p+1);
+  var at=0, first=-1, out=[];
+  for(var k=0;k<list.length;k++){
+    var t=list[k]||{}, text=String(t.text==null?'':t.text);
+    if(!text.trim()) return { refused:'bad-answer' };
+    var s=Number(t.start), i=(s===Math.floor(s)&&s>=1&&s<=starts.length)?starts[s-1]:doc.indexOf(text,at);
+    if(i<at||doc.slice(i,i+text.length)!==text) return { refused:'bad-answer' };
+    var end=i+text.length;
+    if((i>0&&doc.charAt(i-1)!=='\n')||(end<doc.length&&doc.charAt(end)!=='\n')) return { refused:'bad-answer' };
+    if(k>0&&doc.slice(at,i).trim()) return { refused:'bad-answer' };
+    if(k===0) first=i;
+    out.push({ name:String(t.name||''), text:text, goes:String(t.goes||''), why:String(t.why||''), insurance:!!t.insurance });
+    at=end;
+  }
+  if(doc.slice(at).trim()) return { refused:'bad-answer' };
+  var prefix=doc.slice(0,first), c='';
+  if(prefix.trim()){
+    c=String(cover==null?'':cover).replace(/^\s+|\s+$/g,'');
+    if(!c||c!==prefix.replace(/^\s+|\s+$/g,'')) return { refused:'bad-answer' };
+  }
+  return { templates:out, cover:c, prefix:c?prefix:'' };
+}
+/* Whether MLS can ask the splitter at all, and if not, why - said once on
+   the list. */
+function _tplSortAiState(){
+  try{ var pv=window.__MLS_PUBLIC_PREVIEW; if(pv&&pv.enabled===true) return { ok:false, why:'sample' }; }catch(ePv){}
+  try{ if(typeof backendMode!=='function'||!backendMode()||typeof bkToken!=='function'||!bkToken()) return { ok:false, why:'signed-out' }; }catch(eAuth){ return { ok:false, why:'signed-out' }; }
+  try{ if(typeof navigator!=='undefined'&&navigator.onLine===false) return { ok:false, why:'offline' }; }catch(eNav){}
+  return { ok:true, why:'' };
+}
+var TPL_SORT_UNSORTED={
+  'signed-out':'you are not signed in, so the sorting AI could not be asked',
+  'sample':'this is the sample workspace, which does not send templates to the sorting AI',
+  'offline':'this device is offline',
+  'busy':'MLS was busy (too many sorts in one minute)',
+  'unreachable':'MLS could not be reached',
+  'server':'MLS did not answer',
+  'no-ai':'sorting is not available on this account',
+  /* tplsort-1.3.0: the server's refusals, each said as it is */
+  'bad-answer':'the sorting AI\'s answer could not be used',
+  'too-long':'it is longer than MLS can sort in one go',
+  'too-many':'MLS found more templates in it than it can sort in one go'
+};
+/* The one line that says why rows were not sorted, with "Try sorting
+   again" when trying again can help. */
+function _tplSortUnsortedLine(counts,n){
+  var keys=Object.keys(counts||{}).sort(function(a,b){ return counts[b]-counts[a]; });
+  var why=keys.map(function(k){ return TPL_SORT_UNSORTED[k]||TPL_SORT_UNSORTED.unreachable; }).filter(function(v,ix,arr){ return arr.indexOf(v)===ix; }).join('; ');
+  var retry=keys.some(function(k){ return k==='busy'||k==='unreachable'||k==='server'||k==='offline'||k==='bad-answer'; });
+  return '<div class="tpl-sort-unsorted" role="note" style="font-size:12.5px;margin:0 0 7px;padding:7px 9px;border-radius:10px;background:#fff5df;color:#6b4a07">MLS could not sort '+(n===1?'one of these':(n+' of these'))+': '+esc(why)+'. '+(n===1?'It is':'Each one is')+' kept whole - choose where '+(n===1?'it goes':'each one goes')+'.'
+    +(retry?' <button type="button" class="btn-ghost tpl-sort-retry" style="font-size:12px;padding:3px 8px" onclick="_tplSortRetry()">Try sorting again</button>':'')+'</div>';
+}
+/* The template's own title: its first line when that line is a title or a
+   heading ("KNEE FOLLOW-UP VISIT", "History of present illness"), never a
+   field ("Procedure: ...", "Patient: ...", "S: ..."). */
+function _tplSortTitleOf(text){
+  var first=_tplSortFirstLine(String(text==null?'':text).replace(/\r\n?/g,'\n').split('\n'));
+  if(!first) return '';
+  var h=_tplSortHeading(first);
+  if(h&&h.colon&&h.rest) return '';
+  /* a first SECTION heading names the template only when it is the only
+     section ("History of present illness"); over a whole note it is just
+     the first heading ("Chief complaint") */
+  if(h&&h.fam){ var sec=null; try{ sec=_tplSortSections(text); }catch(eSec){ sec=null; } if(!sec||sec.families.length>1) return ''; }
+  var name=h?(h.colon?h.label:first):first;
+  name=String(name).replace(/^#+\s*|\*\*|__/g,'').replace(/\[[^\]]*\]/g,' ').replace(/[:\s]+$/,'').replace(/\s+/g,' ').trim();
+  if(h&&h.fam&&name===name.toUpperCase()) name=_tplSortShowLabel(name);
+  return name;
+}
+/* A name fit to save a template under - or ''. Never a lone letter, a field
+   line ("Patient:", "Procedure:"), a "Lastname, Firstname", a sentence or a
+   made-up name. */
+function _tplSortCleanName(v){
+  v=String(v==null?'':v).replace(/^#+\s*|\*\*|__/g,'').replace(/\s+/g,' ').replace(/[:\s]+$/,'').trim();
+  if(!v||v.length<2||/^[SOAP]$/i.test(v)||!/[A-Za-z0-9]/.test(v)) return '';
+  if(/^(?:patient|pt|name|dob|date|mrn)\b/i.test(v)) return '';
+  if(/:\s*\S/.test(v)) return '';
+  if(/[A-Z][a-z]+,\s*[A-Z][a-z]+/.test(v)) return '';
+  if(/[.?!]$/.test(v)&&v.split(' ').length>4) return '';
+  if(_tplSortGenericName(v)) return '';
+  if(v.length>80){ var cut=v.slice(0,80), sp=cut.lastIndexOf(' '); v=(sp>30?cut.slice(0,sp):cut)+'…'; }
+  return v;
+}
+/* A row's name: the splitter's name for the piece, then the piece's own
+   first title, then the file name - never "Pasted template". */
+function _tplSortName(row,p){
+  var file=(p&&!p.pasted)?String(p.name||row.src||''):'';
+  if(file&&!/\s/.test(file)) file=file.replace(/[-_]+/g,' ');
+  var cands=[row&&row.aiName, _tplSortTitleOf(row&&row.text), file];
+  for(var k=0;k<cands.length;k++){ var v=_tplSortCleanName(cands[k]); if(v) return v; }
+  /* last: the section heading it opens with ("Physical exam") - never a
+     part of a section ("Chief complaint") standing for a whole note */
+  var h=_tplSortHeading(_tplSortFirstLine(String((row&&row.text)||'').split('\n')));
+  if(h&&h.fam&&!h.letter&&!h.weak&&!TPL_SORT_SUBPART.test(h.key)){ var hv=_tplSortCleanName(_tplSortShowLabel(h.label)); if(hv) return hv; }
+  return 'Untitled template';
+}
+/* Every file and every paste once registered, so "Keep it as one template"
+   can put it back exactly as it came. */
+var _tplSortGroups={}, _tplSortGroupSeq=0;
+function _tplSortGroupAdd(g){ var id=++_tplSortGroupSeq; _tplSortGroups[id]=g; return id; }
+function _tplSortWholeRow(p,text,fail){
+  return { name:'', text:String(text==null?'':text).trim(), keep:true, src:p&&!p.pasted?String(p.name||''):'', pasted:!!(p&&p.pasted), aiName:'', aiGoes:'', aiWhy:'', aiInsurance:false, notSorted:String(fail||'') };
+}
+function _tplSortRowFromAi(p,t){
+  return { name:'', text:String((t&&t.text)||''), keep:true, src:p&&!p.pasted?String(p.name||''):'', pasted:!!(p&&p.pasted), aiName:String((t&&t.name)||''), aiGoes:String((t&&t.goes)||'').toLowerCase(), aiWhy:String((t&&t.why)||''), aiInsurance:!!(t&&t.insurance), notSorted:'' };
+}
+/* ONE ANSWER -> ITS ROWS, the same for the first sort and for "Try sorting
+   again". unit = { body, explicit, name, keywords }: the text sent, and its
+   Name:/Keywords: header when it had one.
+     - no answer, or a refusal: the whole text, one row, the reason kept;
+     - a Name: header says it is ONE template: one row, the whole body -
+       never a cover page left out - sorted by the answer only when the
+       splitter also found one template;
+     - otherwise one row per template, the cover page (if any) on the first:
+       put back at its top when the file held one template, left out when it
+       held several. */
+function _tplSortRowsFromAnswer(p,res,unit){
+  if(!res||res.fail||!res.templates||!res.templates.length) return [_tplSortWholeRow(p,unit.body,(res&&res.fail)||'unreachable')];
+  if(unit.explicit){
+    if(res.templates.length!==1){ var one=_tplSortWholeRow(p,unit.body,''); one.aiWhy='MLS read it as '+res.templates.length+' templates, but its Name: line says it is one.'; return [one]; }
+    var whole=_tplSortRowFromAi(p,res.templates[0]); whole.text=String(unit.body||'').trim();
+    return [whole];
+  }
+  var rows=res.templates.map(function(t){ return _tplSortRowFromAi(p,t); });
+  if(res.cover){
+    var r0=rows[0];
+    r0.cover=String(res.cover); r0.coverText=String(res.prefix||(res.cover+'\n\n')); r0.bodyText=r0.text;
+    if(rows.length===1){ r0.coverAt='top'; r0.text=(r0.coverText+r0.bodyText).replace(/^(?:[ \t]*\n)+/,''); }
+    else r0.coverAt='out';
+  }
+  return rows;
+}
+/* Name, place and group each row of one file or paste. */
+function _tplSortFinishRows(rows,p,unit,gid){
+  var from=p.pasted?'your paste':String(p.name||'this file');
+  rows.forEach(function(r,k){
+    r.group={ id:gid, from:from, count:rows.length, index:k+1 };
+    if(unit.explicit&&rows.length===1){ r.name=unit.name; r.explicit=true; r.keywords=unit.keywords; }
+    if(!r.name) r.name=_tplSortName(r,p);
+    _tplSortApply(r);
+  });
+  return rows;
+}
+/* ONE FILE OR ONE PASTE -> its rows, from ONE splitter call with the whole
+   text (tplsort-1.3.0: nothing is cut here). p = {name, text, pasted}; ai =
+   the splitter state for this upload. A Name:/Keywords: header makes the
+   text ONE named template (the splitter only sorts it). Longer than the
+   splitter reads in one call, it is not sent: one row, "too long". */
+async function _tplSortUnitRows(p,ai){
+  var meta=_tplParseMeta(p.text), explicit=!!meta.name;
+  var body=_tplSortDoc(explicit?meta.body:p.text);
+  if(!body.trim()) return [];
+  var gid=_tplSortGroupAdd({ text:body, name:explicit?meta.name:String(p.name||''), pasted:!!p.pasted, explicit:explicit, keywords:explicit?meta.keywords:null });
+  var unit={ body:body, explicit:explicit, name:meta.name, keywords:meta.keywords };
+  var res=null;
+  if(body.length>TPL_SORT_SPLIT_MAX) res={ fail:'too-long' };
+  else if(!ai||!ai.ok) res={ fail:(ai&&ai.why)||'signed-out' };
+  else { try{ res=await _tplSplitCall(body); }catch(eCall){ res={ fail:'unreachable' }; } }
+  return _tplSortFinishRows(_tplSortRowsFromAnswer(p,res,unit),p,unit,gid);
+}
+/* A row's place, once: a kind the doctor declared, else the splitter's
+   answer, else "Choose where it goes" with the best guess offered. A row the
+   doctor has placed (destBy 'doctor' or 'split') is never re-sorted. */
+function _tplSortApply(t){
+  if(!t||t.destBy) return;
+  if(t.unreadable){
+    t.dest='skip'; t.autoDest='skip'; t.guess=''; t.destBy='auto'; t.keep=false; t.sectionCount=0;
+    /* tplsort-1.3.0: the reader's true reason, not "could not read" */
+    t.why=t.autoWhy=(t.pasted?'This paste will be skipped. ':'This file will be skipped. ')+(typeof _tplReadAdvice==='function'?_tplReadAdvice(t.reason):'');
+    return;
+  }
+  var dest='', why='', kind='', by='ai', declared='';
+  try{ declared=t.kindSuggested?'':String((typeof _mlsTplKindOf==='function'?_mlsTplKindOf(t):'')||''); }catch(eDecl){ declared=''; }
+  var goes=TPL_SORT_GOES[String(t.aiGoes||'')]||'';
+  if(declared==='op'){ dest='op'; by='declared'; why='It is marked as an operative note, so it goes with your operative note templates.'; }
+  else if(declared==='insurance'){ dest='letters'; kind='insurance'; by='declared'; why='It is marked as an insurance-ready note format, so it is kept with that kind and drafts insurance-ready notes.'; }
+  else if(declared==='letter'){ dest='letters'; by='declared'; why='It is marked as a letter or other document, so it goes to Letters & other documents.'; }
+  else if(goes&&!t.notSorted){
+    /* tplsort-1.4.0: kind insurance is the Insurance-ready NOTE format, which
+       drafts visit notes; a letter to an insurer is still a letter */
+    dest=goes; kind='';
+    why=t.aiWhy||({ soap:'MLS read it as a whole visit note.', op:'MLS read it as an operative or procedure note.', letters:'MLS read it as a letter or another document.' }[goes]||('MLS read it as a template for '+_tplSortTitle(goes)+'.'));
+  }
+  var g=null;
+  if(!dest){ try{ g=_tplSortBestGuess(t); }catch(eGuess){ g=null; } }
+  t.dest=dest; t.autoDest=dest; t.destBy=by; t.libKind=kind; t.autoLibKind=kind; t.keep=!!dest;
+  t.guess=g?g.dest:''; t.guessWhy=g?g.why:'';
+  if(!dest){
+    var lead=t.notSorted?'':(t.aiWhy?(String(t.aiWhy).replace(/\s+$/,'').replace(/([^.!?])$/,'$1.')+' '):'');
+    /* tplsort-1.3.0: said as it is - no advice a PDF cannot follow */
+    var whole=t.notSorted==='too-long'||t.notSorted==='too-many';
+    if(t.notSorted==='too-long') lead='It is too long for MLS to sort ('+_tplSortDoc(t.text).length.toLocaleString('en-US')+' characters; the most is '+TPL_SORT_SPLIT_MAX.toLocaleString('en-US')+'), so it is kept as one template. ';
+    else if(t.notSorted==='too-many') lead='MLS found more templates in it than it can sort in one go, so it is kept as one template. ';
+    why=lead+(whole?'Choose where the whole thing goes.':(t.notSorted?'Choose where it goes.':'MLS is not sure where it goes. Choose where it goes.'))+(g?(' Best guess: '+_tplSortTitle(g.dest)+' - '+g.why+'.'):'');
+  }
+  t.why=t.autoWhy=why;
+  _tplSortSectionInfo(t);
+}
+/* Whether a row can be split into visit sections, and into which. */
+function _tplSortSectionInfo(t){
+  var sec=null; try{ sec=_tplSortSections(t.text); }catch(eSec){ sec=null; }
+  var filled=sec?sec.parts.filter(function(s){ return String(s.text||'').trim(); }):[];
+  t.sectionCount=(sec&&!sec.restarts&&filled.length>=2)?filled.length:0;
+  t.sectionNames=t.sectionCount?filled.map(function(s){ return s.ap?'Assessment & Plan':_tplSortTitle(s.dest); }).filter(function(v,ix,arr){ return arr.indexOf(v)===ix; }).join(', '):'';
+}
+/* Give every review row its place once (rows staged by another path - the
+   EMR panel, an older build - included). */
+function _tplSortAssign(list){
+  _tplSortCapMemo=null;   /* a new paint reads section room afresh, once */
+  (list||[]).forEach(function(t){ if(t&&!t.destBy){ if(!t.name) t.name=_tplSortName(t,{ name:t.src, pasted:!t.src }); _tplSortApply(t); } });
+}
+/* Characters as the visit store will count them (the same tidy it applies). */
+function _tplSortLength(text){
+  return String(text==null?'':text).replace(/\r\n?/g,'\n').replace(/[ \t]+\n/g,'\n').replace(/\n{4,}/g,'\n\n\n').trim().length;
+}
+/* A template saved to ONE section leaves that section's own heading off -
+   the first heading when it is the section's name (qualified too:
+   "MUSCULOSKELETAL EXAM", "Physical Exam (focused)"). A later heading that
+   is exactly the section's long name ("History of present illness:" under
+   "Chief complaint:") marks a block of its own, so it is not dropped
+   (tplsort-1.3.0: dropping it put the HPI's own placeholder under Chief
+   complaint): it becomes the section's short name ("HPI:"), which MLS
+   reserves and never requires as an inner heading. What followed the colon
+   stays. The short names
+   MLS reserves (HPI, ROS, EXAM, ASSESSMENT, PLAN) are harmless inside and
+   left where they are after the first line - "Plan:" under each problem of
+   a problem-by-problem Assessment & Plan keeps its place. */
+function _tplSortOwnHeading(h,dest,first){
+  if(!h||!h.key||!_tplSortIsVisit(dest)||dest==='soap') return false;
+  var key=h.letter?h.letter.toLowerCase():h.key;
+  var own=TPL_SORT_OWN[dest].test(key)||((dest==='plan'||dest==='assessment')&&TPL_SORT_OWN.ap.test(key));
+  if(own) return true;
+  if(!first||h.letter) return false;
+  var fam=h.fam==='hx'?'':(h.fam==='ap'?((dest==='plan'||dest==='assessment')?dest:''):h.fam);
+  return fam===dest&&!h.weak&&!TPL_SORT_SUBPART.test(key);
+}
+var TPL_SORT_SHORT={hpi:'HPI',ros:'ROS',exam:'EXAM',assessment:'ASSESSMENT',plan:'PLAN'};
+function _tplSortStripOwnHeading(text,dest){
+  var src=String(text==null?'':text).replace(/\r\n?/g,'\n');
+  if(!_tplSortIsVisit(dest)||dest==='soap') return src;
+  var lines=src.split('\n'), out=[], seenHeading=false;
+  var reserved=function(h){ var up=String(h.letter||h.label||'').replace(/\s*\([^)]*\)/g,'').replace(/\s+/g,' ').trim().toUpperCase(); if(up===String(dest).toUpperCase()) return true; return typeof _mlsTemplateHeadingIsReserved==='function'?_mlsTemplateHeadingIsReserved(up):/^(?:HPI|ROS|EXAM|ASSESSMENT|PLAN|SUBJECTIVE|OBJECTIVE|ASSESSMENT AND PLAN|ASSESSMENT & PLAN)$/.test(up); };
+  for(var i=0;i<lines.length;i++){
+    var h=_tplSortHeading(lines[i]);
+    var sectionish=h&&(h.fam||h.letter);
+    var first=!!sectionish&&!seenHeading;
+    if(sectionish) seenHeading=true;
+    if(h&&_tplSortOwnHeading(h,dest,first)&&(first||!reserved(h))){
+      if(first){ if(h.rest) out.push(h.rest); continue; }
+      var shortName=TPL_SORT_SHORT[dest]||String(dest).toUpperCase();
+      if(!h.caps&&dest!=='hpi'&&dest!=='ros') shortName=shortName.charAt(0)+shortName.slice(1).toLowerCase();
+      out.push(String(lines[i]).match(/^\s*/)[0]+shortName+':'+(h.rest?(' '+h.rest):''));
+      continue;
+    }
+    out.push(lines[i]);
+  }
+  var res=out.join('\n').replace(/^(?:[ \t]*\n)+/,'').trimEnd();
+  return res.trim()?res:src;
+}
+/* Exactly the text a row will be saved as. */
+function _tplSortSaveText(t){
+  var text=String((t&&t.text)||'');
+  if(!t||!_tplSortIsVisit(t.dest)||t.dest==='soap') return text;
+  /* remembered per row: the list asks for it on every paint, for every row
+     above each visit row (the room-left check) */
+  var key=t.dest+'\u0000'+text;
+  if(t._saveKey!==key){ t._saveKey=key; t._saveText=_tplSortStripOwnHeading(text,t.dest); }
+  return t._saveText;
+}
+/* How many more saved formats each visit section can take. The Visit note
+   templates module loads on first use; the list asks for it once and paints
+   again when it arrives, and Save asks again regardless. */
+var _tplSortDtAsked=false, _tplSortCapMemo=null;
+function _tplSortCapacity(){
+  if(_tplSortCapMemo) return _tplSortCapMemo;
+  var dt=window.__mlsDraftTuning;
+  if(!dt||typeof dt.profileEditor!=='function'){
+    if(!_tplSortDtAsked&&typeof window.__mlsEnsureDraftTuning==='function'){
+      _tplSortDtAsked=true;
+      try{ Promise.resolve(window.__mlsEnsureDraftTuning()).then(function(api){ if(api&&_tplPendingSplit.length) _renderTplSplitPreview(); }).catch(function(){}); }catch(eAsk){}
+    }
+    return null;
+  }
+  var limit=(dt.visitTemplateLimits&&dt.visitTemplateLimits.formats)||8, out={ limit:limit, count:{}, free:{} };
+  TPL_SORT_FAMILIES.forEach(function(f){
+    var n=0; try{ var ed=dt.profileEditor(f); n=ed?ed.list().length:0; }catch(eCount){ n=0; }
+    out.count[f]=n; out.free[f]=Math.max(0,limit-n);
+  });
+  _tplSortCapMemo=out;
+  return out;
+}
+/* A row's limit warnings, shown BEFORE Save so nothing is dropped by
+   surprise: too long for a visit template, or a section with no room left. */
+function _tplSortRowNote(t,i){
+  var msgs=[], dest=String((t&&t.dest)||'');
+  if(_tplSortIsVisit(dest)){
+    var len=_tplSortLength(_tplSortSaveText(t));
+    if(len>TPL_SORT_MAX_CHARS) msgs.push('Too long for a visit note template: '+len.toLocaleString('en-US')+' characters, and the most one can hold is '+TPL_SORT_MAX_CHARS.toLocaleString('en-US')+'. '+((t.sectionCount>=2)?'Split it into sections, or skip it.':'Shorten it in your file and add it again, send it somewhere else, or skip it.'));
+    else {
+      var cap=_tplSortCapacity();
+      if(cap){
+        var ahead=0;
+        for(var k=0;k<i;k++){ var o=_tplPendingSplit[k]; if(o&&o.dest===dest&&_tplSortLength(_tplSortSaveText(o))<=TPL_SORT_MAX_CHARS&&String(o.text||'').trim()) ahead++; }
+        var room=cap.free[dest];
+        if(ahead>=room) msgs.push((room<=0?(_tplSortTitle(dest)+' already has '+cap.count[dest]+' saved formats, the most a section can keep.'):(_tplSortTitle(dest)+' has room for '+room+' more saved format'+(room===1?'':'s')+', and the one'+(room===1?'':'s')+' above take'+(room===1?'s it':' them')+'.'))+' Delete one in Settings › Visit note templates, send this one somewhere else, or skip it.');
+      }
+    }
+  }
+  if(t&&t.saveNote) msgs.push(t.saveNote);
+  return msgs.length?'<div class="tpl-sort-warn" role="note" style="font-size:12px;margin-top:5px;padding:6px 8px;border-radius:10px;background:#fff5df;color:#6b4a07">'+esc(msgs.join(' '))+'</div>':'';
+}
+/* The whole text, one tap away, exactly as it will be saved. */
+function _tplSortFullText(t){
+  var saveText=_tplSortSaveText(t), full=String((t&&t.text)||'');
+  var dropped=saveText!==full&&_tplSortIsVisit(t.dest);
+  return '<details class="tpl-sort-full" style="margin-top:5px"><summary style="cursor:pointer;font-size:12px;font-weight:650;color:var(--brand-dk,#2E6A4B)">Show the full text ('+saveText.length.toLocaleString('en-US')+' characters)</summary>'
+    +(dropped?'<div style="font-size:11.5px;color:var(--muted);margin:4px 0 0">Its own '+esc(_tplSortTitle(t.dest))+' heading is left off - the section already says what it is.</div>':'')
+    +'<div class="tpl-sort-text" style="white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace;max-height:240px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:6px 8px;margin-top:4px;background:var(--bg,#fafbfa)">'+esc(saveText)+'</div></details>';
+}
+/* The doctor's choice for one row. */
+function _tplSortSetDest(i,value){
+  var t=_tplPendingSplit[i]; if(!t||t.unreadable) return;
+  var dest=String(value||'');
+  if(dest&&dest!=='skip'&&!_tplSortIsLibrary(dest)&&!_tplSortIsVisit(dest)) return;
+  t.dest=dest; t.destBy='doctor'; t.keep=!!dest&&dest!=='skip'; t.saveNote='';
+  /* a letter is kind insurance only when the splitter (or the doctor's own
+     marking) said so for THIS row as a letter - moving it away and back
+     restores that, and nothing else ever adds it */
+  t.libKind=(dest==='letters'&&t.autoDest==='letters')?String(t.autoLibKind||''):'';
+  if(dest&&dest===t.autoDest) t.why=t.autoWhy||'';
+  else if(!dest) t.why=t.autoWhy||'Choose where it goes.';
+  else if(dest==='skip') t.why='You chose to skip it. It will not be saved.';
+  else if(dest===t.guess&&!t.autoDest) t.why='You chose '+_tplSortTitle(dest)+', MLS\'s best guess.';
+  else t.why='You chose '+_tplSortTitle(dest)+'.'+((t.autoDest&&t.autoDest!=='skip')?(' MLS had suggested '+_tplSortTitle(t.autoDest)+'.'):(t.guess&&t.guess!==dest?(' MLS\'s best guess was '+_tplSortTitle(t.guess)+'.'):''));
+  _renderTplSplitPreview();
+  try{ var sel=document.getElementById('tplSortDest_'+i); if(sel) sel.focus({preventScroll:true}); }catch(eFocus){}
+}
+/* One tap on the pre-highlighted best guess. */
+function _tplSortUseGuess(i){ var t=_tplPendingSplit[i]; if(t&&t.guess&&!t.dest) _tplSortSetDest(i,t.guess); }
+/* ...or on every best guess at once. */
+function _tplSortUseAllGuesses(){
+  var n=0;
+  _tplPendingSplit.forEach(function(t){ if(t&&!t.unreadable&&!t.dest&&t.guess&&t.notSorted!=='too-long'&&t.notSorted!=='too-many'&&String(t.text||'').trim()){ t.dest=t.guess; t.destBy='doctor'; t.keep=true; t.saveNote=''; t.why='You chose '+_tplSortTitle(t.guess)+', MLS\'s best guess.'; n++; } });
+  _renderTplSplitPreview();
+  if(n) _tplMultiStatus('Used the best guess for '+n+' template'+(n===1?'':'s')+'. Check the list, then press Save.','#1c7a43');
+}
+/* "Keep it as one template": every row one file or paste became goes back
+   to ONE row, exactly the text that came in, for the doctor to place. */
+function _tplSortKeepTogether(gid){
+  var g=_tplSortGroups[gid]; if(!g) return false;
+  var at=[]; _tplPendingSplit.forEach(function(t,i){ if(t&&t.group&&t.group.id===gid) at.push(i); });
+  if(at.length<2) return false;
+  var p={ name:g.name, pasted:g.pasted };
+  var row=_tplSortWholeRow(p,g.text,'');
+  row.group={ id:gid, from:g.pasted?'your paste':String(g.name||'this file'), count:1, index:1 };
+  if(g.explicit){ row.name=g.name; row.explicit=true; row.keywords=g.keywords; }
+  else row.name=_tplSortName(row,p);
+  _tplSortApply(row);
+  row.why=row.autoWhy='You kept it as one template. Choose where it goes.'+(row.guess?(' Best guess: '+_tplSortTitle(row.guess)+' - '+row.guessWhy+'.'):'');
+  var first=at[0];
+  _tplPendingSplit=_tplPendingSplit.filter(function(t){ return !(t&&t.group&&t.group.id===gid); });
+  _tplPendingSplit.splice(Math.min(first,_tplPendingSplit.length),0,row);
+  _renderTplSplitPreview();
+  _tplMultiStatus('Kept '+(g.pasted?'your paste':'“'+String(g.name||'the file')+'”')+' as one template. Choose where it goes, then press Save.','#1c7a43');
+  return true;
+}
+/* The cover page the splitter left out, back as a row of its own. */
+function _tplSortCover(i,how){
+  var t=_tplPendingSplit[i]; if(!t||!t.cover) return false;
+  var body=String(t.bodyText!=null?t.bodyText:t.text);
+  if(how==='top'){ t.text=(String(t.coverText||(t.cover+'\n\n'))+body).replace(/^(?:[ \t]*\n)+/,''); t.coverAt='top'; }
+  else if(how==='out'){ t.text=body; t.coverAt='out'; }
+  else if(how==='own'){
+    var row=_tplSortWholeRow({ name:t.src, pasted:t.pasted },t.cover,'');
+    row.group=t.group?{ id:t.group.id, from:t.group.from, count:t.group.count, index:t.group.index }:null;
+    row.name=_tplSortName(row,{ name:t.src, pasted:t.pasted });
+    _tplSortApply(row);
+    t.text=body; t.cover=''; t.coverAt='';
+    _tplPendingSplit.splice(i,0,row);
+  } else return false;
+  t._saveKey=null; _tplSortSectionInfo(t);
+  _renderTplSplitPreview();
+  return true;
+}
+/* the cover page as a template of its own (the earlier name) */
+function _tplSortAddCover(i){ return _tplSortCover(i,'own'); }
+/* "Try sorting again" for rows the splitter could not be asked about or
+   did not answer - a busy minute, a dropped connection. */
+var _tplSortRetrying=false;
+async function _tplSortRetry(){
+  if(_tplSortRetrying) return false;
+  var ai=_tplSortAiState();
+  if(!ai.ok){ _tplMultiStatus('MLS still cannot sort them: '+(TPL_SORT_UNSORTED[ai.why]||TPL_SORT_UNSORTED.unreachable)+'.','#b4231e'); return false; }
+  var targets=_tplPendingSplit.filter(function(t){ return t&&t.notSorted&&t.notSorted!=='too-long'&&t.notSorted!=='too-many'&&t.destBy!=='doctor'&&t.destBy!=='split'&&!t.unreadable; });
+  if(!targets.length) return false;
+  var epoch=_tplSortEpoch;
+  _tplSortRetrying=true; _tplAiOff=false;
+  _tplMultiStatus('✨ Sorting '+targets.length+' again…');
+  var results=[];
+  try{ results=await _tplPool(targets,_TPL_AI_LIMIT,async function(t){ try{ return await _tplSplitCall(t.text); }catch(e){ return { fail:'unreachable' }; } }); }
+  finally{ _tplSortRetrying=false; }
+  if(epoch!==_tplSortEpoch) return false;
+  var sorted=0, still=0;
+  targets.forEach(function(t,k){
+    var at=_tplPendingSplit.indexOf(t); if(at<0) return;
+    var res=results[k];
+    if(!res||res.fail){ t.notSorted=(res&&res.fail)||'unreachable'; t.destBy=''; _tplSortApply(t); still++; return; }
+    /* tplsort-1.3.0: the same rows a first sort makes - a Name: template
+       stays ONE template, a cover page is handled the same way */
+    var p={ name:t.src, pasted:t.pasted };
+    var unit={ body:String(t.text||''), explicit:!!t.explicit, name:t.explicit?t.name:'', keywords:t.explicit?t.keywords:null };
+    var rows=_tplSortRowsFromAnswer(p,res,unit);
+    var gid=rows.length>1?_tplSortGroupAdd({ text:unit.body, name:t.explicit?t.name:(t.src||t.name), pasted:t.pasted, explicit:!!t.explicit, keywords:unit.keywords }):(t.group?t.group.id:0);
+    _tplSortFinishRows(rows,p,unit,gid);
+    if(rows.length===1&&t.group) rows[0].group=t.group;
+    Array.prototype.splice.apply(_tplPendingSplit,[at,1].concat(rows));
+    sorted++;
+  });
+  _renderTplSplitPreview();
+  _tplMultiStatus(still?('Sorted '+sorted+'; MLS still could not sort '+still+'. Choose where '+(still===1?'it goes':'each one goes')+', or try again in a minute.'):('Sorted '+sorted+'. Check where each one is going below, then press Save.'),still?'#8A5A00':'#1c7a43');
+  return true;
+}
+/* "Split into sections": one row per visit section, each section's own
+   heading left off (see _tplSortSections and _tplSortStripOwnHeading). */
+function _tplSortSplit(i){
+  var t=_tplPendingSplit[i]; if(!t) return;
+  var parsed=_tplSortSections(t.text);
+  if(parsed.restarts){ _tplMultiStatus('“'+String(t.name||'This template')+'” looks like more than one note - its sections start over - so it is not split into sections. Choose where it goes as a whole, or add its notes one at a time.','#b4231e'); return; }
+  var parts=parsed.parts.filter(function(s){ return String(s.text||'').trim(); });
+  var empty=parsed.parts.filter(function(s){ return !String(s.text||'').trim(); }).map(function(s){ return s.ap?'Assessment & Plan':_tplSortTitle(s.dest); });
+  if(parts.length<2){ _tplMultiStatus('“'+String(t.name||'This template')+'” has only one section with text in it, so there is nothing to split.','#b4231e'); return; }
+  var base=_tplSortGenericName(t.name)?'':String(t.name||'');
+  var from=base?('“'+base+'”'):'this template';
+  var rows=parts.map(function(s){
+    var title=s.ap?'Assessment & Plan':_tplSortTitle(s.dest);
+    var notes=[];
+    if(s.preamble) notes.push('The lines before the first heading are kept at the top of this part.');
+    if(s.history.length) notes.push(s.history.map(_tplSortShowLabel).join(', ')+' '+(s.history.length===1?'is':'are')+' part of HPI - MLS has no separate section for '+(s.history.length===1?'it':'them')+'.');
+    if(s.inner.length) notes.push('It also holds '+s.inner.map(function(x){ return '“'+_tplSortShowLabel(x)+'”'; }).join(', ')+', kept inside this part.');
+    if(s.ap) notes.push('It is one Assessment & Plan part, kept whole, so it goes to Plan; choose Assessment instead if you prefer.');
+    var why='The '+title+' part of '+from+' (from '+s.labels.slice(0,4).map(function(l){ return '“'+_tplSortShowLabel(l)+'”'; }).join(', ')+').'+(notes.length?' '+notes.join(' '):'');
+    return { name:(base?base+' - ':'')+title, text:s.text, keep:true, dest:s.dest, autoDest:s.dest, guess:'', destBy:'split', why:why, autoWhy:why, src:t.src||'', pasted:!!t.pasted, splitFrom:String(t.name||''), sectionCount:0, group:t.group };
+  });
+  Array.prototype.splice.apply(_tplPendingSplit,[i,1].concat(rows));
+  _tplMultiStatus('Split '+(base?('“'+base+'”'):'it')+' into '+rows.length+' sections: '+rows.map(function(r){ return r.name.replace(base+' - ',''); }).join(', ')+'.'+(empty.length?(' Nothing was under '+empty.join(', ')+', so '+(empty.length===1?'that part was':'those parts were')+' left out.'):''),'#1c7a43');
+  _renderTplSplitPreview();
+}
+/* The saved format's name for a visit row: the doctor's own words (a Name:
+   line, the splitter's name, the template's own title, the file name - in
+   that order, already chosen for the row), else "<Section> template". A name
+   that only repeats a section heading says nothing. */
+function _tplSortLabel(t){
+  var title=t.dest==='soap'?'Visit note':(_tplSortTitle(t.dest)||'Visit');
+  var pick=function(v){
+    v=_tplSortCleanName(v);
+    if(!v) return '';
+    if(v.split(' ').length<=5&&_tplSortFamilyOf(v)) return '';
+    return v;
+  };
+  var label=(t.explicit&&String(t.name||'').trim())||pick(t.name);
+  if(label&&label.toLowerCase()===title.toLowerCase()) label='';
+  return (label||(title+' template')).slice(0,80);
+}
+/* A pasted template's file is named by its own first title, never "S" or a
+   "Patient:" line. */
+function _tplSortPasteName(text){
+  return _tplSortCleanName(_tplSortTitleOf(text))||'Pasted template';
+}
+/* The paste box goes down the SAME path as a file: it becomes one plain-text
+   file and enters tplMultiFile, so reading, naming, the review row and the
+   splitter are all the ones an upload gets. */
+var _tplSortPastedFiles=(typeof WeakSet==='function')?new WeakSet():null;
+/* The paste box's text changes WITH an input event: the app's live
+   formatted view (feat_mls_fixpack_0701.js) folds a long structured paste
+   into a read-only preview and hides the box, and it only looks again on
+   input - a box emptied quietly after Sort stayed hidden behind the old
+   preview, and the next template could not be pasted. */
+function _tplSortSetPaste(box,value){
+  if(!box) return;
+  box.value=String(value==null?'':value);
+  try{ box.dispatchEvent(new Event('input',{ bubbles:true })); }catch(eInput){}
+}
+function tplSortPasted(){
+  var box=document.getElementById('tplIntakePaste');
+  var text=box?String(box.value||''):'';
+  if(!text.trim()||!/[A-Za-z]/.test(text)){ _tplMultiStatus('Paste a template into the box first, then press Sort these.','#b4231e'); try{ if(box) box.focus(); }catch(eF){} return false; }
+  var file=null, name=_tplSortPasteName(text);
+  try{ file=new File([text],name.replace(/[\\\/:*?"<>|]+/g,' ').slice(0,80)+'.txt',{ type:'text/plain', lastModified:Date.now() }); }catch(eFile){ file=null; }
+  if(!file){ _tplMultiStatus('This browser could not take the pasted text. Upload it as a file instead.','#b4231e'); return false; }
+  try{ if(_tplSortPastedFiles) _tplSortPastedFiles.add(file); file._mlsTplPasted=true; }catch(eMark){}
+  _tplSortSetPaste(box,'');
+  var run=null;
+  try{ run=(typeof window.tplMultiFile==='function'?window.tplMultiFile:tplMultiFile)({ target:{ files:[file], value:'' } }); }catch(eStart){ run=null; }
+  /* a paste the upload queue refused (a save still running) goes back in the
+     box instead of vanishing */
+  var giveBack=function(){ try{ if(box&&!box.value) _tplSortSetPaste(box,text); }catch(eBack){} };
+  if(!run) giveBack();
+  else { try{ if(typeof run.catch==='function') run.catch(giveBack); }catch(eRun){} }
+  return true;
+}
+function _tplSortIsPasted(file){
+  try{ return !!(file&&((_tplSortPastedFiles&&_tplSortPastedFiles.has(file))||file._mlsTplPasted)); }catch(e){ return false; }
+}
+/* THE ONE PLACE, REACHED FROM SETTINGS. The Templates panel normally lives
+   inside the op-note room (feat_mls_opnote_room.js), whose header reads "Prep
+   op notes" / "Op notes - <date>". Reached from Settings' "+ Add templates",
+   the panel opens on its own, over Settings, headed "Add templates", showing
+   only this card. Closing it lands back in Settings - and when Settings was
+   opened from inside the op-note room, the room is still there under it, on
+   the tab the doctor left (_tplSortRoomReturn). */
+var _tplSortPanelHome=null, _tplSortBaseOpen=(typeof openTemplates==='function')?openTemplates:null, _tplSortRoomReturn='';
+try{ (function(){ var tm=document.getElementById('templatesModal'); if(tm&&tm.parentElement) _tplSortPanelHome={ parent:tm.parentElement, next:tm.nextSibling }; })(); }catch(eHome){}
+/* The two modules that act on this panel when they land - the template
+   library (the account save) and the op-note room, whose first act on
+   landing is to ADOPT a Templates panel it finds open into the room - are
+   brought in before the panel opens, so the room can never pull "Add
+   templates" into "Prep op notes". Their normal queue can take half a
+   minute after sign-in; this asks for them now, the same script tag the
+   queue would add (it stands down on the tag), and waits at most a few
+   seconds before opening regardless. */
+function _tplSortModulesReady(){
+  try{ return !!(window.__mlsOpNoteRoom&&window.__mlsOpNoteRoom.installed&&window.__mlsTemplateLibrary&&window.__mlsTemplateLibrary.installed); }catch(e){ return false; }
+}
+function _tplSortBringModules(){
+  if(_tplSortModulesReady()) return Promise.resolve(true);
+  var asked=null;
+  try{ var od=window.__mlsP1OnDemand; if(od&&typeof od.hurryAll==='function') asked=od.hurryAll(); }catch(eOd){ asked=null; }
+  if(!asked){
+    ['feat_mls_template_library.js','feat_mls_opnote_room.js'].forEach(function(name){
+      try{
+        if(document.querySelector('script[data-mls-asset="'+name+'"]')) return;
+        var tag=document.createElement('script');
+        tag.src=name+'?v='+(window.__MLS_AV||Date.now()); tag.setAttribute('data-mls-asset',name); tag.async=true;
+        (document.body||document.head||document.documentElement).appendChild(tag);
+      }catch(eTag){}
+    });
+  }
+  return new Promise(function(resolve){
+    var t0=Date.now();
+    (function poll(){ if(_tplSortModulesReady()||Date.now()-t0>4000) return resolve(_tplSortModulesReady()); setTimeout(poll,50); })();
+  });
+}
+function openTemplateIntake(){
+  var tm=document.getElementById('templatesModal');
+  if(!tm) return false;
+  if(!_tplSortModulesReady()){
+    var btn=document.getElementById('mlsVnTplIntake');
+    if(btn&&!btn.disabled){ btn.disabled=true; btn.setAttribute('data-was',btn.textContent); btn.textContent='Opening…'; }
+    _tplSortBringModules().then(function(){
+      if(btn&&btn.getAttribute('data-was')!=null){ btn.disabled=false; btn.textContent=btn.getAttribute('data-was'); btn.removeAttribute('data-was'); }
+      _tplSortShowIntake(tm);
+    });
+    return true;
+  }
+  return _tplSortShowIntake(tm);
+}
+function _tplSortShowIntake(tm){
+  /* tplsort-1.2.0: the op-note room stays open under Settings. The panel
+     steps out of the room to open over Settings, and the room is told which
+     tab to show again when the panel closes. */
+  _tplSortRoomReturn='';
+  try{
+    var room=document.getElementById('opPrepModal'), panel=document.getElementById('oprPanelTpls');
+    if(room&&room.classList.contains('show')) _tplSortRoomReturn=(panel&&tm.parentElement===panel&&tm.classList.contains('show'))?'tpls':'procs';
+    if(panel&&tm.parentElement===panel&&_tplSortPanelHome&&_tplSortPanelHome.parent){
+      if(_tplSortPanelHome.next&&_tplSortPanelHome.next.parentNode===_tplSortPanelHome.parent) _tplSortPanelHome.parent.insertBefore(tm,_tplSortPanelHome.next);
+      else _tplSortPanelHome.parent.appendChild(tm);
+    }
+  }catch(eMove){}
+  /* the shell's own opener (captured before any module wrapped it: the
+     room's wrapper would pull the panel back inside the room), then the
+     template library's refresh, which its own wrapper would have run */
+  try{ (_tplSortBaseOpen||openTemplates)(); }catch(eOpen){ return false; }
+  try{ var lib=window.__mlsTemplateLibrary; if(lib&&typeof lib.refresh==='function'){ var r=lib.refresh({ silent:true }); if(r&&typeof r.catch==='function') r.catch(function(){}); } }catch(eLib){}
+  tm.classList.add('tpl-intake');
+  try{ var fold=document.getElementById('tplIntakePasteWrap'); if(fold) fold.open=true; }catch(eFold){}
+  var tries=0;
+  (function land(){
+    var card=document.getElementById('tplIntakeCard');
+    if(card&&card.getClientRects().length){
+      try{ var m=tm.querySelector('.modal'); if(m) m.scrollTop=0; }catch(eTop){}
+      try{ var coarse=window.matchMedia&&window.matchMedia('(pointer: coarse)').matches; var p=document.getElementById('tplIntakePaste'); if(p&&!coarse) p.focus({ preventScroll:true }); }catch(eFocus){}
+      return;
+    }
+    if(++tries<30) setTimeout(land,100);
+  })();
+  return true;
+}
+/* Back to the op-note room when "Add templates" closes, on the tab the
+   doctor left - the Templates tab takes the panel back into the room. */
+function _tplSortBackToRoom(){
+  var tab=_tplSortRoomReturn; _tplSortRoomReturn='';
+  if(!tab) return;
+  setTimeout(function(){
+    try{
+      var room=document.getElementById('opPrepModal');
+      if(!room||!room.classList.contains('show')) return;
+      if(tab==='tpls'&&typeof window.openTemplates==='function') window.openTemplates();
+      else if(window.__mlsOpNoteRoom&&typeof window.__mlsOpNoteRoom.showTab==='function') window.__mlsOpNoteRoom.showTab('procs');
+    }catch(eBack){}
+  },0);
+}
+/* The summary's way back to the visit note templates. */
+function _tplSortSeeVisit(){
+  /* Settings is where the doctor asked to go; a room left open under it is
+     put back on its Procedures tab, not on a Templates tab over Settings */
+  if(_tplSortRoomReturn) _tplSortRoomReturn='procs';
+  try{ var tm=document.getElementById('templatesModal'); if(tm&&tm.classList.contains('show')&&typeof closeTemplates==='function') closeTemplates(); }catch(eTm){}
+  return openVisitNoteTemplates();
+}
+/* REFUSED ROWS STAY IN SIGHT. When the signed-in library stops at its import
+   card (a row needs a decision there), that card takes the review list's
+   place; the visit rows that could not be saved are kept here, with their
+   reasons, until the doctor puts them back on the list or discards them. */
+var _tplSortKeptRows=[];
+function _tplSortRenderKept(){
+  var box=document.getElementById('tplSortKept'); if(!box) return;
+  if(!_tplSortKeptRows.length){ box.innerHTML=''; return; }
+  box.innerHTML='<div class="tpl-sort-kept" role="region" aria-label="Not saved yet" style="border:1px solid #e3c98d;background:#fffaf0;border-radius:10px;padding:9px 11px;margin-top:9px;font-size:12.5px">'
+    +'<b>Not saved - kept here with the reason ('+_tplSortKeptRows.length+')</b>'
+    +_tplSortKeptRows.map(function(t){ return '<div class="tpl-sort-kept-row" style="border-top:1px solid #efe2c2;margin-top:7px;padding-top:6px"><div style="font-weight:600;overflow-wrap:anywhere">'+esc(t.name||'Template')+' <span style="font-weight:400;color:var(--muted)">→ '+esc(_tplSortTitle(t.dest))+'</span></div><div class="tpl-sort-warn" style="font-size:12px;color:#6b4a07;margin-top:3px">'+esc(t.saveNote||'')+'</div>'+_tplSortFullText(t)+'</div>'; }).join('')
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button type="button" class="btn-ghost" style="font-size:12.5px;padding:6px 11px" onclick="_tplSortRestoreKept()">Put them back on the list</button><button type="button" class="btn-ghost" style="font-size:12.5px;padding:6px 11px" onclick="_tplSortDiscardKept()">Discard them</button></div></div>';
+}
+function _tplSortImportWaiting(){
+  try{ var lib=window.__mlsTemplateLibrary; return !!(lib&&lib.state&&lib.state.pending); }catch(e){ return false; }
+}
+function _tplSortRestoreKept(){
+  if(!_tplSortKeptRows.length) return false;
+  if(_tplSortImportWaiting()){ _tplMultiStatus('Finish the operative note import first - press its Save or Cancel - then put these back on the list.','#b4231e'); return false; }
+  var back=_tplSortKeptRows.slice(); _tplSortKeptRows=[]; _tplSortRenderKept();
+  _tplPendingSplit=back.concat((_tplPendingSplit||[]).filter(function(t){ return back.indexOf(t)<0; }));
+  _renderTplSplitPreview();
+  _tplMultiStatus('They are back on the list with the reason. Fix what it says, then press Save.','#8A5A00');
+  return true;
+}
+function _tplSortDiscardKept(){ _tplSortKeptRows=[]; _tplSortRenderKept(); _tplMultiStatus('Discarded. Those were not saved.',''); }
+/* PRIVACY. Staged rows are template text from one account's files; nothing
+   staged may be saved into the next account. A session boundary (sign-out,
+   account switch) empties the review, the paste box, the kept rows, the
+   files registered for "Keep it as one template" and every carry, and any
+   upload or save still running from before it stops. */
+var _tplSortEpoch=0;
+function _tplSortSessionReset(){
+  _tplSortEpoch++;
+  _tplPendingSplit=[]; _tplPendingCarry=[]; _tplUnreadableRows=[]; _tplSortKeptRows=[]; _tplSortGroups={};
+  _tplAiOff=false; _tplRecogFound=0; _tplSortCapMemo=null; _tplSortSaving=false; _tplSortRetrying=false; _tplSortRoomReturn='';
+  try{ _tplSortSetPaste(document.getElementById('tplIntakePaste'),''); }catch(eP){}
+  try{ var f=document.getElementById('tplIntakePasteWrap'); if(f) f.open=false; }catch(eF){}
+  ['tplMultiResult','tplSortKept'].forEach(function(id){ try{ var b=document.getElementById(id); if(b) b.innerHTML=''; }catch(eB){} });
+  try{ var s=document.getElementById('tplMultiStatus'); if(s){ s.textContent=''; s.style.color='var(--muted)'; } }catch(eS){}
+  try{ var tm=document.getElementById('templatesModal'); if(tm) tm.classList.remove('tpl-intake'); }catch(eTm){}
+}
+try{ window.addEventListener('mls:session-boundary',_tplSortSessionReset,true); }catch(eBoundary){}
+/* THE ONE SAVE. Refuses while any row has no place; otherwise visit rows go
+   to their sections, operative rows to the operative note library (kind op)
+   and letters to the library - kind insurance only when the splitter said
+   so, otherwise no kind - and the doctor is told plainly, in one line and
+   one toast, what went where. A row that could not be saved (a limit, a
+   failure) stays in sight with its reason, on every path, never dropped.
+   The name carries "tplAddSplit" so the template library
+   (feat_mls_template_library.js) finds this button and holds it while the
+   signed-in save runs. */
+var _tplSortSaving=false;
+async function tplAddSplitSorted(){
+  if(_tplSortSaving) return false;
+  var epoch=_tplSortEpoch;
+  _tplSortAssign(_tplPendingSplit);
+  var rows=_tplPendingSplit.slice();
+  var open=rows.filter(function(t){ return t&&!t.unreadable&&String(t.text||'').trim()&&!t.dest; });
+  if(open.length){
+    _tplMultiStatus(open.length+' template'+(open.length===1?' still needs':'s still need')+' a place. Choose where '+(open.length===1?'it goes':'each one goes')+' (or choose Skip), then press Save.','#b4231e');
+    _renderTplSplitPreview();
+    try{ var first=document.getElementById('tplSortDest_'+rows.indexOf(open[0])); if(first){ first.scrollIntoView({ block:'center' }); first.focus({ preventScroll:true }); } }catch(eFirst){}
+    return false;
+  }
+  var visit=[], lib=[], skipped=0;
+  rows.forEach(function(t){
+    if(!t) return;
+    var has=!!String(t.text||'').trim();
+    if(has&&_tplSortIsLibrary(t.dest)) lib.push(t);
+    else if(has&&_tplSortIsVisit(t.dest)) visit.push(t);
+    else skipped++;
+  });
+  if(!visit.length&&!lib.length){ _tplMultiStatus('Nothing to save: every template on the list is set to Skip.','#b4231e'); return false; }
+  _tplSortSaving=true;
+  var btn=document.getElementById('tplSortSaveBtn');
+  if(btn){ btn.disabled=true; btn.textContent='⏳ Saving…'; }
+  var perSection={}, notes=[], leftover=[], opSaved=0, letterSaved=0, libAdded=-1, libSame=0, libRejected=0, libLine='', libParked=false, libFailed=false, crossed=false;
+  var nOp=lib.filter(function(t){ return t.dest==='op'; }).length, nLet=lib.length-nOp;
+  try{
+    /* ---- visit rows: the Visit note templates store ---- */
+    if(visit.length){
+      var dt=null;
+      try{ if(typeof window.__mlsEnsureDraftTuning==='function') dt=await window.__mlsEnsureDraftTuning(); }catch(eLoad){ dt=null; }
+      if(epoch!==_tplSortEpoch){ crossed=true; return false; }
+      dt=dt||window.__mlsDraftTuning;
+      if(!dt||typeof dt.importVisitTemplates!=='function'){
+        visit.forEach(function(t){ t.saveNote='Not saved: visit note templates could not load. Reload MLS and press Save again.'; leftover.push(t); });
+      } else {
+        var res=null;
+        try{ res=dt.importVisitTemplates(visit.map(function(t){ return { family:t.dest, label:_tplSortLabel(t), text:_tplSortSaveText(t) }; })); }
+        catch(eImport){ res={ saved:[], refused:visit.map(function(t,ix){ return { index:ix, family:t.dest, reason:'failed' }; }), sections:{} }; }
+        res=res||{ saved:[], refused:[], sections:{} };
+        (res.saved||[]).forEach(function(s){ perSection[s.family]=(perSection[s.family]||0)+1; });
+        (res.refused||[]).forEach(function(r){
+          var t=visit[r.index]; if(!t) return;
+          var title=_tplSortTitle(r.family||t.dest);
+          if(r.reason==='too-long') t.saveNote='Not saved: '+Number(r.length||0).toLocaleString('en-US')+' characters is more than a visit note template can hold ('+Number(r.limit||TPL_SORT_MAX_CHARS).toLocaleString('en-US')+'). '+(t.sectionCount>=2?'Split it into sections, or skip it.':'Shorten it and add it again, or send it somewhere else.');
+          else if(r.reason==='full') t.saveNote='Not saved: '+title+' already has '+(r.count||r.limit||8)+' saved formats, the most a section can keep. Delete one in Settings › Visit note templates, then press Save again.';
+          else if(r.reason==='empty') t.saveNote='Not saved: nothing was left once patient details were taken out.';
+          else t.saveNote='Not saved: '+title+' could not be saved on this device. Press Save again.';
+          leftover.push(t);
+        });
+        TPL_SORT_FAMILIES.forEach(function(f){
+          var sec=(res.sections||{})[f]; if(!sec||!sec.added) return;
+          var title=_tplSortTitle(f);
+          if(sec.newInUse) notes.push(title+': “'+sec.activeLabel+'” is now the one MLS uses'+(sec.added>1?(' - the other '+(sec.added-1)+' '+(sec.added===2?'is':'are')+' saved for you to pick.'):'.'));
+          else if(sec.keptEditing) notes.push(title+': you have unsaved typing in its editor in Settings, so it was left open and the format you were editing stays in use. The new one'+(sec.added>1?'s are':' is')+' saved - pick '+(sec.added>1?'one':'it')+' when you are done.');
+          else notes.push(title+': your current format “'+sec.keptLabel+'” stays in use. The new one'+(sec.added>1?'s are':' is')+' saved - pick '+(sec.added>1?'one':'it')+' under Settings › Visit note templates when you want it.');
+        });
+      }
+    }
+    /* ---- operative rows and letters: the existing library add ---- */
+    if(lib.length){
+      var library=null; try{ library=_tplSuggestLibrary(lib); }catch(eLib){ library=null; }
+      var staged=lib.map(function(t){
+        var c={}; for(var k in t){ if(Object.prototype.hasOwnProperty.call(t,k)) c[k]=t[k]; }
+        c.keep=true; c.kindLocked=1;
+        try{ if(!(c.keywords&&c.keywords.length)) _tplSeedKeywords(c,library); }catch(eSeed){}
+        /* the doctor saw where each one goes and pressed Save: an operative
+           row is kind op; a row the doctor marked as an Insurance-ready note
+           format keeps kind insurance; every other letter is kind letter -
+           never a kind the text classifier or the splitter suggested. tplsort-1.3.0: a
+           letter with NO kind competed for every kind of note, so a consent
+           form out-ranked the ESI op template in the op-note room; kind
+           letter is left out by every picker (_mlsTplKindOf). */
+        delete c.kindSuggested;
+        if(t.dest==='op') c.kind='op';
+        else if(t.libKind==='insurance') c.kind='insurance';
+        else c.kind='letter';
+        return c;
+      });
+      var tl=window.__mlsTemplateLibrary;
+      /* a first account import is named after the files it came from; pasted
+         text has none, so it keeps the library's own "Imported templates" */
+      try{ if(tl&&tl.state&&lib.every(function(t){ return t.pasted; })) tl.state.sourceFilenames=['Imported templates']; }catch(eSetName){}
+      _tplPendingSplit=staged;
+      var ret=null, threw=false;
+      window.__mlsTplSortQuiet=true; window.__mlsTplSortFellBack=false;
+      try{ ret=await Promise.resolve((typeof window.tplAddSplit==='function'?window.tplAddSplit:tplAddSplit)()); }catch(eAdd){ threw=true; }
+      finally{ window.__mlsTplSortQuiet=false; }
+      if(epoch!==_tplSortEpoch){ crossed=true; return false; }
+      var stillStaged=_tplPendingSplit.length&&_tplPendingSplit[0]===staged[0];
+      libParked=!!(stillStaged&&!threw&&tl&&tl.state&&tl.state.pending);
+      var libWords=function(){ var w=[]; if(nOp) w.push(nOp+' operative note template'+(nOp===1?'':'s')); if(nLet) w.push(nLet+' letter'+(nLet===1?'':'s')+' or other document'+(nLet===1?'':'s')); return w.join(' and '); };
+      if(libParked) libLine=libWords()+' '+(lib.length===1?'is':'are')+' waiting for one more step: check the import card below and press its Save button.';
+      else if(stillStaged||threw){
+        libFailed=true;
+        var why=''; try{ var tls=document.getElementById('tlStatus'); why=tls?String(tls.textContent||'').trim():''; }catch(eWhy){}
+        lib.forEach(function(t){ t.saveNote='Not saved to your '+(t.dest==='op'?'operative note templates':'letters and other documents')+(why?(': '+why):'. Press Save again.'); leftover.push(t); });
+      } else {
+        var counts=ret&&ret.counts;
+        var added=counts?((Number(counts.added)||0)+(Number(counts.updated)||0)):lib.length;
+        var same=counts?((Number(counts.duplicated)||0)+(Number(counts.unchanged)||0)):0;
+        if(counts&&added<lib.length){
+          /* the library counted some as already there, and says how many -
+             not which. Say exactly that, never a split it did not report:
+             "Saved 1 of 2 operative notes and letters (1 was already in your
+             library)". */
+          libAdded=added; libSame=same; libRejected=Number(counts.rejected)||0;
+        } else { opSaved=nOp; letterSaved=nLet; }
+        if(window.__mlsTplSortFellBack) notes.push('Your account library could not be reached, so the operative notes and letters were saved on this device.');
+      }
+    }
+  } finally {
+    _tplSortSaving=false;
+    var b2=document.getElementById('tplSortSaveBtn'); if(b2){ b2.disabled=false; b2.textContent='💾 Save each to its place'; }
+  }
+  if(crossed) return false;
+  /* ---- say what went where ---- */
+  var parts=[];
+  TPL_SORT_FAMILIES.forEach(function(f){ if(perSection[f]) parts.push(perSection[f]+' to '+_tplSortTitle(f)); });
+  if(opSaved) parts.push(opSaved+' operative note template'+(opSaved===1?'':'s'));
+  if(letterSaved) parts.push(letterSaved+' letter'+(letterSaved===1?'':'s')+' or other document'+(letterSaved===1?'':'s'));
+  var libNoun=(nOp&&nLet)?'operative notes and letters':(nOp?('operative note template'+(lib.length===1?'':'s')):('letter'+(lib.length===1?'':'s')+' or other document'+(lib.length===1?'':'s')));
+  if(libAdded>0) parts.push(libAdded+' of '+lib.length+' '+libNoun+' ('+libSame+' '+(libSame===1?'was':'were')+' already in your library'+(libRejected?(', '+libRejected+' refused by it'):'')+')');
+  var head=parts.length?('Saved '+(parts.length>1?parts.slice(0,-1).join(', ')+' and '+parts[parts.length-1]:parts[0])+'.'):'Nothing was saved yet.';
+  if(libAdded===0) head+=' '+(lib.length===1?'The '+libNoun+' was':'The '+lib.length+' '+libNoun+' were')+' already in your library'+(libRejected?(' or refused by it'):'')+', so nothing was added twice.';
+  if(skipped) head+=' Skipped '+skipped+'.';
+  if(libParked) head+=' '+lib.length+' more '+(lib.length===1?'is':'are')+' waiting for one more step below.';
+  if(leftover.length) head+=' '+leftover.length+' could not be saved - '+(leftover.length===1?'it is':'they are')+' still here with the reason.';
+  var detail=notes.slice();
+  if(libLine) detail.push(libLine);
+  leftover.forEach(function(t){ t.destBy=t.destBy||'auto'; });
+  if(!libParked){
+    _tplDiscardSplit();
+    if(leftover.length){ _tplPendingSplit=leftover.slice(); _renderTplSplitPreview(); }
+  } else if(leftover.length){
+    /* the import card holds the review list's place; the refused rows are
+       kept right under it, with their reasons */
+    _tplSortKeptRows=leftover.slice(); _tplSortRenderKept();
+  }
+  _tplMultiStatus(head,(leftover.length||libParked||libFailed)?'#8A5A00':'#1c7a43');
+  var boxOut=document.getElementById('tplMultiResult');
+  if(boxOut&&(detail.length||Object.keys(perSection).length)){
+    var done='<div class="tpl-sort-done" style="border:1px solid #cfe0d7;background:#f3faf6;border-radius:10px;padding:9px 11px;margin:0 0 9px;font-size:12.5px">'
+      +'<b>What happens next</b>'
+      +(detail.length?'<ul style="margin:6px 0 0 18px;padding:0">'+detail.map(function(d){ return '<li style="margin:2px 0">'+esc(d)+'</li>'; }).join('')+'</ul>':'')
+      +(Object.keys(perSection).length&&typeof openVisitNoteTemplates==='function'?'<button type="button" class="btn-ghost" style="font-size:12.5px;padding:5px 10px;margin-top:7px" onclick="_tplSortSeeVisit()">See your visit note templates</button>':'')
+      +'</div>';
+    try{ boxOut.insertAdjacentHTML('afterbegin',done); }catch(eDone){}
+  }
+  try{ if(typeof toast==='function') toast(head,(leftover.length||libFailed)?'err':'ok'); }catch(eToast){}
+  try{ var said=document.getElementById('tplMultiStatus'); if(said) said.scrollIntoView({ block:'center' }); }catch(eView){}
+  return !leftover.length&&!libFailed;
 }
 /* Retroactively rename ALREADY-saved templates from patient-name to NOTE TYPE (the procedure).
    For the doctor who already uploaded op notes named "Operative Report - Lastname, First". */
@@ -28629,14 +30034,26 @@ try{
    Score zero is NOT a pick. No match means the caller keeps doing exactly what
    it did before this existed: the doctor's default template, or nothing. */
 var MLS_TPL_KINDS=['soap','insurance','op'];
+/* tplsort-1.3.0 (2026-09-24): A LETTER NEVER DRAFTS A NOTE. A letter or
+   other document saved from "Add templates" (a consent form, a patient
+   handout, a work note) is kind 'letter'. It is not one of the note kinds
+   above - no note is ever drafted from it - and every picker leaves it out:
+   the op-note room's ranker (_opRankTemplates keeps kind '' or op), the
+   visit and op picker (_mlsTplPick), the exact-name pick, the generation
+   scope gate (_mlsGenTemplateScopeSkip) and the connect bundle's class
+   picker. Saved with no kind, a consent form for an epidural steroid
+   injection out-ranked the ESI op template in the op-note room. Written as
+   the literal 'letter' in each function, because suites lift these one by
+   one. */
 function _mlsTplKindOf(t){
   var k=String((t&&t.kind)||'').trim().toLowerCase();
-  return (k==='soap'||k==='insurance'||k==='op')?k:'';
+  return (k==='soap'||k==='insurance'||k==='op'||k==='letter')?k:'';
 }
 function _mlsTplKindLabel(k){
   if(k==='soap') return 'SOAP / progress note';
   if(k==='insurance') return 'Insurance-ready note';
   if(k==='op') return 'Op / procedure note';
+  if(k==='letter') return 'Letter or other document (never drafts a note)';
   return 'Any note kind';
 }
 /* Keywords, normalized: lowercased, trimmed, de-duplicated, order preserved.
@@ -28785,6 +30202,8 @@ function _mlsTplPick(list,ctx,kind){
   for(var i=0;i<list.length;i++){
     var t=list[i]; if(!t||typeof t!=='object') continue;
     var tk=_mlsTplKindOf(t);
+    /* tplsort-1.3.0: a letter is never a candidate, whatever kind is asked */
+    if(tk==='letter') continue;
     if(want&&tk&&tk!==want) continue;
     out.considered++; eligible.push(t);
     var kws=_mlsTplKeywords(t), score=0, matched=[], matchedName=[], j, f, w;
@@ -28895,6 +30314,7 @@ function _mlsTplExactNamePick(visitText){
     for(var i=0;i<list.length;i++){
       var t=list[i]; if(!t||typeof t!=='object') continue;
       var tk=_mlsTplKindOf(t);
+      if(tk==='letter') continue;   /* tplsort-1.3.0: never a letter */
       if(want&&tk&&tk!==want) continue;
       eligible.push(t);
     }
@@ -29002,6 +30422,8 @@ function _mlsGenTemplateSkipSentence(skip){
   var n=String(skip.name||'').replace(/[\r\n]+/g,' ').trim(), q=n?(' "'+n+'"'):'';
   if(skip.why==='operative-report')
     return 'Your procedure template'+q+' was left to the op note room, so this visit note was written in your note style instead.';
+  if(skip.why==='letter')
+    return 'Your template'+q+' is a letter or other document, so this visit note was written in your note style instead.';
   return 'Your template'+q+' is not laid out as a visit note, so this visit note was written in your note style instead.';
 }
 /* WHICH DEFAULT WAS OVERRIDDEN. Measured live 2026-09-01: the active template
@@ -36613,7 +38035,7 @@ function _mlsTemplateIsOperativeReport(tpl){
   try{ kind=(typeof _mlsTplKindOf==='function')?String(_mlsTplKindOf(tpl)||''):String(tpl.kind||'').trim().toLowerCase(); }
   catch(eVnKind){ kind=''; }
   if(kind==='op') return true;                        /* he declared it one */
-  if(kind==='soap'||kind==='insurance') return false; /* he declared it not one */
+  if(kind==='soap'||kind==='insurance'||kind==='letter') return false; /* declared not one */
   /* the packaged procedure starters, which are operative notes by
      construction - feat_pkg_templates mints every one of them as pkg_<name> */
   if(/^pkg_/.test(String(tpl.id||''))) return true;
@@ -36645,6 +38067,9 @@ function _mlsTemplateIsVisitNoteShaped(tpl){
    that could never have shaped anything. */
 function _mlsGenTemplateScopeSkip(tpl){
   if(!tpl||typeof tpl!=='object'||!String(tpl.text||'').trim()) return '';
+  /* tplsort-1.3.0: a letter or other document never shapes a visit note -
+     not even as the doctor's default template */
+  if(_mlsTplKindOf(tpl)==='letter') return 'letter';
   if(_mlsTemplateIsOperativeReport(tpl)) return 'operative-report';
   if(!_mlsTemplateIsVisitNoteShaped(tpl)) return 'not-visit-note-shaped';
   return '';
@@ -41810,7 +43235,9 @@ function _syncSpecialtyPresetTemplates(){
   try{
     var el=document.getElementById('specialtyPreset'); if(!el) return;
     var old=el.querySelector('optgroup[data-mine]'); if(old) old.remove();
-    var list=(typeof getTemplates==='function'?getTemplates():[])||[]; if(!list.length) return;
+    /* tplsort-1.3.0: a letter or other document never shapes a note, so it
+       is not offered as one */
+    var list=((typeof getTemplates==='function'?getTemplates():[])||[]).filter(function(t){ return !(typeof _mlsTplKindOf==='function'&&_mlsTplKindOf(t)==='letter'); }); if(!list.length) return;
     var og=document.createElement('optgroup'); og.label='⭐ Your uploaded templates'; og.setAttribute('data-mine','1');
     var act=(typeof getActiveTemplateId==='function'?getActiveTemplateId():'');
     var usingT=(typeof useTemplatesOn==='function'&&useTemplatesOn());

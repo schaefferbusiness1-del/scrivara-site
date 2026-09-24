@@ -409,7 +409,13 @@
   var TPL_RAIL_SORT_CACHE = { signature: '', order: [] };
   function buildTplRail() {
     var rail = $('oprTplRail'); if (!rail) return;
-    var rawList = safe(function () { return isFn(window.getTemplates) ? (window.getTemplates() || []) : []; }, []);
+    /* tplsort-1.3.0 (2026-09-24): a letter or other document (kind letter -
+       a consent form, a patient handout) never drafts an op note, so the
+       room's rail does not offer it; the op-note dropdown and the
+       auto-match leave it out the same way. */
+    var rawList = safe(function () { return isFn(window.getTemplates) ? (window.getTemplates() || []) : []; }, []).filter(function (t) {
+      return !(t && safe(function () { return isFn(window._mlsTplKindOf) ? window._mlsTplKindOf(t) : S(t.kind).trim().toLowerCase(); }, '') === 'letter');
+    });
     var signature = rawList.map(function (t) { return S(t && t.id) + '\u0001' + S(t && t.name); }).join('\u0002');
     /* b899 — 96 templates in library-insertion order is creation-time noise;
        alphabetical, with a name filter above (owner request 2026-08-06).

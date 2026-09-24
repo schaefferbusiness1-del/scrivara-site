@@ -101,9 +101,14 @@ function lift(startMarker, endMarker, what) {
   return text;
 }
 const READER_SOURCE = [
-  lift('function _tplLetters(t){', '\n/* The SAME 40-letter bar', '_tplLetters'),
+  /* tplsort-1.3.0: the note under _tplLetters now says what the 40-letter
+     bar is for (a reader's own reason), not that tplMultiFile judges by it */
+  lift('function _tplLetters(t){', '\n/* A reader\'s own reason for a file', '_tplLetters'),
   lift('function _tplReadDone(reason,text){', '\nasync function _tplReadAnyFile', '_tplReadDone'),
-  lift('async function _tplReadAnyFile(file){', '\n/* Count how many SEPARATE notes', '_tplReadAnyFile'),
+  /* tplsort-1.2.0: the multi-form counter that followed the reader is gone -
+     every file now goes to the template splitter - so the reader ends at the
+     note that says so */
+  lift('async function _tplReadAnyFile(file){', '\n/* tplsort-1.2.0 (2026-09-24): _tplFormHeaderCount', '_tplReadAnyFile'),
   lift('function _cleanExtractedText(t, lower){', '\n/* Lazy-load the pinned local Mammoth', '_cleanExtractedText'),
   lift('async function _extractDocxText(file){', '\nfunction saveTemplateFromForm(){', '_extractDocxText')
 ].join('\n');

@@ -98,7 +98,13 @@
     }
     var best = '', bc = -1;
     for (var k in tally) { if (tally.hasOwnProperty(k) && tally[k] > bc) { bc = tally[k]; best = k; } }
-    if (!best) { var t = templates(); best = (t[0] && t[0].id) || ''; }
+    /* tplsort-1.3.0: the fallback is the first template that can draft an op
+       note - never a letter or other document (kind letter), nor one the
+       doctor declared a SOAP or insurance note; the same rule as the ranker */
+    if (!best) {
+      var t = templates().filter(function (x) { var k = ''; try { k = isFn(window._mlsTplKindOf) ? S(window._mlsTplKindOf(x)) : S(x && x.kind).toLowerCase(); } catch (e) { k = ''; } return k === '' || k === 'op'; });
+      best = (t[0] && t[0].id) || '';
+    }
     _pd = best; STATE.practiceDefault = best;
     return best;
   }
