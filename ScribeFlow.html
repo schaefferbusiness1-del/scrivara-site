@@ -2884,7 +2884,7 @@ body.theme-dark .auth-wrap::before{ background:radial-gradient(700px 400px at 50
     </div>
     <div class="field" id="authConfirmField" style="display:none">
       <label for="authPass2">Confirm password</label>
-      <input type="password" id="authPass2" placeholder="At least 8 characters" autocomplete="new-password" minlength="8">
+      <input type="password" id="authPass2" placeholder="Type the same password again" autocomplete="new-password" minlength="8">
     </div>
     <p class="local-note" id="authPasswordStandard" style="display:none;margin-top:-4px">🔒 Use at least 8 characters.</p>
 
@@ -3289,7 +3289,7 @@ html:has(> body > #intakeView[style*="display: block"]) body > :not(#intakeView)
     <span class="who" id="whoLabel"></span>
     <button class="btn-white" id="askCopilotHdrBtn" onclick="openCopilotDock()" title="Ask MLS Copilot from anywhere">✦ Ask</button>
     <button class="btn-white" onclick="mlsQuickFind()" title="Jump to any patient or screen — or just press /">🔍 Find</button>
-    <button class="btn-white" id="intakeBtn" data-mls-tools-reach="1" onclick="openIntake()">Patient intake</button>
+    <button class="btn-white" id="intakeBtn" data-mls-tools-reach="1" onclick="openIntakeWithConfirm()">Patient intake</button>
     <button class="btn-white" onclick="openTemplates()">Templates</button>
     <button class="btn-white" id="customWidgetHdrBtn" onclick="openWidgetBuilder()" title="Describe any card you want — MLS builds a real widget that auto-fills on every Generate">＋ Custom widget</button>
     <button class="btn-white" onclick="openSettings()">Settings</button>
@@ -4281,9 +4281,8 @@ html:has(> body > #intakeView[style*="display: block"]) body > :not(#intakeView)
   <div class="card" id="recsCard">
     <h2 aria-label="Recommendations for the provider"><span class="ic">💡</span> Recommendations for the provider
       <button class="btn-green" style="margin-left:auto;font-size:14px;padding:9px 15px" id="genRecsBtn" onclick="generateRecommendations()">✨ Generate Recommendations</button>
-      <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="showView('orders')" title="Turn these into orders">📋 Orders</button>
-      <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="showView('visit')" title="Back to the visit">🎙️ Visit</button>
     </h2>
+    <!-- uifix-1.0.0 (2026-09-24): one Generate door. The button above reads "Regenerate" once suggestions are on screen (recsBtnLabel), so the second Regenerate under the list is gone; the "Orders" and "Visit" buttons here repeated the Review segments and the dock. -->
     <p class="sub">AI looks at this visit plus the active patient's chart (problem list, meds, allergies, history) and suggests items for <b>you</b> to consider — care gaps, interaction flags, follow-up/monitoring, and documentation tips.</p>
     <div class="disclaim">🤝 AI suggestions for the provider to consider — use clinical judgment; not medical advice or directives.</div>
     <div id="recsEmpty" class="empty">
@@ -4299,7 +4298,6 @@ html:has(> body > #intakeView[style*="display: block"]) body > :not(#intakeView)
       <div class="opt-disclaim" style="margin-top:16px">🤝 These are advisory prompts based on documented information and the patient's chart — they are not directives and not medical advice. The provider decides what applies. Documentation tips support <b>accurate</b> coding of work actually done; nothing here is intended to upcode.</div>
       <div class="row tight">
         <button class="btn-ghost" onclick="copyRecommendations()">📑 Copy</button>
-        <button class="btn-ghost" onclick="generateRecommendations()">🔄 Regenerate</button>
       </div>
     </div>
   </div>
@@ -4308,8 +4306,8 @@ html:has(> body > #intakeView[style*="display: block"]) body > :not(#intakeView)
   <!-- ============ ORDERS VIEW ============ -->
   <div id="ordersView" style="display:none">
   <div class="card" id="ordersCard">
-    <h2 aria-label="Orders — scripts, referrals, DME, imaging, injections"><span class="ic">📋</span> Orders <span style="font-weight:400;font-size:14px;color:var(--muted)">(scripts, referrals, DME, imaging, injections)</span>
-      <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="showView('visit')" title="Return to the visit you're documenting">🎙️ Back to visit</button></h2>
+    <h2 aria-label="Orders — scripts, referrals, DME, imaging, injections"><span class="ic">📋</span> Orders <span style="font-weight:400;font-size:14px;color:var(--muted)">(scripts, referrals, DME, imaging, injections)</span></h2>
+    <!-- uifix-1.0.0 (2026-09-24): no "Back to visit" here. The dock's Visit and Review's "The note" segment already go back to the visit; a third door on one screen was one more button to read. -->
     <p class="sub">Build orders for the active patient. Pull the diagnosis from the current note, accept AI-style suggestions, then print or copy a clean order sheet to hand to the patient.</p>
     <div class="disclaim" style="color:var(--brand-dk);background:#eef4fc;border-color:#cfe2f8">🖊 Orders are drafted for the provider to review and sign. Final orders are the provider's responsibility.</div>
 
@@ -4324,12 +4322,12 @@ html:has(> body > #intakeView[style*="display: block"]) body > :not(#intakeView)
       <!-- diagnosis context + auto-suggest -->
       <div class="extra-card" id="ordersDxCard">
         <h3>🩺 Diagnosis context</h3>
-        <p class="sub" style="margin:6px 0 10px">Pull diagnoses & ICD-10 from the current generated note, then add AI-suggested orders with one tap.</p>
+        <p class="sub" style="margin:6px 0 10px">Pull diagnoses & ICD-10 from the current note, typed or generated, then add AI-suggested orders with one tap.</p>
         <div class="row tight">
           <button class="btn-ghost" onclick="pullDxFromNote()">⤵ Pull from current note</button>
           <button class="btn-ghost" onclick="suggestOrdersFromDx()">✨ Suggest orders</button>
         </div>
-        <div id="ordersDxBody" class="xbody" style="margin-top:10px">No diagnosis pulled yet. Generate a note in Visit, then “Pull from current note”.</div>
+        <div id="ordersDxBody" class="xbody" style="margin-top:10px">No diagnosis pulled yet. Write or generate the note in Visit, then press “Pull from current note”.</div>
         <div id="aiOrdersWrap" style="display:none;margin-top:12px">
           <div class="dotbar"><span class="dotbar-lbl">✨ AI-suggested orders (from this visit)</span></div>
           <div id="aiOrdersChips" style="display:flex;gap:8px;flex-wrap:wrap"></div>
@@ -4437,7 +4435,7 @@ html:has(> body > #intakeView[style*="display: block"]) body > :not(#intakeView)
       <h2 aria-label="Admin — Create and invite account"><span class="ic">➕</span> Create &amp; invite account</h2>
       <p class="sub">Create the account, choose its real plan/tier, and approve its clinical workspace in one protected step. The private invite is safe to send after the server confirms the admin-controlled access; patient work opens only after the recipient’s forms and any required practice countersignature are verified.</p>
       <div class="row tight" style="align-items:flex-end;flex-wrap:wrap;gap:10px">
-        <div class="field" style="flex:1;min-width:180px;margin:0"><label for="adminCreateName">Full name</label><input id="adminCreateName" autocomplete="off" placeholder="Dr. Jane Smith"></div>
+        <div class="field" style="flex:1;min-width:180px;margin:0"><label for="adminCreateName">Full name</label><input id="adminCreateName" type="text" autocomplete="off" placeholder="Dr. Jane Smith"></div>
         <div class="field" style="flex:1.4;min-width:220px;margin:0"><label for="adminCreateEmail">Email</label><input id="adminCreateEmail" type="email" autocomplete="off" placeholder="doctor@example.com"></div>
         <div class="field" style="flex:1;min-width:180px;margin:0"><label for="adminCreateRole">Account type</label><select id="adminCreateRole" class="sf-select" onchange="adminCreateRoleChanged()"><option value="head">Head doctor · new practice</option><option value="doctor">Doctor · existing practice</option><option value="nurse">Nurse · existing practice</option><option value="receptionist">Receptionist · existing practice</option></select></div>
       </div>
@@ -4453,7 +4451,7 @@ html:has(> body > #intakeView[style*="display: block"]) body > :not(#intakeView)
       <div class="mini" style="margin-top:8px;color:var(--muted)">Attorney portal accounts are intentionally unavailable here while the legal-request workspace remains unreleased.</div>
       <div id="adminCreateResult" style="display:none;margin-top:12px;border:1px solid var(--line);border-radius:var(--r-ctl,10px);padding:12px;background:var(--soft,#f8fbf9)">
         <div id="adminCreateResultTitle" style="font-weight:700"></div><div id="adminCreateResultDetail" class="sub" style="margin-top:3px"></div>
-        <div id="adminCreateInviteRow" style="display:none;margin-top:10px"><label for="adminCreateInviteUrl" style="font-size:12.5px;font-weight:600">Private one-time invite</label><div class="row tight" style="gap:7px;margin-top:4px"><input id="adminCreateInviteUrl" readonly aria-label="Private one-time invite URL" style="flex:1"><button class="btn-ghost" onclick="adminCopyCreatedInvite(this)">Copy invite</button><button class="btn-ghost" onclick="adminClearCreatedInvite()">Clear</button></div></div>
+        <div id="adminCreateInviteRow" style="display:none;margin-top:10px"><label for="adminCreateInviteUrl" style="font-size:12.5px;font-weight:600">Private one-time invite</label><div class="row tight" style="gap:7px;margin-top:4px"><input id="adminCreateInviteUrl" type="text" readonly aria-label="Private one-time invite URL" style="flex:1"><button class="btn-ghost" onclick="adminCopyCreatedInvite(this)">Copy invite</button><button class="btn-ghost" onclick="adminClearCreatedInvite()">Clear</button></div></div>
       </div>
     </div>
     <div class="card">
@@ -4461,7 +4459,7 @@ html:has(> body > #intakeView[style*="display: block"]) body > :not(#intakeView)
         <button class="btn-ghost" style="margin-left:auto;font-size:14px;padding:9px 15px" onclick="loadAdminUsers()">🔄 Refresh users</button>
       </h2>
       <p class="sub">Manage who can generate notes. Grant a comp (forever) account, a timed trial, or block access.</p>
-      <div id="adminUsersEmpty" class="empty"><span class="big">👥</span>Press <b>Refresh</b> to load users.</div>
+      <div id="adminUsersEmpty" class="empty"><span class="big">👥</span>Loading users…</div>
       <div style="overflow-x:auto">
         <table id="adminUsersTable" style="display:none;width:100%;border-collapse:collapse;font-size:14px">
           <thead><tr style="text-align:left;border-bottom:2px solid var(--line)">
@@ -4534,7 +4532,7 @@ html:has(> body > #intakeView[style*="display: block"]) body > :not(#intakeView)
         <code id="newCodeVal" style="font-size:18px;font-weight:700;letter-spacing:1px"></code>
         <button class="btn-ghost" style="font-size:13px;padding:6px 11px;margin-left:8px" onclick="copyNewCode()">📋 Copy</button>
       </div>
-      <div id="adminCodesEmpty" class="empty" style="margin-top:14px"><span class="big">🎟️</span>Press <b>Refresh</b> to load codes.</div>
+      <div id="adminCodesEmpty" class="empty" style="margin-top:14px"><span class="big">🎟️</span>Loading codes…</div>
       <div style="overflow-x:auto">
         <table id="adminCodesTable" style="display:none;width:100%;border-collapse:collapse;font-size:14px;margin-top:10px">
           <thead><tr style="text-align:left;border-bottom:2px solid var(--line)">
@@ -4557,7 +4555,7 @@ html:has(> body > #intakeView[style*="display: block"]) body > :not(#intakeView)
       <div class="row tight">
         <button class="btn-primary" style="font-size:14px;padding:10px 16px" id="backupRunBtn" onclick="runAdminBackup()">＋ Create backup now</button>
       </div>
-      <div id="adminBackupsEmpty" class="empty" style="margin-top:14px"><span class="big">💾</span>Press <b>Refresh</b> to load backups.</div>
+      <div id="adminBackupsEmpty" class="empty" style="margin-top:14px"><span class="big">💾</span>Loading backups…</div>
       <div style="overflow-x:auto">
         <table id="adminBackupsTable" style="display:none;width:100%;border-collapse:collapse;font-size:14px;margin-top:10px">
           <thead><tr style="text-align:left;border-bottom:2px solid var(--line)">
@@ -4579,7 +4577,7 @@ html:has(> body > #intakeView[style*="display: block"]) body > :not(#intakeView)
         <button class="btn-ghost" style="font-size:14px;padding:9px 15px" onclick="verifyAdminAudit()">🔎 Verify integrity</button>
         <span id="auditVerifyResult" style="font-size:14px;font-weight:600;align-self:center"></span>
       </div>
-      <div id="adminAuditEmpty" class="empty" style="margin-top:14px"><span class="big">📜</span>Press <b>Load recent</b> to view the log.</div>
+      <div id="adminAuditEmpty" class="empty" style="margin-top:14px"><span class="big">📜</span>Loading the audit log…</div>
       <div style="overflow-x:auto">
         <table id="adminAuditTable" style="display:none;width:100%;border-collapse:collapse;font-size:14px;margin-top:10px">
           <thead><tr style="text-align:left;border-bottom:2px solid var(--line)">
@@ -4594,7 +4592,7 @@ html:has(> body > #intakeView[style*="display: block"]) body > :not(#intakeView)
     <!-- Admin — server-owned legal readiness -->
     <div class="card">
       <h2><span class="ic">🛡️</span> Admin — clinical legal readiness</h2>
-      <p class="sub"><b>Clinical workspace access is decided by the server</b> (the counsel-declared release plus per-user grants — manage grants from the Users table above). The onboarding signature ceremony below is separate commercial paperwork: users sign at first sign-in, you countersign the two-party BAA here, and neither ever unlocks clinical access by itself.</p>
+      <p class="sub"><b>Clinical workspace access comes from the counsel-declared legal release plus each person’s grant</b> (manage grants from the Users table above). The onboarding signature ceremony below is separate commercial paperwork: users sign at first sign-in, you countersign the two-party BAA here, and neither ever unlocks clinical access by itself.</p>
       <div id="adminAgreementsEmpty" class="empty" style="display:none"></div>
       <div style="overflow-x:auto">
         <table id="adminAgreementsTable" style="display:none;width:100%;border-collapse:collapse;font-size:13.5px">
@@ -4659,14 +4657,13 @@ html:has(> body > #intakeView[style*="display: block"]) body > :not(#intakeView)
         <input type="month" id="calJump" aria-label="Jump to month" onchange="calJump(this.value)" style="margin-left:10px;border:1px solid var(--line);border-radius:10px;padding:6px 9px;font-size:13px" title="Jump to a month">
         <select id="calProvFilter" aria-label="Filter calendar by provider" onchange="renderCalendar()" style="border:1px solid var(--line);border-radius:10px;padding:6px 9px;font-size:13px"><option value="">Default schedule</option></select>
         <button class="btn-ghost" onclick="cleanupDuplicateAppointments(this)" style="font-size:13px;padding:6px 11px;margin-left:auto;color:#a12c2c;border-color:#e8b7b7" title="Scan the whole calendar and remove duplicate appointments (same patient, same day & time) — keeps one of each">🧹 Remove duplicates</button>
-        <button class="btn-ghost" onclick="_calUserRefresh(this, loadCalendar())" style="font-size:13px;padding:6px 11px">↻ Refresh</button>
+        <button class="btn-ghost" onclick="_calUserRefresh(this, loadCalendar())" aria-label="Refresh the calendar" style="font-size:13px;padding:6px 11px">↻ Refresh</button>
       </div>
-      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:8px;font-size:11.5px;color:var(--muted)">
-        <span><span style="display:inline-block;width:10px;height:10px;border-radius:10px;background:#eef4fc;border:1px solid #cfe2f8;vertical-align:middle"></span> Booked</span>
-        <span><span style="display:inline-block;width:10px;height:10px;border-radius:10px;background:#fff4e0;vertical-align:middle"></span> Arrived</span>
-        <span><span style="display:inline-block;width:10px;height:10px;border-radius:10px;background:#e8eefc;vertical-align:middle"></span> Roomed</span>
-        <span><span style="display:inline-block;width:10px;height:10px;border-radius:10px;background:#e7f6ee;vertical-align:middle"></span> Completed</span>
-      </div>
+      <!-- uifix-1.0.0 (2026-09-24): the Booked / Arrived / Roomed / Completed colour
+           legend is gone. feat_mls_calbox_uniform.js paints every active
+           appointment one blue (the owner's uniform-box order), so the key
+           promised four colours the grid never shows. The day's status counts
+           still read as words above the grid. -->
       <div id="calNewApptBox" style="display:none;margin:0 0 12px;background:#eef6ff;border:1px solid #d2e4fb;border-radius:10px;padding:14px"></div>
       <div id="calAvailBox" data-availbox style="display:none;margin:0 0 12px;background:#f5f9ff;border:1px solid #cfe2f8;border-radius:10px;padding:14px"></div>
       <div id="calSplitWrap">
@@ -8980,6 +8977,37 @@ async function adminProvisionAccount(btn){
    webhook diagnostics, and drives the safe plan grant/clear workflow. Access
    source is server-derived truth (role/subscription/trial/grant/override). */
 var _adminBillingPlans=[];
+/* uifix-1.0.0 (2026-09-24): ADMIN SAYS WHAT HAPPENED, IN THE CARD. Opening
+   Admin loads users, codes, backups and the audit log by itself
+   (showView('admin')), yet each card still read "Press Refresh to load ..." -
+   and when that load failed the line stayed while the failure flashed past as
+   one of four toasts. A card now reads "Loading ..." until its answer lands,
+   and a failed load is said in that card in plain words. The retry is the
+   card's own header button (Refresh users / codes / backups, Load recent),
+   named in the sentence: one retry control per card, not two. */
+function adminCardLoading(box,table,icon,what){
+  if(!box||(table&&table.style.display!=='none')) return;
+  box.style.display='block'; box.innerHTML='<span class="big">'+icon+'</span>Loading '+what+'…';
+}
+function adminCardFailed(box,table,what,retryLabel,e){
+  if(!box) return;
+  var m=String((e&&e.message)||''), st=Number(e&&e.status)||0, why='';
+  /* A 401 goes through handle401, which ends the session only when /api/me
+     agrees the token is dead; if the session stays, the card still says the
+     load failed instead of reading "Loading ..." for ever. */
+  if(m==='401') why='';
+  /* An HTTP 5xx is an answer - an error one. "Did not answer" is kept for a
+     request that got no response at all. The 5xx pattern is read only from
+     adminFetch's own "Request failed (NNN)." fallback, never from a server
+     message that merely contains a number. */
+  else if(st>=500||/^Request failed \(5\d\d\)/.test(m)) why='the MLS server answered with an error.';
+  else if(!st&&/failed to fetch|networkerror|network error|load failed/i.test(m)) why='the MLS server did not answer.';
+  else why=(!m||/^Request failed/.test(m))?'the MLS server turned the request down.':m;
+  var shown=!!(table&&table.style.display!=='none');
+  box.style.display='block';
+  box.innerHTML='<span class="big">⚠️</span>Could not '+(shown?'refresh ':'load ')+what+(why?': '+esc(why):'.')+(shown?' The list below may be out of date.':'')+
+    ' Press <b>'+esc(retryLabel)+'</b> to try again.';
+}
 async function loadAdminBilling(){
   var status=document.getElementById('adminBillingStatus');
   status.style.display='block'; status.innerHTML='Loading billing state…';
@@ -9060,6 +9088,7 @@ async function loadAdminUsers(){
   const empty=document.getElementById('adminUsersEmpty');
   const table=document.getElementById('adminUsersTable');
   const body=document.getElementById('adminUsersBody');
+  adminCardLoading(empty,table,'👥','users');
   try{
     const d=await adminFetch('/api/admin/users');
     const users=(d&&d.users)||[];
@@ -9069,8 +9098,8 @@ async function loadAdminUsers(){
     /* Clinical-workspace grants (owner-managed, server-recorded). Absent
        endpoint (backend not yet updated) or unconfigured release degrade to
        an honest note instead of dead buttons. */
-    let wksp=null;
-    try{ wksp=await adminFetch('/api/admin/legal-release'); }catch(e){ wksp=null; }
+    let wksp=null, wkspErr=null;
+    try{ wksp=await adminFetch('/api/admin/legal-release'); }catch(e){ wksp=null; wkspErr=e; }
     const wkspActive={};
     if(wksp&&wksp.grants) wksp.grants.forEach(function(g){ if(g&&!g.revokedAt) wkspActive[String(g.userId)]=true; });
     const wkspBtnFor=function(u){
@@ -9083,9 +9112,11 @@ async function loadAdminUsers(){
     };
     // heads available for assignment (role==='head', not the owner)
     const heads=users.filter(u=>u.role==='head'&&!(u.role==='owner'||u.isAdmin));
+    /* uifix-1.0.0 (2026-09-24): plain words - no server setting names, and a
+       failed read is not called a missing update. */
     body.innerHTML=(wksp===null
-      ? '<tr><td colspan="6" style="padding:6px;color:var(--muted);font-size:12px">Workspace access grants appear here after the next backend update.</td></tr>'
-      : (wksp.releaseConfigured?'':'<tr><td colspan="6" style="padding:6px;color:var(--muted);font-size:12px">No legal release is configured on the server — workspace grants are unavailable until the LEGAL_RELEASE_* values are set.</td></tr>'))
+      ? '<tr><td colspan="6" style="padding:6px;color:var(--muted);font-size:12px">'+(wkspErr&&wkspErr.status===404?'Clinical workspace grants are not available yet.':'Clinical workspace grants could not be read just now. Press Refresh users to try again.')+'</td></tr>'
+      : (wksp.releaseConfigured?'':'<tr><td colspan="6" style="padding:6px;color:var(--muted);font-size:12px">Clinical workspace grants are off until the legal release is set up.</td></tr>'))
       + users.map(u=>{
       const isOwner=(u.role==='owner'||u.isAdmin);
       const serverReadiness=u&&u.readiness&&u.readiness.state?u.readiness:null;
@@ -9110,7 +9141,7 @@ async function loadAdminUsers(){
         '<td style="padding:8px 6px;white-space:nowrap">'+actions+'</td>'+
       '</tr>';
     }).join('');
-  }catch(e){ toast('Could not load users: '+e.message,'err'); }
+  }catch(e){ adminCardFailed(empty,table,'users','Refresh users',e); }
 }
 
 async function adminWkspGrant(id){
@@ -9228,6 +9259,7 @@ async function loadAdminBackups(){
   const table=document.getElementById('adminBackupsTable');
   const body=document.getElementById('adminBackupsBody');
   if(!empty||!table||!body) return;
+  adminCardLoading(empty,table,'💾','backups');
   try{
     const d=await adminFetch('/api/admin/backups');
     const rows=Array.isArray(d)?d:((d&&d.backups)||[]);
@@ -9244,7 +9276,7 @@ async function loadAdminBackups(){
         '<td style="padding:8px 6px;white-space:nowrap"><button class="btn-ghost" style="font-size:12px;padding:5px 9px" onclick="downloadAdminBackup(\''+esc(name).replace(/'/g,"\\'")+'\')">⬇ Download</button></td>'+
       '</tr>';
     }).join('');
-  }catch(e){ toast('Could not load backups: '+e.message,'err'); }
+  }catch(e){ adminCardFailed(empty,table,'backups','Refresh backups',e); }
 }
 async function downloadAdminBackup(name){
   if(!name){ return; }
@@ -9283,6 +9315,7 @@ async function loadAdminAudit(){
   const table=document.getElementById('adminAuditTable');
   const body=document.getElementById('adminAuditBody');
   if(!empty||!table||!body) return;
+  adminCardLoading(empty,table,'📜','the audit log');
   try{
     const d=await adminFetch('/api/admin/audit?limit=100');
     let rows=Array.isArray(d)?d:((d&&d.entries)||[]);
@@ -9305,7 +9338,7 @@ async function loadAdminAudit(){
         '<td style="padding:8px 6px;white-space:nowrap">'+esc(r.ip||'—')+'</td>'+
       '</tr>';
     }).join('');
-  }catch(e){ toast('Could not load audit log: '+e.message,'err'); }
+  }catch(e){ adminCardFailed(empty,table,'the audit log','Load recent',e); }
 }
 
 /* ---- Role + head-doctor assignment (owner only) ---- */
@@ -9385,6 +9418,7 @@ async function loadAdminCodes(){
   const empty=document.getElementById('adminCodesEmpty');
   const table=document.getElementById('adminCodesTable');
   const body=document.getElementById('adminCodesBody');
+  adminCardLoading(empty,table,'🎟️','codes');
   try{
     const d=await adminFetch('/api/admin/codes');
     const codes=(d&&d.codes)||[];
@@ -9404,7 +9438,7 @@ async function loadAdminCodes(){
         '<td style="padding:8px 6px;white-space:nowrap">'+action+'</td>'+
       '</tr>';
     }).join('');
-  }catch(e){ toast('Could not load codes: '+e.message,'err'); }
+  }catch(e){ adminCardFailed(empty,table,'codes','Refresh codes',e); }
 }
 
 async function adminRevokeCode(id){
@@ -39697,6 +39731,8 @@ function offlineExampleOptimization(){
 function renderRecommendations(){
   const empty=document.getElementById('recsEmpty');
   const content=document.getElementById('recsContent');
+  const genBtn=document.getElementById('genRecsBtn');
+  if(genBtn && !genBtn.disabled && genBtn.textContent!==recsBtnLabel()) genBtn.textContent=recsBtnLabel();
   if(!currentRecs){
     content.style.display='none';
     empty.style.display='block';
@@ -39820,9 +39856,12 @@ Return ONLY valid JSON (no markdown fences) with this exact shape (each value an
   }catch(err){
     if(recResultStillSafe()) toast(friendlyError(err,'generate recommendations'),'err');
   }finally{
-    btn.disabled=false; btn.innerHTML='✨ Generate Recommendations';
+    btn.disabled=false; btn.textContent=recsBtnLabel();
   }
 }
+/* uifix-1.0.0 (2026-09-24): the one Generate button names what a press does
+   now - Generate before there are suggestions, Regenerate once they show. */
+function recsBtnLabel(){ return currentRecs ? '🔄 Regenerate recommendations' : '✨ Generate Recommendations'; }
 function recommendationsText(){
   if(!currentRecs) return '';
   const r=currentRecs;
@@ -41033,8 +41072,37 @@ function downloadFullEMR(){
     const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
     a.download='MLS_EMR_Export_'+String(p.name||'patient').replace(/[^A-Za-z0-9]/g,'_')+'_'+new Date().toISOString().slice(0,10)+'.txt';
     a.click(); URL.revokeObjectURL(a.href);
-    toast('Full chart exported — note, problems, meds, allergies & coding, ready for your EMR.','ok');
+    toast(_fullEmrExportSaid(p, !!(typeof currentSoap!=='undefined' && currentSoap)),'ok');
   }catch(e){ toast('Could not download the export.','err'); }
+}
+/* uifix-1.0.0 (2026-09-24): the export said "Full chart exported — note,
+   problems, meds, allergies & coding" whatever it held, including for a
+   patient with no visits and nothing recorded. It names what the file holds
+   and what it does not, counted the way compilePatientRecord writes it: a
+   draft with no note (not an op-note draft with text) is exported as
+   "[Transcript only — no note generated]", so it is a transcript, not a
+   visit note; the chart summary is exported too, so it is named. */
+function _fullEmrExportSaid(p, withCurrent){
+  const has=function(v){ return !!String(v||'').trim(); };
+  let all=[]; try{ all=patientNotes(p.id)||[]; }catch(e){ all=[]; }
+  let n=0, tOnly=0;
+  all.forEach(function(x){
+    if(!x) return;
+    if(x.isDraft&&!(x.kind==='opnote'&&has(x.text))){ tOnly++; return; }
+    if(has(x.soap||x.text)) n++;
+  });
+  const docs=(p.docs||[]).filter(function(d){ return d&&d.aiSummary; }).length;
+  const inFile=[], missing=[];
+  if(n) inFile.push(n+' visit note'+(n===1?'':'s')); else missing.push('visit notes');
+  if(tOnly) inFile.push(tOnly+' transcript'+(tOnly===1?'':'s')+' with no note written yet');
+  if(withCurrent) inFile.push('the visit in progress');
+  [['problems',p.problems],['medicines',p.meds],['allergies',p.allergies]].forEach(function(x){ (has(x[1])?inFile:missing).push(x[0]); });
+  if(has(p.summary)) inFile.push('the patient summary');
+  if(docs) inFile.push(docs+' document summar'+(docs===1?'y':'ies'));
+  const list=function(a){ return a.length<2?a.join(''):a.slice(0,-1).join(', ')+' and '+a[a.length-1]; };
+  const who=String(p.name||'this patient');
+  if(!inFile.length) return 'Downloaded '+who+'\u2019s chart. It holds only the patient\u2019s details: no visit notes, problems, medicines or allergies are recorded yet.';
+  return 'Downloaded '+who+'\u2019s chart: '+list(inFile)+'.'+(missing.length?' Not recorded yet: '+list(missing)+'.':'');
 }
 function printShare(){
   const p=activePatient(); if(!p) return;
@@ -41341,7 +41409,19 @@ function renderOrdersView(){
   updateNavCounts();
 }
 
-/* ---- diagnosis pull from the current generated note ---- */
+/* ---- diagnosis pull from the current note ---- */
+/* uifix-1.0.0 (2026-09-24): A TYPED OR PASTED NOTE IS THE CURRENT NOTE TOO.
+   The pull read only the generator's structured result (lastEMR /
+   currentCoding), so a note the doctor typed or pasted in Visit - the note
+   Review on this same screen counts, and the note the Athena send path writes
+   (emrReadyText) - answered "generate a note in Visit first". The note is read
+   the way emrReadyText reads it, without writing anything back. */
+function _ordersNoteText(){
+  const nb=document.getElementById('noteBox');
+  const box=nb?String(nb.value||''):'';
+  if(nb && (nb.style.display!=='none' || box.trim())) return box;
+  return String((currentFormat==='insurance'?currentInsurance:currentSoap)||currentSoap||'');
+}
 function noteDiagnosisText(){
   // Combine the structured diagnoses string + ICD chips + chief complaint.
   const e=lastEMR||{};
@@ -41350,12 +41430,85 @@ function noteDiagnosisText(){
   if(e.dx && e.dx!=='—') parts.push(e.dx);
   if(e.cc && e.cc!=='—') parts.push(e.cc);
   const icd=(c.icd&&c.icd.length)?c.icd.slice():[];
-  return { text:parts.join('; '), icd:icd };
+  let section='structured';
+  if(!parts.length && !icd.length){
+    /* No structured diagnosis: take the note's own Assessment / Impression /
+       Diagnosis section (up to the Plan or the next section), and the ICD-10
+       codes written in it, e.g. "M54.16"; with no code in that section, the
+       codes written anywhere in the note. */
+    const note=_ordersNoteText();
+    const a=_noteAssessmentSection(note);
+    section=a.found?(a.text?'read':'empty'):(note.trim()?'none':'no-note');
+    if(a.text) parts.push(a.text);
+    const codesIn=function(t){ return String(t||'').match(/\b[A-TV-Z][0-9][0-9A-Z]\.[0-9A-Z]{1,4}\b/g)||[]; };
+    let codes=codesIn(a.text); if(!codes.length) codes=codesIn(note);
+    codes.forEach(function(x){ x=x.toUpperCase(); if(icd.indexOf(x)<0) icd.push(x); });
+  }
+  return { text:parts.join('; '), icd:icd, section:section };
+}
+/* uifix-1.0.0 (2026-09-24): THE NOTE'S OWN ASSESSMENT, AS DOCTORS WRITE IT.
+   A heading counts at the start of a line ("ASSESSMENT:", "## Impression",
+   "A:", "A/P:", "Assessment/Plan:", or a heading alone on its line), or later
+   on a line when it follows the end of a sentence or is a capitalised word
+   with a colon - so a one-line "Assessment: Lumbar radiculopathy M54.16.
+   Plan: TFESI, gabapentin." stops at "Plan:". A single S/O/A/P letter needs
+   its colon, a capital, and a line start or a sentence end before it, so
+   "vitamin A: 5000 IU" is not a heading. The Assessment is every Assessment,
+   Impression or Diagnosis section in a row, up to the next other heading
+   (Plan, Follow-up, S/O/P, HPI, Exam ...); a combined A/P heading keeps its
+   whole section. The History room's parser (window.__mlsEncView.parseBody)
+   was the first choice, but it reads one heading per line, does not know A/P
+   or Assessment/Plan, and leaves with its module, so it did not fit. */
+function _noteHeadings(src){
+  const out=[];
+  const re=/(ASSESSMENT[ \t]*(?:AND|&|\/)[ \t]*PLAN|IMPRESSION[ \t]*(?:AND|&|\/)[ \t]*PLAN|A[ \t]*[\/&][ \t]*P|ASSESSMENT|IMPRESSIONS?|DIAGNOS[EI]S|DX|PLAN OF CARE|TREATMENT PLAN|TREATMENT|PLAN|RX|RECOMMENDATIONS?|FOLLOW[- ]?UP|DISPOSITION|ORDERS?|SUBJECTIVE|OBJECTIVE|CHIEF COMPLAINT|HISTORY OF PRESENT ILLNESS|HPI|REVIEW OF SYSTEMS|ROS|PHYSICAL EXAM(?:INATION)?|EXAM(?:INATION)?|VITAL SIGNS|VITALS|MEDICATIONS|ALLERGIES|IMAGING|PROCEDURES?|FINDINGS|CC|PE|[SOAP])([ \t*_]*)(:?)/gi;
+  let m;
+  while((m=re.exec(src))){
+    const at=m.index, name=m[1], colon=m[3]===':', end=at+m[0].length;
+    if(at && /[A-Za-z0-9\/&]/.test(src.charAt(at-1))) continue;
+    if(!colon && end<src.length && src.charAt(end)!=='\n') continue;
+    const lead=src.slice(src.lastIndexOf('\n',at-1)+1,at);
+    const capital=name.charAt(0)===name.charAt(0).toUpperCase();
+    const single=name.length===1;
+    if(/^[ \t#*_>•·-]*$/.test(lead)){
+      if(single && (!colon || !capital)) continue;
+    }else{
+      if(!colon || !capital) continue;
+      const afterSentence=/[.;!?)\]][ \t*_]*$/.test(lead);
+      if(!afterSentence && (single || name.length<4)) continue;
+    }
+    out.push({ at:at, body:end, name:name });
+  }
+  return out;
+}
+function _noteAssessmentSection(note){
+  const src=String(note||'').replace(/\r\n?/g,'\n');
+  const heads=_noteHeadings(src);
+  const isA=function(h){ return /^(?:ASSESSMENT|IMPRESSION|DIAGNOS|DX$|A$|A[ \t]*[\/&])/i.test(h.name); };
+  let i=0; while(i<heads.length && !isA(heads[i])) i++;
+  if(i>=heads.length) return { found:false, text:'' };
+  const bits=[];
+  for(; i<heads.length && isA(heads[i]); i++){
+    const stop=i+1<heads.length?heads[i+1].at:src.length;
+    const b=src.slice(heads[i].body,stop).replace(/\s+/g,' ').replace(/^[\s*_:-]+|[\s#*_>•·-]+$/g,'').trim();
+    if(b) bits.push(b);
+  }
+  let text=bits.join(' ');
+  if(text.length>400) text=text.slice(0,400).replace(/\s+\S*$/,'')+'…';
+  return { found:true, text:text };
+}
+/* What a press says when the note gives nothing to pull - never "no
+   Assessment" when the note has one it could not read. */
+function _ordersNoDxSay(d, again){
+  const s=d&&d.section;
+  if(s==='no-note') return 'There is no note yet. Write or generate the note in Visit first.';
+  if(s==='empty') return 'The Assessment in the current note is empty, and the note has no ICD-10 code. Add the diagnosis in Visit, then '+again+'.';
+  return 'MLS could not find an Assessment, Impression or Diagnosis section, or an ICD-10 code, in the current note. Add one in Visit, then '+again+'.';
 }
 function pullDxFromNote(){
   const d=noteDiagnosisText();
   if(!d.text && !d.icd.length){
-    toast('No diagnosis on the current note yet — generate a note in Visit first.','err');
+    toast(_ordersNoDxSay(d,'pull again'),'err');
     return;
   }
   ordersDx={ text:d.text, icd:d.icd };
@@ -41370,7 +41523,7 @@ function renderOrdersDx(){
   const el=document.getElementById('ordersDxBody');
   if(!el) return;
   if(!ordersDx.text && !ordersDx.icd.length){
-    el.textContent='No diagnosis pulled yet. Generate a note in Visit, then “Pull from current note”.';
+    el.textContent='No diagnosis pulled yet. Write or generate the note in Visit, then press “Pull from current note”.';
     return;
   }
   let html='';
@@ -41386,9 +41539,16 @@ function dxCombinedString(){
 function suggestOrdersFromDx(){
   const wrap=document.getElementById('ordersSuggestWrap');
   const chips=document.getElementById('ordersSuggestChips');
-  const t=dxCombinedString();
+  let t=dxCombinedString();
+  /* uifix-1.0.0 (2026-09-24): Suggest reads the same current note as "Pull
+     from current note" instead of refusing until that other button is pressed. */
+  let d0=null;
   if(!t.trim()){
-    toast('Pull a diagnosis from the note first.','err');
+    d0=noteDiagnosisText();
+    if(d0.text || d0.icd.length){ ordersDx={ text:d0.text, icd:d0.icd }; renderOrdersDx(); prefillDxIntoForm(); t=dxCombinedString(); }
+  }
+  if(!t.trim()){
+    toast(_ordersNoDxSay(d0,'try again'),'err');
     wrap.style.display='none'; return;
   }
   // collect matching suggestion templates (de-duped by type+label)
@@ -42780,6 +42940,24 @@ function openIntake(){
   if(v){ v.style.display='block'; v.scrollTop=0; }
   _installIntakeBackTrap();
   try{ history.pushState({mlsIntake:1},'',location.href); }catch(e){}
+}
+/* uifix-1.0.0 (2026-09-24): the Patient intake button (and the Tools row
+   that presses it) hid every chart and locked MLS behind the account
+   password the moment it was pressed, with no word about what was about to
+   happen or how to get back. The press now asks first and says both.
+   openIntake() itself is unchanged for its programmatic callers. */
+async function openIntakeWithConfirm(){
+  if(typeof isLawyerUser==='function' && isLawyerUser()) return false;
+  var ok=false;
+  try{
+    ok=await mlsConfirm('Hand this device to a patient?\n\n'
+      +'MLS hides your charts and opens the new-patient questionnaire full screen, for the patient to fill in.\n\n'
+      +'To come back, tap \u201cStaff: exit\u201d at the top of the questionnaire and enter your MLS password.',
+      {okLabel:'Start patient intake',cancelLabel:'Cancel'});
+  }catch(eAsk){ ok=false; }
+  if(!ok) return false;
+  openIntake();
+  return true;
 }
 function exitIntake(){
   // SECURITY: the iPad is in the patient's hands — exiting back to the clinical
@@ -51328,7 +51506,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1330';
+  window.__MLS_AV='b1331';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',
@@ -52501,9 +52679,9 @@ html[data-msl="guided"] #docFileInput ~ p.mini,
 html[data-msl="calm"] #insBox p.mini,
 html[data-msl="guided"] #insBox p.mini{ display:none !important; }
 
-/* Calendar. The Booked/Arrived/Roomed/Completed legend is NOT hidden - it is
-   a key to a colour code rather than prose, and a doctor reads it to decode
-   the grid rather than to learn the app. */
+/* Calendar. (uifix-1.0.0, 2026-09-24: the Booked/Arrived/Roomed/Completed
+   colour legend this block used to spare was removed from the markup - every
+   active appointment is one blue, so it keyed colours the grid never used.) */
 html[data-msl="calm"] #calendarView .card.cx-agenda > p.mini,
 html[data-msl="guided"] #calendarView .card.cx-agenda > p.mini,
 html[data-msl="calm"] #mlsT3Roster .t3r-cap:not(.t3r-census),
@@ -53222,16 +53400,20 @@ html[data-msl="guided"] #ptList .pt-item button.del{ display:none !important; }
      does not still claim yesterday.
 
      It is a label, not a control: no click target, no z-index above the dock,
-     and it steps aside on narrow screens where the header owns the space. -->
+     and it steps aside on narrow screens where the header owns the space.
+
+     uifix-1.0.0 (2026-09-24): so it LOOKS like a label too. It wore the same
+     card background, border, shadow and pill shape as the Normal and Account
+     buttons beside it, and read as a third button that did nothing when
+     pressed. Plain text now: no fill, no border, no shadow. -->
 <style id="mslTodayCss">
 #mslToday{
   position:fixed; z-index:940;
   top:calc(env(safe-area-inset-top,0px) + 14px);
   right:calc(env(safe-area-inset-right,0px) + 18px);
   display:flex; flex-direction:column; align-items:flex-end; gap:1px;
-  padding:5px 12px; border-radius:var(--r-pill,999px);
-  background:var(--card); border:1px solid var(--line);
-  box-shadow:var(--shadow); pointer-events:none; user-select:none;
+  padding:5px 4px;
+  background:none; border:0; box-shadow:none; pointer-events:none; user-select:none;
 }
 #mslToday .mslTodayDay{ font:800 12.5px/1.15 var(--sans); color:var(--ink); letter-spacing:.2px; }
 #mslToday .mslTodayDate{ font:600 11px/1.15 var(--sans); color:var(--muted); }
@@ -64935,7 +65117,7 @@ html.mls-clunky-hdr #mslChipMenu{
 html.mls-clunky-hdr #mlsRdTitle{
   min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
 }
-html.mls-clunky-hdr #mslToday{ padding:4px 10px; }
+html.mls-clunky-hdr #mslToday{ padding:4px 4px; } /* uifix-1.0.0: text, not a pill */
 @media (max-width:760px){
   html.mls-clunky-hdr #mslToday{ display:none !important; }
   html.mls-clunky-hdr #mslChipBtn{ padding:4px 9px; font-size:11.5px; }
@@ -67275,30 +67457,12 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
     note.hidden = false;
   }
 
-  /* --- 130: a Review sub-screen with no lit segment. The bar is repainted by
-     the calm shell, so this adds its segment on every pass and takes it away
-     the moment the doctor leaves the room. */
-  function recsSegment(on){
-    var bar = el('mlsRightNow');
-    var seg = bar ? bar.querySelector('.seg') : null;
-    var mine = bar ? bar.querySelector('[data-mls-clunky-seg="1"]') : null;
-    if (!on || !seg) { if (mine && mine.parentNode) mine.parentNode.removeChild(mine); return false; }
-    if (!mine) {
-      mine = document.createElement('button');
-      mine.type = 'button';
-      mine.className = 'segbtn on';
-      mine.setAttribute('data-mls-clunky-seg', '1');
-      mine.setAttribute('role', 'tab');
-      mine.textContent = 'Recommendations';
-      mine.onclick = function(){ try { if (typeof window.showView === 'function') window.showView('recs'); } catch (e) {} };
-      var first = seg.querySelector('.segbtn');
-      if (first && first.nextSibling) seg.insertBefore(mine, first.nextSibling);
-      else seg.appendChild(mine);
-    }
-    if (mine.className.indexOf('on') < 0) mine.className = 'segbtn on';
-    if (mine.getAttribute('aria-selected') !== 'true') mine.setAttribute('aria-selected', 'true');
-    return true;
-  }
+  /* --- 130: a Review sub-screen with no lit segment. uifix-1.0.0 (2026-09-24):
+     the stand-in "Recommendations" segment this block painted on Recommendations
+     only is gone. Its cause is fixed instead - nav-reorg no longer hides
+     #nav_recs inline, so the calm shell offers Recommendations as a real Review
+     segment: lit here, and reachable from Orders too. A second copy would be two
+     segments with one name. */
 
   function pass(){
     if (retired) return false;
@@ -67332,8 +67496,6 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
           else if (n.hasAttribute('data-mls-clunky-dupetitle')) n.removeAttribute('data-mls-clunky-dupetitle');
         });
       }
-
-      recsSegment(view === 'recs');
 
       /* 114 */
       var prog = el('su_progress');
@@ -67393,7 +67555,6 @@ html[data-mls-clunky-nopt] #historyView [data-mls-clunky-ro="1"]{ display:none !
         document.documentElement.removeAttribute('data-mls-clunky-nopt');
         var n = el('mlsClunkyHistNote'); if (n && n.parentNode) n.parentNode.removeChild(n);
         historyHero(false);
-        var seg = document.querySelector('[data-mls-clunky-seg="1"]'); if (seg && seg.parentNode) seg.parentNode.removeChild(seg);
         Array.prototype.forEach.call(document.querySelectorAll('[data-mls-clunky-ro],[data-mls-clunky-dupetitle],[data-mls-clunky-suhead]'), function(x){
           x.removeAttribute('data-mls-clunky-ro'); x.removeAttribute('data-mls-clunky-dupetitle'); x.removeAttribute('data-mls-clunky-suhead');
         });

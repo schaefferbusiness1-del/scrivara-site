@@ -71,9 +71,10 @@ assert.strictEqual(load({
   _loadAuthoritativeStore() { return { ok: false, store: { days: { '2026-08-14': {} } } }; }
 }), 'wait', 'an invalid authoritative store was accepted as pull proof');
 
+/* uifix-1.0.0 (2026-09-24): a calendar row is not proof of a pull (C63), so it no longer ticks the row. */
 assert.strictEqual(load({
   authoritativeStatusForDay() { throw new Error('not ready'); },
   _loadAuthoritativeStore() { throw new Error('not ready'); }
-}, [{ id: 'synthetic-existing-calendar-row' }]), 'ok', 'the established calendar fallback stopped working');
+}, [{ id: 'synthetic-existing-calendar-row' }]), 'wait', 'a calendar row alone ticked “Pull your first day” with no pull made');
 
 console.log('PASS first-run historical pull: any sanitized account-owned pulled day completes “Pull your first day”; empty/invalid stores stay incomplete');

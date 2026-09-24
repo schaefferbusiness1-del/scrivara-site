@@ -50,7 +50,8 @@ assert(ui.includes("tabs.setAttribute('role', 'tablist')") && ui.includes("tab.s
 assert(ui.includes("/^(Enter| |Spacebar)$/") && ui.includes("tab.addEventListener('keydown', authTabKeydown)"), 'auth tabs must work from the keyboard');
 assert(ui.includes("pass.setAttribute('minlength', '8')") && ui.includes("pass.removeAttribute('minlength'); /* preserve login compatibility */"), 'signup must enforce eight characters without blocking legacy login passwords');
 assert(ui.includes("showResetError('Password must be at least 8 characters.')"), 'password reset must use the same eight-character standard');
-assert(app.includes('id="authPass2" placeholder="At least 8 characters" autocomplete="new-password" minlength="8"'), 'base signup markup does not enforce the eight-character contract before optional UI loads');
+/* uifix-1.0.0 (2026-09-24): the confirm field's placeholder asks for the same password again (C61); the minlength contract is unchanged. */
+assert(app.includes('id="authPass2" placeholder="Type the same password again" autocomplete="new-password" minlength="8"'), 'base signup markup does not enforce the eight-character contract before optional UI loads');
 assert(app.includes('id="resetPass" placeholder="••••••••" autocomplete="new-password" minlength="8"') && app.includes('id="resetPass2" placeholder="••••••••" autocomplete="new-password" minlength="8"'), 'base reset markup does not enforce the eight-character contract');
 assert(app.includes("const authMin=authMode==='signup'?8:6") && app.includes("if(mode==='signup') pass.setAttribute('minlength','8'); else pass.removeAttribute('minlength')"), 'base auth logic does not enforce eight characters only for fresh signup');
 assert(app.includes("if(!p1 || p1.length<8){ showErr('Password must be at least 8 characters.')"), 'base reset handler still accepts a password shorter than eight characters');

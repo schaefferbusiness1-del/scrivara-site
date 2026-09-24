@@ -74,7 +74,11 @@
       '.mlsease-empty .mlsease-empty-row{display:flex;flex-wrap:wrap;gap:8px;}' +
       '.mlsease-hint{font-size:11px;font-weight:600;color:var(--brand,#204034);' +
       'background:rgba(37,99,201,.08);border-radius:999px;padding:2px 8px;margin-left:6px;white-space:nowrap;}' +
-      '.mlsease-scale{font-weight:600;color:var(--muted,#79837C);}';
+      '.mlsease-scale{font-weight:600;color:var(--muted,#79837C);}' +
+      /* uifix-1.0.0 (2026-09-24): Add visit for a chart that already exists
+         shows who it is as one line of text, and has one way to save. */
+      '.mlsease-who{font-size:14px;font-weight:600;line-height:1.4;color:var(--ink,#1A211C);}' +
+      '[data-mlsease-visitmode="1"] #apgAdd,[data-mlsease-visitmode="1"] #apPending .ap-hint{display:none!important;}';
     var s = el('style', { id: STYLE_ID }); s.textContent = css;
     (document.head || document.documentElement).appendChild(s);
   }
@@ -268,16 +272,27 @@
     if (sexEl && pref.sex && !sexEl.value) sexEl.value = pref.sex;
     if (phoneEl && pref.phone && !phoneEl.value) phoneEl.value = pref.phone;
     if (pref.existing) {
+      injectStyle();
       root.setAttribute('data-mlsease-visitmode', '1');
       var hd = root.querySelector('.ap-hd h3');
       if (hd) hd.textContent = '➕ Add visit — ' + (pref.name || 'selected patient');
       var patientSec = nameEl && nameEl.closest ? nameEl.closest('.ap-sec') : null;
       if (patientSec) {
         var patientLab = patientSec.querySelector('.ap-lab');
-        if (patientLab) patientLab.textContent = 'Selected patient (locked for this visit)';
+        if (patientLab) patientLab.textContent = 'Patient';
         Array.prototype.forEach.call(patientSec.querySelectorAll('input'), function (inp) {
           inp.readOnly = true; inp.setAttribute('aria-readonly', 'true');
         });
+        /* uifix-1.0.0 (2026-09-24): five read-only boxes (two of them empty
+           "optional" fields) looked like a form to fill in for a patient who
+           already exists. The chart is named in one line instead; the boxes
+           stay in the DOM, hidden, because Save reads the identity from them. */
+        Array.prototype.forEach.call(patientSec.querySelectorAll('.ap-row'), function (row) { row.style.display = 'none'; });
+        if (!patientSec.querySelector('.mlsease-who')) {
+          var who = [pref.name || 'Selected patient', pref.dob ? 'DOB ' + pref.dob : '', pref.mrn ? 'MRN ' + pref.mrn : ''].filter(Boolean).join(' · ');
+          var whoEl = el('div', { class: 'mlsease-who' }); whoEl.textContent = who;
+          patientSec.appendChild(whoEl);
+        }
       }
       var save = root.querySelector('#apSave'); if (save) save.textContent = '💾 Save visit';
     }

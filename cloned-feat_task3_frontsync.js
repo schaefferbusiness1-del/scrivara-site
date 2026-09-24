@@ -137,8 +137,33 @@
     }
     if (loc.before) { if (el.parentElement !== loc.host || el.nextSibling !== loc.before) loc.host.insertBefore(el, loc.before); }
     else if (el.parentElement !== loc.host || loc.host.firstChild !== el) { loc.host.insertBefore(el, loc.host.firstChild); }
-    var running = [], err = null;
-    for (var k = 1; k <= 7; k++) { var g = S.stages[k]; if (!g) continue; if (g.state === 'run') running.push(g.label); if (g.state === 'err' && (!err || g.ts > err.ts)) err = g; }
+    /* uifix-1.0.0 (2026-09-24): ONE BANNER PER OUTAGE. On the calendar a failed
+       read already has its own notice above the grid (#calLoadNotice:
+       "Appointments could not be loaded ... Try again"), and this strip said the
+       same outage again ("Reading provider schedule failed - HTTP 503 . Retry"):
+       two red banners and two retry buttons for one loadCalendar(). While that
+       read is settling, or its notice owns the failure, the calendar's own
+       reads (stages 1-3) are left to it - no error here, and no "Finished"
+       tick beside a red notice. A failure the notice does not cover (the
+       appointments loaded but the provider list did not) still shows here.
+       A 'loading' state counts for 15 s at most (__mlsCalendarHydrationAt,
+       the same bound the Visit day empty state uses): loadCalendar can exit
+       early (401, session change, a superseded read) and leave it set, and a
+       stale claim must not hide a real failure. */
+    var calOwns = loc.mode === 'cal' && safe(function () {
+      if (window.__mlsCalendarLoadError) return true;
+      if (window.__mlsCalendarHydration !== 'loading') return false;
+      var age = Date.now() - Number(window.__mlsCalendarHydrationAt || 0);
+      return age >= 0 && age < 15000;
+    }, false);
+    var running = [], err = null, ownedErr = false;
+    for (var k = 1; k <= 7; k++) {
+      var g = S.stages[k]; if (!g) continue;
+      if (g.state === 'run') running.push(g.label);
+      if (g.state !== 'err') continue;
+      if (calOwns && k <= 3) { ownedErr = true; continue; }
+      if (!err || g.ts > err.ts) err = g;
+    }
     var hideTs = +(el.getAttribute('data-t3hide') || 0);
     if (err && Date.now() - err.ts < 30000) {
       var msg = err.label + ' failed' + (err.detail ? ' - ' + err.detail : '') + '.';
@@ -151,7 +176,7 @@
       el.style.display = 'flex'; el.removeAttribute('data-t3hide'); return;
     }
     var g8 = S.stages[8];
-    if (g8 && g8.state === 'ok' && Date.now() - g8.ts < 2600 && Date.now() - hideTs > 5000) {
+    if (!ownedErr && g8 && g8.state === 'ok' && Date.now() - g8.ts < 2600 && Date.now() - hideTs > 5000) {
       if (stripState.kind !== 'done') { stripState = { txt: g8.label, kind: 'done' }; el.className = 't3s-done'; el.querySelector('.t3s-txt').textContent = '\u2713 ' + g8.label; el.querySelector('.t3s-spin').style.display = 'none'; el.querySelector('.t3s-retry').style.display = 'none'; }
       el.style.display = 'flex'; return;
     }

@@ -2822,7 +2822,12 @@ const tests = [
   'template-intake-sorts-everything-runtime.test.js',
   /* tplsort-1.3.0: a letter saved from "Add templates" is kind letter and no
      picker - the op-note room's auto-match above all - ever drafts from it */
-  'template-letters-never-draft-runtime.test.js'
+  'template-letters-never-draft-runtime.test.js',
+  /* uifix-1.0.0 (2026-09-24): the screens outside Visit and Settings say each
+     thing once, and say it true */
+  'review-and-study-one-door-runtime.test.js',
+  'calendar-and-admin-say-it-once-runtime.test.js',
+  'controls-say-what-they-do-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

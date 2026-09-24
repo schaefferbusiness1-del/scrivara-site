@@ -136,6 +136,8 @@
         'font-variant-numeric:tabular-nums;}'+
         '#'+WRAP_ID+' .mrp-btn:hover:not([disabled]){background:rgba(31,122,224,.20);}'+
         '#'+WRAP_ID+' .mrp-btn[disabled]{opacity:.55;cursor:default;}'+
+        /* uifix-1.0.0 (2026-09-24): hidden until it has a chart to offer (see render). */
+        '#'+WRAP_ID+'[hidden]{display:none!important;}'+
         '#'+MENU_ID+'{position:fixed;z-index:9600;min-width:200px;max-width:260px;background:#13283d;color:#fff;'+
         'border-radius:11px;padding:7px;box-shadow:0 12px 30px rgba(0,0,0,.36);}'+
         '#'+MENU_ID+' .mrp-item{display:flex;flex-direction:column;align-items:flex-start;width:100%;text-align:left;'+
@@ -196,6 +198,12 @@
         ?'<button type="button" class="mrp-btn" title="Jump back to a recent chart">↻ Recent ('+state.n+') ▾</button>'
         :'<button type="button" class="mrp-btn" disabled aria-disabled="true" title="Recent charts appear here once you open a few patients">↻ Recent ▾</button>';
       if(existing.innerHTML!==html) existing.innerHTML=html;
+      /* uifix-1.0.0 (2026-09-24): the disabled placeholder read as a dead
+         control on every screen until a second chart had been opened. It stays
+         mounted and holds its last committed state through a refresh, but is
+         not shown, and cannot be tabbed to, until there is a chart to jump
+         back to. */
+      if(existing.hidden!==!state.ready) existing.hidden=!state.ready;
       var btn=existing.querySelector('.mrp-btn');
       if(btn&&!btn.__mlsRecentBound){btn.__mlsRecentBound=true;btn.addEventListener('click',function(ev){ev.preventDefault();ev.stopPropagation();
         if(btn.disabled)return;

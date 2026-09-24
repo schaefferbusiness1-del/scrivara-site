@@ -502,7 +502,10 @@ function withNote(h, text) {
   h.nav();
   h.tap('device');
   assert.strictEqual(h.calls.openSettings, 1, 'This device must open the app\'s own Settings');
-  assert(h.calls.toasts.some(t => /Integrations/.test(t.m) && /This device/.test(t.m)),
+  /* uifix-1.0.0 (2026-09-24): it now looks for the device card and lands on it (C56); only when the card never appears does it name the place. */
+  assert(!h.calls.toasts.some(t => /Settings → Integrations → This device/.test(t.m)), 'This device must not print a path to follow instead of going there');
+  for (let i = 0; i < 40; i++) h.fireTimers(200);
+  assert(h.calls.toasts.some(t => /Connections & integrations/.test(t.m) && /This device/.test(t.m)),
     'and name the section to look in — "go to Settings → Integrations" printed on a device with no route there is the defect this replaced');
 }
 {

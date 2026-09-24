@@ -15,8 +15,9 @@ const tuning = fs.readFileSync(path.join(root, 'feat_mls_draft_tuning.js'), 'utf
 assert(firstRun.includes('id="mlsFrAiBtn"'), 'first-run checklist has no AI formats CTA');
 assert(/key: 'tuning'[\s\S]{0,260}Visit note templates/.test(firstRun),
   'template checklist row does not use its Settings destination name');
-assert(/Get MLS working - 0 of 4 done/.test(firstRun) && /done === 4/.test(firstRun),
-  'the checklist does not count AI configuration honestly');
+/* uifix-1.0.0 (2026-09-24): the optional templates row is not counted and never shown as an error (C62). */
+assert(/Get MLS working - 0 of ' \+ REQUIRED \+ ' done/.test(firstRun) && /done === REQUIRED/.test(firstRun) && /optional: true/.test(firstRun),
+  'the checklist does not count only the steps MLS needs');
 assert(/on\(byId\('mlsFrAiBtn'\),\s*'click',\s*onAiClick\)/.test(firstRun),
   'AI formats CTA is not wired into the checklist lifecycle');
 assert(/async function onAiClick\(\)[\s\S]{0,1200}window\.openSettings/.test(firstRun),

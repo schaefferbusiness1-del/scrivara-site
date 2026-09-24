@@ -351,7 +351,19 @@
     var fresh = Number(startedAt || 0) > 0 && Number(deadlineAt || 0) > Number(startedAt || 0) && captured >= Number(startedAt) - 5000 && captured <= Number(deadlineAt);
     return !!(r && r.kind === 'athena-chart-coverage' && r.complete === true && r.truncated !== true && String(r.readerVersion || '') === '2.9.19-chart-r3' && String(r.requestId || '') === requestId && String(resp.requestId || '') === requestId && r.identityObserved === true && clean(r.identityVia) && fresh && expected >= 1 && Number(r.readClinicalFrames || 0) === expected && Number(r.boundClinicalFrames || 0) === expected && Number(r.unboundClinicalFrames || 0) === 0 && Number(r.oversizeClinicalFrames || 0) === 0 && Number(r.unreadFrames || 0) === 0 && Number(r.omittedForCap || 0) === 0 && Number(r.textChars || 0) === S(resp.text).length);
   }
-  function resolvedLine(spec) { return '<div class="mls-occ-resolved">Resolved facility: <b>' + esc(spec.facility.name) + '</b>' + (spec.facility.departmentId ? (' &middot; Athena department ' + esc(spec.facility.departmentId)) : '') + '. Exact CPT: <b>' + esc(spec.codes.join(', ')) + '</b>.</div>'; }
+  /* uifix-1.0.0 (2026-09-24): doctor words on screen. No Athena department id,
+     no facility alias or example in the placeholders, no notes about the
+     extension build; the facility table itself is unchanged. The search runs
+     only for a facility in that table, so the panel says which ones MLS has
+     on file instead of inviting any name (onFileLine). */
+  function onFileNames() {
+    var names = FACILITIES.map(function (f) { return f.name; }).sort();
+    return names.length < 2 ? names.join('') : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
+  }
+  function onFileLine() {
+    return FACILITIES.length ? ('Facilities MLS has on file: <b>' + esc(onFileNames()) + '</b>.') : 'MLS has no facility on file yet, so this search cannot run.';
+  }
+  function resolvedLine(spec) { return '<div class="mls-occ-resolved">Facility: <b>' + esc(spec.facility.name) + '</b>. CPT: <b>' + esc(spec.codes.join(', ')) + '</b>.</div>'; }
   function receiptHtml(r) {
     var p = r.pages ? (r.pages + ' page' + (r.pages === 1 ? '' : 's')) : 'page count unavailable';
     return r.complete ? '<div class="mls-occ-ok">Verified complete retrieval &middot; ' + esc(p) + '.</div>' : '<div class="mls-occ-warn">Completeness not verified (' + esc(r.reason) + ', ' + esc(p) + '). Matching evidence is shown, but this search is not reported as complete.</div>';
@@ -443,13 +455,13 @@
     if (api && !ownsInstall()) return;
     var query = panel.querySelector('#mlsOccQuery'), facility = panel.querySelector('#mlsOccFacility'), spec = parseQuery(query && query.value, facility && facility.value), out = panel.querySelector('#mlsOccOut');
     if (!spec.codes.length) { if (out) out.innerHTML = '<div class="mls-occ-warn">Enter one exact CPT/HCPCS code. Keywords never substitute for an exact supplied code.</div>'; return; }
-    if (!spec.facility.name || spec.facility.resolved !== true) { if (out) out.innerHTML = '<div class="mls-occ-warn">Choose a supported exact facility alias. SCCC resolves to POSM ASC Chester County (department 744); SCCC Hospital stays separate.</div>'; return; }
+    if (!spec.facility.name || spec.facility.resolved !== true) { if (out) out.innerHTML = '<div class="mls-occ-warn">' + (spec.facility.name ? 'MLS does not have a facility called \u201c' + esc(spec.facility.name) + '\u201d on file, so it cannot check each claim against it.' : 'Name the facility, in the question or in the Facility box.') + ' Nothing was searched. ' + onFileLine() + '</div>'; return; }
     var run = makeRun('search', panel); if (!run) { if (out) out.innerHTML = '<div class="mls-occ-warn">The previous Athena request is still draining. Wait before starting another.</div>'; return; } run.epoch = epoch;
     if (!claimAthena(run, 'p1-occurrence-report', 365000)) { finishRun(run); if (out) out.innerHTML = '<div class="mls-occ-warn">Another Athena read or schedule pull is active. Nothing started; retry after it finishes.</div>'; return; }
     /* A newly accepted search owns the visible question now. Do not retain the
        previous named cohort invisibly while the replacement reads or fails. */
     snapshot = null;
-    setBusy(panel, true); status(panel, resolvedLine(spec) + '<div class="mls-occ-warn">Before this click, keep Athena Revenue &amp; Usage report 268 open with Post Date = Show All and Service Date = Show All. MLS can fill the exact CPT and click Run, but this frozen extension cannot navigate to that report or set those Show All controls.</div><div class="mls-occ-summary" id="mlsOccProgress">Starting the read-only search...</div>');
+    setBusy(panel, true); status(panel, resolvedLine(spec) + '<div class="mls-occ-warn">Keep the Revenue and Usage report open in Athena with Post Date and Service Date set to Show All. MLS types the CPT code and runs the report; it cannot open the report or change those dates for you.</div><div class="mls-occ-summary" id="mlsOccProgress">Starting the read-only search...</div>');
     function say(m) { if (current(run) && !run.cancelled && livePanel(panel)) { var n = panel.querySelector('#mlsOccProgress'); if (n) n.textContent = clean(m); } }
     var params = { reportId: '268', reportName: 'Revenue and Usage', postDateMode: 'all', serviceDateMode: 'all', cpt: spec.codes, procedureName: '', departmentId: spec.facility.departmentId, facilityName: spec.facility.name, readOnly: true };
     var cfg = { maxPages: MAX_PAGES, cptFieldLabels: ['procedure code(s)', 'procedure code', 'cpt', 'hcpcs'], dateFromLabels: ['service date from'], dateToLabels: ['service date to'], runLabels: ['run report', 'run', 'view report', 'search'] };
@@ -473,7 +485,7 @@
   function updateResolution(panel) {
     if (api && !ownsInstall()) return;
     var q = panel.querySelector('#mlsOccQuery'), f = panel.querySelector('#mlsOccFacility'), spec = parseQuery(q && q.value, f && f.value), n = panel.querySelector('#mlsOccResolved');
-    if (!n) return; n.innerHTML = spec.facility.name ? ('Will match exact facility: <b>' + esc(spec.facility.name) + '</b>' + (spec.facility.departmentId ? (' (Athena department ' + esc(spec.facility.departmentId) + ')') : '') + (spec.codes.length ? (' &middot; exact CPT ' + esc(spec.codes.join(', '))) : '')) : 'Type a facility; SCCC resolves to the exact surgery-center department.';
+    if (!n) return; n.innerHTML = !spec.facility.name ? ('Name the facility in the question or in the Facility box. ' + onFileLine()) : spec.facility.resolved !== true ? ('MLS does not have a facility called \u201c' + esc(spec.facility.name) + '\u201d on file, so this search cannot run. ' + onFileLine()) : ('Will match facility: <b>' + esc(spec.facility.name) + '</b>' + (spec.codes.length ? (' &middot; CPT ' + esc(spec.codes.join(', '))) : ''));
     if (snapshot) { snapshot = null; status(panel, '<div class="mls-occ-warn">The question or facility changed. Prior results and confirmation were cleared; run the exact search again.</div>'); }
     if (lease && lease.kind === 'search') cancelRun();
   }
@@ -486,10 +498,10 @@
   function mount() {
     if (api && !ownsInstall()) return;
     if (document.getElementById(PANEL_ID)) return;
-    var anchor = document.getElementById('mlsStudyBAuto'); if (!anchor) return;
+    var anchor = document.getElementById('mlsStudyBAuto') || document.getElementById('mlsStudyBFind'); if (!anchor) return;
     var section = anchor.closest ? anchor.closest('.mls-study-sec') : null; if (!section || !section.parentNode) return;
     injectCss(); var p = document.createElement('div'); p.id = PANEL_ID; p.__mlsOccEpoch = epoch;
-    p.innerHTML = '<div class="mls-occ-head">Exact Athena procedure + facility search <span class="mls-study-badge live">read-only</span></div><p class="mls-study-help"><b>First open Athena Reports &gt; Report Library &gt; Revenue and Usage (268), set Post Date and Service Date to Show All, and leave that report open.</b> MLS fills the exact CPT and clicks Run; it cannot navigate or set those Show All controls. The facility is gated locally on each separate claim occurrence because the frozen extension cannot set Athena\'s facility control. Search results stay local until you explicitly Pull; selected patients then use normal MLS chart import and storage.</p><div class="mls-occ-grid"><div><label class="mls-study-lab" for="mlsOccQuery">Question</label><input id="mlsOccQuery" class="mls-study-in" placeholder="Who had MILD procedure CPT 62330, all done at SCCC?" /></div><div><label class="mls-study-lab" for="mlsOccFacility">Facility (optional if named in question)</label><input id="mlsOccFacility" class="mls-study-in" placeholder="SCCC" /></div></div><div id="mlsOccResolved">SCCC resolves to POSM ASC Chester County, Athena department 744.</div><div class="mls-study-actions"><button type="button" id="mlsOccSearch" class="mls-study-btn">Fill exact CPT and run open report</button><button type="button" id="mlsOccCancel" class="mls-study-btn ghost" style="display:none" disabled>Cancel</button></div><div id="mlsOccOut" aria-live="polite" aria-atomic="true"></div>';
+    p.innerHTML = '<div class="mls-occ-head">Exact Athena procedure + facility search <span class="mls-study-badge live">read-only</span></div><p class="mls-study-help"><b>First open the Revenue and Usage report in Athena (Reports &gt; Report Library), set Post Date and Service Date to Show All, and leave it open.</b> MLS types the CPT code and runs the report; it cannot open the report or change those dates for you. MLS then checks the facility on each claim itself. Results stay here until you press Pull; the patients you pick are imported the usual way.</p><div class="mls-occ-grid"><div><label class="mls-study-lab" for="mlsOccQuery">Question</label><input id="mlsOccQuery" class="mls-study-in" placeholder="e.g. Who had CPT 62330?" /></div><div><label class="mls-study-lab" for="mlsOccFacility">Facility (optional if named in question)</label><input id="mlsOccFacility" class="mls-study-in" placeholder="A facility listed below" /></div></div><div id="mlsOccResolved">Name the facility in the question or in the Facility box. ' + onFileLine() + '</div><div class="mls-study-actions"><button type="button" id="mlsOccSearch" class="mls-study-btn">Fill exact CPT and run open report</button><button type="button" id="mlsOccCancel" class="mls-study-btn ghost" style="display:none" disabled>Cancel</button></div><div id="mlsOccOut" aria-live="polite" aria-atomic="true"></div>';
     section.parentNode.insertBefore(p, section); p.querySelector('#mlsOccSearch').addEventListener('click', function () { runSearch(p); }); p.querySelector('#mlsOccCancel').addEventListener('click', function () { if (cancelRun()) { var n = p.querySelector('#mlsOccProgress'); if (n) n.textContent = 'Canceling safely after the current read...'; } }); p.querySelector('#mlsOccQuery').addEventListener('input', function () { updateResolution(p); }); p.querySelector('#mlsOccFacility').addEventListener('input', function () { updateResolution(p); });
   }
   function sessionBoundary() {

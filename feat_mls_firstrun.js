@@ -23,8 +23,9 @@
  *        anything ambiguous or in flight stays neutral.
  *   3. "Pull your first day"
  *        window.__mlsSI.authoritativeStatusForDay(todayIso()).available===true
- *        fallback: any row in window._calAppts
- *   4. "Visit note templates"
+ *        or any day in the importer's authoritative-day store (a calendar row
+ *        alone is not proof of a pull - uifix-1.0.0)
+ *   4. "Visit note templates" (optional: not counted, never shown as an error)
  *        account-scoped draftTuningV1 contains a saved, valid section state
  *
  * SURFACE B -- an anchored guided tour, __mlsFirstRun.tour() (reworked to
@@ -362,10 +363,11 @@
       var days = loaded && loaded.ok === true && loaded.store && loaded.store.days;
       if (days && typeof days === 'object' && Object.keys(days).length) return 'ok';
     }
-    var rows = safe(function () {
-      return isFn(window._calAppts) ? (window._calAppts() || []) : (window._calAppts || []);
-    }, null);
-    if (rows && rows.length) return 'ok';
+    /* uifix-1.0.0 (2026-09-24): the old last resort - "any row in
+       window._calAppts" - ticked this row with no pull made. A calendar row
+       can be an appointment typed into MLS by hand or synced from another
+       device; it is not proof that this doctor pulled a day, so it no longer
+       counts. Only the importer's own record of a pulled day does. */
     return 'wait';
   }
 
@@ -397,6 +399,7 @@
       'width:3px;height:7px;background:#B4472E;border-radius:1px}',
       '#mlsFrCard .mlsfr-text{flex:1;min-width:0}',
       '#mlsFrCard .mlsfr-label{color:var(--muted,#636E66)}',
+      '#mlsFrCard .mlsfr-opt{font-size:12.5px;color:var(--muted,#636E66)}',
       '#mlsFrCard .mlsfr-row.ok .mlsfr-label{color:var(--ink,#1A211C)}',
       '#mlsFrCard .mlsfr-hint{display:none;font-size:12.5px;color:var(--muted,#636E66);margin-top:1px}',
       '#mlsFrCard .mlsfr-row.bad .mlsfr-hint{display:block;color:#B4472E}',
@@ -455,8 +458,15 @@
     { key: 'conn', label: 'MLS Assist installed and answering', hint: 'Install or enable the MLS Assist extension, then reload this page.' },
     { key: 'ath', label: 'athenaOne signed in', hint: 'Open athenaOne in another tab and sign in there.' },
     { key: 'day', label: 'Pull your first day', hint: '' },
-    { key: 'tuning', label: 'Visit note templates', hint: 'Optional: choose how your visit notes look. Opens Settings > Notes & AI > Visit note templates.' }
+    { key: 'tuning', label: 'Visit note templates', hint: 'Optional: choose how your visit notes look. Opens Settings > Notes & AI > Visit note templates.', optional: true }
   ];
+  /* uifix-1.0.0 (2026-09-24): the optional row showed the red error mark and
+     counted against "of 4", so a doctor who had done everything MLS needs
+     still read "3 of 4 done" beside a red row. The count is of the steps MLS
+     needs; the optional row is labelled optional, is never shown as an error
+     for not being done, and does not hold the checklist open. */
+  var REQUIRED = 0;
+  for (var ri = 0; ri < ROWS.length; ri++) { if (!ROWS[ri].optional) REQUIRED++; }
 
   function mount() {
     if (byId(CARD_ID)) return true;
@@ -469,13 +479,13 @@
     card.setAttribute('role', 'region');
     card.setAttribute('aria-label', 'MLS setup checklist');
     var html = '<div class="mlsfr-head">' +
-      '<div class="mlsfr-title" id="mlsFrTitle">Get MLS working - 0 of 4 done</div>' +
+      '<div class="mlsfr-title" id="mlsFrTitle">Get MLS working - 0 of ' + REQUIRED + ' done</div>' +
       '<button type="button" id="mlsFrDismiss">Dismiss</button>' +
       '</div><div class="mlsfr-rows">';
     for (var i = 0; i < ROWS.length; i++) {
       html += '<div class="mlsfr-row" id="mlsFrRow_' + ROWS[i].key + '">' +
         '<span class="mlsfr-mark" aria-hidden="true"></span>' +
-        '<span class="mlsfr-text"><span class="mlsfr-label">' + ROWS[i].label + '</span>' +
+        '<span class="mlsfr-text"><span class="mlsfr-label">' + ROWS[i].label + (ROWS[i].optional ? ' <span class="mlsfr-opt">(optional)</span>' : '') + '</span>' +
         (ROWS[i].key === 'day' ? '<button type="button" class="mlsfr-pull" id="mlsFrPullBtn">Pull today</button>' : '') +
         (ROWS[i].key === 'tuning' ? '<button type="button" class="mlsfr-pull" id="mlsFrAiBtn">Configure</button>' : '') +
         '<span class="mlsfr-hint"' + (ROWS[i].key === 'day' ? ' role="status" aria-live="polite"' : '') + '>' + ROWS[i].hint + '</span></span></div>';
@@ -519,9 +529,20 @@
        accusation the doctor can see is false. */
     var athShown = (athState === 'bad' && pongTruth()) ? 'wait' : athState;
     var states = { conn: connTruth(), ath: athShown, day: dayTruth(), tuning: draftTuningTruth() };
-    var done = 0, k;
-    for (k in states) { if (states.hasOwnProperty(k) && states[k] === 'ok') done++; }
-    setText(byId('mlsFrTitle'), 'Get MLS working - ' + done + ' of 4 done');
+    var done = 0;
+    for (var d = 0; d < ROWS.length; d++) {
+      if (ROWS[d].optional) {
+        if (states[ROWS[d].key] !== 'ok') {
+          /* Not done is not an error. Only a press that failed (see
+             showAiConfigureFailure) keeps its red line, until the step is done. */
+          var optRow = byId('mlsFrRow_' + ROWS[d].key);
+          states[ROWS[d].key] = (optRow && /(^|\s)bad(\s|$)/.test(S(optRow.className))) ? 'bad' : 'wait';
+        }
+        continue;
+      }
+      if (states[ROWS[d].key] === 'ok') done++;
+    }
+    setText(byId('mlsFrTitle'), 'Get MLS working - ' + done + ' of ' + REQUIRED + ' done');
     for (var i = 0; i < ROWS.length; i++) {
       var key = ROWS[i].key;
       var row = byId('mlsFrRow_' + key);
@@ -532,7 +553,7 @@
     var pull = byId('mlsFrPullBtn');
     if (pull) { var wantHide = (states.day === 'ok'); if (pull.hidden !== wantHide) pull.hidden = wantHide; }
 
-    if (done === 4) { markDone(); removeCard(); return states; }
+    if (done === REQUIRED) { markDone(); removeCard(); return states; }
     kickPong();
     kickConnCheck();
     kickAthProbe();

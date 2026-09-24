@@ -43960,7 +43960,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     p.studyTags = Array.isArray(p.studyTags)?p.studyTags:[];
     if(p.studyTags.indexOf(cohort)<0) p.studyTags.push(cohort);
     p.cohort = cohort;
-    return !!safe(function(){ window.upsertPatient(p); return true; }, false);
+    var saved=!!safe(function(){ window.upsertPatient(p); return true; }, false);
+    if(saved) safe(showCohortTab);
+    return saved;
   }
   function listCohorts(){
     var map={}; getPatients().forEach(function(p){
@@ -44168,6 +44170,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     studyLifecycle('render');
     var ex=document.getElementById('mlsStudyOv'); if(ex){studyScrubOverlay(ex);ex.remove();}
     studyRestoreBackground();
+    /* uifix-1.0.0 (2026-09-24): no empty Cohorts tab. With no cohort it held one
+       sentence pointing at the other two tabs; the tab now appears once a
+       cohort exists (showCohortTab adds it the moment an import makes one). */
+    var hasCohorts=listCohorts().length>0; if(TAB==='C'&&!hasCohorts)TAB='A';
     var o=document.createElement('div'); o.id='mlsStudyOv';
     o.innerHTML=''
       +'<div class="mls-study-card" role="dialog" aria-modal="true" aria-labelledby="mlsStudyTitle" aria-describedby="mlsStudyDialogHelp">'
@@ -44179,7 +44185,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       +' <div class="mls-study-tabs">'
       +'   <button type="button" data-t="A" class="'+(TAB==='A'?'on':'')+'">By name + DOB</button>'
       +'   <button type="button" data-t="B" class="'+(TAB==='B'?'on':'')+'">By procedure</button>'
-      +'   <button type="button" data-t="C" class="'+(TAB==='C'?'on':'')+'">Cohorts</button>'
+      +(hasCohorts?'   <button type="button" data-t="C" class="'+(TAB==='C'?'on':'')+'">Cohorts</button>':'')
       +' </div>'
       +' <div class="mls-study-body" id="mlsStudyBody"></div>'
       +'</div>';
@@ -44197,6 +44203,15 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     else if(TAB==='B') renderModeB(body);
     else renderCohorts(body);
     var initial=o.querySelector('.mls-study-tabs .on')||o.querySelector('.mls-study-x');if(initial&&studyDomCurrent(renderOwner,o))try{initial.focus();}catch(e){}
+  }
+
+  function showCohortTab(){
+    var o=document.getElementById('mlsStudyOv'), bar=o&&o.querySelector('.mls-study-tabs');
+    if(!bar||bar.querySelector('[data-t="C"]')||!listCohorts().length)return;
+    var owner=studyCapture('cohort-tab',true);
+    var b=document.createElement('button'); b.type='button'; b.setAttribute('data-t','C'); b.textContent='Cohorts';
+    b.addEventListener('click', function(){ if(!studyDomCurrent(owner,b))return;TAB='C'; render(); });
+    var after=bar.querySelector('[data-t="B"]'); bar.insertBefore(b, after?after.nextSibling:null);
   }
 
   /* ----- Mode A ----- */
@@ -44247,7 +44262,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var map={};
     getPatients().forEach(function(p){
       var proc=safe(function(){ return window._ptProcedure?window._ptProcedure(p):''; }, '');
-      if(proc && proc!=='—' && proc.toLowerCase()!=='other'){ (map[proc]=map[proc]||[]).push(p); }
+      /* uifix-1.0.0 (2026-09-24): _ptProcedure answers "No procedure yet" for a
+         patient with none; offering it as a procedure to tick tagged every such
+         patient into the cohort. */
+      if(proc && proc!=='—' && proc.toLowerCase()!=='other' && proc!=='No procedure yet'){ (map[proc]=map[proc]||[]).push(p); }
     });
     return map;
   }
@@ -44262,9 +44280,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     body.innerHTML=''
       /* ---- Section 1: Find in Athena by procedure (the real grab) ---- */
       +'<div class="mls-study-sec">'
-      +' <div class="mls-study-sech">Find patients in Athena by procedure <span class="mls-study-badge exp">needs live tuning</span></div>'
-      +' <p class="mls-study-help">Grab everyone who got a given shot/injection. In Athena, open a report or list that shows the procedure (a <b>procedure/CPT claims report</b>, a billing/charge report, or a schedule filtered by procedure) for the date range you want. Then pick the procedure or type the shot name below and click <b>Find in Athena</b>. MLS reads that open report, extracts each patient’s name + DOB, and runs every one through the same strict name + DOB verify + import as the “By name + DOB” tab. Read-only — it never writes to Athena.</p>'
-      +' <p class="mls-study-help"><b>🛰️ Search Athena with MLS Assist</b> goes further: MLS Assist <b>drives athenaOne itself</b> — it enters the CPT/procedure + date range into your procedure/claims/charge search, runs it, and <b>pages through every result</b>, harvesting each patient. Every patient still passes the same strict name + DOB verify + import. Needs one live tuning pass to your athenaOne search screen (see notes). <b>🔎 Find in Athena</b> instead reads a report you already ran.</p>'
+      /* uifix-1.0.0 (2026-09-24): doctor words only - the "needs live tuning"
+         badge and "(see notes)" were build notes, not instructions. The
+         caveat they stood for stays, in plain words: on some Athena screens
+         MLS Assist reads nothing, and the 0-row answer then points to Find in
+         Athena. */
+      +' <div class="mls-study-sech">Find patients in Athena by procedure</div>'
+      +' <p class="mls-study-help">Find everyone who had a given shot or procedure. Pick the procedure or type its name or CPT code, and set dates if you want them. <b>Search Athena with MLS Assist</b> runs the search in your signed-in Athena tab and reads each page of results. On some Athena screens it cannot read the results at all; if it reads nothing, run the report yourself and use <b>Find in Athena</b>, which reads a procedure, charge or claims report you already have open.</p>'
+      +' <p class="mls-study-help">Either way, each patient is checked by name and date of birth against their Athena chart before import, the same as “By name + DOB”. Nothing is written to Athena.</p>'
       +' <label class="mls-study-lab">Procedure / shot</label>'
       +' <select id="mlsStudyBSel" class="mls-study-in">'+procOpts+'</select>'
       +' <label class="mls-study-lab">…or type a shot/injection name or CPT</label>'
@@ -44283,7 +44306,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       +'</div>'
       /* ---- Section 2: From patients already in MLS (works now) ---- */
       +'<div class="mls-study-sec">'
-      +' <div class="mls-study-sech">From patients already in MLS <span class="mls-study-badge live">works now</span></div>'
+      +' <div class="mls-study-sech">From patients already in MLS</div>'
       +' <p class="mls-study-help">Build a cohort from patients you’ve already imported, grouped by their note CPT/procedure. Tick procedures and tag them to a cohort — no Athena round-trip.</p>'
       +' '+localHtml
       +' <label class="mls-study-lab">Cohort / study name</label>'
@@ -44291,11 +44314,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       +' <div class="mls-study-actions"><button type="button" id="mlsStudyBTag" class="mls-study-btn">Add matching patients to cohort</button></div>'
       +' <div id="mlsStudyBOut" class="mls-study-results"></div>'
       +'</div>'
-      /* ---- Section 3: Via athenahealth FHIR API (gated) ---- */
-      +'<div class="mls-study-sec gated">'
-      +' <div class="mls-study-sech">Via athenahealth API (exact procedure cohort) <span class="mls-study-badge gate" id="mlsStudyFhirBadge">checking…</span></div>'
-      +' <p class="mls-study-help">A reliable “all patients who received CPT X” query runs through the SMART-on-FHIR integration — no screen-scraping. This is wired and ready; it stays disabled until athenahealth developer/partner API access is approved, then it turns on automatically. It shows no data until the API is live.</p>'
-      +' <div class="mls-study-actions"><button type="button" id="mlsStudyFhirBtn" class="mls-study-btn ghost" disabled>Run exact FHIR cohort query (disabled until API access)</button></div>'
+      /* ---- Section 3: Via the athenahealth API ----
+         uifix-1.0.0 (2026-09-24): hidden until the API answers. It used to show
+         on every open with a button that was always disabled ("disabled until
+         API access"); a control that can never be pressed is not offered. */
+      +'<div class="mls-study-sec" id="mlsStudyFhirSec" hidden>'
+      +' <div class="mls-study-sech">Ask Athena directly <span class="mls-study-badge live" id="mlsStudyFhirBadge">connected</span></div>'
+      +' <p class="mls-study-help">Asks Athena for every patient billed with the chosen CPT code in the dates above. Each patient is still checked by name and date of birth before import.</p>'
+      +' <div class="mls-study-actions"><button type="button" id="mlsStudyFhirBtn" class="mls-study-btn ghost">Ask Athena for these patients</button></div>'
       +' <div id="mlsStudyFhirOut" class="mls-study-results"></div>'
       +'</div>';
     body.querySelector('#mlsStudyBAuto').addEventListener('click', function(){ if(studyDomCurrent(owner,body))doAutoSearchAthena(body); });
@@ -44364,7 +44390,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     assistSearchProcedure(params, searchCfg(), setS,owner).then(function(rd){
       if(!studyDomCurrent(owner,body))return;
       var text=(rd&&rd.text)?rd.text:'';
-      if(!text){ out.innerHTML='<div class="mls-study-gate">MLS Assist ran the search but read 0 rows'+(rd&&rd.pages?(' across '+rd.pages+' page(s)'):'')+'. The results table likely needs selector tuning to your athenaOne layout (set <code>window.__mlsStudyConfig.search</code>), or run the report yourself and use the read-only Find in Athena.</div>'; return; }
+      if(!text){ out.innerHTML='<div class="mls-study-gate">MLS Assist ran the search but read 0 rows'+(rd&&rd.pages?(' across '+rd.pages+' page(s)'):'')+'. Run the report yourself in Athena, then use Find in Athena to read it.</div>'; return; }
       var all=parseReportRows(text);
       var rows=dedupeReportRows(filterReportRows(all, crit));
       renderCandidates(body, rows, all.length, crit, {bestScore:null, pages:(rd&&rd.pages)||0});
@@ -44398,7 +44424,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var owner=studyCapture('candidate-list',true);if(!studyDomCurrent(owner,body))return;
     var out=body.querySelector('#mlsStudyBFindOut');
     if(!rows.length){
-      out.innerHTML='<div class="mls-study-gate">Read the report ('+esc(String(totalParsed))+' patient row(s) parsed'+(rd&&rd.bestScore!=null?(', match score '+esc(String(rd.bestScore))):'')+') but none matched <b>'+esc(crit.label)+'</b>'+((crit.from||crit.to)?' in that date range':'')+'.<br>Tips: make sure the report shows the procedure/CPT column; widen or clear the date range; or open the report so the patient rows are visible. This scrape is conservative and may need tuning to your report’s layout (set <code>window.__mlsStudyConfig</code>).</div>';
+      out.innerHTML='<div class="mls-study-gate">Read the report ('+esc(String(totalParsed))+' patient row(s) parsed'+(rd&&rd.bestScore!=null?(', match score '+esc(String(rd.bestScore))):'')+') but none matched <b>'+esc(crit.label)+'</b>'+((crit.from||crit.to)?' in that date range':'')+'.<br>Tips: make sure the report shows the procedure/CPT column; widen or clear the date range; or open the report so the patient rows are visible.</div>';
       return;
     }
     var withDob=rows.filter(function(r){ return normDob(r.dob); }).length;
@@ -44450,13 +44476,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if(!badge||!btn) return;
     studyFhirProbe(owner).then(function(p){
       if(!studyDomCurrent(owner,body))return;
+      var sec=body.querySelector('#mlsStudyFhirSec');
       if(p.available){
-        badge.textContent='API connected'; badge.className='mls-study-badge live';
-        btn.disabled=false; btn.textContent='Run exact FHIR cohort query';
+        if(sec) sec.hidden=false;
         btn.addEventListener('click', function(){ if(studyDomCurrent(owner,body))runFhirCohort(body); });
-      } else {
-        badge.textContent='gated'; badge.className='mls-study-badge gate';
-        btn.disabled=true; btn.textContent='Run exact FHIR cohort query (disabled until API access)';
+      } else if(sec&&sec.parentNode){
+        sec.parentNode.removeChild(sec);
       }
     });
   }
@@ -44464,17 +44489,20 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var owner=studyCapture('fhir-run',true);if(!studyDomCurrent(owner,body))return;
     var out=body.querySelector('#mlsStudyFhirOut');
     var crit=resolveCriteria(body.querySelector('#mlsStudyBSel').value, body.querySelector('#mlsStudyBProc').value);
-    if(!crit.codes.length){ out.innerHTML='<div class="mls-study-gate">Pick a procedure or enter a CPT code first (the FHIR query needs a CPT/HCPCS code).</div>'; return; }
+    /* uifix-1.0.0 (2026-09-24): doctor words once the button is pressed too -
+       no "FHIR", no HTTP codes, and a failed answer does not claim the
+       connection shown above is missing. */
+    if(!crit.codes.length){ out.innerHTML='<div class="mls-study-gate">Pick a procedure or type its CPT code first. Athena is asked by CPT code.</div>'; return; }
     var cohort=(body.querySelector('#mlsStudyBFCohort').value||crit.label||'').trim();
-    out.innerHTML='<div class="mls-study-sum">Querying athenahealth FHIR for CPT '+esc(crit.codes.join(', '))+'…</div>';
+    out.innerHTML='<div class="mls-study-sum">Asking Athena for patients billed with CPT '+esc(crit.codes.join(', '))+'…</div>';
     fhirCohortByCpt(crit.codes, body.querySelector('#mlsStudyBFrom').value, body.querySelector('#mlsStudyBTo').value,owner).then(function(res){
       if(!studyDomCurrent(owner,body))return;
-      if(!res||!res.ok||!Array.isArray(res.patients)){ out.innerHTML='<div class="mls-study-gate">The FHIR query didn’t return a cohort'+(res&&res.status?(' (HTTP '+esc(String(res.status))+')'):'')+'. The API may not be approved yet.</div>'; return; }
+      if(!res||!res.ok||!Array.isArray(res.patients)){ out.innerHTML='<div class="mls-study-gate">Athena did not send back a patient list for CPT '+esc(crit.codes.join(', '))+' this time, so nothing was imported. Try again in a moment, or use Search Athena with MLS Assist above.</div>'; return; }
       var rows=res.patients.map(function(p){ return { name:p.name||'', dob:p.dob||'', raw:'', dobValid:!!normDob(p.dob) }; }).filter(function(r){ return r.name; });
-      out.innerHTML='<div class="mls-study-sum">FHIR returned '+rows.length+' patient(s) for CPT '+esc(crit.codes.join(', '))+'. Verifying + importing into “'+esc(cohort)+'”…</div>'
+      out.innerHTML='<div class="mls-study-sum">Athena returned '+rows.length+' patient(s) for CPT '+esc(crit.codes.join(', '))+'. Checking each by name and date of birth, then importing into “'+esc(cohort||'Athena cohort')+'”…</div>'
         +rows.map(function(r,i){ var s=statOf('pending'); return '<div class="mls-study-row" id="mlsfc'+i+'"><span class="mls-study-rn">'+esc(r.name)+'</span><span class="mls-study-rd">'+esc(r.dob||'')+'</span><span class="mls-study-rs '+s.cls+'">'+s.icon+' '+s.label+'</span></div>'; }).join('')
         +'<div class="mls-study-sum" id="mlsStudyFhirSum"></div>';
-      importSequential(rows, cohort||'FHIR cohort', { sum: out.querySelector('#mlsStudyFhirSum'), row:function(i){ return out.querySelector('#mlsfc'+i); } },null,owner);
+      importSequential(rows, cohort||'Athena cohort', { sum: out.querySelector('#mlsStudyFhirSum'), row:function(i){ return out.querySelector('#mlsfc'+i); } },null,owner);
     });
   }
 
@@ -45045,13 +45073,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if(!grabDomCurrent(owner,sec))return;
       if(!resp || resp.error){
         var em = resp&&resp.error;
-        var msg = em==='no-ext' ? 'MLS Assist isn’t responding. Install/enable the extension (v1.31+) and keep your signed-in athenaOne tab open, then try again.'
+        var msg = em==='no-ext' ? 'MLS Assist isn’t responding. Make sure MLS Assist is installed and turned on and your signed-in athenaOne tab is open, then try again.'
                 : em==='timeout' ? 'Timed out driving athenaOne. Open your signed-in athenaOne tab (a procedure/claims search or report) and try again — or use 🔎 Find in Athena on a report you’ve already run.'
                 : esc(String(em||'Couldn’t drive the athenaOne search — is an athenaOne tab open and signed in?'));
         out.innerHTML='<div class="mls-study-gate">'+msg+'</div>'; return;
       }
       var text=resp.text||'';
-      if(!text){ out.innerHTML='<div class="mls-study-gate">MLS Assist reached athenaOne but read 0 result rows'+(resp.pages?(' across '+resp.pages+' page(s)'):'')+'. Open a procedure/claims search or report so the result rows are visible, or tune <code>window.__mlsStudyConfig.search</code> to your layout — or use 🔎 Find in Athena on a report you’ve already run.</div>'; return; }
+      if(!text){ out.innerHTML='<div class="mls-study-gate">MLS Assist reached athenaOne but read 0 result rows'+(resp.pages?(' across '+resp.pages+' page(s)'):'')+'. Open a procedure or claims search or report so the result rows are visible, or use Find in Athena on a report you have already run.</div>'; return; }
       var all=safe(function(){ return st._parseReportRows(text); }, [])||[];
       var rows=safe(function(){ var hit=st._filterReportRows(all, crit); return st._dedupeReportRows?st._dedupeReportRows(hit):hit; }, [])||[];
       renderCandidates(sec, rows, all.length, crit, resp, addCal,owner);
@@ -45064,7 +45092,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     var norm=safe(function(){ return S()._normDob; }, null);
     var pageInfo='Harvested '+(resp.pages||1)+' page'+((resp.pages||1)===1?'':'s')+(resp.drove?' · auto-ran the search':'')+(resp.paginated?' · paginated':'');
     if(!rows.length){
-      out.innerHTML='<div class="mls-study-gate">'+pageInfo+'. Parsed '+esc(String(totalParsed))+' patient row(s) but none matched <b>'+esc(crit.label||'your criteria')+'</b>'+((crit.from||crit.to)?' in that date range':'')+'.<br>Tips: make sure the report shows the procedure/CPT column; widen/clear the date range; or set <code>window.__mlsStudyConfig</code> to tune the parser to your report layout.</div>';
+      out.innerHTML='<div class="mls-study-gate">'+pageInfo+'. Parsed '+esc(String(totalParsed))+' patient row(s) but none matched <b>'+esc(crit.label||'your criteria')+'</b>'+((crit.from||crit.to)?' in that date range':'')+'.<br>Tips: make sure the report shows the procedure/CPT column, or widen or clear the date range.</div>';
       return;
     }
     var withDob=rows.filter(function(r){ return norm?norm(r.dob):r.dob; }).length;
@@ -45105,16 +45133,23 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       var sec=findBtn.closest('.mls-study-sec'); if(!sec) return;
       var owner=grabCapture('injected-controls');if(!grabDomCurrent(owner,sec))return;
       if(sec.querySelector('#mlsGrabAthenaBtn')) return;
-      // badge: this is the autopilot upgrade
-      var head=sec.querySelector('.mls-study-sech'); if(head && !head.querySelector('.mls-grab-badge')){ var bd=document.createElement('span'); bd.className='mls-study-badge live mls-grab-badge'; bd.textContent='autopilot v1.31'; head.appendChild(bd); }
+      /* uifix-1.0.0 (2026-09-24): no "autopilot v1.31" badge - an extension
+         version is not something a doctor acts on. */
       var actions=findBtn.parentElement; // .mls-study-actions
       var b=document.createElement('button'); b.type='button'; b.id='mlsGrabAthenaBtn'; b.className='mls-study-btn'; b.innerHTML='🤖 Search Athena with MLS Assist';
       b.title='Drive athenaOne’s procedure/claims search, run it, paginate through every page, and import all matching patients.';
       actions.appendChild(b);
+      /* uifix-1.0.0 (2026-09-24): ONE "Search Athena with MLS Assist". Study's
+         own render carries a static #mlsStudyBAuto with the same name and the
+         same search; this button supersedes it (it adds the calendar option),
+         so the twin leaves in the same tick instead of waiting for Outcome
+         Study to load and dedupe it. */
+      var twin=actions.querySelector('#mlsStudyBAuto'); if(twin&&twin.parentNode) twin.parentNode.removeChild(twin);
       // options row
       var opt=document.createElement('div'); opt.className='mls-grab-opts';
-      opt.innerHTML='<label><input type="checkbox" id="mlsGrabDrive" checked> Auto-run the report in Athena (best-effort)</label>'
-                  +'<label><input type="checkbox" id="mlsGrabCal" checked> Add a calendar entry for any scheduled appointment</label>';
+      /* uifix-1.0.0: the "Auto-run the report in Athena (best-effort)" box is
+         gone - runGrab never read it, so unticking it changed nothing. */
+      opt.innerHTML='<label><input type="checkbox" id="mlsGrabCal" checked> Add a calendar entry for any scheduled appointment</label>';
       actions.parentElement.insertBefore(opt, actions.nextSibling);
       // dedicated output area for the grab (kept separate from the manual Find output)
       var out=document.createElement('div'); out.id='mlsGrabOut'; out.className='mls-study-results';
@@ -46492,7 +46527,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     INTO_MENU.forEach(function (key) {
       var real = document.getElementById('nav_' + key);
       if (real) {
-        if (real.style.display !== 'none') real.style.display = 'none';
+        /* uifix-1.0.0 (2026-09-24): the class alone hides the rail copy. This
+           used to write inline display:none as well, and inline display:none is
+           the app's "this account is not offered it" signal (navFeatOn, role
+           gates) - so the dock's Review read Recommendations as gated off and
+           never offered it: the tab was reachable only from Recommendations
+           itself. A role gate still writes its own inline hide. */
         if (!real.classList.contains('mls-navreorg-off'))
           real.classList.add('mls-navreorg-off');
       }

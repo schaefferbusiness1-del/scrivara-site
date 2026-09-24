@@ -264,10 +264,8 @@
       '#' + TABS_ID + ' .mls-sm-tab[aria-selected="true"]{background:var(--card);color:var(--ink);',
       '  box-shadow:var(--shadow-soft,0 1px 2px rgba(20,33,28,.05))}',
       '#' + TABS_ID + ' .mls-sm-tab:focus-visible{outline:2px solid var(--brand);outline-offset:2px}',
-      '#' + TABS_ID + ' .mls-sm-hint{color:var(--muted);font-size:12.5px;font-weight:500;padding:0 12px 0 6px}',
       '@media (max-width:560px){#' + TABS_ID + '{width:100%;justify-content:stretch}',
-      '  #' + TABS_ID + ' .mls-sm-tab{flex:1;padding:9px 8px;text-align:center}',
-      '  #' + TABS_ID + ' .mls-sm-hint{display:none}}',
+      '  #' + TABS_ID + ' .mls-sm-tab{flex:1;padding:9px 8px;text-align:center}}',
       '@media (prefers-reduced-motion:reduce){#' + TABS_ID + ' .mls-sm-tab{transition:none}',
       '  #' + TABS_ID + ' .mls-sm-tab:active{transform:none}}',
 
@@ -332,13 +330,14 @@
         b.setAttribute('role', 'tab');
         b.setAttribute('data-mls-sm-tab', sec.key);
         b.textContent = sec.label;
+        /* uifix-1.0.0 (2026-09-24): the section's one-line hint is the tab's
+           own tooltip. It used to be a caption <span> inside this pill bar,
+           after the three tabs, where it read as a fourth tab. */
+        b.title = sec.hint;
         b.addEventListener('click', function () { select(sec.key, true); });
         b.addEventListener('keydown', onTabKey);
         bar.appendChild(b);
       });
-      var hint = D.createElement('span');
-      hint.className = 'mls-sm-hint';
-      bar.appendChild(hint);
     }
     /* Directly after the title strip, so the switcher reads as part of the
        page header rather than as a floating control. */
@@ -406,9 +405,6 @@
       if (t.getAttribute('aria-selected') !== sel) t.setAttribute('aria-selected', sel);
       if (t.getAttribute('tabindex') !== ti) t.setAttribute('tabindex', ti);
     });
-    var sec = SECTIONS.filter(function (s) { return s.key === key; })[0];
-    var hint = qs('#' + TABS_ID + ' .mls-sm-hint');
-    if (hint && sec && hint.textContent !== sec.hint) hint.textContent = sec.hint;
     if (remember) safe(function () { W.localStorage.setItem(STORE_KEY, key); });
     syncAnalysisInline(key);
     /* Give the section its own data a nudge — the Analysis tiles used to load

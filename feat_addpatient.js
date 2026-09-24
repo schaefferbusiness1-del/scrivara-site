@@ -458,6 +458,28 @@
     ['#apgDate', '#apgType', '#apgIcd', '#apgCpt', '#apgMeds', '#apgFind', '#apgPain', '#apgOdi', '#apgPlan'].forEach(function (id) {
       var el = modal.querySelector(id); if (el) el.value = '';
     });
+    modal.__mlsGuidedTouched = {};
+  }
+
+  /* uifix-1.0.0 (2026-09-24): did the doctor type a visit, or is the form
+     only showing the defaults it was opened with? feat_ease fills Visit date
+     with today and Visit type with the last type used by setting .value,
+     which fires no event, so an untouched form still "has" a date and a type.
+     Only a field the doctor typed into or changed (an input or change event)
+     that still holds a value counts; the prefilled date and type are then
+     taken with it, because the doctor saw them. */
+  function markGuidedTouched(modal, ev) {
+    var t = ev && ev.target, id = t && t.id;
+    if (!id || !/^apg[A-Z]/.test(id) || id === 'apgAdd') return;
+    if (!modal.__mlsGuidedTouched) modal.__mlsGuidedTouched = {};
+    modal.__mlsGuidedTouched[id] = true;
+  }
+  function guidedTyped(modal) {
+    var seen = modal.__mlsGuidedTouched || {};
+    return Object.keys(seen).some(function (id) {
+      var el = modal.querySelector('#' + id);
+      return !!(el && trim(el.value));
+    });
   }
 
   function buildModal() {
@@ -505,6 +527,7 @@
       modeEpoch++;
       var host = modal.querySelector('#apModeHost');
       host.innerHTML = (mode === 'guided') ? guidedFormHtml() : pasteFormHtml();
+      modal.__mlsGuidedTouched = {};
       if (mode === 'guided') {
         modal.querySelector('#apgAdd').addEventListener('click', function () {
           var v = collectGuided(modal);
@@ -525,6 +548,8 @@
         });
       }
     }
+    modal.addEventListener('input', function (ev) { markGuidedTouched(modal, ev); }, true);
+    modal.addEventListener('change', function (ev) { markGuidedTouched(modal, ev); }, true);
     modal.querySelectorAll('.ap-mode').forEach(function (m) {
       m.addEventListener('click', function () {
         modal.querySelectorAll('.ap-mode').forEach(function (x) { x.classList.remove('on'); });
@@ -544,7 +569,20 @@
       };
     }
 
-    modal.querySelector('#apSave').addEventListener('click', function () { doSave(modal, gatherDetails()); });
+    modal.querySelector('#apSave').addEventListener('click', function () {
+      /* uifix-1.0.0 (2026-09-24): Save takes the visit typed into the guided
+         fields. It used to need a separate "Add this visit" press first, and
+         without it Save answered "Add at least one visit" - or, with other
+         visits queued, left the typed one behind. Only a visit the doctor
+         actually typed is taken: a form still holding just its automatic
+         defaults (today's date, the last visit type) adds nothing, so Save
+         keeps refusing with "Add at least one visit" (guidedTyped). */
+      if (mode === 'guided' && guidedTyped(modal)) {
+        var typed = collectGuided(modal);
+        if (typed) { _pending.push(typed); clearGuided(modal); refreshPending(modal); }
+      }
+      doSave(modal, gatherDetails());
+    });
     modal.querySelector('#apAthena').addEventListener('click', function () { doAthena(modal, gatherDetails()); });
     var closeFn = function () { close(modalEpoch); };
     modal.querySelector('#apClose').addEventListener('click', closeFn);
@@ -808,6 +846,7 @@
     _normName: normName,
     _nameCompatible: nameCompatible,
     _collectGuidedFrom: collectGuided,
+    _guidedTyped: guidedTyped,
     _listToArr: listToArr,
     _STRUCT_SYS: STRUCT_SYS,
     _pending: function () { return _pending; },

@@ -543,7 +543,17 @@
     '#mlsToolsMenu .gh,#mlsToolsMenu .sep{grid-column:1/-1}',
     '#mlsToolsMenu .r{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:6px;padding:12px 6px 10px;border-radius:12px;font-size:11.5px;line-height:1.25;color:#1A211C;cursor:pointer;text-align:center;min-height:76px}',
     '#mlsToolsMenu .r .ri{font-size:26px;line-height:1}',
-    '#mlsToolsMenu .r .rn{overflow-wrap:anywhere}',
+    /* uifix-1.0.0 (2026-09-24): "Troubleshoot Athena" rendered as
+       "Troublesho / ot". The menu's 13px floor (max(13px,1em) !important in
+       the shell) resolves to the page's 16px, which is wider than a ~92px
+       cell holds, and overflow-wrap:anywhere then split the word wherever it
+       ran out. Row names sit at the floor itself, the size the section
+       captions already use, and break only between words. max-width:100%
+       keeps the name inside its cell: in this centered flex column a label
+       would otherwise keep its full min-content width, so a single word
+       wider than the whole cell would spill into the neighbouring cells
+       instead of wrapping - with it, that one case still wraps in place. */
+    'html #mlsToolsMenu .r .rn{font-size:13px!important;overflow-wrap:break-word;max-width:100%}',
     '#mlsToolsMenu .r:hover,#mlsToolsMenu .r:focus{background:#EAF1EE;outline:0}',
     '#mlsToolsMenu .sep{height:1px;margin:5px 8px;background:rgba(0,0,0,.07)}',
     /* Section captions. Quiet by construction - a caption that competes with
@@ -632,6 +642,15 @@
     'font:500 12.5px inherit;cursor:pointer;opacity:1;transform:none;animation:none}',
     '#mlsRightNow .seg .segbtn.on{background:#fff;color:#204034;box-shadow:0 1px 3px rgba(20,35,28,.10)}',
     '#mlsRightNow .seg .segbtn:hover{color:#204034;background:rgba(255,255,255,.6)}',
+    /* uifix-1.0.0 (2026-09-24): Review now holds four segments - Orders,
+       Recommendations, The note and History - since Recommendations is offered
+       as a real segment beside the History the owner put there. At phone width
+       that row ran past the right edge of the screen and folded The note onto
+       two lines. Narrow screens get a smaller segment that keeps its label on
+       one line, and a second line of segments before any would leave the
+       screen. */
+    '@media (max-width:520px){#mlsRightNow .seg{max-width:100%;flex-wrap:wrap;box-sizing:border-box;margin-right:0}',
+    '#mlsRightNow .seg .segbtn{padding:6px 7px;font-size:13px;white-space:nowrap}}',
 
     /* stages — the visit rail.
        Owner, on a screenshot of "Prep · Record · Review · Sign · Send":
@@ -2001,8 +2020,18 @@
       { label: /^clear$/i, within: '#calendarView', as: 'Back to the calendar', primary: true,
         when: function () { var p = D.getElementById('cpPanel'), f = D.getElementById('cpFrom'), t = D.getElementById('cpTo');
           return !!(p && p.style.display !== 'none' && visible(p)) || !!(f && f.value) || !!(t && t.value); } },
-      { label: /^\+?\s*new appointment$/i, as: 'New appointment' },
-      { label: /^pull plan$/i, within: '#calendarView' },
+      /* uifix-1.0.0 (2026-09-24): ONE "New appointment", ONE "Pull plan".
+         "Show more calendar tools" put "New appointment" + "+ New appointment"
+         and "Pull plan" + "Pull plan" on screen at once: this bar relayed each
+         VISIBLE calendar button, so every relay was a second offer of it. And
+         the unscoped New appointment spec matched this bar's own proxy button,
+         so it stayed offered only by accident once the real one was folded.
+         Now New appointment is relayed from the calendar itself, and only
+         while the calendar's own button is folded away - the bar is its one
+         door with the tools closed, the "+ New appointment" button is with
+         them open. Pull plan lives only in the tools' range row. */
+      { label: /^\+?\s*new appointment$/i, within: '#calendarView', moved: true, as: 'New appointment',
+        when: function () { return !qsa('#calendarView button').some(function (b) { return visible(b) && /^\+?\s*new appointment$/i.test(textOf(b)); }); } },
       { label: /^check in to the office$/i, within: '#calendarView', as: 'Check in' },
       { id: 'ptBoardBtn' }
     ],

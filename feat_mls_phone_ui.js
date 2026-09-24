@@ -329,6 +329,11 @@
     'body.mls-ph3 #mlsAsstFab, body.mls-ph3 #mlsCopVoiceBtn, body.mls-ph3 #mlsTabPickerChip,',
     'body.mls-ph3 #mlsRdRailBtn, body.mls-ph3 #mlsRdNav, body.mls-ph3 #_patientFace,',
     'body.mls-ph3 #mlsVoiceCluster, body.mls-ph3 #mlsPhExit, body.mls-ph3 #mlsTray,',
+    /* uifix-1.0.0 (2026-09-24): the desktop progress chip ("1 needs
+       attention") is fixed at z-index 2147483200, so it sat on the patient
+       rows, the menu and the transcript. It is the same family as #mlsStages
+       above; the phone says what a pull did in its own note line. */
+    'body.mls-ph3 #mlsPsChip, body.mls-ph3 #mlsPsPanel,',
     'body.mls-ph3 #mlsR46VerBanner, body.mls-ph3 #mlsA2hsCard{display:none!important}',
 
     /* The backup-failure badge is NOT hidden - it reports a real problem with
@@ -810,7 +815,7 @@
       ckN ? (ckN + ' patient' + (ckN === 1 ? '' : 's') + ' have talked to the avatar') : 'What patients told the avatar in the waiting room');
     h += menuItem('refresh', '&#8635;', 'Refresh', 'Re-read the schedule and your charts from MLS');
     h += menuItem('settings', '&#9881;', 'Settings', 'Every setting for this account');
-    h += menuItem('device', '&#128241;', 'This ' + dev, 'Name it, and choose what it is: Settings → Integrations → This device');
+    h += menuItem('device', '&#128241;', 'This ' + dev, 'Name it, and choose what it is');
     /* Android fires beforeinstallprompt and the item installs. iOS never fires
        it and never will, but Share -> Add to Home Screen works there, so the
        item is still offered and TELLS the doctor the route. An item that
@@ -1963,11 +1968,7 @@
       var open = hostFn('openSettings');
       if (!open) { refuse('Settings has not finished loading on this ' + deviceNoun() + ' yet.'); return; }
       safe(function () { open(); });
-      if (act === 'device') {
-        /* The settings modal is the app's own surface; this only says where to
-           look inside it, because a phone cannot see the section rail at once. */
-        toast('Settings → Integrations → This device', '');
-      }
+      if (act === 'device') showDeviceSetting();
       return;
     }
     if (act === 'install') {
@@ -2587,6 +2588,65 @@
     }, 1000);
   }
 
+  /* uifix-1.0.0 (2026-09-24): "This iPhone" opened Settings on whichever tab
+     was last used (Account & security) and toasted a path to follow. It now
+     lands on the device card itself: the Settings group that holds it is
+     selected and the card is scrolled into view. The card is drawn by the
+     device-role module a moment after Settings opens, so this looks for it for
+     a bounded few seconds, and only if it never appears does it say, in words,
+     where it is. The look-up is the doctor's to end: it stops, silently, the
+     moment Settings is closed or another Settings tab is chosen - it never
+     pulls the doctor back to a tab they left, or speaks after Settings shut. */
+  var deviceSeekTimer = null, deviceSeekOff = null;
+  function stopDeviceSeek() {
+    if (deviceSeekTimer !== null) { clearTimeout(deviceSeekTimer); deviceSeekTimer = null; }
+    if (deviceSeekOff) { var off = deviceSeekOff; deviceSeekOff = null; safe(off); }
+  }
+  function showDeviceSetting() {
+    stopDeviceSeek();
+    var tries = 0, want = 'integrations', moved = false;
+    function selectGroup(key) {
+      var tab = key ? safe(function () { return document.querySelector('#settingsTabBar [data-mls-settings-group="' + key + '"]'); }, null) : null;
+      if (tab && tab.getAttribute('aria-selected') !== 'true') safe(function () { tab.click(); });
+      return !!tab;
+    }
+    function settingsClosed() {
+      var m = $('settingsModal');
+      return !!(m && m.classList && !m.classList.contains('show'));
+    }
+    /* Only the doctor's own press on, or keyboard move into, the Settings
+       tabs counts as leaving; this look-up's own tab.click() is not a
+       trusted event. */
+    function onPick(ev) {
+      var t = ev && ev.target;
+      if (!ev || ev.isTrusted !== true || !t || !t.closest) return;
+      if (safe(function () { return t.closest('#settingsTabBar'); }, null)) moved = true;
+    }
+    safe(function () { document.addEventListener('click', onPick, true); document.addEventListener('focusin', onPick, true); });
+    deviceSeekOff = function () { document.removeEventListener('click', onPick, true); document.removeEventListener('focusin', onPick, true); };
+    selectGroup(want);
+    (function look() {
+      deviceSeekTimer = setTimeout(function () {
+        deviceSeekTimer = null;
+        tries++;
+        if (moved || settingsClosed()) { stopDeviceSeek(); return; }
+        var card = $('mlsDrCard');
+        if (card) {
+          var sec = safe(function () { return card.closest('[data-mls-settings-group]'); }, null);
+          want = (sec && sec.getAttribute('data-mls-settings-group')) || want;
+          selectGroup(want);
+          safe(function () { card.scrollIntoView({ block: 'start' }); });
+          var first = safe(function () { return card.querySelector('button'); }, null);
+          if (first && first.focus) safe(function () { first.focus({ preventScroll: true }); });
+          stopDeviceSeek();
+          return;
+        }
+        if (tries < 30) { selectGroup(want); look(); return; }
+        stopDeviceSeek();
+        toast('Open Connections & integrations in Settings, then \u201cThis device\u201d.', '');
+      }, 200);
+    })();
+  }
   /* Sign-out is asynchronous (logout() awaits the unsynced-note stop and a
      server call), so the frame cannot come down on the same tick as the press.
      Bounded: it stops on the first check that finds the account gone, and after
@@ -2621,6 +2681,7 @@
     stopTicking();
     stopCheckinWatch();
     stopSignOutWatch();
+    stopDeviceSeek();
     if (ensureTimer !== null) { clearTimeout(ensureTimer); ensureTimer = null; }
     safe(function () { S.obs && S.obs.disconnect(); });
     S.obs = null; obsHost = null;
