@@ -202,8 +202,11 @@
            nowhere on this form, so a patient coming back weeks later typed
            something else, was told to check three things at once, and had no
            way to recover. Same word everywhere, and say which email. -->
-      <label for="u">Email</label>
-      <input id="u" name="username" type="email" autocomplete="username" placeholder="the email your practice has on file" required />
+      <!-- portaluser-1.0.0: a family sharing one email gets a sign-in name that
+           is not an address (the password screen tells the patient which), and
+           type=email refused to send it. -->
+      <label for="u">Email or sign-in name</label>
+      <input id="u" name="username" type="text" inputmode="email" autocapitalize="off" spellcheck="false" autocomplete="username" placeholder="the email your practice has on file" required />
       <label for="p">Password</label>
       <input id="p" name="password" type="password" autocomplete="current-password" required />
       <label for="d">Date of birth <span style="font-weight:400;color:#68736B;font-size:13px">— so we can be sure it's you</span></label>
@@ -724,7 +727,9 @@
           if(res.ok){
             FIRSTTIME=false; try{ sessionStorage.removeItem("mls_patient_setup"); }catch(e){}
             back.remove();
-            addSys("✓ Password saved. Next time, sign in with your email, this password, and your date of birth.");
+            var who=String((res.j&&res.j.signInName)||"");
+            if(who&&who.indexOf("@")<0) addSys("✓ Password saved. Next time, sign in with the sign-in name "+who+" (your email is shared, so it is not your sign-in), this password, and your date of birth.");
+            else addSys("✓ Password saved. Next time, sign in with "+(who||"your email")+", this password, and your date of birth.");
             return;
           }
           b.disabled=false; b.textContent="Save my password";
