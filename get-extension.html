@@ -39,8 +39,13 @@ h1{font-family:'Newsreader',Georgia,serif;font-weight:600;letter-spacing:-.015em
 /* pagesfix-1.0.0 (2026-09-23): the digest is one 64-character word, so on a
  * 390px phone it ran off the card and the page scrolled sideways. It may now
  * break inside itself, but only when it cannot fit a line of its own, so a
- * desktop still shows it on one line. */
-#status b{overflow-wrap:break-word;overflow-wrap:anywhere}
+ * desktop still shows it on one line.
+ * digestfit-1.0.0 (2026-09-24): in the proportional body font the digest's
+ * width depended on its characters - one release's digest measured 504px, the next 534px,
+ * and the 526px card then broke it over two lines on a desktop. A fixed-width
+ * face gives every 64-character digest the same width (about 500px at 13px),
+ * so each release's digest fits one desktop line. */
+#status b{overflow-wrap:break-word;overflow-wrap:anywhere;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace;font-size:13px}
 .note{margin-top:18px;background:#fcf8ef;border:1px solid #efe4ce;border-radius:9px;padding:11px 13px;font-size:12.5px;color:#7a5527}
 </style>
 </head>

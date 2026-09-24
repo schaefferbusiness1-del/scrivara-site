@@ -75,9 +75,12 @@ assert.deepStrictEqual(offenders, [],
 
 /* floor moved 2026-09-15 (pre-existing red, 21 on the pre-session b1270 as well): one welded heading
    from the b672 census no longer carries controls, so it no longer needs an accessible name; every
-   heading that still holds controls is guarded (offenders above stay empty). */
-assert(guarded >= 21,
-  'expected at least the 22 welded headings found at b672 to carry an explicit accessible name, found ' +
+   heading that still holds controls is guarded (offenders above stay empty).
+   floor moved 2026-09-24 (b1331, uifix-1.0.0): the Orders heading dropped its "Back to visit" button on
+   purpose - the dock's Visit and Review's "The note" segment already go back to the visit - so it no
+   longer holds controls and no longer counts here. Its aria-label stays, and offenders stay empty. */
+assert(guarded >= 20,
+  'expected at least the 20 welded headings found at b672 to carry an explicit accessible name, found ' +
   guarded + '. Nine of those were VISIBLE in the runtime probe; the other thirteen live in views the\n' +
   'probe never reached (team, legal, studio result, pinned widget) and were found by this static scan —\n' +
   'which is the argument for the gate being static. If a heading legitimately lost its controls, lower\n' +

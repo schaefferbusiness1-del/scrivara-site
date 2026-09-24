@@ -13582,6 +13582,10 @@ async function pullPatientFromAthenaPrompt(btn){
 }
 async function pullPatientChartViaAssist(btn, opts){
   opts=opts||{};
+  /* stafffix-1.0.0 (2026-09-23): pulling a patient's Athena chart (problems,
+     meds, allergies, prior notes) is a clinical read; the front desk never
+     starts one, whichever button or door calls this */
+  if(typeof isReceptionistUser==='function'&&isReceptionistUser()){ try{ toast('Pulling a chart from Athena is for clinicians. A front-desk account has the front desk and the calendar.','err'); }catch(_eRp){} return false; }
   var lm=window.__mlsP1AthenaReadLease,directLeaseToken='',directTouch=null;
   var releaseDirect=function(){if(directTouch){clearInterval(directTouch);directTouch=null;}try{if(directLeaseToken)lm.release(directLeaseToken);}catch(_){}directLeaseToken='';};
   try{if(!lm||typeof lm.claim!=='function'){toast('The preview Athena reader is still loading. Retry in a moment.','err');return false;}directLeaseToken=lm.claim('p1-direct-chart',110000)||'';if(!directLeaseToken){toast('Another Athena read or schedule pull is active. Wait for it to finish, then retry.','err');return false;}directTouch=setInterval(function(){try{lm.touch(directLeaseToken);}catch(_){}},25000);if(typeof lm.ready==='function'&&await lm.ready(directLeaseToken)!==true){releaseDirect();toast('Another MLS tab owns the Athena reader. Wait for it to finish, then retry.','err');return false;}}catch(eLease){releaseDirect();return false;}
@@ -24621,6 +24625,6 @@ function _ptGroupSort(mode){
 })();
 </script>
 
-<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b1335';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
+<script>/* MLS-CONNECT staging loader: use the same deterministic release cache token as production. */(function(){try{window.__MLS_AV='b1336';var s=document.createElement('script');s.src='mls-connect.staging.js?v='+window.__MLS_AV;s.defer=true;(document.body||document.documentElement).appendChild(s);}catch(e){}})();</script>
 </body>
 </html>

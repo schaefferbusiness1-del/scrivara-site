@@ -51,7 +51,17 @@ assert(!/createElement/.test(gear), 'the retired destination gear must never be 
 
 const localPanelAt = connector.indexOf('MLS draft sections - review &amp; confirm');
 assert(localPanelAt >= 0, 'local MLS draft-section panel is missing');
-const localPanel = connector.slice(localPanelAt - 900, localPanelAt + 3800);
+/* pin moved 2026-09-24: b1330 (tplsort-1.3.0) deliberately retired the panel's
+   AI sort - a patient note is never staged as a template - and added the
+   #emrAiWhy disclosure plus a comment saying why. That pushed addBtn() past
+   the old fixed 3800-character window. Bound the panel by its own end (the
+   addBtn() launcher that follows render()) instead of a character count;
+   every check below still runs on the same panel HTML and handlers. */
+const localPanelEnd = connector.indexOf('function addBtn(){', localPanelAt);
+assert(localPanelEnd > localPanelAt, 'the section sorter panel no longer ends at its addBtn() launcher');
+// Bounded: a renamed launcher must not let the slice run into unrelated code.
+assert(localPanelEnd - localPanelAt < 6000, 'the section sorter panel slice grew past 6000 characters: ' + (localPanelEnd - localPanelAt));
+const localPanel = connector.slice(localPanelAt - 900, localPanelEnd + 'function addBtn(){'.length);
 assert(/id="emrIns"[^>]*>Update local MLS draft<\/button>/.test(localPanel),
   'the section sorter must name its action as a local draft update');
 assert(/updates only the local MLS note draft; it never writes or sends anything to Athena/i.test(localPanel),

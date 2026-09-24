@@ -111,8 +111,12 @@ const EDITS = [
   {
     file: SF, id: 'sf-board-sort',
     why: 'renderBoard (staff board): within each status group, timeless rows sort last (status stays the primary key - group headers/counts unaffected).',
-    find: "((order[a.status]||9)-(order[b.status]||9)) || String(a.start_at||'').localeCompare(String(b.start_at||''));",
-    replace: "((order[a.status]||9)-(order[b.status]||9)) || (((a.time_unknown||!a.start_at)?1:0)-((b.time_unknown||!b.start_at)?1:0)) || String(a.start_at||'').localeCompare(String(b.start_at||''));"
+    /* b1325 (stafffix-1.0.0) replaced the status key (order[s]||9) with rank(s)
+       on purpose: checked_in is 0, and (0||9) sorted a checked-in patient below
+       the cancellations. Only the status key moved; the timeless-last clause
+       this edit adds is unchanged. */
+    find: "(rank(a.status)-rank(b.status)) || String(a.start_at||'').localeCompare(String(b.start_at||''));",
+    replace: "(rank(a.status)-rank(b.status)) || (((a.time_unknown||!a.start_at)?1:0)-((b.time_unknown||!b.start_at)?1:0)) || String(a.start_at||'').localeCompare(String(b.start_at||''));"
   },
   {
     file: SF, id: 'sf-board-time',
