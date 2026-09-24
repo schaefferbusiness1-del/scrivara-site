@@ -11151,7 +11151,7 @@ async function runNightlyBackup(trigger) {
     const finalTab = await mlsBackupRevalidateTab(emr.id);
     return !!(finalTab && finalTab.url === beforeRead.url);
   });
-  if (!(c && c.ok)) return finish({ ok: false, captured: 0, patients: 0, errors: 1, scanned: 1, navigationDisabled: true, trigger: trigger || 'manual', error: (c && c.error) || 'The verified Athena chart could not be captured.', at: new Date().toISOString(), seconds: Math.round((Date.now() - started) / 1000) });
+  if (!(c && c.ok) || c.chartSaved === false) return finish({ ok: false, captured: 0, patients: 0, errors: 1, scanned: 1, navigationDisabled: true, trigger: trigger || 'manual', error: (c && c.chartSaved === false) ? 'MLS read the open chart but did not save it: it could not safely tell this patient apart from another chart.' : ((c && c.error) || 'The verified Athena chart could not be captured.'), at: new Date().toISOString(), seconds: Math.round((Date.now() - started) / 1000) });
   /* The legacy backup walked every chart link by repeatedly changing the
      user's Athena tab URL. That could yank focus, disturb unsaved work, and
      invalidate the signed-in session. Backups are now non-navigating: they may

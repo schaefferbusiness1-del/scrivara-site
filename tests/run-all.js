@@ -2811,7 +2811,10 @@ const tests = [
   'team-notes-stay-open-and-keep-typing-runtime.test.js',
   'new-visit-keeps-unsaved-note-runtime.test.js',
   'visit-layout-restore-width-contrast-rail-runtime.test.js',
-  'typed-visit-notes-reach-the-phone-runtime.test.js'
+  'typed-visit-notes-reach-the-phone-runtime.test.js',
+  /* capsaved-1.0.0 (MLS Assist 3.0.114): a capture the server did not save
+     never reads as Captured */
+  'extension-capture-says-when-nothing-was-saved.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

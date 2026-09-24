@@ -1390,6 +1390,14 @@
     });
   });
 
+  /* 3.0.114: the server answers ok with chartSaved:false when it could not
+     tell this patient apart from another chart (no DOB or MRN to go on, or
+     that chart holds someone else). Nothing was written, so never say
+     Captured. */
+  function mlsCaptureNotSaved(resp) {
+    if (!resp || resp.chartSaved !== false) return '';
+    return 'Read ' + (resp.patient || 'this patient') + ', but MLS did not save it: it could not safely tell this patient apart from another chart. Nothing was written. Open the chart with the date of birth or MRN showing, then capture again.';
+  }
   // --- capture the whole chart (read all data) into MLS ---
   $('#mls-cap').addEventListener('click', () => {
     const pageText = ((document.body && document.body.innerText) || '').trim().slice(0, 20000);
@@ -1398,7 +1406,8 @@
     mlsRelayRetry({ type: 'mlsAssistExtract', pageText, url: location.href }, (resp) => {
       btn.disabled = false; btn.textContent = '📋 Capture whole chart → MLS';
       if (!resp) { log('No response (extension reloaded?).'); return; }
-      if (resp.ok) { log('✓ Captured ' + (resp.patient || 'patient') + ' + ' + (resp.visits || 0) + ' prior visit(s) into MLS.'); return; }
+      if (resp.ok && mlsCaptureNotSaved(resp)) { log(mlsCaptureNotSaved(resp)); return; }
+      if (resp.ok) { log('✓ Captured ' + (resp.patient || 'patient') + ' + ' + (resp.visits || 0) + ' prior visit(s) into MLS' + (resp.separateChart === true ? ' as its own chart. The MLS chart with the same ID belongs to a different patient and was left untouched.' : '.')); return; }
       log('Capture: ' + (resp.error || 'no patient identity found on this page.'));
     });
   });
@@ -1619,7 +1628,7 @@
         if (a.type === 'capturechart') {
           var ptc = await send('mlsAssistPageText');
           var ex = await send('mlsAssistExtract', { pageText: (ptc && ptc.text) || '' });
-          L((ex && ex.ok) ? ('📋 Captured ' + (ex.patient || 'patient') + ' (' + (ex.visits || 0) + ' visits) into MLS') : ('Capture: ' + ((ex && ex.error) || 'no patient found on this screen')));
+          L((ex && ex.ok && mlsCaptureNotSaved(ex)) ? mlsCaptureNotSaved(ex) : (ex && ex.ok) ? ('📋 Captured ' + (ex.patient || 'patient') + ' (' + (ex.visits || 0) + ' visits) into MLS') : ('Capture: ' + ((ex && ex.error) || 'no patient found on this screen')));
           await (function (ms) { var __hsAt = Date.now() + Math.max(0, Number(ms || 0)); return new Promise(function (r) { /* mls-hs-1.0.0: hidden tab => timers throttled to 1/s then 1/min; yield through a MessageChannel (not a timer) until the wall clock passes. */ if (typeof document === 'undefined' || !document.hidden) { setTimeout(r, Math.max(0, __hsAt - Date.now())); return; } var __ch = null; try { __ch = new MessageChannel(); } catch (e) { __ch = null; } if (!__ch) { setTimeout(r, Math.max(0, __hsAt - Date.now())); return; } __ch.port1.onmessage = function () { if (Date.now() >= __hsAt) { try { __ch.port1.onmessage = null; __ch.port1.close(); __ch.port2.close(); } catch (e2) {} r(); return; } if (!document.hidden) { try { __ch.port1.onmessage = null; __ch.port1.close(); __ch.port2.close(); } catch (e3) {} setTimeout(r, Math.max(0, __hsAt - Date.now())); return; } try { __ch.port2.postMessage(0); } catch (e4) { setTimeout(r, Math.max(0, __hsAt - Date.now())); } }; __ch.port2.postMessage(0); }); })(1000); continue;
         }
         if (a.type === 'pastenote') {
