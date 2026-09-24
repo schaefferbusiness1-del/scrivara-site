@@ -8744,12 +8744,13 @@ async function redeemCode(value,inputEl){
     });
     if(r.status===401){ handle401(); return; }
     let d={}; try{ d=await r.json(); }catch(e){}
-    if(!r.ok){ toast((d&&(d.error||d.message))||'That code could not be redeemed.','err'); return; }
+    if(!r.ok){ toast((d&&(d.error||d.message))||'That code could not be redeemed.','err'); return false; }
     bkUser=d.user||bkUser;
     applyAccessUI();
     if(inputEl) inputEl.value='';
     toast('Access unlocked!','ok');
-  }catch(e){ toast('Network problem reaching the server. Try again.','err'); }
+    return true;
+  }catch(e){ toast('Network problem reaching the server. Try again.','err'); return false; }
 }
 // Convenience wired to the two redeem inputs (banner + settings).
 function redeemFromBanner(){ redeemCode(document.getElementById('redeemInputBanner').value,document.getElementById('redeemInputBanner')); }
@@ -19291,7 +19292,14 @@ function suHasCapability(name){
   return false;
 }
 function suCanSchedule(){ var r=suRole(); return suHasCapability('scheduling')&&(r==='head'||r==='doctor'||r==='user'||r==='nurse'||r==='receptionist'); }
-function suAllowedSteps(){ var out=[0,1]; if(suCanSchedule()){ out.push(2); out.push(3); } out.push(4); out.push(5); return out; }
+/* suhours-1.0.0: "Your weekly schedule" saves the PRACTICE's booking hours
+   (POST /api/schedule/availability writes the head's row). A new team member's
+   first run turned the whole practice's online booking into that member's
+   days - and even pressing Next re-saved them. Only whoever owns the
+   practice's hours (a head, or a solo account) gets the step; members still
+   edit the practice hours in Settings > Scheduling on purpose. */
+function suOwnsPracticeHours(){ return suRole()==='head'||!(bkUser&&bkUser.head_id); }
+function suAllowedSteps(){ var out=[0,1]; if(suCanSchedule()){ if(suOwnsPracticeHours()) out.push(2); out.push(3); } out.push(4); out.push(5); return out; }
 function suNormalizeOnboarding(data){
   var o=(data&&data.onboarding)||data||{}, caps=o.capabilities||(bkUser&&bkUser.capabilities)||{};
   var raw=String(o.status||'').toLowerCase(), status=raw==='complete'?SU_STATUS.COMPLETED:(raw==='in-progress'?SU_STATUS.IN_PROGRESS:SU_STATUS.NOT_STARTED);
@@ -19355,7 +19363,7 @@ function suResumeStep(){
   if(SU_STATE.status===SU_STATUS.NOT_STARTED) return 0;
   var done=SU_STATE.completedSteps||[];
   if(done.indexOf('profile')<0||(suIsProvider()&&done.indexOf('practice')<0)) return 1;
-  if(suCanSchedule()&&done.indexOf('schedule')<0) return 2;
+  if(suCanSchedule()&&suOwnsPracticeHours()&&done.indexOf('schedule')<0) return 2;
   if(suCanSchedule()&&done.indexOf('staff_prep')<0) return 3;
   if(done.indexOf('preferences')<0) return 4;
   return 5;
@@ -19685,7 +19693,7 @@ async function suFinish(){
   var msg=document.getElementById('setupMsg');
   try{
     await suPersistIdentity();
-    var required=['profile','preferences']; if(suIsProvider()) required.push('practice'); if(suCanSchedule()) required.push('schedule','staff_prep');
+    var required=['profile','preferences']; if(suIsProvider()) required.push('practice'); if(suCanSchedule()){ if(suOwnsPracticeHours()) required.push('schedule'); required.push('staff_prep'); }
     var finished=await suSaveOnboarding({completedSteps:suCompletedWith(required),completed:true,tourStatus:'completed'});
     if(!finished||finished.status!==SU_STATUS.COMPLETED) throw new Error('Setup still needs '+String((finished&&finished.currentStep)||'one required step')+'. Return to that step before finishing.');
     SU_STATE.status=SU_STATUS.COMPLETED;
@@ -46081,6 +46089,13 @@ function sfRafSoon(cb,ms){
   setTimeout(fire, ms||300);
 }
 function sfWaitForStableFirstFrame(token,force,gated){
+  /* setupwait-1.0.0: when the account's first screen is the agreements
+     ceremony, the pending screen or the lock screen, startSession skips the UI
+     bundle - so the bundle/owner/enhanced checks below could never pass and
+     every such account (each new doctor's first sign-in, an ended trial) sat
+     on "Still preparing your workspace" until the 32 s release. That surface
+     needs none of them. */
+  if(!gated){ try{ if(typeof agAccountSetupSurface==='function'&&agAccountSetupSurface()) gated=true; }catch(eSurface){} }
   const minAt=sfGateLoadingStarted+SF_GATE_MIN_MS;
   const releaseAt=sfGateLoadingStarted+SF_GATE_MAX_MS-SF_GATE_READY_HOLD_MS-SF_GATE_FADE_MS;
   let last='',stableAt=0;
@@ -46352,6 +46367,19 @@ function showAgreementsGate(fromLoading){
     if(reasons.indexOf('PRACTICE_REQUIRED')>=0) summary.innerHTML='<b>This account is not attached to a practice.</b> Ask your MLS administrator to correct the practice assignment before patient work begins.';
     else if(reasons.indexOf('AGREEMENT_ARTIFACT_INVALID')>=0) summary.innerHTML='<b>Your signed-form receipt did not pass the server integrity check.</b> Patient work remains closed; ask your MLS administrator to review the account evidence.';
     else if(reasons.indexOf('PRACTICE_BAA_INVALID')>=0) summary.innerHTML='<b>The practice agreement did not pass the server integrity check.</b> Patient work remains closed; ask the MLS owner to review the executed agreement.';
+    /* lockreason-1.0.0: an ended trial or an inactive subscription read "has not
+       been switched on yet - ask your MLS administrator", and the access-code
+       box lives inside the app this gate hides, so a code the server would
+       accept had nowhere to go. Name the real reason and take the code here. */
+    else if(reasons.indexOf('COMMERCIAL_ACCESS_INACTIVE')>=0){
+      const exp=(bkUser&&bkUser.access_expires)?Date.parse(bkUser.access_expires):NaN;
+      const ended=Number.isFinite(exp)&&exp<=Date.now();
+      if(tt) tt.textContent=ended?'Your trial has ended':'Your subscription is not active';
+      summary.innerHTML='<b>'+(ended?'Your MLS trial has ended.':'Your MLS subscription is not active.')+'</b> Your records are kept. Enter an access code, or ask your MLS administrator to renew the account.'
+        +'<span style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><input id="agRedeemInput" type="text" autocomplete="off" aria-label="Access code" placeholder="Access code" style="flex:1 1 180px;min-width:0;padding:10px 12px;border:1px solid var(--line,#d6ddd8);border-radius:10px;font-size:15px">'
+        +'<button type="button" class="btn-primary" id="agRedeemBtn" onclick="agRedeemAndRetry()">Use code</button></span>';
+      if(why) why.style.display='none';
+    }
     else summary.innerHTML='<b>Your practice has not been switched on for patient work yet.</b> Ask your MLS administrator to enable the clinical workspace for this account — nobody can do it from this browser.';
   }
   const rb=document.getElementById('agRetryBtn'); if(rb) rb.style.display='';
@@ -46578,6 +46606,13 @@ var sfGateRetrySeq=0;
 function sfGateRetryOwner(){
   const seq=++sfGateRetrySeq, token=bkToken(), epoch=Number(window.__mlsSessionEpoch)||0;
   return {seq:seq,token:token,owned:()=>seq===sfGateRetrySeq&&bkToken()===token&&(Number(window.__mlsSessionEpoch)||0)===epoch};
+}
+/* lockreason-1.0.0: the lock screen's own access-code box */
+async function agRedeemAndRetry(){
+  const inp=document.getElementById('agRedeemInput'), btn=document.getElementById('agRedeemBtn');
+  if(btn) btn.disabled=true;
+  try{ if(await redeemCode(inp?inp.value:'',inp)) await retryLegalReadiness(); }
+  finally{ if(btn&&btn.isConnected) btn.disabled=false; }
 }
 async function retryLegalReadiness(){
   const btn=document.getElementById('agRetryBtn');

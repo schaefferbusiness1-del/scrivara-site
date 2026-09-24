@@ -220,6 +220,7 @@ for (const rel of SHELLS) {
     balanced(src, 'function suTier()', 'suTier') + '\n' +
     balanced(src, 'function suHasCapability(name)', 'suHasCapability') + '\n' +
     balanced(src, 'function suCanSchedule()', 'suCanSchedule') + '\n' +
+    balanced(src, 'function suOwnsPracticeHours()', 'suOwnsPracticeHours') + '\n' +
     balanced(src, 'function suAllowedSteps()', 'suAllowedSteps') + '\n' +
     'this.allowed = suAllowedSteps;', ctx);
   const roles = ['doctor', 'head', 'user', 'nurse', 'receptionist'];
@@ -233,6 +234,17 @@ for (const rel of SHELLS) {
   ctx.bkUser = { role: 'doctor', capabilities: { tier: 'lite' } };
   ctx.SU_STATE = { capabilities: { tier: 'lite' }, role: 'doctor', tier: 'lite' };
   eq(ctx.allowed()[0], 0, 'a lite account must still begin at the video step');
+  /* suhours-1.0.0: "Your weekly schedule" saves the practice's hours - a team
+     member (head_id set) skips it, the head and a solo account keep it */
+  const caps = { scheduling: true };
+  ctx.bkUser = { role: 'user', head_id: 7, capabilities: caps }; ctx.SU_STATE = { capabilities: caps, role: 'user', tier: 'standard' };
+  const member = ctx.allowed();
+  ctx.bkUser = { role: 'head', capabilities: caps }; ctx.SU_STATE = { capabilities: caps, role: 'head', tier: 'standard' };
+  const head = ctx.allowed();
+  if (member.indexOf(3) >= 0 || head.indexOf(3) >= 0) {
+    ok(member.indexOf(2) < 0, 'a team member is still asked for the practice hours: ' + JSON.stringify(member));
+    ok(head.indexOf(2) >= 0, 'the head is no longer asked for the practice hours: ' + JSON.stringify(head));
+  }
 }
 
 /* ============================================ PARTS 2-4: THE REAL PLAYER */

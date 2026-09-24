@@ -409,6 +409,10 @@
   function fill(listId, emptyId, countId, arr){
     var el=$(listId), empty=$(emptyId), cnt=$(countId);
     arr = Array.isArray(arr)?arr:[];
+    /* portalload-1.0.0: a list that failed before says "on file" again only
+       once a load succeeds */
+    if(empty && empty.hasAttribute("data-empty-text")) empty.textContent = empty.getAttribute("data-empty-text");
+    try{ var rb=$("recRetry"); if(rb) rb.remove(); }catch(eRb){}
     cnt.textContent = arr.length;
     if(!arr.length){ el.innerHTML=""; show(empty); return; }
     hide(empty);
@@ -439,9 +443,35 @@
 
   function enterApp(){ hide($("login")); show($("app")); try{ window.dispatchEvent(new Event("mls:portal-signed-in")); }catch(e){} }
 
+  /* portalload-1.0.0: a failed records load (500, 404, a cold-start 502 HTML
+     page) was read as data, so a patient with medications was told "No
+     medications / problems / appointments / visits on file". A failure now
+     says so, never "on file", and offers Try again. */
+  function recordsFailed(err){
+    /* a dead session goes back to sign-in rather than a Try-again that cannot work */
+    if(err&&err.auth){ try{ setSess(null); }catch(eS){} hide($("app")); show($("login")); return; }
+    [["meds","medsEmpty","cMeds"],["problems","probEmpty","cProb"],["appts","apptEmpty","cAppt"],["visits","visEmpty","cVis"]].forEach(function(x){
+      var list=$(x[0]), empty=$(x[1]), cnt=$(x[2]);
+      if(list) list.innerHTML="";
+      if(cnt) cnt.textContent="–";
+      if(empty){ if(!empty.hasAttribute("data-empty-text")) empty.setAttribute("data-empty-text", empty.textContent); empty.textContent="Not loaded yet."; show(empty); }
+    });
+    if(!$("recRetry")){
+      var bar=document.createElement("div"); bar.id="recRetry"; bar.setAttribute("role","alert");
+      bar.style.cssText="margin:10px 0;padding:12px 14px;border:1px solid #EAD3CE;background:#FBF1EF;color:#B23B3B;border-radius:12px;font-size:14px";
+      bar.appendChild(document.createTextNode("We couldn't load your records. "));
+      var b=document.createElement("button"); b.type="button"; b.textContent="Try again";
+      b.style.cssText="margin-left:6px;border:none;border-radius:999px;background:#204034;color:#fff;font-weight:700;padding:8px 14px;min-height:40px;cursor:pointer";
+      b.onclick=function(){ b.disabled=true; b.textContent="Loading…"; loadRecords().catch(recordsFailed).then(function(){ if(b.isConnected){ b.disabled=false; b.textContent="Try again"; } }); };
+      bar.appendChild(b);
+      var host=$("meds"); host=host&&host.closest?(host.closest("section")||host.parentNode):null;
+      if(host&&host.parentNode) host.parentNode.insertBefore(bar, host); else $("app").insertBefore(bar, $("app").firstChild);
+    }
+  }
   function loadRecords(){
     return api("/api/patient/history").then(function(r){
       if(r.status===401){ throw {auth:true}; }
+      if(!r.ok){ throw {status:r.status}; }
       return r.json();
     }).then(function(j){
       j = j || {};
@@ -475,7 +505,7 @@
        paint that actually uses it. This read is belt-and-braces. */
     api("/api/patient/me").then(function(r){
       if(r.ok){
-        enterApp(); loadRecords().catch(function(){}); addSys("Hi! Ask me anything about your records below.");
+        enterApp(); loadRecords().catch(recordsFailed); addSys("Hi! Ask me anything about your records below.");
         r.json().then(function(j){ try{ if(typeof window.__mlsPortalNoteOffice==="function") window.__mlsPortalNoteOffice(j && j.practice); }catch(eOf){} }, function(){});
       }
       else if(r.status===401 && PSESS){ setSess(null); } // stale bearer token — clear so a fresh sign-in starts clean
@@ -533,7 +563,7 @@
           setSess(tok);
           DEMO=false; enterApp();
           addSys("You're signed in. Ask me anything about your records below.");
-          return loadRecords().catch(function(){ addSys("Your records are taking a moment to load — pull to refresh or reload the page."); });
+          return loadRecords().catch(recordsFailed);
         }
         // 2) Backend not yet returning a bearer token — try the legacy cookie
         //    path (works only once the server CORS/samesite fix is deployed).

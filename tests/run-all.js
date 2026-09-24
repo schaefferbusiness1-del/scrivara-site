@@ -2829,7 +2829,12 @@ const tests = [
   'calendar-and-admin-say-it-once-runtime.test.js',
   'controls-say-what-they-do-runtime.test.js',
   /* grabcode-1.0.0: Study search failures read as sentences, never a bare reader code */
-  'study-grab-never-shows-a-code.test.js'
+  'study-grab-never-shows-a-code.test.js',
+  /* portalload-1.0.0: a failed records load says so, never "on file" */
+  'patient-portal-says-when-records-failed-runtime.test.js',
+  /* lockreason-1.0.0 + setupwait-1.0.0: the lock screen names an ended trial or
+     subscription, takes an access code, and appears in seconds */
+  'lock-screen-names-the-reason-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)
