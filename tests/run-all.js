@@ -2834,7 +2834,14 @@ const tests = [
   /* lockreason-1.0.0 + setupwait-1.0.0: the lock screen names an ended trial or
      subscription, takes an access code, and appears in seconds */
   'lock-screen-names-the-reason-runtime.test.js',
-  'patient-portal-names-the-sign-in-and-who-to-call-runtime.test.js'
+  'patient-portal-names-the-sign-in-and-who-to-call-runtime.test.js',
+  /* cptrunc-1.0.0: a Copilot draft the server had to cut shows a strip and asks
+     before copy/email on both surfaces; the EMR route refuses it; an old-server
+     reply renders and behaves exactly as before */
+  'copilot-cut-draft-canvas-runtime.test.js',
+  'copilot-cut-draft-assistant-runtime.test.js',
+  /* repairadv-1.0.0: the served structured repair parks its own quality receipt */
+  'structured-repair-serves-its-own-receipt-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

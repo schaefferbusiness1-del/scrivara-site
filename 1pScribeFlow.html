@@ -1726,6 +1726,11 @@
   .c-art-head{ display:flex;align-items:center;gap:8px;padding:10px 13px;background:linear-gradient(135deg,#eef4ff,#f4f0ff);border-bottom:1px solid var(--line);font-size:14px; }
   .c-art-title{ font-weight:700;color:var(--ink);flex:1; }
   .c-art-kind{ font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);background:var(--soft,#eef2f8);border-radius:22px;padding:2px 9px; }
+  /* cptrunc-1.0.0: the strip over a Copilot draft the server had to cut. Amber
+     while the text still carries the cut marker; a plain note once the marker
+     has been edited out (the draft stays flagged). Theme tokens cover dark. */
+  .c-art-warn{ padding:9px 13px;background:var(--gold-bg,#F4EEE1);color:var(--amber,#985F26);border-bottom:1px solid rgba(217,169,59,.45);font-size:12.5px;line-height:1.45;font-weight:600; }
+  .c-art-warn.c-art-warn-soft{ background:var(--soft,#F4F2EC);color:var(--muted);border-bottom-color:var(--line);font-weight:500; }
   .c-art-text{ width:100%;box-sizing:border-box;border:0;border-bottom:1px solid var(--line);padding:13px;font-size:13.5px;line-height:1.55;font-family:inherit;min-height:140px;resize:vertical;background:var(--field-bg,#fff);color:var(--ink); }
   .c-art-text:focus{ outline:none;background:var(--card,#fff); }
   .c-art-tweak{ display:flex;gap:7px;padding:10px 11px;align-items:center;background:var(--soft,#FCFBF8); }
@@ -22291,23 +22296,93 @@ function _copilotScrollToLatest(box){
 /* ===== Copilot ARTIFACT canvas: an editable draft (email/letter/summary/plan)
    the user can tweak in place — no full regenerate — then copy or send. ===== */
 function _copilotArtIcon(k){ return {email:'📧',letter:'✉️',summary:'📝',plan:'🗂️',note:'🩺',text:'📄'}[k]||'📄'; }
+/* cptrunc-1.0.0 (2026-09-24): A DRAFT THE SERVER HAD TO CUT NEVER PASSES AS
+   WHOLE. /api/copilot holds a draft to 16,000 characters. A longer one keeps
+   its opening and its end, carries a '[... DRAFT INCOMPLETE ...]' marker
+   where the middle was cut (so the cut travels with every copy), and says
+   artifact.truncated and artifact.omittedChars. The canvas shows an amber
+   strip while the draft is flagged or still marked. Copy and the email draft
+   ask first while the text holds the marker, and the EMR route refuses it.
+   Once the marker is edited out the strip softens to a plain note and the
+   flag stays. A server that predates the flag sends neither the flag nor the
+   marker, so every path below is then exactly what it was. */
+var COPILOT_ART_CUT_MARK='[... DRAFT INCOMPLETE';
+function _copilotArtifactMarked(text){ return String(text==null?'':text).indexOf(COPILOT_ART_CUT_MARK)>=0; }
+/* cptrunc-1.1.0: a cut draft stays loud (amber, ask before copy or email,
+   refused by the EMR route) until the doctor edits the marker out BY HAND.
+   A Tweak is a model rewrite: when it drops the marker, the cut middle may
+   have been smoothed over or filled in, so it does not soften the strip. */
+function _copilotArtifactLoud(ar,text){ return _copilotArtifactMarked(text) || !!(ar && ar.truncated===true && ar.cutClearedByHand!==true); }
+function _copilotArtifactCutWords(ar){
+  var n=Number(ar&&ar.omittedChars); n=(isFinite(n)&&n>0)?Math.floor(n):0;
+  return n?(n.toLocaleString('en-US')+(n===1?' character was':' characters were')+' cut'):'part of it was cut';
+}
+function _copilotArtifactWarnText(ar,marked,loud){
+  if(marked) return 'Incomplete draft: '+_copilotArtifactCutWords(ar)+' where the text is marked. Ask Copilot for a shorter version or for it in parts before you copy, email or send it.';
+  if(loud) return 'Incomplete draft: '+_copilotArtifactCutWords(ar)+', and a rewrite removed the marker, so the cut part may have been smoothed over or filled in. Check the whole draft before you copy, email or send it.';
+  return 'This draft came back incomplete: '+_copilotArtifactCutWords(ar)+'. The marker is no longer in the text, so check that nothing needed is missing before you use it.';
+}
+function _copilotArtifactWarnHtml(ar,i,text){
+  var marked=_copilotArtifactMarked(text), loud=_copilotArtifactLoud(ar,text);
+  if(!loud&&!(ar&&ar.truncated===true)) return '';
+  return '<div class="c-art-warn'+(loud?'':' c-art-warn-soft')+'" id="cArtWarn_'+i+'" role="'+(loud?'alert':'note')+'">'+_ce(_copilotArtifactWarnText(ar,marked,loud))+'</div>';
+}
+/* Keeps the strip true while the doctor edits the draft or a Tweak lands.
+   It never clears the flag: a draft that came back cut stays flagged. */
+function _copilotArtifactWarnSync(i,text,byHand){
+  try{
+    var m=_copilotHistory[i], ar=m&&m.artifact, marked=_copilotArtifactMarked(text);
+    if(byHand===true&&ar&&ar.truncated===true) ar.cutClearedByHand=!marked;
+    var loud=_copilotArtifactLoud(ar,text);
+    var strip=document.getElementById('cArtWarn_'+i);
+    if(!loud&&!(ar&&ar.truncated===true)){ if(strip&&strip.parentNode) strip.parentNode.removeChild(strip); return; }
+    if(!strip){
+      var ta=document.getElementById('cArt_'+i); if(!ta||!ta.parentNode) return;
+      strip=document.createElement('div'); strip.id='cArtWarn_'+i; ta.parentNode.insertBefore(strip,ta);
+    }
+    /* write only what changed, so a screen reader is not handed the same
+       alert again on every keystroke */
+    var cls='c-art-warn'+(loud?'':' c-art-warn-soft'), role=loud?'alert':'note', txt=_copilotArtifactWarnText(ar,marked,loud);
+    if(strip.className!==cls) strip.className=cls;
+    if(strip.getAttribute('role')!==role) strip.setAttribute('role',role);
+    if(strip.textContent!==txt) strip.textContent=txt;
+  }catch(eCut){}
+}
+/* Resolves true at once when the text holds no cut marker: no dialog, the
+   same path as before. Otherwise asks with the in-app dialog; a missing
+   dialog, an error or a cancel is a no. */
+function _copilotArtifactAskCut(i,text,question,okLabel){
+  var m=_copilotHistory[i], ar=m&&m.artifact;
+  if(!_copilotArtifactLoud(ar,text)) return Promise.resolve(true);
+  if(typeof mlsConfirm!=='function') return Promise.resolve(false);
+  var msg=_copilotArtifactMarked(text)
+    ?'This draft is incomplete: '+_copilotArtifactCutWords(ar)+' where the text is marked.\n\n'+question
+    :'This draft came back incomplete ('+_copilotArtifactCutWords(ar)+') and a rewrite removed the marker, so the cut part may have been smoothed over or filled in.\n\n'+question;
+  return Promise.resolve().then(function(){ return mlsConfirm(msg,{okLabel:okLabel,cancelLabel:'Not yet'}); })
+    .then(function(v){ return v===true; },function(){ return false; });
+}
 function _copilotArtifactHtml(m, i){
   if(!m || !m.artifact || !m.artifact.content) return '';
   var ar=m.artifact; var isEmail=(ar.kind==='email');
   var emailBtn = isEmail?'<button class="cact-btn" onclick="copilotArtifactEmail('+i+')">📋 Copy email draft</button>':'';
   return '<div class="c-artifact" id="cArtBox_'+i+'">'
     +'<div class="c-art-head"><span>'+_copilotArtIcon(ar.kind)+'</span><span class="c-art-title">'+_ce(ar.title||'Draft')+'</span><span class="c-art-kind">'+_ce(ar.kind||'text')+'</span></div>'
+    +_copilotArtifactWarnHtml(ar,i,ar.content)
     +'<textarea id="cArt_'+i+'" class="c-art-text" spellcheck="true" oninput="_copilotSyncArtifact('+i+',this.value);_copilotAutogrowArtifact(this)">'+_ce(ar.content)+'</textarea>'
     +'<div class="c-art-tweak"><input id="cTw_'+i+'" placeholder="Tweak it — “shorter”, “warmer tone”, “add the next-steps line”…" onkeydown="if(event.key===\'Enter\'){event.preventDefault();copilotTweak('+i+');}"><button class="btn-primary" id="cTwBtn_'+i+'" style="font-size:12.5px;padding:8px 13px" onclick="copilotTweak('+i+')">✦ Tweak</button></div>'
     +'<div class="cactions" style="margin-top:9px"><button class="cact-btn" onclick="copilotCopyArtifact('+i+')">📋 Copy</button>'+emailBtn+'<button class="cact-btn" onclick="copilotArtifactToEMR('+i+',this)">👁 Review EMR route</button><button class="cact-btn" onclick="copilotArtifactToTool('+i+')">🧩 Build a tool</button></div>'
     +'</div>';
 }
-function _copilotSyncArtifact(i,val){ var m=_copilotHistory[i]; if(m&&m.artifact) m.artifact.content=val; }
+function _copilotSyncArtifact(i,val){ var m=_copilotHistory[i]; if(m&&m.artifact) m.artifact.content=val; _copilotArtifactWarnSync(i,val,true); }
 /* Push a Copilot-drafted document (prior-auth, referral, letter, summary) straight
    into the EMR's note field via MLS Assist — same cross-frame paste as the visit note. */
 function copilotArtifactToEMR(i,btn){
   var ta=document.getElementById('cArt_'+i); var t=(ta&&ta.value||'').trim();
   if(!t){ try{ toast('Nothing to send yet.','err'); }catch(e){} return; }
+  /* cptrunc-1.0.0: refused, not confirmed. The marker and the cut span would
+     be the text that lands, and nothing downstream asks again. */
+  var cutMsg=_copilotHistory[i];
+  if(_copilotArtifactLoud(cutMsg&&cutMsg.artifact,t)){ try{ toast('This draft is incomplete: '+_copilotArtifactCutWords(cutMsg&&cutMsg.artifact)+(_copilotArtifactMarked(t)?' where the text is marked':'')+', so it does not go to the EMR. Ask Copilot for a shorter version or for it in parts.','err'); }catch(e){} return; }
   try{ if(typeof sendToEMRviaAssist==='function'){ sendToEMRviaAssist(btn||null,{text:t}); return; } }catch(e){}
   try{ copilotCopyArtifact(i); }catch(e){}
 }
@@ -22327,12 +22402,26 @@ async function copilotTweak(i){
     var fault=_mlsAiFault(r,d,'the editor');
     if(fault){ try{ toast(fault,'err'); }catch(e){} }
     else if(!String(d.text||'').trim()){ try{ toast(d.error||'No revision came back. Try again or rephrase the instruction.','err'); }catch(e){} }
-    else { ta.value=d.text; if(m&&m.artifact) m.artifact.content=d.text; tw.value=''; _copilotAutogrowArtifact(ta); _copilotSaveHist(); try{ toast('Updated.','ok'); }catch(e){} }
+    else { ta.value=d.text; if(m&&m.artifact) m.artifact.content=d.text; try{ if(typeof _copilotArtifactWarnSync==='function') _copilotArtifactWarnSync(i,d.text); }catch(eCut){} tw.value=''; _copilotAutogrowArtifact(ta); _copilotSaveHist(); try{ toast('Updated.','ok'); }catch(e){} }
   }catch(e){ try{ toast('Network error.','err'); }catch(e){} }
   finally{ if(btn){ btn.disabled=false; btn.textContent='✦ Tweak'; } }
 }
-function copilotCopyArtifact(i){ var ta=document.getElementById('cArt_'+i); if(!ta) return; try{ navigator.clipboard.writeText(ta.value||''); toast('Copied.','ok'); }catch(e){ try{ ta.select(); document.execCommand('copy'); toast('Copied.','ok'); }catch(_){} } }
-function copilotArtifactEmail(i){ var m=_copilotHistory[i]; var ta=document.getElementById('cArt_'+i); var body=ta?ta.value:(m&&m.artifact?m.artifact.content:''); var to=(m&&m.artifact&&m.artifact.to)||''; var subj=(m&&m.artifact&&m.artifact.subject)||(m&&m.artifact&&m.artifact.title)||''; _copilotOpenEmail(to,subj,body); }
+function copilotCopyArtifact(i){ var ta=document.getElementById('cArt_'+i); if(!ta) return;
+  /* cptrunc-1.0.0: a draft that still holds the cut marker asks first; every
+     other draft copies at once, exactly as before. */
+  var cm=_copilotHistory[i];
+  if(_copilotArtifactLoud(cm&&cm.artifact,ta.value)){
+    _copilotArtifactAskCut(i,ta.value,'Copy it anyway?','Copy anyway').then(function(ok){ if(ok) _copilotCopyArtifactText(ta); else { try{ toast('Nothing was copied.',''); }catch(e){} } });
+    return;
+  }
+  _copilotCopyArtifactText(ta); }
+function _copilotCopyArtifactText(ta){ try{ navigator.clipboard.writeText(ta.value||''); toast('Copied.','ok'); }catch(e){ try{ ta.select(); document.execCommand('copy'); toast('Copied.','ok'); }catch(_){} } }
+function copilotArtifactEmail(i){ var m=_copilotHistory[i]; var ta=document.getElementById('cArt_'+i); var body=ta?ta.value:(m&&m.artifact?m.artifact.content:''); var to=(m&&m.artifact&&m.artifact.to)||''; var subj=(m&&m.artifact&&m.artifact.subject)||(m&&m.artifact&&m.artifact.title)||'';
+  if(_copilotArtifactLoud(m&&m.artifact,body)){
+    _copilotArtifactAskCut(i,body,'Open it as an email draft anyway?','Open email draft').then(function(ok){ if(ok) _copilotOpenEmail(to,subj,body); else { try{ toast('The email draft was not opened.',''); }catch(e){} } });
+    return;
+  }
+  _copilotOpenEmail(to,subj,body); }
 /* Turn a Copilot draft into an interactive tool in the Studio builder. */
 function copilotArtifactToTool(i){ var m=_copilotHistory[i]; var ta=document.getElementById('cArt_'+i); var content=ta?ta.value:(m&&m.artifact?m.artifact.content:''); var title=(m&&m.artifact&&m.artifact.title)||'this'; var p=document.getElementById('studioPrompt'); if(p){ p.value='Build an interactive tool around this content (make it useful and editable). Title: '+title+'\n\nCONTENT:\n'+content; } try{ if(typeof generateStudioWidget==='function') generateStudioWidget(); var pp=document.getElementById('studioPrompt'); if(pp) pp.scrollIntoView({behavior:'smooth',block:'center'}); }catch(e){} }
 /* Draft-only email review. Nothing leaves MLS; the clinician copies the text
@@ -35544,6 +35633,16 @@ async function _mlsRepairUnsupportedClinicalClaim(sys,user,draftTuning,signal){
        contract before this repair can rejoin normal generation. */
     var candidate=parseGenJSON(repaired);
     _mlsValidateStructuredNoteResult(candidate,draftTuning);
+    /* repairadv-1.0.0 (2026-09-24): THE REPAIR'S OWN RECEIPT. The note served
+       is this repair, not the refused /api/generate draft, and
+       structured_note_repair now answers with the same quality receipt
+       /api/generate carries. Park it where the visit room reads the lines to
+       check, only after the repair passed the check above, so a refused
+       repair leaves nothing behind. A server that predates the receipt sends
+       no quality, and the parked advisory is left exactly as it was. */
+    if(payload&&payload.quality&&typeof payload.quality==='object'&&typeof _mlsNoteAdvisoryFromQuality==='function'){
+      try{ window.__mlsLastNoteAdvisory=_mlsNoteAdvisoryFromQuality(payload.quality); }catch(eRepairAdv){}
+    }
     return repaired;
   }catch(error){
     if(signal&&signal.aborted)throw error;

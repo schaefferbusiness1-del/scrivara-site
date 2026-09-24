@@ -25,6 +25,12 @@
  *   - artifact (e.g. a drafted email) -> shown as an editable preview card;
  *     Copy email draft writes the reviewed draft to the clipboard. This held
  *     build never sends email or accepts an arbitrary network recipient.
+ *   - cptrunc-1.0.0 (2026-09-24): a draft the server had to cut (it says
+ *     artifact.truncated / artifact.omittedChars, and the text carries a
+ *     '[... DRAFT INCOMPLETE' marker where the middle was cut) shows an
+ *     amber strip, and Copy email draft asks first while the text still
+ *     holds the marker. A server that predates the flag sends neither the
+ *     flag nor the marker, and the card is then exactly what it was.
  *
  * HARD SAFETY: this module cannot write to athenaOne, sign, save, or submit
  * anything. It has no path to any Athena/order/sign function. The only network
@@ -67,7 +73,9 @@
       '.' + BLOCK_CLASS + ' .mlsca-art input{width:100%;box-sizing:border-box;font:13px system-ui;border:1px solid #cfd9ea;border-radius:8px;padding:6px 8px;margin:4px 0}',
       '.' + BLOCK_CLASS + ' .mlsca-send{margin-top:6px;cursor:pointer;border:0;border-radius:8px;padding:6px 12px;font:700 12px system-ui;color:#fff;background:#137a3a}',
       '.' + BLOCK_CLASS + ' .mlsca-send[disabled]{opacity:.55;cursor:default}',
-      '.' + BLOCK_CLASS + ' .mlsca-note{font:11px system-ui;color:#5b6b82;margin-top:5px}'
+      '.' + BLOCK_CLASS + ' .mlsca-note{font:11px system-ui;color:#5b6b82;margin-top:5px}',
+      '.' + BLOCK_CLASS + ' .mlsca-warn{margin:0 0 6px;padding:7px 9px;border-radius:8px;background:#F4EEE1;border:1px solid rgba(217,169,59,.55);color:#7A4E1D;font:600 12px/1.45 system-ui}',
+      '.' + BLOCK_CLASS + ' .mlsca-warn.soft{background:#F4F2EC;border-color:#E7E5DD;color:#5b6b82;font-weight:500}'
     ].join('\n');
     (document.head || document.documentElement).appendChild(st);
   }
@@ -345,7 +353,43 @@
       artifact: payload && payload.artifact && typeof payload.artifact === 'object' ? payload.artifact : null };
   }
 
-  function copyEmailDraft(btn, block) {
+  /* ---------------- cptrunc-1.0.0: a cut draft is never passed as whole ---------------- */
+  var CUT_MARK = '[... DRAFT INCOMPLETE';
+  function cutMarked(text) { return String(text == null ? '' : text).indexOf(CUT_MARK) >= 0; }
+  function cutFlagged(artifact) { return !!(artifact && artifact.truncated === true); }
+  function cutWords(artifact) {
+    var n = Number(artifact && artifact.omittedChars);
+    n = (isFinite(n) && n > 0) ? Math.floor(n) : 0;
+    return n ? (n.toLocaleString('en-US') + (n === 1 ? ' character was' : ' characters were') + ' cut') : 'part of it was cut';
+  }
+  function cutSentence(artifact, marked) {
+    return marked
+      ? 'Incomplete draft: ' + cutWords(artifact) + ' where the text is marked. Ask Copilot for a shorter version or for it in parts before you copy, email or send it.'
+      : 'This draft came back incomplete: ' + cutWords(artifact) + '. The marker is no longer in the text, so check that nothing needed is missing before you use it.';
+  }
+  /* Paints, softens or removes the strip for the text now in the box. The
+     flag is never cleared: a draft that came back cut stays flagged. */
+  function syncCutStrip(art, before, artifact, text) {
+    var strip = safe(function () { return art.querySelector('.mlsca-warn'); }, null);
+    var marked = cutMarked(text);
+    if (!marked && !cutFlagged(artifact)) {
+      if (strip && strip.parentNode) safe(function () { strip.parentNode.removeChild(strip); });
+      return null;
+    }
+    if (!strip) {
+      strip = document.createElement('div');
+      if (before && before.parentNode === art) art.insertBefore(strip, before); else art.appendChild(strip);
+    }
+    /* write only what changed, so a screen reader is not handed the same
+       alert again on every keystroke */
+    var cls = 'mlsca-warn' + (marked ? '' : ' soft'), role = marked ? 'alert' : 'note', txt = cutSentence(artifact, marked);
+    if (strip.className !== cls) strip.className = cls;
+    if (strip.getAttribute('role') !== role) strip.setAttribute('role', role);
+    if (strip.textContent !== txt) strip.textContent = txt;
+    return strip;
+  }
+
+  function copyEmailDraft(btn, block, artifact) {
     var toEl = block.querySelector('.mlsca-to');
     var subjEl = block.querySelector('.mlsca-subj');
     var bodyEl = block.querySelector('.mlsca-body');
@@ -353,8 +397,26 @@
     var subject = subjEl ? String(subjEl.value || '').trim() : '';
     var body = bodyEl ? String(bodyEl.value || '') : '';
     var draft = (to ? 'To: ' + to + '\n' : '') + (subject ? 'Subject: ' + subject + '\n' : '') + '\n' + body;
+    if (!cutMarked(body)) { writeEmailDraft(btn, draft); return; }
+    /* The text still holds the cut marker: ask first with the in-app dialog.
+       A missing dialog, an error or a cancel copies nothing. */
+    var question = 'This draft is incomplete: ' + cutWords(artifact) + ' where the text is marked.\n\nCopy it anyway?';
+    var asked = safe(function () {
+      return isFn(window.mlsConfirm) ? Promise.resolve(window.mlsConfirm(question, { okLabel: 'Copy anyway', cancelLabel: 'Not yet' })) : null;
+    }, null);
+    if (!asked) { toast('This draft is incomplete, so nothing was copied. Ask Copilot for a shorter version or for it in parts.'); return; }
     btn.disabled = true;
-    Promise.resolve(safe(function () { return navigator.clipboard.writeText(draft); }, Promise.reject(new Error('clipboard unavailable'))))
+    asked.then(function (yes) {
+      if (yes === true) { writeEmailDraft(btn, draft); return; }
+      btn.disabled = false; toast('Nothing was copied.');
+    }, function () { btn.disabled = false; toast('Nothing was copied.'); });
+  }
+  function writeEmailDraft(btn, draft) {
+    btn.disabled = true;
+    /* The fallback rejection is made only when the clipboard write could not
+       start. It used to be built on every press, and a successful copy then
+       left it unhandled (an "Uncaught (in promise)" line each time). */
+    Promise.resolve(safe(function () { return navigator.clipboard.writeText(draft); }, null) || Promise.reject(new Error('clipboard unavailable')))
       .then(function () { btn.textContent = 'Copied'; toast('Email draft copied. Review it in your approved email system before sending.'); })
       .then(null, function () { btn.disabled = false; btn.textContent = 'Copy email draft'; toast('Could not copy the email draft.'); });
   }
@@ -397,6 +459,8 @@
     if (artifact && String(artifact.content || '').trim()) {
       var art = document.createElement('div'); art.className = 'mlsca-art';
       var h = document.createElement('h5'); h.textContent = artifact.title || 'Draft'; art.appendChild(h);
+      /* cptrunc-1.0.0: the strip sits under the title, over the draft. */
+      syncCutStrip(art, null, artifact, artifact.content);
       var isEmail = String(artifact.kind || '').toLowerCase() === 'email';
       if (isEmail) {
         var toI = document.createElement('input'); toI.className = 'mlsca-to'; toI.placeholder = 'Recipient email'; toI.value = artifact.to || '';
@@ -405,10 +469,11 @@
       }
       var ta = document.createElement('textarea'); ta.className = 'mlsca-body'; ta.value = artifact.content || '';
       art.appendChild(ta);
+      ta.oninput = function () { syncCutStrip(art, h.nextSibling || null, artifact, ta.value); };
       if (isEmail) {
         var sendBtn = document.createElement('button'); sendBtn.type = 'button'; sendBtn.className = 'mlsca-send';
         sendBtn.textContent = 'Copy email draft';
-        sendBtn.onclick = function () { copyEmailDraft(sendBtn, art); };
+        sendBtn.onclick = function () { copyEmailDraft(sendBtn, art, artifact); };
         art.appendChild(sendBtn);
         var note = document.createElement('div'); note.className = 'mlsca-note';
         note.textContent = 'Draft only. Nothing is sent from MLS; review and send it from your approved email system.';
