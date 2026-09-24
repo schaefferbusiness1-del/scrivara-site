@@ -45075,7 +45075,10 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
         var em = resp&&resp.error;
         var msg = em==='no-ext' ? 'MLS Assist isn’t responding. Make sure MLS Assist is installed and turned on and your signed-in athenaOne tab is open, then try again.'
                 : em==='timeout' ? 'Timed out driving athenaOne. Open your signed-in athenaOne tab (a procedure/claims search or report) and try again — or use 🔎 Find in Athena on a report you’ve already run.'
-                : esc(String(em||'Couldn’t drive the athenaOne search — is an athenaOne tab open and signed in?'));
+                : (em==='athena-not-open'||em==='no-athena-tab') ? 'No signed-in athenaOne tab is open. Open athenaOne in this browser, sign in, then try again.'
+                /* grabcode-1.0.0: a bare reader code ("athena-not-open") is not a sentence a doctor can act on */
+                : (/^[a-z0-9]+(?:[-_][a-z0-9]+)+$/i.test(String(em||'')) || !em) ? 'MLS Assist could not run the athenaOne search. Open your signed-in athenaOne tab and try again, or use Find in Athena on a report you have already run.'
+                : esc(String(em));
         out.innerHTML='<div class="mls-study-gate">'+msg+'</div>'; return;
       }
       var text=resp.text||'';

@@ -856,4 +856,8 @@
     _structureAndQueue: structureAndQueue,
     _doSave: doSave
   };
+  /* addready-1.0.0: this file loads async and feat_ease.js loads sync, so
+     feat_ease may install first and find no open() to wrap - Add a visit then
+     opened the blank new-patient form. Say when open() exists. */
+  try { window.dispatchEvent(new CustomEvent('mls:addpatient-ready')); } catch (eReady) {}
 })();

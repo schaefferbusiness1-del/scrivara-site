@@ -2827,7 +2827,9 @@ const tests = [
      thing once, and say it true */
   'review-and-study-one-door-runtime.test.js',
   'calendar-and-admin-say-it-once-runtime.test.js',
-  'controls-say-what-they-do-runtime.test.js'
+  'controls-say-what-they-do-runtime.test.js',
+  /* grabcode-1.0.0: Study search failures read as sentences, never a bare reader code */
+  'study-grab-never-shows-a-code.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

@@ -111,6 +111,16 @@ assert.strictEqual(context.__mlsEase.version, '1.2.0');
 for (const type of ['mls:view-changed', 'mls:active-patient-changed', 'mls:session-boundary']) {
   assert.strictEqual(winEvents.count(type), 1, `${type} listener is not installed exactly once`);
 }
+/* addready-1.0.0: feat_addpatient.js loads async and may define __mlsAddPatient
+   after this file installed; its ready event must still get open() wrapped */
+assert.strictEqual(winEvents.count('mls:addpatient-ready'), 1, 'the add-patient ready listener is not installed exactly once');
+const lateOpen = function () { return 'opened'; };
+context.__mlsAddPatient = { open: lateOpen };
+winEvents.emit('mls:addpatient-ready');
+assert(context.__mlsAddPatient.open.__mlsEaseWrapped && context.__mlsAddPatient.open.__mlsEaseOrig === lateOpen,
+  'Add a visit stays unwrapped when feat_addpatient.js loads after feat_ease.js');
+winEvents.emit('mls:addpatient-ready');
+assert.strictEqual(context.__mlsAddPatient.open.__mlsEaseOrig, lateOpen, 'a second ready event wrapped open() twice');
 assert.strictEqual(observers.length, 1, 'profile calm installed more than one observer');
 assert.strictEqual(observers[0].targets[0].target, profileCard, 'profile observer is not scoped to #profileCard');
 
@@ -142,6 +152,8 @@ assert.strictEqual(context.__mlsEase.installed, false, 'revert did not retire th
 for (const type of ['mls:view-changed', 'mls:active-patient-changed', 'mls:session-boundary']) {
   assert.strictEqual(winEvents.count(type), 0, `${type} listener leaked after revert`);
 }
+assert.strictEqual(winEvents.count('mls:addpatient-ready'), 0, 'the add-patient ready listener leaked after revert');
+assert.strictEqual(context.__mlsAddPatient.open, lateOpen, 'revert did not restore the original open()');
 assert.strictEqual(document.getElementById('mlsEaseStyle'), null, 'a queued repair resurrected profile UI after revert');
 assert(observers[0].disconnected, 'profile observer remained connected after revert');
 

@@ -374,6 +374,8 @@
     window.addEventListener('mls:view-changed', onViewChanged);
     window.addEventListener('mls:active-patient-changed', onPatientChanged);
     window.addEventListener('mls:session-boundary', onSessionBoundary);
+    /* addready-1.0.0: feat_addpatient.js may load after this file */
+    window.addEventListener('mls:addpatient-ready', wrapOpen);
     listenersAttached = true;
   }
 
@@ -382,6 +384,7 @@
     window.removeEventListener('mls:view-changed', onViewChanged);
     window.removeEventListener('mls:active-patient-changed', onPatientChanged);
     window.removeEventListener('mls:session-boundary', onSessionBoundary);
+    window.removeEventListener('mls:addpatient-ready', wrapOpen);
     listenersAttached = false;
   }
 
@@ -401,6 +404,7 @@
   }
 
   function wrapOpen() {
+    if (!lifecycleActive) return;
     if (window.__mlsAddPatient && typeof window.__mlsAddPatient.open === 'function' &&
         !window.__mlsAddPatient.open.__mlsEaseWrapped) {
       origOpen = window.__mlsAddPatient.open;
