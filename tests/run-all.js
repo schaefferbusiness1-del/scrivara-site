@@ -300,14 +300,14 @@ const AUTOMATED_PROOF_FILES = new Set([
      per surface, at each surface's real diameter, plus the drawn face and the
      photograph measured with ONE instrument in the SAME 302px circle. */
   '1p-avatar-surface-quality-proof.js',
-  /* padprov-1.0.0 (owner-measured 2026-09-02 05:5x): "Pull this day from
-     Athena" forwarded the month card's "Your athenaOne view (default)" label
-     to runFlow as a literal provider NAME, matching zero athenaOne rows and
-     reporting a false empty for a day with a full schedule. resolvePadScope()
-     now recognizes that label (and the older "All providers" wording) as the
-     'all' scope, and never forwards a name the provider roster does not
-     recognize. */
-  'pad-provider-proof.js',
+  /* padprov-1.0.0 (pad-provider-proof.js) RETIRED 2026-09-24: it pinned
+     resolvePadScope(), which padcanon-1.0.0 (b1259) deleted - "Pull this day
+     from Athena" now only sets the date on window.__mlsDaySwitch, which owns
+     provider scope. Its guarantees are held by
+     pull-visible-entrypoints-exact-route.test.js (the pad button only proxies
+     the DaySwitch, never runFlow/importDay) and
+     1p-provider-roster-settle-retry-runtime.test.js (the default-view label
+     never becomes a provider value). */
   /* fmt-1.0.0 (owner-measured 2026-09-02, a real visit in his own tab): the
      generated note came out in the NARRATIVE prose family - "History: ...
      Examination: Not documented ... Plan: Not documented" - and he said "this
@@ -1646,7 +1646,6 @@ const tests = [
   'ap-one-destination-proof.js',
   'sheet-rows-and-reopen-proof.js',
   'draft-has-no-signature-proof.js',
-  'pad-provider-proof.js',
   'attention-days-proof.js',
   'nav-home-proof.js',
   'surfnav-splice-proof.js',

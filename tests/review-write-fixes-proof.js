@@ -463,7 +463,32 @@ const FLOWS = [FLOW_FILE, 'feat_mls_writeflow.js', 'cloned-feat_mls_writeflow.js
       savenamedVerified: () => opts.saveVerified === true,
       SAVENAMED_PILL_LABEL: 'ONE PRESS LEFT',
       SAVENAMED_PILL_SHORT: 'PILL SHORT SENTINEL',
-      SAVENAMED_DONE_SHORT: 'DONE SHORT SENTINEL'
+      SAVENAMED_DONE_SHORT: 'DONE SHORT SENTINEL',
+      /* savetruth-1.x / writeflight (2026-09-10/11): the derivation also asks whether an uncertain
+         receipt is on screen, whether a save leg pressed Save or was read-only, whether native
+         section persistence is ready or proven, and whether a generic save is verified or owed.
+         Every answer defaults to NO / nothing, which is a review with no uncertain receipt and no
+         save in flight, so every sentence measured below is still reached by the same branch. */
+      unifiedUncertainReceipt: () => opts.uncertain || null,
+      saveReceiptReadOnlyLeg: () => false,
+      saveReceiptPressedSave: () => false,
+      SAVENAMED_READONLY_UNCERTAIN: 'READONLY UNCERTAIN SENTINEL',
+      SAVENAMED_SAVE_UNKNOWN: 'SAVE UNKNOWN SENTINEL',
+      unifiedRow: () => null,
+      savenamedRefused: () => false,
+      savenamedNativeSectionsPersisted: () => false,
+      savenamedNativeVerified: () => false,
+      savenamedNativeFinishShape: () => false,
+      nativeNamedSectionPersistenceReady: () => false,
+      writeflightNativeProven: () => false,
+      WRITEFLIGHT_PERSIST_SAY: 'PERSIST SAY SENTINEL',
+      WRITEFLIGHT_NEUTRAL_SAY: 'NEUTRAL SAY SENTINEL',
+      unifiedSaveVerified: () => false,
+      unifiedGenericSaveOwed: () => false,
+      GENERICSAVE_PILL_SHORT: 'GENERIC SAVE PILL SENTINEL',
+      SAVENAMED_NATIVE_WAITING_MSG: 'NATIVE WAITING SENTINEL',
+      SAVENAMED_NATIVE_DONE_SHORT: 'NATIVE DONE SENTINEL',
+      SAVENAMED_BOTH_SHORT: 'BOTH SHORT SENTINEL'
     });
     vm.runInContext(base + '\nthis.__out = sheetclarStateBase(' + JSON.stringify(opts.state || {}) + ', ' +
       JSON.stringify(opts.kind || '') + ');', context, { filename: 'sheetclar-state.js' });
@@ -576,14 +601,17 @@ const FLOWS = [FLOW_FILE, 'feat_mls_writeflow.js', 'cloned-feat_mls_writeflow.js
       f + ': the all-unreadable batch line still guesses "old .doc files?"');
     eq(src.indexOf("couldn’t be read as text (old .doc files? re-save them as .docx or PDF and upload again)"), -1,
       f + ': the wrong batch advice is still shipped');
-    ok(src.indexOf('reason:rsn') > 0, f + ': the reader\'s reason is not carried onto the unreadable row');
+    /* tplsort-1.2.0 (b1330): the row carries `why`, which starts as the reader's own reason (rsn)
+       and is only replaced when there is none, or it is the generic 'unreadable' / a paste. */
+    ok(src.indexOf('var why=rsn;') > 0, f + ': the unreadable row no longer starts from the reader\'s own reason');
+    ok(src.indexOf('reason:why') > 0, f + ': the reader\'s reason is not carried onto the unreadable row');
   });
 
   const shell = read('1pScribeFlow.html');
   /* Sliced by explicit boundaries, not by brace matching: this reader is a
      wall of regex literals and `/^image\//` would read as a line comment. */
   const advice = between(shell, 'var _TPL_READ_ADVICE={', 'async function _tplReadAnyFile(file){', 'read advice');
-  const reader = between(shell, 'async function _tplReadAnyFile(file){', '/* Count how many SEPARATE notes a blob holds', 'file reader');
+  const reader = between(shell, 'async function _tplReadAnyFile(file){', '/* tplsort-1.2.0 (2026-09-24): _tplFormHeaderCount', 'file reader');
   ok(advice.indexOf('function _tplUnreadableWhy(rows){') > 0, 'the shared-cause summary is not in the advice block');
   ok(reader.indexOf('_tplReadDone(') > 0, 'the reader records no reason at all');
 

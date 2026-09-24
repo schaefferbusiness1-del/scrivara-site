@@ -219,7 +219,10 @@ t3Api.route();
 runT3Timers(7130);
 assert.strictEqual(t3Api.ticks(), 2, 'Task 3 lost route-driven correctness after its deferred startup pass');
 
-assert(connect.includes('feat_b18_qa.js') && connect.includes('20260808b18v14perf2'));
+/* 2026-09-24: the b18 token moved with b1316's change to feat_b18_qa.js (Escape
+   closes the search chip); the old URL would keep serving the cached copy. */
+assert(connect.includes('feat_b18_qa.js') && connect.includes('20260924b18v15'));
+assert(!connect.includes('20260808b18v14perf2'), 'the retired b18 cache token is still reachable');
 assert(connect.includes('SRC="feat_task3_frontsync.js",V="t3-p1-1.2.0"') &&
   connect.includes('s.src=SRC+"?v="+(window.__MLS_AV||"p1-preview")'),
   'Task 3 is not loaded from its current exact owner under the shared immutable build token');

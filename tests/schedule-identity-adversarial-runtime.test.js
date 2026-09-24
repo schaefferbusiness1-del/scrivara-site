@@ -63,8 +63,12 @@
    facts were read and saved, so the row and the batch still complete.
    =================================================================== */
 
-/* harness hygiene 2026-09-15: the loaded module arms real timeouts; un-ref'd they kept node alive after PASS (hang-after-pass in the whole-registry sweep). */
-const unrefTimeout = (fn, ms) => { const t = setTimeout(fn, ms); if (t && typeof t.unref === 'function') t.unref(); return t; };
+/* harness hygiene 2026-09-24: the loaded module's timeouts stay REF'D. Its batches legitimately
+   await real timers (the chart-facts capture settle, the capture race, retry backoffs); un-ref'd,
+   those let the event loop drain mid-await and node exited 0 with NO verdict printed (a silent
+   pass). RED by default until the verdict line flips it, and the explicit process.exit(0) after
+   PASS ends the run so the module's long batch-deadline timers cannot hang it. */
+process.exitCode = 1;
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
@@ -113,7 +117,7 @@ const bootstrapResponses = new Map();
 const context = {
   console, Promise, Date, Math, JSON, Intl, Object, Array, String, Number, RegExp,
   encodeURIComponent, queueMicrotask,
-  setTimeout: unrefTimeout, clearTimeout, setInterval: () => 1, clearInterval: () => {},
+  setTimeout, clearTimeout, setInterval: () => 1, clearInterval: () => {},
   location: { pathname: '/ScribeFlow-staging.html' },
   localStorage: {
     getItem: key => store.has(key) ? store.get(key) : null,
@@ -176,6 +180,17 @@ assert.strictEqual(context.__mlsVisitNotesPref.read().state, 'on');
 context.addEventListener = (_type, fn) => listeners.add(fn);
 context.removeEventListener = (_type, fn) => listeners.delete(fn);
 context.postMessage = msg => {
+  /* The per-patient chart-facts capture (siCaptureFacts) asks the extension for one read-only
+     capture. This harness has no chart banner to capture, so answer it the way an extension
+     without a capture does: ok:false. The capture is non-fatal by design, so no verdict below
+     may depend on it; answering keeps the run from waiting out the capture timer. */
+  if (msg && msg.type === 'mlsAppCapture') {
+    queueMicrotask(() => {
+      const reply = { data: { source: 'mls-ext', type: 'mlsAppCaptureResult', resp: { ok: false } } };
+      Array.from(listeners).forEach(fn => fn(reply));
+    });
+    return;
+  }
   if (msg && msg.type === 'mlsAppGotoDate') {
     gotoCalls.push({ date: msg.date, requestId: msg.requestId });
     queueMicrotask(() => {
@@ -1002,4 +1017,6 @@ assert(api && api.version === canonicalVersion[1],
   }
 
   console.log('PASS adversarial schedule identity, source-proof history binding, fresh chart coverage, full visit-reader receipt, dayfacts-1.0.1 chart-facts + scoped pulled-day note on OFF, BOTH day-note retry feeds (deferred queue + idle backfill) fed by a day-facts receipt, and zero-read UNCHOSEN');
+  /* the verdict is printed: exit 0 explicitly (see the exitCode=1 default at the top). */
+  process.exit(0);
 })().catch(err => { console.error(err); process.exit(1); });

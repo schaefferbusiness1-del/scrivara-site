@@ -65,6 +65,19 @@ if (fingerprint(committed) !== fingerprint(fresh)) {
     (onlyCommitted.length ? '  in manifest but not in source:\n    ' + onlyCommitted.join('\n    ') : ''));
 }
 
+/* A manifest written on Windows recorded '1p\index.html', which no inventory
+   taken on Linux or CI can match, so the check above called it STALE on every
+   run. The inventory now always records '/'; a backslash in either set means
+   that regressed, and it is named here instead of as a stale manifest. */
+[['committed manifest', committed], ['fresh inventory', fresh]].forEach(function (pair) {
+  const back = pair[1].controls.filter(function (c) { return /\\/.test(String(c.file)); });
+  if (back.length) {
+    fail('The ' + pair[0] + ' records ' + back.length + ' control(s) under a Windows file path (e.g. "' +
+      back[0].file + '"). File paths in the manifest always use "/". Regenerate with ' +
+      'node tools/ui-control-inventory.js.');
+  }
+});
+
 /* ---- 2. every control resolves in every shell --------------------------- */
 
 const reach = readJson(REACH);

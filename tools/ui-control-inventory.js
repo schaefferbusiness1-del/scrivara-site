@@ -36,15 +36,23 @@ function sourceFiles() {
   const files = fs.readdirSync(ROOT)
     .filter(name => /\.html$/i.test(name) && !/^_/.test(name))
     .sort();
+  /* A recorded file path always uses '/', on every OS. path.join() gives
+   * '1p\index.html' on Windows, and a manifest generated there never matched a
+   * fresh inventory taken anywhere else, so the coverage suite called it STALE
+   * on Linux and on CI. The path is a manifest key, not a file-system path. */
   for (const dir of ['1p', 'cloned']) {
     const full = path.join(ROOT, dir, 'index.html');
-    if (fs.existsSync(full)) files.push(path.join(dir, 'index.html'));
+    if (fs.existsSync(full)) files.push(dir + '/index.html');
   }
   files.push(APP_CONNECT);
   for (const name of fs.readdirSync(ROOT)) {
     if (/^feat_.*\.js$/.test(name)) files.push(name);
   }
-  return files;
+  return files.map(toManifestPath);
+}
+
+function toManifestPath(file) {
+  return String(file).replace(/\\/g, '/');
 }
 
 function isClinicianShell(file) {

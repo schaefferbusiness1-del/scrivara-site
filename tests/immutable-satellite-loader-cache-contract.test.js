@@ -27,7 +27,23 @@ const assets = [
      skipped as untouched, which is what every seed advance quietly buys. A
      literal token is only as good as the human bumping it; this one now
      follows the build number and cannot go stale again. */
-  ['feat_b18_qa.js', '20260808b18v14perf2', '20260808b18v13perf1'],
+  /* 2026-09-24: four hand-maintained tokens had gone stale, each after a change
+     this week, so a returning browser kept the old copy cache-first
+     (tests/cache-token-cannot-go-stale.test.js):
+       feat_b18_qa.js                   b1316 5d58f5a2, Escape closes the search chip
+       feat_mls_calendar_exact.js       b1290 8514d3fd, unshrunk appointment blocks
+                                        keep their padding (calnav-1.0.0)
+       feat_mls_analysis_exact.js       b1316 5d58f5a2, the Month & year report tile
+                                        and no blank tile for a withheld card
+       feat_mls_appwidth_responsive.js  b1302 add38727, the patient bar shares the
+                                        workspace column
+     Each token moved, and the three that were not pinned before are pinned here.
+     analysis_exact had shared '20260722idle2' with help_exact and settings_exact,
+     which did not change and keep it, so its retired entry is the whole old URL. */
+  ['feat_b18_qa.js', '20260924b18v15', '20260808b18v14perf2'],
+  ['feat_mls_calendar_exact.js', '20260924cx213', '20260727cx212'],
+  ['feat_mls_analysis_exact.js', '20260924ax8', 'feat_mls_analysis_exact.js?v=20260722idle2'],
+  ['feat_mls_appwidth_responsive.js', '20260924aw1c2', '20260630aw1c1'],
   ['feat_copilot_slim.js', '20260719csp211', '20260716csp210'],
   /* feat_mls_asst_fix.js now follows the shared build token. Its account and
      provider-readiness fixes change with the release and must not depend on a

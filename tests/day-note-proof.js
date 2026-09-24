@@ -410,7 +410,13 @@ function sheetContext() {
   /* 1p-mls-connect.js is four megabytes of independent modules and defines
      `esc` twenty-nine times. Scope every lookup to the pull-progress module's
      OWN body first, or the slice comes from somebody else's panel. */
-  const progStart = CONNECT.indexOf("var api = { version: '1.0.0', opens: 0 };");
+  /* anchored on the module's api literal with ANY version: the module bumps its version on
+     ordinary changes (1.0.0 -> 1.1.0 in b1258), which is not a move. The anchor must still name
+     exactly ONE place in the file, or the slices below could come from another module. */
+  const PROG_ANCHOR = /var api = \{ version: '[\d.]+', opens: 0 \};/g;
+  const progAnchors = CONNECT.match(PROG_ANCHOR) || [];
+  assert.strictEqual(progAnchors.length, 1, 'the pull-progress module anchor is no longer unique: ' + progAnchors.length);
+  const progStart = CONNECT.search(PROG_ANCHOR);
   assert(progStart > 0, 'the pull-progress module moved');
   const progEnd = CONNECT.indexOf('window.__mlsPullProgress = api;', progStart);
   assert(progEnd > progStart, 'the pull-progress module has no end');
@@ -425,6 +431,8 @@ function sheetContext() {
     statement(PROGRESS, 'function esc(s) {', 'esc'),
     balanced(PROGRESS, 'function dnRefusedSuffix(dnRaw)', 'dnRefusedSuffix'),
     balanced(PROGRESS, 'function rowsHtml(S)', 'rowsHtml'),
+    /* renderDone names the pulled day on its result line (a pulled day is not always today) */
+    balanced(PROGRESS, 'function ppDateLabel(raw)', 'ppDateLabel'),
     balanced(PROGRESS, 'function renderDone(S)', 'renderDone')
   ].join('\n');
   const captured = {};
@@ -443,6 +451,8 @@ function sheetContext() {
     mmss() { return '1m 00s'; },
     api: { doneShown: 0 },
     hidden: false, doneDismissed: false, startedAt: 0,
+    /* module-scoped Stop flag renderDone reads (clunky2-pull-1.0.0): no Stop pressed here */
+    stopRequested: false,
     captured
   };
   const ctx = vm.createContext(sandbox);
@@ -466,24 +476,24 @@ function partDSheetWording() {
   eq(cellOf('read'), 'note saved', 'a read note does not say it was saved');
   eq(cellOf('queued:deadline'), 'queued to read', 'a QUEUED note still reads as a failure - the owner\'s seven orange rows');
   eq(classOf('queued:deadline'), 'pp-wait', 'a queued note is painted as a warning');
-  eq(cellOf('reading:deadline'), 'reading today’s note now', 'a note being read right now does not say so');
+  eq(cellOf('reading:deadline'), 'reading that day’s note now', 'a note being read right now does not say so');
   eq(classOf('reading:deadline'), 'pp-wait', 'a note being read is painted as a warning');
   eq(cellOf('no-note'), 'no note in athenaOne for this day', 'a day athenaOne has no note for does not say so');
   eq(classOf('no-note'), 'pp-wait', 'a day with no note in athenaOne is painted as a failure');
-  eq(cellOf('unread:deadline'), 'today’s note not read this time (chart saved) — refused: athenaOne was too slow',
+  eq(cellOf('unread:deadline'), 'that day’s note not read this time (chart saved) — refused: athenaOne was too slow',
     'a note whose retries are spent does not name what refused it');
   eq(classOf('unread:deadline'), 'pp-bad', 'a spent refusal is no longer flagged for attention');
   /* the engine writes a RAW reason into this cell (tnColumn carries
      entry.todayNoteReason), so the classifier has to recognise it too. */
   eq(cellOf('unread:pulled-day-note-deadline-exceeded'),
-    'today’s note not read this time (chart saved) — refused: athenaOne was too slow',
+    'that day’s note not read this time (chart saved) — refused: athenaOne was too slow',
     'a raw timing refusal is not classified into the closed vocabulary');
   /* fnc-1.0.0 still stands: anything the closed classifier does not recognise
      prints NO reason rather than leaking a scoped-reader message. */
-  eq(cellOf('unread:some-raw-reader-text'), 'today’s note not read this time (chart saved)',
+  eq(cellOf('unread:some-raw-reader-text'), 'that day’s note not read this time (chart saved)',
     'an unknown code leaked into the doctor-facing cell');
   eq(cellOf('unread:visit-bodies-incomplete [no-bound-clinical-detail,stable-source-keys-incomplete]'),
-    'today’s note not read this time (chart saved)',
+    'that day’s note not read this time (chart saved)',
     'a raw scoped-reader internal leaked into the doctor-facing cell');
   ok(/queued and will be read automatically/.test(s.run('rowsHtml(' + JSON.stringify({ rows: [{ k: 'x', name: 'Q', ok: true, reason: '', dn: 'queued:deadline', dnd: '2026-09-01' }] }) + ')')),
     'the queued cell has no tooltip saying the note is coming');

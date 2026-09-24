@@ -45,6 +45,18 @@
  *       app's currentVisitAthenaBinding; it re-enters the sheet with a bound
  *       expectedContext, which lives in the SHEET's state. The regenerate
  *       rebuilt through the app binding alone and discarded it.
+ *       UPDATE 2026-09-10 (7c77423b, "Return to note from blocked Athena
+ *       review"): Send review no longer offers Regenerate, or any AI
+ *       generation, at all. It offers "Return to note", plus "Use this note for
+ *       this visit" when a retained note already matches the exact
+ *       appointment. That second action commits the sheet's own bound visit
+ *       through the canonical Bind gate (wfbindCommitCanonical) and only then
+ *       rebuilds, so the rebuilt review is still for the bound visit. Section 4
+ *       now presses that control instead of the removed one. The
+ *       regenkeep-1.0.0 seam still ships, although no control reaches
+ *       runUnifiedCanonicalGeneration (its only arming caller) any more, so
+ *       its unit checks (4b) and byte pins (7) stay until the module itself is
+ *       removed.
  *
  * WHAT THIS SUITE IS NOT. It is not a write proof. Section 0 pins that all
  * seven SHA-pinned write-path regions are byte-identical, so nothing here can
@@ -451,14 +463,27 @@ function whatHappenedRow(html, label) {
       'a BLOCKED row was swept into the new status');
   }
 
-  /* ======== 4. REGENERATE KEEPS THE VISIT HE JUST BOUND, BY HAND ===========
-   * The measured sequence: bound sheet -> "Regenerate HPI, ROS, Exam,
-   * Assessment & Plan" -> the rebuild comes back for the app's own day. */
+  /* ======= 4. A REBUILT REVIEW IS FOR THE VISIT THE DOCTOR BOUND ==========
+   * The measured sequence (b1197): bound sheet -> "Regenerate HPI, ROS, Exam,
+   * Assessment & Plan" -> the rebuild came back for the app's own day.
+   *
+   * 7c77423b (2026-09-10, "Return to note from blocked Athena review") removed
+   * that Regenerate control from Send review on purpose: Send review no longer
+   * offers any AI generation (athena-unified-confirmation-contract.test.js and
+   * athena-inline-canonical-generation-runtime.test.js both require
+   * #mlsAthenaUnifiedGenerateSections to be ABSENT). The press-through-the-sheet
+   * reproduction that used to live here therefore had nothing left to press.
+   * What replaced it is pinned below against the same fixtures: "Return to
+   * note", plus "Use this note for this visit", which rebuilds the review. That
+   * rebuild must still come back for the bound visit. It now gets there by
+   * committing the SHEET's own visit through the canonical Bind gate before the
+   * rebuild, never by a standing override. */
   const APP_OPTS = { patient: PATIENT, sections: THREE, receiptSessionId: 'regen-app',
     expectedContext: { visitDate: APP_ATHENA_DAY, provider: PROVIDER, appointmentId: '', encounterId: '', encounterUrl: '' } };
   {
-    /* 4a. THE DEFECT, reproduced against the shipped rebuild with nothing
-       armed: the app's own context names the creation day and no appointment. */
+    /* 4a. The premise, against the shipped rebuild with nothing armed: the
+       app's own context names the creation day and no appointment, so a
+       rebuild that dropped the bound visit would visibly land there. */
     const h = makeHarness({});
     const bare = h.wf.openUnifiedConfirmation(clone(APP_OPTS));
     await settle(120);
@@ -467,51 +492,70 @@ function whatHappenedRow(html, label) {
       'the fixture is invalid - the app-side rebuild did not land on the creation day (got ' + bare.visit.visitDate + ')');
   }
   {
+    /* 4a'. THE REPLACEMENT, pressed the way it ships. The bound review carries
+       a stale-provenance note for the exact appointment the app binding
+       already names (the only state in which "Use this note for this visit"
+       is offered). The rebuild is modelled exactly as the old block modelled
+       it: pushEntireVisitToAthena rebuilds from the APP binding alone. */
     const h = makeHarness({});
-    let generateCalls = 0, rebuildCalls = 0;
+    let generateCalls = 0, rebuildCalls = 0, reanchors = 0, commits = 0;
+    let appBinding = { patient: clone(PATIENT), source: 'saved-record', historical: true, visitContext: clone(BOUND) };
+    h.window._athenaEditorFingerprint = () => 'unchanged-editor-fingerprint';
+    h.window._athenaGetVisitBinding = () => appBinding;
+    h.window._athenaFreezeVisitBinding = (active, meta) => ({ patient: active, source: meta.source, historical: meta.historical,
+      visitContext: clone(meta.visitContext) });
+    h.window._athenaSetVisitBinding = (b) => { commits++; appBinding = b; return true; };
+    h.window._mlsAthenaCanRecoverExplicitBinding = (b) => b === appBinding;
+    h.window._mlsAthenaReanchorExplicitBinding = () => { reanchors++; return true; };
+    h.window._mlsAthenaCanonicalForWrite = () => ({ required: true, ok: reanchors > 0 });
+    h.window.generateNote = function () { generateCalls++; return true; };
+    h.window.pushEntireVisitToAthena = function () {
+      rebuildCalls++;
+      h.wf.openUnifiedConfirmation({ patient: PATIENT, sections: THREE, receiptSessionId: 'recover-rebuilt',
+        expectedContext: clone(appBinding.visitContext) });
+      return true;
+    };
     const boundManifest = h.wf.openUnifiedConfirmation({ patient: PATIENT, plan: [], sections: [], expectedContext: BOUND,
-      receiptSessionId: 'regen-bound', generationIssue: 'athena-note-stale-canonical-provenance' });
+      receiptSessionId: 'recover-bound', generationIssue: 'athena-note-stale-canonical-provenance' });
     await settle(160);
     const boundVisit = clone(boundManifest.visit);
     eq(boundVisit.appointmentId, APPOINTMENT, 'the bound review did not carry the exact appointment the doctor bound');
     eq(boundVisit.encounterId, ENCOUNTER, 'the bound review did not carry the exact encounter');
 
-    /* the sheet's own local-generation action, wired exactly as it ships */
-    h.window.generateNote = function () { generateCalls++; return true; };
-    h.window.pushEntireVisitToAthena = function () {
-      rebuildCalls++;
-      /* the app rebuild knows only the app binding - the creation day, unbound */
-      h.wf.openUnifiedConfirmation(clone(APP_OPTS));
-      return true;
-    };
-    const genBtn = h.el('mlsAthenaUnifiedGenerateSections');
-    ok(genBtn && (genBtn.handlers.click || []).length === 1, 'the Regenerate control is not wired on the sheet');
-    genBtn.click();
+    const card = h.cardHtml();
+    eq(card.indexOf('id="mlsAthenaUnifiedGenerateSections"'), -1,
+      'the bound review offers the removed Regenerate control again - Send review may not start an AI generation');
+    ok(card.indexOf('id="mlsAthenaUnifiedReturnToNote"') > 0, 'the bound review lost its Return to note action');
+    ok(card.indexOf('id="mlsAthenaUnifiedRecoverSaved"') > 0,
+      'the bound review with a retained note for this exact appointment does not offer "Use this note for this visit"');
+    const recover = h.el('mlsAthenaUnifiedRecoverSaved');
+    eq((recover.handlers.click || []).length, 1, 'the "Use this note for this visit" control is not wired exactly once');
+    recover.click();
     await settle(300);
 
-    eq(generateCalls, 1, 'the regenerate did not run the ordinary local generation exactly once');
-    eq(rebuildCalls, 1, 'the regenerate did not rebuild the review exactly once');
-    eq(h.executes().length, 0, 'THE REGENERATE WROTE TO ATHENA - it may only run local generation and validation');
+    eq(generateCalls, 0, 'the rebuild ran an AI generation - Send review may only reuse the retained note');
+    eq(rebuildCalls, 1, 'the rebuild did not rebuild the review exactly once');
+    eq(commits, 1, 'the rebuild did not commit the bound visit through the canonical Bind gate exactly once');
+    eq(reanchors, 1, 'the rebuild did not pass the canonical re-anchor gate exactly once');
+    eq(h.executes().length, 0, 'THE REBUILD WROTE TO ATHENA - it may only re-anchor and reopen the read-only review');
 
+    eq(appBinding.visitContext.visitDate, boundVisit.visitDate, 'the rebuild committed a different day than the sheet was bound to');
+    eq(appBinding.visitContext.appointmentId, APPOINTMENT, 'the rebuild committed a different appointment than the sheet was bound to');
     const rebuilt = h.state().manifest;
     eq(rebuilt.visit.visitDate, boundVisit.visitDate,
-      'THE MEASURED DEFECT: the regenerate reset the visit to the creation day and the bind had to be done again');
-    eq(rebuilt.visit.appointmentId, boundVisit.appointmentId, 'the regenerate lost the exact appointment the doctor bound');
-    eq(rebuilt.visit.encounterId, boundVisit.encounterId, 'the regenerate lost the bound encounter id');
-    eq(rebuilt.visit.encounterUrl, boundVisit.encounterUrl, 'the regenerate lost the bound encounter URL');
-    eq(rebuilt.visit.provider, boundVisit.provider, 'the regenerate lost the bound provider');
-    eq(rebuilt.patient.patientId, PATIENT.patientId, 'the regenerate rebuilt against a different patient');
-    /* ...and it DID re-run the note generation: the freshly generated sections
-       are the rows on the rebuilt sheet. */
-    eq(rebuilt.rows.filter(r => r.action === 'write_note').length, 3,
-      'the rebuild did not carry the freshly generated note sections');
+      'THE MEASURED DEFECT: the rebuild reset the visit to another day and the bind had to be done again');
+    eq(rebuilt.visit.appointmentId, boundVisit.appointmentId, 'the rebuild lost the exact appointment the doctor bound');
+    eq(rebuilt.visit.encounterId, boundVisit.encounterId, 'the rebuild lost the bound encounter id');
+    eq(rebuilt.visit.encounterUrl, boundVisit.encounterUrl, 'the rebuild lost the bound encounter URL');
+    eq(rebuilt.visit.provider, boundVisit.provider, 'the rebuild lost the bound provider');
+    eq(rebuilt.patient.patientId, PATIENT.patientId, 'the rebuild rebuilt against a different patient');
 
-    /* the carry-through is ONE SHOT: the very next ordinary open is untouched */
-    eq(h.regenKeep().pending(), null, 'the regenerate left a standing visit override armed');
+    /* nothing is left standing: the very next ordinary open is untouched */
+    eq(h.regenKeep().pending(), null, 'the rebuild left a standing visit override armed');
     const after = h.wf.openUnifiedConfirmation(clone(APP_OPTS));
     await settle(120);
-    eq(after.visit.appointmentId, '', 'a later ordinary review inherited the regenerate\'s carry-through');
-    ok(after.visit.visitDate !== boundVisit.visitDate, 'a later ordinary review inherited the regenerate\'s bound day');
+    eq(after.visit.appointmentId, '', 'a later ordinary review inherited the rebuild\'s visit');
+    ok(after.visit.visitDate !== boundVisit.visitDate, 'a later ordinary review inherited the rebuild\'s bound day');
   }
   {
     /* 4b. it refuses outright for a different patient, and it can never invent

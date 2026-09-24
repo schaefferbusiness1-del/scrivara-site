@@ -1323,8 +1323,28 @@
   /* studiofix-1.0.0: Pull activity drives #mlsPdpSel, a <select> this shell
      hides with the day strip's extras. el.click() never opens a select, let
      alone a hidden one, so the row did nothing. Its choices are offered in a
-     small dialog instead, and choosing one changes the real select. */
-  function chooseFromHiddenSelect(sel) {
+     small dialog instead.
+     A choice goes to the select's OWNER, the same call the owner's own change
+     handler makes, and the real select is set to match. The shell never
+     synthesizes an event to reach a listener (ui-control-coverage): a listener
+     that waits for a real person's choice must be able to rely on getting one.
+     So only a hidden select with a known owner is offered here; any other one
+     is shown, never driven. */
+  var HIDDEN_SELECT_OWNERS = {
+    /* feat_mls_pull_device_picker.js: set(id, name) stores the choice and
+       repaints the picker; its change handler reads data-name the same way. */
+    mlsPdpSel: function (o) {
+      var pick = W.__mlsPullTarget;
+      if (!pick || typeof pick.set !== 'function') return false;
+      pick.set(String(o.value || 'auto'), String(o.getAttribute('data-name') || o.textContent || ''));
+      return true;
+    }
+  };
+  function hiddenSelectOwner(sel) {
+    var id = sel && sel.id;
+    return (id && Object.prototype.hasOwnProperty.call(HIDDEN_SELECT_OWNERS, id)) ? HIDDEN_SELECT_OWNERS[id] : null;
+  }
+  function chooseFromHiddenSelect(sel, owner) {
     var S = function (x) { return x == null ? '' : String(x); };
     var old = qs('#mlsSelPick'); if (old && old.parentNode) old.parentNode.removeChild(old);
     var lab = S(sel.getAttribute('aria-label') || (sel.labels && sel.labels[0] && sel.labels[0].textContent) || 'Choose').trim();
@@ -1341,8 +1361,12 @@
       b.textContent = (o.selected ? '\u2713 ' : '') + S(o.textContent).trim();
       b.style.cssText = 'display:block;width:100%;text-align:left;margin:4px 0;padding:9px 12px;border-radius:10px;font:inherit;cursor:pointer;border:1px solid ' + (o.selected ? '#2E6A4B' : '#E7E5DD') + ';background:' + (o.selected ? '#EAF1EE' : '#fff');
       b.addEventListener('click', function () {
-        sel.value = o.value; safe(function () { sel.dispatchEvent(new Event('change', { bubbles: true })); });
-        close(); note(lab + ': ' + S(o.textContent).trim());
+        var was = sel.value;
+        sel.value = o.value;
+        var done = safe(function () { return owner(o, sel); }) === true;
+        if (!done) sel.value = was;
+        close();
+        note(done ? lab + ': ' + S(o.textContent).trim() : lab + ' could not be changed right now. Nothing was changed.');
       });
       card.appendChild(b);
     });
@@ -1358,7 +1382,13 @@
   }
   function runControl(el) {
     if (!el) return true;
-    if (String(el.tagName || '').toUpperCase() === 'SELECT' && !el.getClientRects().length) return chooseFromHiddenSelect(el);
+    if (String(el.tagName || '').toUpperCase() === 'SELECT' && !el.getClientRects().length) {
+      var owner = hiddenSelectOwner(el);
+      if (owner) return chooseFromHiddenSelect(el, owner);
+      spotlight(el);
+      note('That list cannot be changed from here. Open the screen it belongs to and choose there.');
+      return true;
+    }
     if (trustedGated(el)) {
       spotlight(el);
       note('That one has to be pressed directly — the app only accepts a real click there. It is highlighted for you.');

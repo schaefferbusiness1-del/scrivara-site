@@ -163,6 +163,7 @@ let tokenCounter = 0;
 function makeWorker(store, options = {}) {
   let listener = null;
   let executeCalls = 0;
+  let probeCalls = 0;
   const liveAthenaTabs = [{ id: 91, url: lockedContext.encounterUrl }];
   const context = {
     self: {}, URL, Date, Math, JSON, Object, Array, String, Number, RegExp, Uint32Array, Promise,
@@ -195,6 +196,7 @@ function makeWorker(store, options = {}) {
         async executeScript(details) {
           const request = details.args[0];
           if (request.mode === 'probe') {
+            probeCalls++;
             return [{ result: {
               ok: true, contextVerified: true, readOnly: true,
               reason: 'note-workspace-context-verified', context: clone(lockedContext)
@@ -222,6 +224,7 @@ function makeWorker(store, options = {}) {
   assert.strictEqual(typeof listener, 'function', 'typed Athena action handler did not wire');
   return {
     get executeCalls() { return executeCalls; },
+    get probeCalls() { return probeCalls; },
     send(message) {
       return new Promise((resolve, reject) => {
         let settled = false;
@@ -297,178 +300,71 @@ function assertRedactedTerminal(record, label) {
   assert.strictEqual(restartStore.values[persisted.key], undefined,
     'expiry alarm retained a redacted settled action-token tombstone');
 
-  // Sign is also an action-token consumer, but it has a second one-use
-  // prerequisite: the verified note-write proof. A ready Sign token must not
-  // become unusable merely because MV3 discarded the worker that minted it.
-  const signStore = makeSessionStore();
-  const signWorker = makeWorker(signStore);
-  const writeProbe = await signWorker.send({ ...probeMessage, previewHash: 'preview-sign-restart' });
-  const writeResult = await signWorker.send(executeMessage(writeProbe, {
-    previewHash: 'preview-sign-restart', gestureProof: 'write-before-sign'
-  }));
-  assert(writeResult.ok && writeResult.noteWriteProof, 'verified note write did not mint its exact Sign prerequisite');
-  const persistedWriteProof = proofEntry(signStore, writeResult.noteWriteProof);
-  assert.strictEqual(persistedWriteProof.record.state, 'ready');
-  const signProbeMessage = {
-    ...probeMessage, action: 'sign_encounter', previewHash: 'preview-sign-restart',
-    noteWriteProof: writeResult.noteWriteProof
-  };
-  const signProbe = await signWorker.send(signProbeMessage);
-  assert(signProbe.ok && signProbe.actionToken, 'Sign probe did not mint an exact action token');
-  assert(signProbe.expiresAt <= persistedWriteProof.record.expiresAt,
-    'Sign token advertised validity beyond its verified-write prerequisite');
-  assert(tokenEntry(signStore, signProbe.actionToken).record.noteWriteProof === writeResult.noteWriteProof,
-    'persisted Sign token lost its exact verified-write prerequisite id');
-
-  const restartedSignWorker = makeWorker(signStore, {
-    executeResult(request) {
-      return request.action === 'sign_encounter'
-        ? { ok: true, attempted: true, verified: true, signed: true, reason: 'exact-sign-control-context-verified', context: clone(lockedContext) }
-        : null;
-    }
-  });
-  const signResult = await restartedSignWorker.send(executeMessageFor(signProbeMessage, signProbe, {
-    gestureProof: 'sign-after-restart'
-  }));
-  assert.strictEqual(signResult.ok, true,
-    'fresh worker lost the exact verified-write prerequisite behind a ready Sign token');
-  assert.strictEqual(signResult.signed, true);
-  assert.strictEqual(restartedSignWorker.executeCalls, 1, 'restart Sign path injected more than one mutation');
-  assertRedactedTerminal(proofEntry(signStore, writeResult.noteWriteProof).record,
-    'consumed verified-write proof');
-  assertRedactedTerminal(tokenEntry(signStore, signProbe.actionToken).record,
-    'settled Sign token');
-  const usedProofTombstone = proofEntry(signStore, writeResult.noteWriteProof);
-  const settledSignTombstone = tokenEntry(signStore, signProbe.actionToken);
-  for (const terminalEntry of [usedProofTombstone, settledSignTombstone]) {
-    terminalEntry.record.issuedAt = Date.now() - 10000;
-    terminalEntry.record.expiresAt = Date.now() - 1;
-  }
-  await signStore.fireAlarm();
-  assert.strictEqual(signStore.values[usedProofTombstone.key], undefined,
-    'expiry alarm retained a redacted used note-proof tombstone');
-  assert.strictEqual(signStore.values[settledSignTombstone.key], undefined,
-    'expiry alarm retained a redacted settled Sign-token tombstone');
-
-  // The proof itself must survive a restart before the Sign probe, and exactly
-  // one of two independently minted Sign tokens may consume it.
-  const proofRestartStore = makeSessionStore();
-  const proofWriter = makeWorker(proofRestartStore);
-  const proofWriteProbe = await proofWriter.send({ ...probeMessage, previewHash: 'preview-proof-restart' });
-  const proofWrite = await proofWriter.send(executeMessage(proofWriteProbe, {
-    previewHash: 'preview-proof-restart', gestureProof: 'proof-write'
-  }));
-  assert(proofWrite.ok && proofWrite.noteWriteProof);
-  const proofSignMessage = {
-    ...probeMessage, action: 'sign_encounter', previewHash: 'preview-proof-restart',
-    noteWriteProof: proofWrite.noteWriteProof
-  };
-  const proofRestartWorker = makeWorker(proofRestartStore);
-  const [signProbeA, signProbeB] = await Promise.all([
-    proofRestartWorker.send(proofSignMessage),
-    proofRestartWorker.send(proofSignMessage)
-  ]);
-  assert(signProbeA.ok && signProbeB.ok, 'fresh worker could not hydrate the verified-write proof for Sign probing');
-  const firstSign = await proofRestartWorker.send(executeMessageFor(proofSignMessage, signProbeA, {
-    gestureProof: 'first-sign-proof-claim'
-  }));
-  const secondSign = await proofRestartWorker.send(executeMessageFor(proofSignMessage, signProbeB, {
-    gestureProof: 'second-sign-proof-claim'
-  }));
-  assert.strictEqual(firstSign.ok, true, 'first exact Sign proof claim was refused');
-  assert.strictEqual(secondSign.reason, 'note-write-proof-used',
-    'the same verified-write proof authorized a second Sign token');
-  assert.strictEqual(proofRestartWorker.executeCalls, 1, 'one verified-write proof reached Sign mutation twice');
-
-  // A rejected terminal write after a proof claim must burn the ready proof
-  // before returning. A second pre-minted Sign token in a fresh worker may not
-  // revive that prerequisite when storage recovers.
-  const proofClaimFailureStore = makeSessionStore();
-  const proofClaimWriter = makeWorker(proofClaimFailureStore);
-  const proofClaimWriteProbe = await proofClaimWriter.send({ ...probeMessage, previewHash: 'preview-proof-claim-failure' });
-  const proofClaimWrite = await proofClaimWriter.send(executeMessage(proofClaimWriteProbe, {
-    previewHash: 'preview-proof-claim-failure', gestureProof: 'proof-before-claim-failure'
-  }));
-  assert(proofClaimWrite.ok && proofClaimWrite.noteWriteProof);
-  const proofClaimSignMessage = {
-    ...probeMessage, action: 'sign_encounter', previewHash: 'preview-proof-claim-failure',
-    noteWriteProof: proofClaimWrite.noteWriteProof
-  };
-  const proofClaimWorker = makeWorker(proofClaimFailureStore);
-  const [failedProofSignToken, proofReplaySignToken] = await Promise.all([
-    proofClaimWorker.send(proofClaimSignMessage), proofClaimWorker.send(proofClaimSignMessage)
-  ]);
-  assert(failedProofSignToken.ok && proofReplaySignToken.ok);
-  proofClaimFailureStore.setFailSetPrefix('mlsAthenaNoteWriteProofV1.');
-  const failedProofClaim = await proofClaimWorker.send(executeMessageFor(
-    proofClaimSignMessage, failedProofSignToken, { gestureProof: 'failed-proof-terminal-write' }
-  ));
-  assert.strictEqual(failedProofClaim.reason, 'token-state-unavailable');
-  assert.strictEqual(proofClaimWorker.executeCalls, 0,
-    'failed proof-claim persistence reached the Athena driver');
-  assert.strictEqual(proofClaimFailureStore.values[`mlsAthenaNoteWriteProofV1.${proofClaimWrite.noteWriteProof}`], undefined,
-    'failed proof-claim persistence left the ready prerequisite recoverable');
-  proofClaimFailureStore.setFailSetPrefix('');
-  const proofClaimReplayWorker = makeWorker(proofClaimFailureStore);
-  const failedProofReplay = await proofClaimReplayWorker.send(executeMessageFor(
-    proofClaimSignMessage, proofReplaySignToken, { gestureProof: 'proof-claim-replay-after-restart' }
-  ));
-  assert.strictEqual(failedProofReplay.reason, 'verified-note-write-required',
-    'failed proof-claim persistence revived a ready proof after worker restart');
-  assert.strictEqual(proofClaimReplayWorker.executeCalls, 0,
-    'replayed proof after failed claim persistence reached the Athena driver');
-
-  for (const outageMode of ['throw', 'silent-drop']) {
-    const combinedProofStore = makeSessionStore();
-    const combinedProofWriter = makeWorker(combinedProofStore);
-    const combinedWriteProbe = await combinedProofWriter.send({
-      ...probeMessage, previewHash: `preview-proof-combined-${outageMode}`
-    });
-    const combinedWrite = await combinedProofWriter.send(executeMessage(combinedWriteProbe, {
-      previewHash: `preview-proof-combined-${outageMode}`, gestureProof: `proof-combined-write-${outageMode}`
+  // draftonly-1.0.0 (b1210): the worker's own closed action map dispatches ONLY write_note and
+  // save_draft; Sign, order placement and billing staging stay manual in athenaOne. The Sign-proof
+  // restart, one-use proof claims, combined proof outage and atomic order-row replacement this
+  // suite used to drive can no longer be reached, so what is pinned in their place is the closed
+  // door itself: each removed action is refused as unknown on probe AND execute, before any token,
+  // storage, alarm or Athena work, with the shared policy guard stubbed OPEN (makeWorker's
+  // gateActionRequest returns null, so the refusal is the worker's own). A refused execute may not
+  // spend the ready write_note token presented with it either.
+  const draftOnlyStore = makeSessionStore();
+  const draftOnlyWorker = makeWorker(draftOnlyStore);
+  const draftOnlyWriteProbe = await draftOnlyWorker.send({ ...probeMessage, previewHash: 'preview-draft-only' });
+  assert(draftOnlyWriteProbe.ok && draftOnlyWriteProbe.actionToken, 'the write_note probe beside the removed actions did not mint');
+  const draftOnlyProbeCalls = draftOnlyWorker.probeCalls;
+  const draftOnlyKeys = JSON.stringify(Object.keys(draftOnlyStore.values).sort());
+  const draftOnlySets = draftOnlyStore.setHistory.length;
+  const draftOnlyAlarms = JSON.stringify(draftOnlyStore.alarmNames.sort());
+  const removedActionRequests = [
+    { ...probeMessage, action: 'sign_encounter', previewHash: 'preview-draft-only', noteWriteProof: 'any-proof-id' },
+    orderProbeMessage('local-order-removed', 'row-order-removed', 'preview-draft-only'),
+    { ...probeMessage, action: 'stage_billing', previewHash: 'preview-draft-only', noteText: '', sections: [],
+      billing: { emCode: '99213', cptCodes: ['20610'] } }
+  ];
+  for (const request of removedActionRequests) {
+    const removedProbe = await draftOnlyWorker.send(request);
+    assert.strictEqual(removedProbe.ok, false, `${request.action} probe was accepted`);
+    assert.strictEqual(removedProbe.blocked, true, `${request.action} probe was not refused as blocked`);
+    assert.strictEqual(removedProbe.reason, 'unknown-action',
+      `${request.action} probe was not refused by the draft-only action map`);
+    assert.strictEqual(removedProbe.actionToken, undefined, `${request.action} probe minted an action token`);
+    const removedExecute = await draftOnlyWorker.send(executeMessageFor(request, draftOnlyWriteProbe, {
+      gestureProof: `removed-${request.action}`
     }));
-    assert(combinedWrite.ok && combinedWrite.noteWriteProof);
-    const combinedSignMessage = {
-      ...probeMessage, action: 'sign_encounter', previewHash: `preview-proof-combined-${outageMode}`,
-      noteWriteProof: combinedWrite.noteWriteProof
-    };
-    const combinedProofWorker = makeWorker(combinedProofStore);
-    const [combinedFirstSign, combinedReplaySign] = await Promise.all([
-      combinedProofWorker.send(combinedSignMessage), combinedProofWorker.send(combinedSignMessage)
-    ]);
-    assert(combinedFirstSign.ok && combinedReplaySign.ok,
-      `${outageMode} proof outage setup did not mint two independent Sign tokens`);
-    if (outageMode === 'throw') {
-      combinedProofStore.setFailRemovePrefix('mlsAthenaNoteWriteProofV1.');
-      combinedProofStore.setFailSetPrefix('mlsAthenaNoteWriteProofV1.');
-    } else {
-      combinedProofStore.setDropRemovePrefix('mlsAthenaNoteWriteProofV1.');
-      combinedProofStore.setDropSetPrefix('mlsAthenaNoteWriteProofV1.');
-    }
-    const combinedProofFailure = await combinedProofWorker.send(executeMessageFor(
-      combinedSignMessage, combinedFirstSign, { gestureProof: `proof-combined-first-${outageMode}` }
-    ));
-    assert.strictEqual(combinedProofFailure.reason, 'token-state-unavailable');
-    assert.strictEqual(combinedProofWorker.executeCalls, 0,
-      `${outageMode} combined proof outage reached the Athena driver`);
-    assert.strictEqual(proofEntry(combinedProofStore, combinedWrite.noteWriteProof).record.state, 'ready',
-      `${outageMode} combined proof outage fixture did not preserve the adversarial ready record`);
-    assert(combinedProofStore.alarmNames.includes(`mls-athena-auth-quarantine-v1.proof.${combinedWrite.noteWriteProof}`),
-      `${outageMode} combined proof outage did not retain its durable quarantine`);
-    combinedProofStore.setFailRemovePrefix(''); combinedProofStore.setFailSetPrefix('');
-    combinedProofStore.setDropRemovePrefix(''); combinedProofStore.setDropSetPrefix('');
-    const combinedProofReplayWorker = makeWorker(combinedProofStore);
-    const combinedProofReplay = await combinedProofReplayWorker.send(executeMessageFor(
-      combinedSignMessage, combinedReplaySign, { gestureProof: `proof-combined-replay-${outageMode}` }
-    ));
-    assert.strictEqual(combinedProofReplay.reason, 'token-state-unavailable',
-      `${outageMode} combined proof outage revived after worker recovery`);
-    assert.strictEqual(combinedProofReplayWorker.executeCalls, 0,
-      `${outageMode} combined proof outage replay reached the Athena driver`);
+    assert.strictEqual(removedExecute.ok, false, `${request.action} execute was accepted`);
+    assert.strictEqual(removedExecute.blocked, true, `${request.action} execute was not marked blocked`);
+    assert.strictEqual(removedExecute.reason, 'unknown-action',
+      `${request.action} execute was not refused by the draft-only action map`);
   }
+  assert.strictEqual(draftOnlyWorker.probeCalls, draftOnlyProbeCalls, 'a removed action ran a read-only Athena probe');
+  assert.strictEqual(draftOnlyWorker.executeCalls, 0, 'a removed action reached the Athena driver');
+  assert.strictEqual(draftOnlyStore.setHistory.length, draftOnlySets, 'a removed action wrote browser-session state');
+  assert.strictEqual(JSON.stringify(Object.keys(draftOnlyStore.values).sort()), draftOnlyKeys,
+    'a removed action minted, changed or removed a persisted record');
+  assert.strictEqual(JSON.stringify(draftOnlyStore.alarmNames.sort()), draftOnlyAlarms, 'a removed action scheduled or cleared an alarm');
+  assert.strictEqual(tokenEntry(draftOnlyStore, draftOnlyWriteProbe.actionToken).record.state, 'ready',
+    'a refused removed-action execute spent the write_note token presented with it');
+  const draftOnlyWrite = await draftOnlyWorker.send(executeMessage(draftOnlyWriteProbe, {
+    previewHash: 'preview-draft-only', gestureProof: 'draft-only-write'
+  }));
+  assert.strictEqual(draftOnlyWrite.ok, true, 'the write_note token could not do the one write it was minted for');
+  assert.strictEqual(draftOnlyWorker.executeCalls, 1, 'the draft-only write injected zero or two mutations');
+  assert.strictEqual(draftOnlyStore.localTouches, 0, 'the draft-only path touched local/sync storage');
+
+  // A verified note write still persists its exact write proof in browser-session storage.
+  const proofStore = makeSessionStore();
+  const proofWriter = makeWorker(proofStore);
+  const proofWriteProbe = await proofWriter.send({ ...probeMessage, previewHash: 'preview-write-proof' });
+  const proofWrite = await proofWriter.send(executeMessage(proofWriteProbe, {
+    previewHash: 'preview-write-proof', gestureProof: 'write-proof'
+  }));
+  assert(proofWrite.ok && proofWrite.noteWriteProof, 'a verified note write did not persist its exact write proof');
+  assert.strictEqual(proofEntry(proofStore, proofWrite.noteWriteProof).record.state, 'ready');
+  assert.strictEqual(proofStore.localTouches, 0, 'the write proof touched local/sync storage');
 
   // If the exact proof cannot be persisted, the already-verified note result
-  // remains truthful but must not expose an unusable Sign capability.
+  // remains truthful but must not expose a proof the next worker cannot hydrate.
   const proofFailureStore = makeSessionStore();
   proofFailureStore.setFailSetPrefix('mlsAthenaNoteWriteProofV1.');
   const proofFailureWorker = makeWorker(proofFailureStore);
@@ -491,21 +387,19 @@ function assertRedactedTerminal(record, label) {
   assert.strictEqual(proofSilentDropWrite.noteWriteProof, undefined,
     'a silently dropped verified-write proof survived its persistence readback');
 
+  // An unused write proof is session-scoped: once expired, the next cleanup removes it.
   const expiredProofStore = makeSessionStore();
   const expiredProofWriter = makeWorker(expiredProofStore);
   const expiredProofProbe = await expiredProofWriter.send({ ...probeMessage, previewHash: 'preview-expired-proof' });
   const expiredProofWrite = await expiredProofWriter.send(executeMessage(expiredProofProbe, {
     previewHash: 'preview-expired-proof', gestureProof: 'expired-proof-write'
   }));
-  const expiredProofRecord = proofEntry(expiredProofStore, expiredProofWrite.noteWriteProof).record;
-  expiredProofRecord.issuedAt = Date.now() - 10000;
-  expiredProofRecord.expiresAt = Date.now() - 1;
-  const expiredProofSign = await makeWorker(expiredProofStore).send({
-    ...probeMessage, action: 'sign_encounter', previewHash: 'preview-expired-proof',
-    noteWriteProof: expiredProofWrite.noteWriteProof
-  });
-  assert.strictEqual(expiredProofSign.reason, 'note-write-proof-expired',
-    'expired persisted write proof did not fail with its truthful prerequisite reason');
+  const expiredProof = proofEntry(expiredProofStore, expiredProofWrite.noteWriteProof);
+  expiredProof.record.issuedAt = Date.now() - 10000;
+  expiredProof.record.expiresAt = Date.now() - 1;
+  await expiredProofStore.fireAlarm();
+  assert.strictEqual(expiredProofStore.values[expiredProof.key], undefined,
+    'expiry cleanup retained an expired verified-write proof');
 
   // Optional signed-in account/practice expectations are part of the minted
   // authorization. Execute cannot weaken or replace what probe reviewed.
@@ -557,64 +451,6 @@ function assertRedactedTerminal(record, label) {
   assert.strictEqual(doubleResults.filter(result => result.reason === 'token-used').length, 1,
     'double click did not consume exactly one duplicate');
   assert.strictEqual(doubleWorker.executeCalls, 1, 'double click injected more than once');
-
-  // Order-row replacement is one storage transaction: invalidate every older
-  // same-manifest token and mint the newly reviewed row together.
-  const orderStore = makeSessionStore();
-  const orderWorker = makeWorker(orderStore, {
-    executeResult(request) {
-      return request.action === 'place_order'
-        ? { ok: true, attempted: true, verified: true, orderPlaced: true, alreadyPresent: false, reason: 'one-exact-order-isolated-readback-verified', context: clone(lockedContext) }
-        : null;
-    }
-  });
-  const orderA = orderProbeMessage('local-order-atomic-a', 'row-order-atomic-a');
-  const orderB = orderProbeMessage('local-order-atomic-b', 'row-order-atomic-b');
-  const orderProbeA = await orderWorker.send(orderA);
-  const orderProbeB = await orderWorker.send(orderB);
-  assert(orderProbeA.ok && orderProbeB.ok, 'sequential exact-order probes were not minted');
-  assert.strictEqual(tokenEntry(orderStore, orderProbeA.actionToken).record.state, 'invalidated',
-    'new order probe left its older same-manifest token ready');
-  assertRedactedTerminal(tokenEntry(orderStore, orderProbeA.actionToken).record,
-    'invalidated order token');
-  assert.strictEqual(tokenEntry(orderStore, orderProbeB.actionToken).record.state, 'ready');
-  assert(orderStore.setHistory.some(keys => keys.includes(`mlsAthenaActionV3Token.${orderProbeA.actionToken}`) &&
-    keys.includes(`mlsAthenaActionV3Token.${orderProbeB.actionToken}`)),
-  'order invalidation and replacement mint were not committed in one session write');
-  const staleOrder = await orderWorker.send(executeMessageFor(orderA, orderProbeA, {
-    gestureProof: 'stale-order', gestureRowHash: orderA.rowHash, gestureClientOrderId: orderA.clientOrderId
-  }));
-  assert.strictEqual(staleOrder.reason, 'token-used');
-  const liveOrder = await orderWorker.send(executeMessageFor(orderB, orderProbeB, {
-    gestureProof: 'live-order', gestureRowHash: orderB.rowHash, gestureClientOrderId: orderB.clientOrderId
-  }));
-  assert.strictEqual(liveOrder.ok, true);
-  assert.strictEqual(orderWorker.executeCalls, 1, 'atomic order replacement executed zero or two rows');
-
-  const failedOrderStore = makeSessionStore();
-  const failedOrderWorker = makeWorker(failedOrderStore);
-  const retainedOrder = orderProbeMessage('local-order-retained', 'row-order-retained', 'preview-order-failed-transaction');
-  const refusedReplacement = orderProbeMessage('local-order-refused', 'row-order-refused', 'preview-order-failed-transaction');
-  const retainedProbe = await failedOrderWorker.send(retainedOrder);
-  failedOrderStore.setDropBatchSet(true);
-  const refusedProbe = await failedOrderWorker.send(refusedReplacement);
-  assert.strictEqual(refusedProbe.reason, 'token-state-unavailable',
-    'silently dropped order transaction returned an uncommitted replacement token');
-  const readyAfterFailure = Object.entries(failedOrderStore.values).filter(([key, value]) =>
-    key.startsWith('mlsAthenaActionV3Token.') && value.state === 'ready');
-  assert.strictEqual(readyAfterFailure.length, 1,
-    'failed replacement storage transaction left zero or multiple persisted ready order tokens');
-  assert.strictEqual(readyAfterFailure[0][0], `mlsAthenaActionV3Token.${retainedProbe.actionToken}`,
-    'failed replacement transaction displaced the last successfully returned order token');
-  failedOrderStore.setDropBatchSet(false);
-  const retainedAfterFailure = await failedOrderWorker.send(executeMessageFor(retainedOrder, retainedProbe, {
-    gestureProof: 'retained-after-failed-replacement',
-    gestureRowHash: retainedOrder.rowHash, gestureClientOrderId: retainedOrder.clientOrderId
-  }));
-  assert.strictEqual(retainedAfterFailure.ok, true,
-    'failed replacement transaction changed the prior token only in the current worker');
-  assert.strictEqual(failedOrderWorker.executeCalls, 1,
-    'failed replacement transaction did not preserve exactly one executable prior order token');
 
   // Persisted state that was changed, expired, issued in the future, or left
   // at the mutation boundary never reaches the driver in a new worker.
@@ -752,7 +588,7 @@ function assertRedactedTerminal(record, label) {
     'probe trusted a session write that did not survive readback');
   assert.strictEqual(silentDrop.ok, false);
 
-  console.log('PASS Athena action token session runtime: exact action + Sign-proof restart, one-use replay/double-click/proof claims, combined remove+set outage quarantine, atomic order replacement, exact binding/tamper/expiry, uncertain restart, storage failure/readback, PHI-free terminal tombstones, and expiry cleanup');
+  console.log('PASS Athena action token session runtime: exact write_note restart hydration, one-use replay/double-click, draft-only refusal of Sign/order/billing before any token or storage work, write-proof persistence/readback and expiry, combined remove+set outage quarantine, exact account/practice binding/tamper/expiry, uncertain restart, storage failure/readback, PHI-free terminal tombstones, and expiry cleanup');
 })().catch(error => {
   console.error(error);
   process.exitCode = 1;

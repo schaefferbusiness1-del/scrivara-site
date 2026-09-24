@@ -919,27 +919,54 @@ async function runtime() {
          would silently turn automatic drafting off). */
       ok(st.rail, 'the left-side patient selector is not on screen in Simple');
       ok(st.railed, 'the shell\'s own Draft-all button is not in the rail, so the room has two primaries or none');
-      /* and the ONE disclosure gives every one of them back */
-      const opened = await page.evaluate(() => {
-        window.__mlsOpDay.setMore(true);
-        return window.__uiContract.room();
-      });
-      /* SETTLE, DON'T SNAPSHOT. Un-folding the rail hands msl-1.0.0 back its
-         own named disclosures ("Change day", "Your templates", "Assign
-         templates in bulk"), and msl paints those on its own refresh cadence -
-         measured at 8 controls after 300ms and 12 after 800ms in the same
-         build. The invariant is "the fold gives everything back"; the sample
-         is allowed up to 3s to be taken. */
-      let reopened = await page.evaluate(() => window.__uiContract.room());
-      for (let settle = 0; settle < 10 && reopened.chrome <= 8; settle++) {
-        await page.waitForTimeout(300);
-        reopened = await page.evaluate(() => window.__uiContract.room());
+      /* and the ONE disclosure gives every one of them back.
+         SETTLE ON WHAT THE FOLD GIVES BACK, NOT ON A CLOCK OR A LITERAL.
+         Un-folding the rail hands msl-1.0.0 back its own named disclosures,
+         and msl paints those on its own refresh cadence, which depends on the
+         box: 8 controls after 300ms and 12 after 800ms in one build; at b1336
+         about 5s on a loaded box (17 polls of 300ms) and under 100ms on an idle
+         one. The unfolded total moved too. At b1336 it is 7 (home, close, the
+         two view buttons, the three disclosures), or 10 once opfollow-1.0.0 has
+         painted #oprTplMode's three buttons - which it keeps visible while
+         folded as well, so the folded count moves from 2 to 5 with it. The old
+         check, a fixed 3s poll against "more than 8", therefore failed both on
+         a slow paint and on a complete one. It now waits (up to 15s) for the
+         three disclosures BY NAME, each on the region msl-1.0.0's registry
+         folds, and compares against the folded room this run measured a moment
+         earlier. */
+      const GIVEN_BACK = [
+        ['#opPrepDayRow', 'Change day'],
+        ['#oprTplRail', 'Your templates'],
+        ['#mlsOnfBar', 'Assign templates in bulk']
+      ];
+      const closed = await page.evaluate(() => window.__uiContract.room());
+      const foldStart = Date.now();
+      await page.evaluate(() => window.__mlsOpDay.setMore(true));
+      const gaveBack = await page.waitForFunction((rows) => rows.every(([sel, label]) => {
+        const b = document.querySelector('#opPrepModal button.msl-more[data-msl-for="' + sel + '"]');
+        return !!b && window.__uiContract.visible(b) && (b.textContent || '').indexOf(label) >= 0;
+      }), GIVEN_BACK, { timeout: 15000, polling: 250 }).then(() => true, () => false);
+      const reopened = await page.evaluate(() => window.__uiContract.room());
+      measured.fold = { closed: closed.chrome, open: reopened.chrome, ms: Date.now() - foldStart };
+      ok(gaveBack,
+        `pressing More in Simple did not show its named disclosures (${GIVEN_BACK.map((g) => g[1]).join(', ')}) within 15s — a fold that cannot be opened is a deletion: ${JSON.stringify(reopened.chromeIds)}`);
+      for (const [, label] of GIVEN_BACK) {
+        ok(closed.chromeIds.every((id) => id.indexOf(label) < 0),
+          `"${label}" is on screen in Simple before More is pressed, so the fold hides nothing: ${JSON.stringify(closed.chromeIds)}`);
+        ok(reopened.chromeIds.some((id) => id.indexOf(label) >= 0),
+          `pressing More in Simple did not give "${label}" back as a control in the room: ${JSON.stringify(reopened.chromeIds)}`);
       }
-      ok(reopened.chrome > 8,
-        `pressing More in Simple gave nothing back (${reopened.chrome} controls) — a fold that cannot be opened is a deletion`);
+      /* the fold also holds the 'This patient / All patients' view switch
+         (#opPrepModeRow in the fold's ADV list): it must come back too */
+      for (const id of ['opPrepModePatient', 'opPrepModeAll']) {
+        ok(closed.chromeIds.every((x) => x.indexOf(id) < 0),
+          `the view switch "${id}" is on screen in Simple before More is pressed: ${JSON.stringify(closed.chromeIds)}`);
+        ok(reopened.chromeIds.some((x) => x.indexOf(id) >= 0),
+          `pressing More in Simple did not give the view switch "${id}" back: ${JSON.stringify(reopened.chromeIds)}`);
+      }
+      ok(reopened.chrome > closed.chrome,
+        `pressing More in Simple gave nothing back (${closed.chrome} controls folded, ${reopened.chrome} unfolded) — a fold that cannot be opened is a deletion: ${JSON.stringify(reopened.chromeIds)}`);
       await page.evaluate(() => window.__mlsOpDay.setMore(false));
-      checks++;
-      void opened;
     }
 
     /* ================================================================
@@ -2076,6 +2103,7 @@ runtime().then(() => {
   console.log(`1p-ui-shape-contract: ${checks} checks passed`);
   console.log(`  scope chip @360: font ${measured.chip.fontPx}px, line-height ${measured.chip.lineHeightPx}px, box ${measured.chip.boxHeight}px`);
   console.log(`  op-note tap targets @360: ${(measured.taps || []).map((t) => t.id + ' ' + t.w + 'x' + t.h).join(', ')}`);
+  console.log(`  op-note fold in Simple: ${measured.fold.closed} controls folded, ${measured.fold.open} unfolded, disclosures back in ${measured.fold.ms}ms`);
   if (measured.ringHoist) {
     console.log(`  KNOWN DEFECT (nextglow lane), ${measured.ringHoist.length} sample(s): no guided ring lit —`);
     measured.ringHoist.forEach((r) => console.log(`    ${r}`));

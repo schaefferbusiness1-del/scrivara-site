@@ -372,7 +372,9 @@ ok(CONNECT.indexOf("window.removeEventListener('mls:generation-started', onLaneG
 ok(CONNECT.indexOf("window.removeEventListener('mls:generation-settled', onLaneGenSettled)") > 0,
   'revert() no longer detaches the settled listener');
 const SYNC_TOP = codeOnly(extractFn(CONNECT, '  function syncTopLane(rec) {'));
-ok(SYNC_TOP.indexOf('paintLaneHint(hint, live, text, noteText)') > 0,
+/* the painter takes a 5th argument since the paused-visit resume work (2026-09-10): whether the
+   note's transcript is stale, so a resumable visit is not painted as settled. */
+ok(SYNC_TOP.indexOf('paintLaneHint(hint, live, text, noteText, noteTranscriptStale)') > 0,
   'syncTopLane no longer paints the hint through the generation-aware painter');
 ok(SYNC_TOP.indexOf('_genRun.active') > 0,
   'the lane Generate label no longer reads the run state, so it can offer to start a run already running');
@@ -389,7 +391,7 @@ ok(CONNECT.indexOf("'#mlsEz3 .ez3fl-rechint[data-mls-gen-run=\"active\"]") > 0,
    nobody runs. */
 ['mls-connect.js', 'cloned-mls-connect.js'].forEach(function (f) {
   const src = read(f);
-  ok(src.indexOf('function paintLaneHint(hint, live, text, noteTextValue) {') > 0,
+  ok(src.indexOf('function paintLaneHint(hint, live, text, noteTextValue, noteTranscriptStale) {') > 0,
     f + ' was not re-derived - it has no generation-aware lane hint painter');
   ok(src.indexOf('function genRunOverlay() {') > 0, f + ' was not re-derived - it has no run overlay');
 });
@@ -484,6 +486,16 @@ const BRANCHES = [
     expect: 'This is still a draft. Complete and save it before reviewing Athena actions. Nothing changed.'
   },
   {
+    /* histfix-1.0.0: a chart-import receipt came FROM Athena and is never written back. */
+    name: 'the note is a chart-import receipt',
+    id: 'import-1',
+    setup(h) {
+      h.setNotes([{ id: 'import-1', text: 'Chart import receipt: problems, medications, allergies' }]);
+      h.set('_mlsIsChartImportNote', (n) => !!n && n.id === 'import-1');
+    },
+    expect: 'This is a chart-import receipt - data read from Athena, not a visit note. Nothing is sent back.'
+  },
+  {
     name: 'the note still has unresolved template fields',
     id: 'blank-1',
     setup(h) {
@@ -521,7 +533,7 @@ const BRANCHES = [
       h.set('_athenaBindingForSavedRecord', () => GOOD_BINDING);
       h.set('_mlsSavedAthenaCanonicalForWrite', () => ({ required: true, ok: false, reason: 'canonical-source-changed' }));
     },
-    expect: 'This saved generated note no longer has a current, verified five-section Athena payload. Reopen it, regenerate or repair the standard note, and save it again. Nothing changed in Athena.',
+    expect: 'This saved generated note no longer has a current, verified five-section Athena payload. Reopen it, review and complete the standard note, and save it again. Nothing changed in Athena.',
     cure: true
   },
   {
@@ -553,7 +565,7 @@ BRANCHES.forEach(function (b) {
   ok(rec, b.name + ': no per-note refusal record was written - the row will show nothing');
   eq(rec.message, b.expect, b.name + ': the recorded sentence differs from the toasted one');
   if (b.cure) {
-    eq(rec.cure, 'Open this visit ▸ Regenerate ▸ Save to history, then review again',
+    eq(rec.cure, 'Open this visit ▸ Review or complete the existing note ▸ Open Send to Athena again ▸ Save to history when ready',
       b.name + ': the canonical refusal lost its cure hint');
   } else {
     eq(rec.cure, '', b.name + ': a cure hint was invented for a branch that has no sequence to follow');
@@ -637,7 +649,7 @@ ok(PUSH_CODE.indexOf('if(_phRefused) return;') > 0,
   ok(src.indexOf('${_mlsHistRefusalHtml(n.id)}') > 0,
     name + ' does not render the refusal line in its History row');
   ok(src.indexOf('.hist-main .hist-refusal{') > 0, name + ' has no skin for the refusal line');
-  ok(src.indexOf("HIST_REFUSAL_CANON_CURE='Open this visit ▸ Regenerate ▸ Save to history, then review again'") > 0,
+  ok(src.indexOf("HIST_REFUSAL_CANON_CURE='Open this visit ▸ Review or complete the existing note ▸ Open Send to Athena again ▸ Save to history when ready'") > 0,
     name + ' lost the canonical cure hint');
   eq((src.match(/_mlsHistPushRefuse\(/g) || []).length, BRANCHES.length + 1,
     name + ' does not record the same set of refusal branches (definition + ' + BRANCHES.length + ' call sites)');

@@ -60,7 +60,7 @@ const srv = http.createServer((q, r) => {
     await pg.evaluate(HARNESS);
     await pg.evaluate(() => window.__clunky.seed());
     const load = (src) => pg.evaluate((src) => new Promise((r) => { const s = document.createElement('script'); s.src = src; s.onload = r; s.onerror = r; document.head.appendChild(s); }), src);
-    for (const [g, src] of [['__mlsStudyRequest', '/feat_mls_study_request.js'], ['__mlsSaveVerify', '/feat_save_verify.js']]) {
+    for (const [g, src] of [['__mlsStudyRequest', '/feat_mls_study_request.js'], ['__mlsSaveVerify', '/feat_save_verify.js'], ['__mlsPullTarget', '/feat_mls_pull_device_picker.js']]) {
       if (!(await pg.evaluate((g) => !!window[g], g))) await load(src);
     }
     await pg.waitForTimeout(800);
@@ -131,22 +131,107 @@ const srv = http.createServer((q, r) => {
     const chip = await pg.evaluate(() => { const c = document.getElementById('mlsAskCopilotChip'); return !!(c && c.style.display !== 'none' && c.getClientRects().length); });
     assert.strictEqual(chip, false, 'no stray Ask MLS Copilot chip after Find picked a result');
 
-    /* 7. a Tools row driving a hidden <select> offers its choices */
+    /* 7. a Tools row driving a hidden <select> offers its choices, and a choice
+       goes to the select's OWNER, never through a synthesized event.
+       Pull activity is #mlsPdpSel (feat_mls_pull_device_picker.js), hidden by
+       the calm shell. Through b1336 the chooser set the value and faked a
+       'change' event; ui-control-coverage forbids the shell from synthesizing
+       events. The chooser now calls window.__mlsPullTarget.set() directly and
+       keeps the select in step, so the pin is on what the doctor gets: the
+       stored pull target, the live select, and zero synthesized events. */
     const pick = await pg.evaluate(async () => {
-      const sel = document.createElement('select'); sel.id = 'zzHiddenSel'; sel.setAttribute('aria-label', 'Pull runs on');
-      sel.innerHTML = '<option value="auto">Auto - office computer</option><option value="lap">Laptop</option>';
-      const wrap = document.createElement('div'); wrap.style.display = 'none'; wrap.appendChild(sel); document.body.appendChild(wrap);
-      let changed = ''; sel.addEventListener('change', () => { changed = sel.value; });
-      const C = window.__mlsCalmShell; if (!C || typeof C.runControl !== 'function') { wrap.remove(); return null; }
-      C.runControl(sel); await new Promise((r) => setTimeout(r, 100));
-      const d = document.getElementById('mlsSelPick'); const shown = !!(d && d.getClientRects().length);
-      const btn = d && [...d.querySelectorAll('button')].find((x) => /Laptop/.test(x.textContent)); if (btn) btn.click();
-      wrap.remove();
-      return { shown, changed, closed: !document.getElementById('mlsSelPick') };
+      const C = window.__mlsCalmShell, P = window.__mlsPullTarget;
+      if (!C || typeof C.runControl !== 'function') return null;
+      if (!P || typeof P.set !== 'function') return { picker: false };
+      const KEY = 'mls_pull_target_device';
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const keep = localStorage.getItem(KEY);
+      localStorage.removeItem(KEY);
+      /* the picker paints its select next to the day bar's Pull button; the
+         calm shell hides that spot, so a hidden host stands in for it */
+      let host = null;
+      if (!document.getElementById('mlsDsPullBtn')) {
+        host = document.createElement('div'); host.style.display = 'none';
+        const pb = document.createElement('button'); pb.type = 'button'; pb.id = 'mlsDsPullBtn'; pb.textContent = 'Pull';
+        host.appendChild(pb); document.body.appendChild(host);
+      }
+      P.refresh(); await sleep(50);
+      const wrap = document.getElementById('mlsPdpWrap');
+      const wrapDisplay = wrap ? wrap.style.display : '';
+      if (wrap) wrap.style.display = 'none';
+      const live = () => document.getElementById('mlsPdpSel');
+      let synthesized = 0;
+      const count = (e) => { if (e.target && e.target.id === 'mlsPdpSel') synthesized++; };
+      document.addEventListener('change', count, true);
+      document.addEventListener('input', count, true);
+      const choose = async (re) => {
+        C.runControl(live()); await sleep(100);
+        const d = document.getElementById('mlsSelPick');
+        const shown = !!(d && d.getClientRects().length);
+        const rows = d ? [...d.querySelectorAll('button')].map((x) => x.textContent.trim()) : [];
+        const btn = d && [...d.querySelectorAll('button')].find((x) => re.test(x.textContent));
+        if (btn) btn.click();
+        await sleep(100);
+        const n = document.getElementById('mlsNote');
+        return { shown, rows, clicked: !!btn, closed: !document.getElementById('mlsSelPick'), note: n ? n.textContent : '' };
+      };
+      const out = { picker: true };
+      try {
+        /* a registered computer, as the picker lists one after /api/relay/devices */
+        const opt = new Option('Front desk laptop (laptop/secondary)', 'dev-LAP');
+        opt.setAttribute('data-name', 'Front desk laptop');
+        live().add(opt);
+        out.toLaptop = await choose(/Front desk laptop/);
+        out.afterLaptop = { get: P.get(), stored: localStorage.getItem(KEY), selValue: live() && live().value };
+        out.toAuto = await choose(/^(\u2713 )?Auto/);
+        out.afterAuto = { get: P.get(), stored: localStorage.getItem(KEY), selValue: live() && live().value };
+      } finally {
+        document.removeEventListener('change', count, true);
+        document.removeEventListener('input', count, true);
+        if (keep === null) localStorage.removeItem(KEY); else localStorage.setItem(KEY, keep);
+        if (wrap) wrap.style.display = wrapDisplay;
+        if (host) host.remove();
+        P.refresh();
+      }
+      out.synthesized = synthesized;
+
+      /* a hidden select with no owner is shown, never driven */
+      const sel = document.createElement('select'); sel.id = 'zzHiddenSel'; sel.setAttribute('aria-label', 'Some other choice');
+      sel.innerHTML = '<option value="a">A</option><option value="b">B</option>';
+      const box = document.createElement('div'); box.style.display = 'none'; box.appendChild(sel); document.body.appendChild(box);
+      let other = 0; sel.addEventListener('change', () => { other++; }); sel.addEventListener('input', () => { other++; });
+      C.runControl(sel); await sleep(100);
+      const n2 = document.getElementById('mlsNote');
+      out.noOwner = { chooser: !!document.getElementById('mlsSelPick'), value: sel.value, events: other, note: n2 ? n2.textContent : '' };
+      box.remove();
+      return out;
     });
-    if (pick !== null) assert.deepStrictEqual(pick, { shown: true, changed: 'lap', closed: true }, 'a hidden select is offered as a small chooser that changes the real select');
+    if (pick !== null) {
+      assert.strictEqual(pick.picker, true, 'the pull-device picker (window.__mlsPullTarget) is installed');
+      assert.deepStrictEqual(
+        { shown: pick.toLaptop.shown, clicked: pick.toLaptop.clicked, closed: pick.toLaptop.closed },
+        { shown: true, clicked: true, closed: true },
+        'Pull activity opens a chooser listing the picker\'s choices, and choosing closes it: ' + JSON.stringify(pick.toLaptop));
+      assert.ok(pick.toLaptop.rows.some((r) => /Auto/.test(r)), 'the chooser offers Auto: ' + JSON.stringify(pick.toLaptop.rows));
+      assert.deepStrictEqual(pick.afterLaptop.get, { id: 'dev-LAP', name: 'Front desk laptop', self: false },
+        'choosing a computer stores it through the picker\'s own set(), under the name the picker lists');
+      assert.deepStrictEqual(JSON.parse(pick.afterLaptop.stored), { id: 'dev-LAP', name: 'Front desk laptop' },
+        'the pull target is stored where the relay reads it');
+      assert.strictEqual(pick.afterLaptop.selValue, 'dev-LAP', 'the real select shows the chosen computer');
+      assert.match(pick.toLaptop.note, /Front desk laptop/, 'the choice is confirmed on screen');
+      assert.deepStrictEqual(
+        { shown: pick.toAuto.shown, clicked: pick.toAuto.clicked, closed: pick.toAuto.closed, get: pick.afterAuto.get, stored: pick.afterAuto.stored, selValue: pick.afterAuto.selValue },
+        { shown: true, clicked: true, closed: true, get: null, stored: null, selValue: 'auto' },
+        'choosing Auto clears the target and the real select reads Auto: ' + JSON.stringify(pick.afterAuto));
+      assert.strictEqual(pick.synthesized, 0, 'no change or input event was synthesized on #mlsPdpSel');
+      assert.deepStrictEqual(
+        { chooser: pick.noOwner.chooser, value: pick.noOwner.value, events: pick.noOwner.events },
+        { chooser: false, value: 'a', events: 0 },
+        'a hidden select with no known owner is not proxied: no chooser, no value change, no synthesized event');
+      assert.match(pick.noOwner.note, /cannot be changed from here/, 'and the doctor is told where to change it');
+    }
 
     assert.deepStrictEqual(errs, [], 'no page errors: ' + errs.join(' | '));
-    console.log('PASS studio and tools do what they say: Practice loaders exist and a failed registry export says so, Find offers only usable routes, appointments count once, Verify speaks when its report is hidden, Escape closes Copilot, no stray Ask chip, and a hidden select row opens a chooser');
+    console.log('PASS studio and tools do what they say: Practice loaders exist and a failed registry export says so, Find offers only usable routes, appointments count once, Verify speaks when its report is hidden, Escape closes Copilot, no stray Ask chip, and Pull activity opens a chooser that sets the pull target through its owner, with no synthesized event');
   } finally { await b.close(); srv.close(); }
 });

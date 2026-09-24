@@ -82,8 +82,14 @@ function importerGateSlice(rosterComplete, options) {
     balanced(IMPORTER, 'function resolveProviderRequest(raw, opts)', 'resolveProviderRequest')
   ].join('\n');
   const receipt = { complete: rosterComplete === true, partial: rosterComplete !== true, listedCount: 3, rosterScope: 'painted-day-grid' };
+  /* The gate's stamp-age rule (frozenAllScopeOk: older than 30 days is refused) reads Date.now().
+     A caller that runs on a harness clock (Part B's frozen job clock) passes that clock here, so the
+     stamp it wrote and the gate that judges it share ONE clock. Without it the gate judged a stamp
+     written at the frozen job time against the real calendar, and the suite went red by itself
+     30 days after that fixed date. */
+  const GateDate = options.Date || Date;
   const ctx = vm.createContext({
-    console, JSON, Math, Object, String, Number, Date, RegExp, Boolean, isFinite,
+    console, JSON, Math, Object, String, Number, Date: GateDate, RegExp, Boolean, isFinite,
     safe(fn, fallback) { try { return fn(); } catch (e) { return fallback; } },
     isFn(value) { return typeof value === 'function'; },
     providerKey(raw) { return String(raw == null ? '' : raw).trim().toLowerCase().replace(/[^a-z0-9]+/g, '-'); },
@@ -202,8 +208,8 @@ function rangeRuntime(options) {
 
   /* the REAL importer provider gate drives this stub, so Part B's admission
      decisions are the shipped ones and not a second opinion. */
-  const gateCtxComplete = importerGateSlice(true);
-  const gateCtxIncomplete = importerGateSlice(false);
+  const gateCtxComplete = importerGateSlice(true, { Date: FakeDate });
+  const gateCtxIncomplete = importerGateSlice(false, { Date: FakeDate });
   function gate(raw, opts) {
     return (rosterComplete ? gateCtxComplete : gateCtxIncomplete).__gate(raw, opts);
   }

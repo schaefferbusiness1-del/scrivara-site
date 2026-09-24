@@ -22,11 +22,23 @@ sandbox.globalThis = sandbox;
 vm.createContext(sandbox);
 vm.runInContext(guardSource, sandbox, { filename: 'write_safety_guard.js' });
 const safety = sandbox.MLSWriteSafety;
-assert(safety && safety.version === 'wsg-2.0.0', 'write-safety guard did not load (wsg-2.0.0 = MLS Assist 3.0.62, policy refusal lifted; the test-content policy below is unchanged)');
-assert.strictEqual(Object.keys(safety.BLOCKED_EXECUTE_ACTIONS || { x: 1 }).length, 0, 'wsg-2.0.0: no action may be refused by policy');
-assert.strictEqual(safety.gateActionRequest({ mode: 'execute', action: 'sign_encounter', noteText: '' }), null, 'wsg-2.0.0: sign_encounter execute must pass the policy gate');
-assert.strictEqual(safety.gateActionRequest({ mode: 'execute', action: 'stage_billing', noteText: '' }), null, 'wsg-2.0.0: stage_billing execute must pass the policy gate');
-assert.strictEqual(safety.gateActionRequest({ mode: 'execute', action: 'place_order', noteText: '' }), null, 'wsg-2.0.0: place_order execute must pass the policy gate');
+/* wsg-3.0.0 (draftonly-1.0.0, b1210): Athena execution is restricted to drafts. Sign, billing
+   staging and order placement are refused by policy again; the test-content policy below is
+   unchanged. athena-draft-only-execution.test.js owns the draft-only allowlist in depth; this suite
+   pins the policy version its test-content checks run under, exactly. */
+assert(safety && safety.version === 'wsg-3.0.0', 'write-safety guard did not load (wsg-3.0.0 = draft-only execution; the test-content policy below is unchanged)');
+assert.deepStrictEqual(Object.keys(safety.BLOCKED_EXECUTE_ACTIONS || {}).sort(), ['place_order', 'sign_encounter', 'stage_billing'],
+  'wsg-3.0.0: the policy-blocked execute actions are not exactly sign_encounter, stage_billing and place_order');
+for (const action of ['sign_encounter', 'stage_billing', 'place_order']) {
+  const refused = safety.gateActionRequest({ mode: 'execute', action, noteText: '' });
+  assert(refused && refused.blocked === true && refused.ok === false,
+    'wsg-3.0.0: ' + action + ' execute passed the policy gate');
+  assert.strictEqual(refused.reason, 'write-safety-final-action-blocked',
+    'wsg-3.0.0: ' + action + ' execute was refused for the wrong reason');
+  assert.strictEqual(refused.action, action, 'wsg-3.0.0: the refusal does not name the action it refused');
+  assert(/Nothing was changed/.test(String(refused.error || '')),
+    'wsg-3.0.0: the ' + action + ' refusal does not say that nothing was changed');
+}
 
 const syntheticPatient = { name: 'Synthetic Preview Patient', mrn: 'SYN-1001' };
 assert.strictEqual(safety.checkTestWritePolicy({ patient: syntheticPatient, noteText: 'Ordinary reviewed draft.' }), null,

@@ -149,6 +149,29 @@ const srv = http.createServer((q, r) => {
     assert.strictEqual(marks.layout, false, 'Patient profile position is not marked "Applies right away"');
     assert.strictEqual(marks.group, false, 'Group by procedure is not marked "Applies right away"');
     if (marks.portal !== null) assert.strictEqual(marks.portal, true, 'the portal-invite switch, which writes at once, is marked');
+    /* 5a. ...and it does write at once, to THIS account (pap-1.0.1). The switch
+       is built at page load, before this harness signs in. The old switch kept
+       the key from then, the unresolved 'sf_u::_::' one, so the namespace guard
+       refused every press and the mark above was untrue
+       (1p-settings-redesign-contract). */
+    const portal = await pg.evaluate(async () => {
+      const tgl = () => document.getElementById('mlsPortalAskTgl');
+      if (!tgl()) return null;
+      const key = uns('ez3PortalAskOff'), was = localStorage.getItem(key);
+      const reopen = async () => { closeSettings(); await new Promise((r) => setTimeout(r, 60)); openSettings({ userInitiated: true }); await new Promise((r) => setTimeout(r, 120)); };
+      localStorage.setItem(key, '1'); await reopen();
+      const shownOff = tgl().checked;
+      localStorage.removeItem(key); await reopen();
+      const shownOn = tgl().checked;
+      tgl().click(); const off = localStorage.getItem(key);
+      tgl().click(); const on = localStorage.getItem(key);
+      const stranded = Object.keys(localStorage).filter((k) => /^sf_u::(?:_|undefined|)::ez3PortalAskOff$/.test(k));
+      if (was === null) localStorage.removeItem(key); else localStorage.setItem(key, was);
+      return { shownOff, shownOn, off, on, stranded };
+    });
+    assert.ok(portal, 'the portal-invite switch is in Settings');
+    assert.deepStrictEqual(portal, { shownOff: false, shownOn: true, off: '1', on: null, stranded: [] },
+      'the portal-invite switch shows the signed-in account\'s choice and saves each press to that account at once');
     assert.deepStrictEqual([marks.appTabs, marks.oldOrdersTab], [false, false], 'no App tabs switch that changes nothing, and the tab it gated is not on screen');
     const cancel = await pg.evaluate(async () => {
       const key = uns('qolPtLayout'), stored = localStorage.getItem(key), was = document.body.classList.contains('pt-split');

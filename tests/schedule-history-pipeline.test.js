@@ -1,7 +1,10 @@
 'use strict';
 
-/* harness hygiene 2026-09-15: the loaded module arms real timeouts; un-ref'd they kept node alive after PASS (hang-after-pass in the whole-registry sweep). */
-const unrefTimeout = (fn, ms) => { const t = setTimeout(fn, ms); if (t && typeof t.unref === 'function') t.unref(); return t; };
+/* harness hygiene 2026-09-24: the loaded module's timeouts stay REF'D. The first history batch
+   legitimately awaits real timers (the bounded chart-facts capture settle, the capture race, the
+   chart-retry backoff); un-ref'd, those let the event loop drain mid-await and node exited before
+   any verdict. The explicit process.exit(0) after PASS (bottom of file) already ends the run, so a
+   leftover module deadline timer cannot hang it. */
 /* RED until the verdict line at the bottom flips it: this suite awaits module promises that, on
    pristine b1270 as well, never settle in this harness, and an event loop that simply drains would
    otherwise exit 0 with no verdict printed (a-suite-can-pass-without-running). */
@@ -52,7 +55,7 @@ const context = {
   Number,
   RegExp,
   encodeURIComponent,
-  setTimeout: unrefTimeout,
+  setTimeout,
   clearTimeout,
   setInterval: () => 1,
   clearInterval: () => {},
@@ -95,6 +98,17 @@ context.addEventListener = (_type, fn) => listeners.add(fn);
 context.removeEventListener = (_type, fn) => listeners.delete(fn);
 context.postMessage = msg => {
   if (msg && msg.type === 'mlsAppFocusMlsTab') { managedReleaseSignals++; return; }
+  /* The per-patient chart-facts capture (siCaptureFacts) asks the extension for one read-only
+     capture. This harness has no chart banner to capture, so answer it the way an extension
+     without a capture does: ok:false. The capture is non-fatal by design, so the verdict below
+     must not depend on it; answering keeps the run from waiting out the capture timer. */
+  if (msg && msg.type === 'mlsAppCapture') {
+    queueMicrotask(() => {
+      const reply = { data: { source: 'mls-ext', type: 'mlsAppCaptureResult', resp: { ok: false } } };
+      Array.from(listeners).forEach(fn => fn(reply));
+    });
+    return;
+  }
   if (!msg || msg.type !== 'mlsAppReadAllVisits') return;
   queueMicrotask(() => {
     /* A legacy/id-less response from an older request must never settle this

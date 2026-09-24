@@ -166,6 +166,18 @@ const TWO = [
   { key: 'ros', text: 'Two-row ROS body.' }
 ];
 const GENERIC = [{ key: 'note', text: 'Generic encounter note body.\nSecond line of it.' }];
+/* A procedure / operative note is a write row that is NOT one of the named clinical destinations the
+   preview keeps open whatever the row count, so it is the row that still proves the collapse rule. */
+const FOUR_WITH_PROCEDURE = [
+  { key: 'hpi', text: 'Four-row HPI body.\nSecond line.' },
+  { key: 'ros', text: 'Four-row ROS body.' },
+  { key: 'exam', text: 'Four-row exam body.' },
+  { key: 'procedure', text: 'Procedure: knee injection.\nTolerated well.\nNo complications.' }
+];
+const TWO_WITH_PROCEDURE = [
+  { key: 'hpi', text: 'Two-row HPI body.\nSecond line.' },
+  { key: 'procedure', text: 'Procedure: knee injection.\nTolerated well.' }
+];
 function clone(v) { return JSON.parse(JSON.stringify(v)); }
 function unesc(s) { return String(s).replace(/&lt;/g, '<').replace(/&amp;/g, '&'); }
 function norm(s) { return String(s).replace(/\s+/g, ' ').trim(); }
@@ -642,7 +654,11 @@ function armsWriteNote(go) {
     ok(seam.style(false).indexOf('-webkit-line-clamp:2') > 0, 'the collapsed preview does not clamp to two lines');
     eq(seam.style(true).indexOf('line-clamp'), -1, 'the expanded preview is still clamped');
 
-    /* SIX write rows -> collapsed, with a real button carrying aria-expanded */
+    /* SIX NAMED write rows -> every one arrives EXPANDED. The named clinical destinations (HPI, ROS,
+       Exam, Assessment, Plan and the combined A&P) are the doctor's primary review and stay readable
+       on first paint whatever the row count (d2cf1705): collapsing them made the sheet look as
+       though it had less to write than the payload it dispatches. Each still carries a real
+       aria-expanded button. */
     const h = makeHarness({ batchArm: true });
     const manifest = h.wf.openUnifiedConfirmation({ patient: PATIENT, sections: clone(FIVE), expectedContext: BOUND, receiptSessionId: 'pv-six' });
     await settle(400);
@@ -652,15 +668,20 @@ function armsWriteNote(go) {
     eq(parts.texts.length, 6, 'not every ready write row shows the text that will land');
     eq(parts.toggles.length, 6, 'a preview block has no toggle control');
     parts.toggles.forEach(function (b) {
-      eq(b.getAttribute('aria-expanded'), 'false', 'a six-row review did not arrive collapsed');
-      eq(b.textContent, seam.showAll, 'the collapsed toggle does not offer to show all');
+      eq(b.getAttribute('aria-expanded'), 'true', 'a named clinical destination arrived collapsed in a six-row review');
+      eq(b.textContent, seam.showLess, 'the expanded toggle does not offer to show less');
       eq(b.tagName, 'BUTTON', 'the preview toggle is not a real button, so it is not keyboard-reachable');
     });
-    /* the destination label IS the block's title */
+    parts.texts.forEach(function (t) {
+      eq(t.getAttribute('data-mls-preview-open'), '1', 'a named clinical destination did not record that it is open');
+      eq(String(t.style.cssText).indexOf('line-clamp'), -1, 'a named clinical destination is clamped on arrival');
+    });
+    /* the block's title names it as the exact text, then the exact Athena destination */
+    eq(parts.titles.length, 6, 'not every ready write row has a titled preview block');
     parts.titles.forEach(function (t) {
       const row = ready.filter(r => r.id === t.getAttribute('data-mls-preview-title'))[0];
       ok(row, 'a preview block belongs to no ready row');
-      eq(t.textContent, row.destination, 'the preview block is not titled with the exact Athena destination');
+      eq(t.textContent, 'Exact text to be written · ' + row.destination, 'the preview block is not titled with the exact Athena destination');
     });
 
     /* THE EQUALITY PIN: what the block shows IS what the execute sends. */
@@ -683,6 +704,59 @@ function armsWriteNote(go) {
       const node = parts.texts.filter(t => t.getAttribute('data-mls-preview-text') === row.id)[0];
       eq(norm(node.textContent), norm(m.noteText),
         'THE PREVIEW AND THE PAYLOAD DISAGREE for ' + row.label + ' - a preview that is not the payload is a lie');
+    });
+
+    /* THE COLLAPSE RULE, through the shipped renderer: in a review of MORE than three write rows, a
+       row that is not a named clinical destination arrives collapsed to two lines behind "Show all",
+       while the named rows beside it stay open. The whole payload stays in the DOM either way. */
+    const four = makeHarness({ batchArm: true });
+    const fourManifest = four.wf.openUnifiedConfirmation({ patient: PATIENT, sections: clone(FOUR_WITH_PROCEDURE), expectedContext: BOUND, receiptSessionId: 'pv-four' });
+    await settle(400);
+    const fourReady = fourManifest.rows.filter(r => r.action === 'write_note' && r.capability === 'ready');
+    eq(fourReady.length, 4, 'the four-section fixture did not build four ready write rows');
+    const procRow = fourReady.filter(r => r.kind === 'procedure')[0];
+    ok(procRow, 'the four-section fixture has no ready procedure row, so the collapse rule is not reached');
+    const fp = four.previews();
+    eq(fp.texts.length, 4, 'not every ready row of the four-row review shows the text that will land');
+    eq(fp.toggles.length, 4, 'a preview block of the four-row review has no toggle control');
+    fp.toggles.forEach(function (b) {
+      const row = fourReady.filter(r => r.id === b.getAttribute('data-mls-preview-toggle'))[0];
+      ok(row, 'a four-row preview toggle belongs to no ready row');
+      const named = row.kind !== 'procedure';
+      eq(b.getAttribute('aria-expanded'), named ? 'true' : 'false',
+        named ? 'a named destination collapsed in a four-row review' : 'an unnamed row did not arrive collapsed in a review of more than three write rows');
+      eq(b.textContent, named ? seam.showLess : seam.showAll, 'the toggle word does not match its state for ' + row.label);
+      eq(b.tagName, 'BUTTON', 'the preview toggle is not a real button, so it is not keyboard-reachable');
+    });
+    const procText = fp.texts.filter(t => t.getAttribute('data-mls-preview-text') === procRow.id)[0];
+    ok(procText, 'no preview block for the procedure row');
+    eq(procText.getAttribute('data-mls-preview-open'), '0', 'the collapsed block did not record that it is collapsed');
+    ok(String(procText.style.cssText).indexOf('-webkit-line-clamp:2') > 0, 'the collapsed block is not clamped to two lines');
+    eq(procText.textContent, procRow.payload.noteText, 'the collapsed block does not hold the whole payload text');
+    eq(four.executes().length, 0, 'rendering the four-row review sent something');
+
+    /* ...and the SAME unnamed row, in a review of three rows or fewer, arrives expanded */
+    const small = makeHarness({ batchArm: true });
+    const smallManifest = small.wf.openUnifiedConfirmation({ patient: PATIENT, sections: clone(TWO_WITH_PROCEDURE), expectedContext: BOUND, receiptSessionId: 'pv-two-proc' });
+    await settle(400);
+    const smallProc = smallManifest.rows.filter(r => r.action === 'write_note' && r.capability === 'ready' && r.kind === 'procedure')[0];
+    ok(smallProc, 'the two-section procedure fixture has no ready procedure row');
+    const smallToggle = small.previews().toggles.filter(b => b.getAttribute('data-mls-preview-toggle') === smallProc.id)[0];
+    ok(smallToggle, 'the two-row procedure preview has no toggle');
+    eq(smallToggle.getAttribute('aria-expanded'), 'true', 'an unnamed row in a review of three rows or fewer did not arrive expanded');
+    eq(smallToggle.textContent, seam.showLess, 'the expanded unnamed toggle does not offer to show less');
+
+    /* the rule itself, on the shipped seam: MORE than three unnamed write rows all collapse, exactly
+       three all stay open, and a named destination stays open in either review. */
+    const unnamedReview = n => ({ rows: Array.from({ length: n }, (_, i) => ({
+      id: 'unnamed-' + i, action: 'write_note', capability: 'ready', kind: i % 2 ? 'note' : 'procedure', payload: { noteText: 'Row ' + i } })) });
+    const fourUnnamed = unnamedReview(4);
+    fourUnnamed.rows.forEach(r => eq(seam.openByDefault(fourUnnamed, r), false, 'an unnamed row stayed open in a review of four unnamed write rows'));
+    const threeUnnamed = unnamedReview(3);
+    threeUnnamed.rows.forEach(r => eq(seam.openByDefault(threeUnnamed, r), true, 'an unnamed row collapsed in a review of three write rows'));
+    ['hpi', 'ros', 'exam', 'assessment', 'plan', 'assessment_and_plan'].forEach(function (kind) {
+      eq(seam.openByDefault(fourUnnamed, { id: 'named-' + kind, action: 'write_note', capability: 'ready', kind: kind }), true,
+        'the named destination ' + kind + ' collapsed in a review of more than three write rows');
     });
 
     /* THREE ROWS OR FEWER -> expanded on arrival */
@@ -723,8 +797,10 @@ function armsWriteNote(go) {
     /* ...and the shipped rows KEPT it - the engineer\'s view is not replaced */
     ok(h.cardHtml().indexOf('View the exact text going to') > 0,
       'the shipped preview REPLACED writeui-1.0.0\'s payload disclosure instead of sitting beside it');
-    ok(h.cardHtml().indexOf('Payload ') > 0, 'the payload and row hashes left the sheet');
+    /* the hash footer reads "Text ID … · Row ID …" since ee7f212d */
+    ok(h.cardHtml().indexOf('Text ID ') > 0, 'the payload hash left the sheet');
+    ok(h.cardHtml().indexOf(' Row ID ') > 0, 'the row hash left the sheet');
   }
 
-  console.log('PASS write-sheet-agreement-proof: ' + checks + ' checks - under a batch arm the READY sentence, the primary button\'s visible label, its aria-label and its title are ONE claim about what one press does (and the exact phrase MLS Assist mints its write authorization from is still on the button, with no other action\'s phrase ever added); the Assessment/Plan shape this athenaOne does not have leaves the queue and the button the moment the other shape lands, in both directions, and reads COVERED instead of being offered as a press that can only refuse; and every ready write row shows the exact text that will land, in reading type with its line breaks, collapsed to two lines behind a keyboard-reachable aria-expanded toggle that never alters the string - which is byte for byte the noteText the execute actually sends - each measured against the PRE-FIX bytes, where none of it happens');
+  console.log('PASS write-sheet-agreement-proof: ' + checks + ' checks - under a batch arm the READY sentence, the primary button\'s visible label, its aria-label and its title are ONE claim about what one press does (and the exact phrase MLS Assist mints its write authorization from is still on the button, with no other action\'s phrase ever added); the Assessment/Plan shape this athenaOne does not have leaves the queue and the button the moment the other shape lands, in both directions, and reads COVERED instead of being offered as a press that can only refuse; and every ready write row shows the exact text that will land, in reading type with its line breaks, behind a keyboard-reachable aria-expanded toggle that never alters the string (the named clinical destinations arrive open; any other row in a review of more than three write rows arrives collapsed to two lines) - which is byte for byte the noteText the execute actually sends - each measured against the PRE-FIX bytes, where none of it happens');
 })().catch(err => { console.error(err); process.exit(1); });

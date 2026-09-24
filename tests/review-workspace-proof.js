@@ -1047,9 +1047,20 @@ function startSegmentHarness(world) {
       ok(shape.candidates >= 3,
         'only ' + shape.candidates + ' note surfaces exist on the page - fewer than the two copies this contract counts');
 
-      const countVisible = () => page.evaluate(() => [...document.querySelectorAll('.mls-fp-fmt, #ez3Note, #noteBox')]
-        .filter((el) => el.offsetParent !== null && el.getBoundingClientRect().height > 0)
-        .map((el) => (el.id ? '#' + el.id : '.' + el.className) + ' in ' + ((el.parentElement && el.parentElement.id) ? '#' + el.parentElement.id : (el.parentElement ? '.' + el.parentElement.className : '?'))));
+      /* A .mls-fp-fmt is a COPY of the note only while its .fmt-body is on
+         screen. In fixpack's edit mode (the Edit button, which the note-first
+         path in mls-connect presses so the canonical note opens editable) the
+         body goes display:none and the textarea it wraps is shown instead; the
+         wrap stays display:block only for its one-line "Formatted" toggle bar,
+         which carries no note text. Counting the bare bar would call one note
+         two. The body is held to the same visibility test as every other
+         surface, so a formatted view that really is on screen still counts. */
+      const countVisible = () => page.evaluate(() => {
+        const shown = (el) => !!el && el.offsetParent !== null && el.getBoundingClientRect().height > 0;
+        return [...document.querySelectorAll('.mls-fp-fmt, #ez3Note, #noteBox')]
+          .filter((el) => shown(el) && (!el.classList.contains('mls-fp-fmt') || shown(el.querySelector('.fmt-body'))))
+          .map((el) => (el.id ? '#' + el.id : '.' + el.className) + ' in ' + ((el.parentElement && el.parentElement.id) ? '#' + el.parentElement.id : (el.parentElement ? '.' + el.parentElement.className : '?')));
+      });
 
       const states = [
         { label: 'visit-focus live, review workspace CLOSED', run: () => page.evaluate(() => { document.body.classList.remove('ez3adv'); if (window.__mlsRevWork) window.__mlsRevWork.reconcile(); }) },
