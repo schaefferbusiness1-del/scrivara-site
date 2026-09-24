@@ -362,7 +362,8 @@
       if(res.status===404){ showMsg('MLS could not match this patient to a saved chart, or invitations are temporarily unavailable. Pick the patient from your charts and try again. Nothing was sent.', false); diag('send-portal-invite → 404 '+JSON.stringify(res.j||{})); return null; }
       if(res.status===400){ showMsg('Please pick the patient from your charts and try again. If this continues, contact your MLS administrator. Nothing was sent.', false); diag('send-portal-invite → 400 '+JSON.stringify(res.j||{})); return null; }
       if(res.status===401||res.status===403){ showMsg('Your MLS session isn’t authorized to send invites. Sign in to MLS again (as the practice/admin account) and retry.', false); diag('send-portal-invite → '+res.status); return null; }
-      if(res.status===409){ showMsg('Portal access already exists for this patient or email. If they cannot sign in, disable the old access in MLS, then send a new invite.', false); diag('send-portal-invite → 409 '+JSON.stringify(res.j||{})); return null; }
+      if(res.status===422&&res.j&&typeof res.j.message==='string'){ showMsg(res.j.message+' Nothing was sent.', false); diag('send-portal-invite → 422'); return null; }
+      if(res.status===409){ showMsg('MLS could not set up portal access for this chart. Contact your MLS administrator. Nothing was sent.', false); diag('send-portal-invite → 409 '+JSON.stringify(res.j||{})); return null; }
       if(res.status===502){ showMsg('The email was not delivered. Do not assume the patient received an invite. Try again shortly; if it continues, contact your MLS administrator.', false); diag('send-portal-invite → 502 '+JSON.stringify(res.j||{})); return null; }
       showMsg('We could not send the invite. Check the patient details and try again. If it continues, contact your MLS administrator.', false); diag('send-portal-invite → '+res.status+' '+JSON.stringify(res.j||{})); return null;
     })

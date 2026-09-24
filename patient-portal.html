@@ -452,7 +452,12 @@
      says so, never "on file", and offers Try again. */
   function recordsFailed(err){
     /* a dead session goes back to sign-in rather than a Try-again that cannot work */
-    if(err&&err.auth){ try{ setSess(null); }catch(eS){} hide($("app")); show($("login")); return; }
+    if(err&&err.auth){
+      try{ setSess(null); }catch(eS){} hide($("app")); show($("login"));
+      /* portalload-1.1.0: the sign-in screen came back with no word of why */
+      var le=$("loginErr"); if(le){ le.textContent="Your session ended. Please sign in again."; show(le); }
+      return;
+    }
     [["meds","medsEmpty","cMeds"],["problems","probEmpty","cProb"],["appts","apptEmpty","cAppt"],["visits","visEmpty","cVis"]].forEach(function(x){
       var list=$(x[0]), empty=$(x[1]), cnt=$(x[2]);
       if(list) list.innerHTML="";
@@ -664,7 +669,9 @@
         var ans = res.j && (res.j.answer||res.j.reply||res.j.text||res.j.message||res.j.content);
         while(ans && typeof ans === "object") ans = ans.content || ans.text || ans.reply || ans.answer || ans.message || "";
         if(!res.ok){ try{ console.warn('[patient portal] record question declined',res.status,res.j||{}); }catch(e){} }
-        thinking.textContent = ans || (res.ok ? "I couldn't find an answer to that in your records." : "We couldn't answer that right now. Try again, or contact your care team.");
+        /* portalinactive-1.1.0: a 503 PRACTICE_INACTIVE names who to call; say that, not "try again" */
+        var said = (!res.ok && res.j && typeof res.j.error === "string" && res.j.code === "PRACTICE_INACTIVE") ? res.j.error : "";
+        thinking.textContent = said || ans || (res.ok ? "I couldn't find an answer to that in your records." : "We couldn't answer that right now. Try again, or contact your care team.");
       })
       .catch(function(){ thinking.textContent="We couldn't reach the portal. Check your connection and try again."; })
       .then(function(){ btn.disabled=false; });
@@ -705,7 +712,7 @@
       '<div style="background:#fff;border-radius:16px;max-width:420px;width:100%;padding:28px 26px;box-shadow:0 12px 44px rgba(0,0,0,.32)">'
       +'<div style="display:flex;align-items:center;gap:9px;font-weight:800;color:#204034;font-size:17px"><span style="width:11px;height:11px;border-radius:50%;background:#2E6A4B;box-shadow:0 0 0 4px rgba(46,106,75,.15)"></span>Welcome to your patient portal</div>'
       +'<div style="margin:10px 0 2px;font-size:14.5px;color:#1A211C">✓ Your secure link worked — you\'re connected to <b>your own</b> records.</div>'
-      +'<div style="margin:6px 0 2px;color:#55605A;font-size:13.5px">One quick step: choose a password. You\'ll use it (with your email and date of birth) to sign in from now on.</div>'
+      +'<div style="margin:6px 0 2px;color:#55605A;font-size:13.5px">One quick step: choose a password. You\'ll use it with your sign-in name and date of birth to sign in from now on.</div>'
       +'<label style="display:block;font-size:12.5px;font-weight:700;color:#204034;margin:14px 0 5px">New password (8+ characters)</label>'
       +'<input id="pwsP1" type="password" autocomplete="new-password" style="width:100%;padding:14px 15px;border:1px solid #E2E6E2;border-radius:14px;font-size:16px;background:#F7F8F7;box-sizing:border-box" />'
       +'<label style="display:block;font-size:12.5px;font-weight:700;color:#204034;margin:12px 0 5px">Repeat password</label>'
@@ -726,10 +733,23 @@
         .then(function(res){
           if(res.ok){
             FIRSTTIME=false; try{ sessionStorage.removeItem("mls_patient_setup"); }catch(e){}
-            back.remove();
             var who=String((res.j&&res.j.signInName)||"");
-            if(who&&who.indexOf("@")<0) addSys("✓ Password saved. Next time, sign in with the sign-in name "+who+" (your email is shared, so it is not your sign-in), this password, and your date of birth.");
-            else addSys("✓ Password saved. Next time, sign in with "+(who||"your email")+", this password, and your date of birth.");
+            var shared=!!(who&&who.indexOf("@")<0);
+            var line=shared?("✓ Password saved. Next time, sign in with the sign-in name "+who+" (your email is shared, so it is not your sign-in), this password, and your date of birth.")
+              :("✓ Password saved. Next time, sign in with "+(who||"your email")+", this password, and your date of birth.");
+            /* portaluser-1.1.0: the sign-in name was only said in the chat
+               behind the modal, which a patient closing the page never read.
+               The modal names it now and closes on the patient's own tap. */
+            var card=back.firstElementChild;
+            card.innerHTML='<div style="font-weight:800;color:#204034;font-size:17px">✓ Password saved</div>'
+              +'<div style="margin:10px 0 4px;color:#55605A;font-size:13.5px">Next time, sign in with:</div>'
+              +'<div id="pwsWho" style="margin:4px 0 6px;padding:12px 14px;border:1px solid #E2E6E2;border-radius:12px;background:#F7F8F7;font-size:16px;font-weight:700;color:#1A211C;word-break:break-all"></div>'
+              +'<div style="color:#55605A;font-size:13.5px">'+(shared?'Your email is shared with someone else in your family, so this sign-in name is yours. ':'')+'Use it with this password and your date of birth.</div>'
+              +'<button id="pwsDone" style="width:100%;border:none;border-radius:999px;background:#204034;color:#fff;font-weight:700;font-size:15.5px;padding:15px 18px;min-height:50px;cursor:pointer;margin-top:16px">Got it — open my records</button>';
+            document.getElementById("pwsWho").textContent=who||"your email";
+            var done=document.getElementById("pwsDone");
+            done.onclick=function(){ back.remove(); addSys(line); };
+            try{ done.focus(); }catch(e){}
             return;
           }
           b.disabled=false; b.textContent="Save my password";

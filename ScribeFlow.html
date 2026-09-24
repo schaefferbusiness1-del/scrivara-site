@@ -46371,13 +46371,24 @@ function showAgreementsGate(fromLoading){
        been switched on yet - ask your MLS administrator", and the access-code
        box lives inside the app this gate hides, so a code the server would
        accept had nowhere to go. Name the real reason and take the code here. */
-    else if(reasons.indexOf('COMMERCIAL_ACCESS_INACTIVE')>=0){
+    /* lockreason-1.1.0: only when the plan is the ONE thing blocking. With a
+       missing release or closed operations too, a code would not unlock and
+       the screen would promise that it does. An Enterprise-covered member's
+       access is the practice's plan: no code box, the practice renews it. */
+    else if(reasons.length===1&&reasons[0]==='COMMERCIAL_ACCESS_INACTIVE'){
       const exp=(bkUser&&bkUser.access_expires)?Date.parse(bkUser.access_expires):NaN;
       const ended=Number.isFinite(exp)&&exp<=Date.now();
-      if(tt) tt.textContent=ended?'Your trial has ended':'Your subscription is not active';
-      summary.innerHTML='<b>'+(ended?'Your MLS trial has ended.':'Your MLS subscription is not active.')+'</b> Your records are kept. Enter an access code, or ask your MLS administrator to renew the account.'
-        +'<span style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><input id="agRedeemInput" type="text" autocomplete="off" aria-label="Access code" placeholder="Access code" style="flex:1 1 180px;min-width:0;padding:10px 12px;border:1px solid var(--line,#d6ddd8);border-radius:10px;font-size:15px">'
-        +'<button type="button" class="btn-primary" id="agRedeemBtn" onclick="agRedeemAndRetry()">Use code</button></span>';
+      const ce=(bkUser&&bkUser.commercialEntitlement)||{};
+      const covered=ce.source==='practice-enterprise'||String((bkUser&&bkUser.storedPlan)||'')==='practice_enterprise_member';
+      if(covered){
+        if(tt) tt.textContent='Your practice plan is not active';
+        summary.innerHTML='<b>Your access comes from your practice’s Enterprise plan, which is not active.</b> Your records are kept. Ask your practice administrator to renew the plan with MLS.';
+      }else{
+        if(tt) tt.textContent=ended?'Your trial has ended':'Your subscription is not active';
+        summary.innerHTML='<b>'+(ended?'Your MLS trial has ended.':'Your MLS subscription is not active.')+'</b> Your records are kept. Enter an access code, or ask your MLS administrator to renew the account.'
+          +'<span style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><input id="agRedeemInput" type="text" autocomplete="off" aria-label="Access code" placeholder="Access code" onkeydown="if(event.key===\'Enter\'){event.preventDefault();agRedeemAndRetry();}" style="flex:1 1 180px;min-width:0;padding:10px 12px;border:1px solid var(--line,#d6ddd8);border-radius:10px;font-size:15px">'
+          +'<button type="button" class="btn-primary" id="agRedeemBtn" onclick="agRedeemAndRetry()">Use code</button></span>';
+      }
       if(why) why.style.display='none';
     }
     else summary.innerHTML='<b>Your practice has not been switched on for patient work yet.</b> Ask your MLS administrator to enable the clinical workspace for this account — nobody can do it from this browser.';
@@ -46389,7 +46400,12 @@ function showAgreementsGate(fromLoading){
      retelling of the reason. */
   agGateErr(trouble?'Access remains locked until MLS can check it.':'Access remains locked.');
   const gate=document.getElementById('agreementsGate'); if(gate) gate.style.display='block';
-  const retry=document.getElementById('agRetryBtn'); if(retry) try{ retry.focus(); }catch(e){}
+  /* lockreason-1.1.0: the code box, when shown, is what the person came to use.
+     From the loading screen the page is still hidden here (the reveal follows
+     in the same frame), so a focus that did not take is tried once more. */
+  const focusEl=document.getElementById('agRedeemInput')||document.getElementById('agRetryBtn');
+  const focusIt=()=>{ try{ if(focusEl&&focusEl.isConnected&&gate&&gate.style.display==='block'&&document.activeElement!==focusEl) focusEl.focus(); }catch(e){} };
+  focusIt(); if(document.activeElement!==focusEl) setTimeout(focusIt,0);
 }
 /* Restored 2026-07-20 — the first-sign-in signing ceremony. Shown only when
    the clinical gate has PASSED and the signed-in account has not signed the
@@ -46610,6 +46626,7 @@ function sfGateRetryOwner(){
 /* lockreason-1.0.0: the lock screen's own access-code box */
 async function agRedeemAndRetry(){
   const inp=document.getElementById('agRedeemInput'), btn=document.getElementById('agRedeemBtn');
+  if(btn&&btn.disabled) return;
   if(btn) btn.disabled=true;
   try{ if(await redeemCode(inp?inp.value:'',inp)) await retryLegalReadiness(); }
   finally{ if(btn&&btn.isConnected) btn.disabled=false; }
@@ -51541,7 +51558,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1334';
+  window.__MLS_AV='b1335';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

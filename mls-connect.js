@@ -36336,7 +36336,16 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       if(!ppExt){ msg.style.color='#B07636'; msg.textContent='This chart has no stable patient id yet, so a portal login cannot be linked to it. Save the patient (or re-pull them from Athena) first.'; return; }
       msg.style.color='#B9CEC2'; msg.textContent='Sending...'; btn.disabled=true;
       fetch(BACKEND+'/api/patient/admin/send-portal-invite',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({email:email,name:pp.name||'',external_id:ppExt,dob:pp.dob||'',mrn:pp.mrn||'',id:pp.id||''})})
-        .then(function(r){ btn.disabled=false; if(r.ok){ msg.style.color='#2E6A4B'; msg.textContent='Sent. The patient will get a secure login link by email.'; } else if(r.status===401||r.status===403){ msg.style.color='#B07636'; msg.textContent='This account may not be allowed to send invites (needs the practice/admin login). Send from the admin account.'; } else { msg.style.color='#B07636'; msg.textContent='Could not send (error '+r.status+'). Try again.'; } })
+        /* portalsend-1.0.0: an ok reply with sent:false (no email went out) read
+           "Sent", and every refusal read "error <status>" while the server
+           named the problem (no email on file, no such chart). */
+        .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ return {r:r,j:j||{}}; }); })
+        .then(function(x){ var r=x.r, j=x.j; btn.disabled=false; msg.style.color='#B07636';
+          if(r.ok&&j.sent===false){ msg.textContent='The login link was made, but the email was not delivered. Do not assume the patient got it. Try again shortly.'; }
+          else if(r.ok){ msg.style.color='#2E6A4B'; msg.textContent='Sent. The patient will get a secure login link by email.'; }
+          else if(r.status===401||r.status===403){ msg.textContent='This account may not be allowed to send invites (needs the practice/admin login). Send from the admin account.'; }
+          else if(r.status===404){ msg.textContent='MLS could not find this patient\'s saved chart in your practice. Save the patient first. Nothing was sent.'; }
+          else { var said=(typeof j.message==='string'&&j.message)||''; msg.textContent=said?(said+' Nothing was sent.'):('Could not send (error '+r.status+'). Try again.'); } })
         .catch(function(){ btn.disabled=false; msg.style.color='#B07636'; msg.textContent='Network error, try again.'; });
     };
   }

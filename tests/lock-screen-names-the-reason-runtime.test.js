@@ -8,6 +8,9 @@
      2. every account whose first screen is the lock screen (or the agreements
         ceremony) waited ~32 s on "Still preparing your workspace…", because
         the first-frame wait looked for a UI bundle startSession never loads.
+   lockreason-1.1.0 (review): the code box shows only when the plan is the one
+   blocking reason, never for an Enterprise-covered member (the practice's plan
+   renews it), takes Enter, and has the focus.
    Real Chrome, synthetic accounts, every backend call answered by page routes. */
 const http=require('http'),fs=require('fs'),path=require('path');
 const {chromium}=require('playwright');
@@ -59,10 +62,11 @@ const srv=http.createServer((q,r)=>{let p=decodeURIComponent(q.url.split('?')[0]
   assert.strictEqual(await text(pg,'agGateTitleText'),'Your trial has ended'); checks++;
   assert.doesNotMatch(await text(pg,'agGateSummary'),/not been switched on/,'an ended trial still reads as "not switched on"'); checks++;
   assert.ok(await pg.isVisible('#agRedeemInput'),'no access-code box on the lock screen'); checks++;
+  assert.strictEqual(await pg.evaluate(()=>document.activeElement&&document.activeElement.id),'agRedeemInput','the code box does not have the focus'); checks++;
   /* a wrong code is refused and the gate stays */
   await pg.fill('#agRedeemInput','nope'); await pg.click('#agRedeemBtn'); await pg.waitForTimeout(800);
   assert.ok(await pg.isVisible('#agreementsGate'),'a refused code opened the app'); checks++;
-  await pg.fill('#agRedeemInput','trial14'); await pg.click('#agRedeemBtn');
+  await pg.fill('#agRedeemInput','trial14'); await pg.press('#agRedeemInput','Enter');
   await pg.waitForFunction(()=>getComputedStyle(document.getElementById('agreementsGate')).display==='none'&&getComputedStyle(document.getElementById('appScreen')).display!=='none',null,{timeout:30000});
   assert.deepStrictEqual(st.redeemed,['nope','trial14']); checks++;
  });
@@ -76,7 +80,16 @@ const srv=http.createServer((q,r)=>{let p=decodeURIComponent(q.url.split('?')[0]
   assert.strictEqual(await text(pg,'agGateTitleText'),'Not switched on yet'); checks++;
   assert.ok(!(await pg.isVisible('#agRedeemInput')),'a code box appeared for an approval the owner gives'); checks++;
  });
+ await run('a lapsed plan with a missing release too does not promise a code opens it',{email:EM,name:'Dr Synthetic',role:'doctor',hasAccess:false,access:'blocked',agreements:{required:false},readiness:{state:'blocked',reasons:['COMMERCIAL_ACCESS_INACTIVE','CLINICAL_APPROVAL_MISSING']}},async(pg)=>{
+  assert.strictEqual(await text(pg,'agGateTitleText'),'Not switched on yet'); checks++;
+  assert.ok(!(await pg.isVisible('#agRedeemInput')),'a code box appeared when a code cannot unlock'); checks++;
+ });
+ await run('an Enterprise-covered member is sent to the practice, with no code box',{email:EM,name:'Dr Synthetic',role:'user',head_id:7,hasAccess:false,storedPlan:'practice_enterprise_member',commercialEntitlement:{source:'practice-enterprise',hasAccess:false},agreements:{required:false},readiness:{state:'blocked',reasons:['COMMERCIAL_ACCESS_INACTIVE']}},async(pg)=>{
+  assert.strictEqual(await text(pg,'agGateTitleText'),'Your practice plan is not active'); checks++;
+  assert.match(await text(pg,'agGateSummary'),/practice administrator/); checks++;
+  assert.ok(!(await pg.isVisible('#agRedeemInput')),'an Enterprise member was offered a code box'); checks++;
+ });
  await b.close(); srv.close();
  if(failures.length){ console.error('FAILED:\n  '+failures.join('\n  ')); process.exit(1); }
- console.log('PASS lock screen names the reason: '+checks+' checks - an ended trial and a cancelled subscription say so and take an access code (a good code opens the app, a bad one does not), an unapproved account keeps its wording, and the lock screen appears in seconds, not 32 s');
+ console.log('PASS lock screen names the reason: '+checks+' checks - an ended trial and a cancelled subscription say so and take an access code (focused, Enter works; a good code opens the app, a bad one does not), an unapproved account or one with another blocker too keeps its wording, an Enterprise member is sent to the practice, and the lock screen appears in seconds, not 32 s');
 });
