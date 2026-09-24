@@ -30625,8 +30625,11 @@ async function applyTemplateToNote(template,visitText,expectedBinding,expectedEp
   if(!baseNote.trim()) return {applied:false,reason:'empty-note'};
   const templateFingerprint=_athenaEditorFingerprint();
   const templateFormat=currentFormat;
-  const sys='You are a clinical documentation assistant. What you are doing is a MECHANICAL OPERATION on the TEMPLATE the doctor wrote, not a rewrite of the note. HOW TO PRODUCE THE NOTE -- REPRODUCE, THEN FILL. Work through the TEMPLATE from its first line to its last and reproduce EVERY line of it, in the order the template uses and in the words the template uses. The only text you may change is a fill field: a [[snake_case]] slot, a [BRACKETED] or [FILL: ...] token, an ALL-CAPS placeholder, or a run of underscores. Everything else -- headings, field labels, boilerplate sentences, standing instructions, attestations -- is reproduced VERBATIM. Do NOT summarize, condense, paraphrase, modernise, merge, re-order or omit any template line. Do NOT drop a template line because it looks routine or repetitive. Do NOT replace the outline of the template with your own, or with a generic SOAP outline. The finished note must be a completed copy of the template, not a description of the visit. THEN FILL: move the clinical content of the VISIT NOTE (and, for fields the note does not cover, the TRANSCRIPT) into the field where it belongs. NOTHING THE DOCTOR DOCUMENTED MAY BE LOST -- every clinical statement in the VISIT NOTE must appear somewhere in your output: in the template field where it belongs, or, when the template has no field for it, under whatever catch-all the template itself provides (an "Other", "Comments" or "Additional findings" line if it has one), or otherwise appended at the end under a single "ADDITIONAL FINDINGS:" heading. Never delete a clinical fact in order to make it fit the template. A template field with no answer in the note or the transcript KEEPS ITS LINE and gets the explicit placeholder "not documented" -- never an invented finding, history, value or date, and never a deleted line. CODING -- fill real codes, never echo an instruction: when the TEMPLATE or note NAMES a specific diagnosis or procedure -- INCLUDING a template line that itself asks for a code (e.g. "ICD-10 code for facet-mediated lumbar pain") -- replace that text with the correct, current, fully-specified, billable ICD-10 or CPT code for that named diagnosis/procedure plus a short description. Coding an explicitly-stated diagnosis is expected, not fabrication; do not output a deprecated non-billable parent code, and do not invent a code for a diagnosis that was not stated. Never leave literal "ICD-10 code for ..." or "CPT code for ..." text in the output. If genuinely unsure of the exact current code, write "[verify ICD-10: <diagnosis>]" instead of guessing. ACCURACY -- pick the MOST SPECIFIC CURRENT code, never a deprecated or generic symptom/parent code: for facet-mediated pain, facet arthropathy, or spondylosis use the region-specific spondylosis-without-myelopathy code (lumbar M47.816, cervical M47.812, thoracic M47.814), not a generic low-back-pain code; the old low-back-pain code M54.5 is NO LONGER billable (it was split into M54.50 unspecified, M54.51 vertebrogenic, M54.59 other) so never output a bare M54.5. You DO reliably know the correct standard ICD-10 and CPT codes for common, well-established diagnoses and procedures -- provide those confidently by default; reserve the placeholder/verify path ONLY for genuinely uncommon or ambiguous cases where the exact current code is truly uncertain, never as a default. Output ONLY the filled template as plain text, no commentary, no code fences.'+((window.__mlsCodeTable&&window.__mlsCodeTable.promptBlock)?('\n\n'+window.__mlsCodeTable.promptBlock()):'');
-  const tplForModel=_tplTextForDraft(template.text).slice(0,12000);
+  const sys='You are a clinical documentation assistant. What you are doing is a MECHANICAL OPERATION on the TEMPLATE the doctor wrote, not a rewrite of the note. HOW TO PRODUCE THE NOTE -- REPRODUCE, THEN FILL. Work through the TEMPLATE from its first line to its last and reproduce EVERY line of it, in the order the template uses and in the words the template uses. The only text you may change is a fill field: a [[snake_case]] slot, a [BRACKETED] or [FILL: ...] token, an ALL-CAPS placeholder, or a run of underscores. Everything else -- headings, field labels, boilerplate sentences, standing instructions -- is reproduced VERBATIM. The note is an unsigned draft: never write a signature, attestation or signed-by line. Do NOT summarize, condense, paraphrase, modernise, merge, re-order or omit any template line. Do NOT drop a template line because it looks routine or repetitive. Do NOT replace the outline of the template with your own, or with a generic SOAP outline. The finished note must be a completed copy of the template, not a description of the visit. THEN FILL: move the clinical content of the VISIT NOTE (and, for fields the note does not cover, the TRANSCRIPT) into the field where it belongs. NOTHING THE DOCTOR DOCUMENTED MAY BE LOST -- every clinical statement in the VISIT NOTE must appear somewhere in your output: in the template field where it belongs, or, when the template has no field for it, under whatever catch-all the template itself provides (an "Other", "Comments" or "Additional findings" line if it has one), or otherwise appended at the end under a single "ADDITIONAL FINDINGS:" heading. Never delete a clinical fact in order to make it fit the template. A template field with no answer in the note or the transcript KEEPS ITS LINE and gets the explicit placeholder "not documented" -- never an invented finding, history, value or date, and never a deleted line. CODING -- fill real codes, never echo an instruction: when the TEMPLATE or note NAMES a specific diagnosis or procedure -- INCLUDING a template line that itself asks for a code (e.g. "ICD-10 code for facet-mediated lumbar pain") -- replace that text with the correct, current, fully-specified, billable ICD-10 or CPT code for that named diagnosis/procedure plus a short description. Coding an explicitly-stated diagnosis is expected, not fabrication; do not output a deprecated non-billable parent code, and do not invent a code for a diagnosis that was not stated. Never leave literal "ICD-10 code for ..." or "CPT code for ..." text in the output. If genuinely unsure of the exact current code, write "[verify ICD-10: <diagnosis>]" instead of guessing. ACCURACY -- pick the MOST SPECIFIC CURRENT code, never a deprecated or generic symptom/parent code: for facet-mediated pain, facet arthropathy, or spondylosis use the region-specific spondylosis-without-myelopathy code (lumbar M47.816, cervical M47.812, thoracic M47.814), not a generic low-back-pain code; the old low-back-pain code M54.5 is NO LONGER billable (it was split into M54.50 unspecified, M54.51 vertebrogenic, M54.59 other) so never output a bare M54.5. You DO reliably know the correct standard ICD-10 and CPT codes for common, well-established diagnoses and procedures -- provide those confidently by default; reserve the placeholder/verify path ONLY for genuinely uncommon or ambiguous cases where the exact current code is truly uncertain, never as a default. Output ONLY the filled template as plain text, no commentary, no code fences.'+((window.__mlsCodeTable&&window.__mlsCodeTable.promptBlock)?('\n\n'+window.__mlsCodeTable.promptBlock()):'');
+  /* gen-1.1.0: the draft is unsigned, so the reformat pass is never shown the
+     template's signature block either (it used to fill it in) */
+  const tplDraftText=_tplTextForDraft(template.text);
+  const tplForModel=((typeof _mlsTemplateWithoutSignatureLines==='function')?_mlsTemplateWithoutSignatureLines(tplDraftText).text:tplDraftText).slice(0,12000);
   const user='TEMPLATE TO REPRODUCE - every line of it, in this order:\n"""\n'+tplForModel+'\n"""\n\nVISIT NOTE - EVERY CLINICAL STATEMENT IN IT MUST SURVIVE:\n"""\n'+baseNote.slice(0,12000)+'\n"""\n\nORIGINAL TRANSCRIPT (for any template fields not covered by the note):\n"""\n'+String(visitText||'').slice(0,8000)+'\n"""';
   /* noteq-1.0.0 (b1169): the template-fidelity contract on the reformat pass.
      This is the pass whose entire job is "follow the template well", so it
@@ -35769,7 +35772,12 @@ function _mlsValidateAthenaNote(text){
   if(src.length>50000) throw _mlsAthenaNoteQualityError('athena_note exceeds the browser safety bound');
   var required=['hpi','ros','exam','assessment','plan'];
   var labels={hpi:'HPI',ros:'Review of Systems',exam:'Physical Exam',assessment:'Assessment',plan:'Plan / Follow-up'};
-  var lines=src.split('\n'), flat=/^\s*(HPI|ROS|EXAM|ASSESSMENT|PLAN)\s*:?\s*(.*)$/i, combinedWrapper=/^\s*(?:#{1,6}\s*|\*{1,3}\s*|_{1,3}\s*|`{1,3}\s*)?ASSESSMENT\s*(?:AND|&)\s*PLAN\b/i;
+  /* hbound-1.0.0 (2026-09-24): a heading word must END at a colon, a space or the
+     line end - the backend's EXACT_NOTE_HEADING_RE, byte for byte. Without it
+     "Examination: tender L4-5" read as EXAM with the body "ination: tender
+     L4-5", and inside the exam it read as a duplicate EXAM. Labels that begin
+     with a whole heading word ("Plan of care:") still read as that section. */
+  var lines=src.split('\n'), flat=/^\s*(HPI|ROS|EXAM|ASSESSMENT|PLAN)(?=\s*:|\s|$)\s*:?\s*(.*)$/i, combinedWrapper=/^\s*(?:#{1,6}\s*|\*{1,3}\s*|_{1,3}\s*|`{1,3}\s*)?ASSESSMENT\s*(?:AND|&)\s*PLAN\b/i;
   var malformed=/^\s*(?:#{1,6}\s*|\*{1,3}\s*|_{1,3}\s*|\x60{1,3}\s*|\d+[.)]\s*|[-•]\s+)?(?:HPI|ROS|EXAM|ASSESSMENT|PLAN|SUBJECTIVE|OBJECTIVE|ASSESSMENT\s*(?:AND|&)\s*PLAN|REVIEW\s+OF\s+SYSTEMS|PHYSICAL\s+EXAM)\b\s*(?:[*_\x60]+)?\s*:?\s*$/i;
   var signatureHeading=/^\s*(?:#{1,6}\s*|\*{1,3}\s*|_{1,3}\s*|\x60{1,3}\s*|\d+[.)]\s*|[-•]\s+)?SIGNATURE\s*(?:[*_\x60]+)?\s*:?\s*(?:[*_\x60]+\s*)?(?:\[[^\]\n]*\])?\s*$/i;
   var bodies={}, current=null, seen={}, order=[];
@@ -37432,7 +37440,12 @@ function _flatSoapNote(note){
     const keys=['hpi','ros','exam','assessment','plan'];
     const label={hpi:'HPI',ros:'ROS',exam:'EXAM',assessment:'ASSESSMENT',plan:'PLAN'};
     const rows=b=>{for(const k of keys)if(!String((b[k]||[]).join('\n')).trim())return null;return keys.map(k=>label[k]+':\n'+String(b[k].join('\n')).trim()).join('\n\n');};
-    const flat=/^\s*(HPI|ROS|EXAM|ASSESSMENT|PLAN)\s*:?\s*(.*)$/i, lines=src.split('\n');
+    /* hbound-1.0.0 (2026-09-24): a heading word must END at a colon, a space or the
+       line end - the backend's EXACT_NOTE_HEADING_RE, byte for byte. Without it
+       "Examination: tender L4-5" read as EXAM with the body "ination: tender
+       L4-5", and inside the exam it read as a duplicate EXAM. Labels that begin
+       with a whole heading word ("Plan of care:") still read as that section. */
+    const flat=/^\s*(HPI|ROS|EXAM|ASSESSMENT|PLAN)(?=\s*:|\s|$)\s*:?\s*(.*)$/i, lines=src.split('\n');
     let b={}, cur='', order=[], first=lines.find(line=>line.trim())||'';
     if(!/^\s*(SUBJECTIVE|OBJECTIVE|ASSESSMENT|PLAN)\s*:?/i.test(first)) for(const line of lines){const m=flat.exec(line);if(m){const k=m[1].toLowerCase();if(b[k])return null;b[k]=[];cur=k;order.push(k);if(m[2].trim())b[k].push(m[2]);}else{if(!cur&&line.trim())return null;if(cur)b[cur].push(line);}}
     if(order.join('|')===keys.join('|')){const out=rows(b);if(out)return withApp(out);}
@@ -38224,13 +38237,72 @@ try{ window._mlsTemplateIsOperativeReport=_mlsTemplateIsOperativeReport;
 
 /* The block itself. Returns null - never a partial contract - whenever there
    is nothing real to state, so the caller's no-op path is a single test. */
+/* gen-1.1.0: shared by the draft contract and the template reformat pass,
+   so neither asks the model to reproduce a signature on an unsigned draft */
+function _mlsTemplateWithoutSignatureLines(text){
+  var LEAD='(?:[-\u2013\u2014\u2022*_#]+\\s*|\\d+[.)]\\s*)*(?:(?:(?:provider|physician|clinician|attending|electronic|e-?)\\s*)?(?:signature|attestation)\\s*:\\s*[*_]*\\s*)?';
+  var SIG_LINE=new RegExp('^\\s*'+LEAD+'(?:(?:electronically\\s+signed|e-?signed|signed\\s+by)\\b|\\/s\\/|I attest that I have reviewed\\b|(?:this|the)\\s+(?:note|document(?:ation)?|report|record|encounter|visit|chart|entry)\\s+(?:was|has\\s+been|is)\\s+electronically\\s+signed\\b)','i');
+  var CRED='(?:MD|M\\.D\\.|DO|D\\.O\\.|PA-?C|PA|NP|FNP-?C|APRN|CRNA|DNP|RN|DC|DPM|PhD|MBBS|FACS|FAAPMR|FAAOS)';
+  var FILL='(?:\\[\\[[^\\]\\n]{1,60}\\]\\]|\\[[^\\]\\n]{1,60}\\]|_{3,})';
+  var BLOCK=[
+    new RegExp('^\\s*(?:'+FILL+'|'+CRED+'\\.?)(?:[\\s,/]+(?:'+FILL+'|'+CRED+'\\.?))*\\s*$','i'),
+    new RegExp('^\\s*(?:(?:Dr\\.?\\s+)?[A-Z][A-Za-z.\'\\u2019-]*(?:\\s+[A-Z][A-Za-z.\'\\u2019-]*){0,3}(?:\\s*,\\s*'+CRED+'\\.?)+|Dr\\.?\\s+[A-Z][A-Za-z.\'\\u2019-]*(?:\\s+[A-Z][A-Za-z.\'\\u2019-]*){0,3})\\s*$'),
+    new RegExp('^\\s*(?:date(?:\\s*\\/\\s*time)?(?:\\s+signed)?|time(?:\\s+signed)?|signed\\s+(?:on|at)|credentials?|npi|license(?:\\s+(?:no\\.?|number|#))?)\\s*[:#-]\\s*(?:'+FILL+'(?:[\\s,/]+'+FILL+')*)?\\s*$','i')
+  ];
+  var SIGNER=/provider|physician|clinician|signer|signature|signed|credential|npi/i;
+  var SIGNER_SLOT=/\[\[?[^\]\n]*(?:provider|physician|clinician|signer|signature|signed|credential|npi)[^\]\n]*\]\]?|_{3,}|,\s*(?:MD|DO|PA-?C|NP|APRN)\b/i;
+  function blockLine(line){
+    if(!String(line||'').trim()) return false;
+    var shaped=false;
+    for(var b=0;b<BLOCK.length;b++){ if(BLOCK[b].test(line)){ shaped=true; break; } }
+    if(!shaped) return false;
+    /* a fill field that does not name the signer is clinical */
+    var fills=String(line).match(/\[\[[^\]\n]{1,60}\]\]|\[[^\]\n]{1,60}\]/g)||[];
+    for(var f=0;f<fills.length;f++){ if(!SIGNER.test(fills[f])) return false; }
+    return true;
+  }
+  var lines=String(text==null?'':text).split('\n'), drop=[], n=0, i, j;
+  for(i=0;i<lines.length;i++) drop.push(false);
+  for(i=0;i<lines.length;i++){
+    if(!SIG_LINE.test(lines[i])) continue;
+    drop[i]=true;
+    for(j=i+1;j<lines.length&&blockLine(lines[j]);j++) drop[j]=true;
+    for(j=i-1;j>=0&&blockLine(lines[j])&&SIGNER_SLOT.test(lines[j]);j--) drop[j]=true;
+  }
+  var kept=[];
+  for(i=0;i<lines.length;i++){ if(drop[i]) n++; else kept.push(lines[i]); }
+  return {text:kept.join('\n'),omitted:n};
+}
 function _mlsGenTemplateContract(tpl){
   if(!tpl||!tpl.text) return null;
+  /* gen-1.1.0 (2026-09-24): THE DRAFT IS UNSIGNED, SO THE TEMPLATE THE MODEL
+     COPIES CARRIES NO SIGNATURE LINES. This contract used to order
+     "attestations - is reproduced VERBATIM"; a template ending
+     "Electronically signed by: [[provider]]" was copied into the draft, the
+     backend's display check refused the signed-looking note, and the visit got
+     a 502 after two billed calls. A line goes when it IS a signature or
+     attestation line - it opens (after a list marker, emphasis, or a
+     "Signature:" / "Attestation:" label) with "Electronically signed",
+     "e-signed", "Signed by", "/s/", "I attest that I have reviewed", or
+     "This note was electronically signed" - together with the signer's
+     name, credential, signing-date and rule lines right beside it. A clinical
+     line that only MENTIONS signing stays: "Injection consent was
+     electronically signed by the patient:" and "Pain w/s/o radiation:" are
+     template lines like any other. The backend now removes the same lines
+     from the TEMPLATE_CONTRACT block; doing it here as well means a backend
+     from before that change is never shown them either.
+     One rule differs from the backend's first cut, on purpose (review note
+     R4): a line BELOW a signature line joins the signature block only when
+     every fill field on it names the signer - "[[plan]]", "[[addendum]]" and
+     "Date: [[date_of_injury]]" under "Signed by: [[provider]]" are clinical
+     and are kept; "[[date_signed]]", "Date: ______" and "Jane Doe, MD" go. */
+  var withoutSignatureLines=(typeof _mlsTemplateWithoutSignatureLines==='function')?_mlsTemplateWithoutSignatureLines:function(t){ return {text:String(t==null?'':t),omitted:0}; };
   var san=_mlsTplPromptSanitize(String(tpl.text||''));
   var body='';
   try{ body=(typeof _tplTextForDraft==='function')?_tplTextForDraft(san.text):String(san.text||''); }
   catch(eTplDraft){ body=String(san.text||''); }
-  body=String(body==null?'':body).slice(0,12000);
+  var sig=withoutSignatureLines(body);
+  body=String(sig.text==null?'':sig.text).slice(0,12000);
   if(!body.trim()) return null;
   var sections=_mlsTplSectionLines(body).slice(0,40);
   var name=String((tpl&&tpl.name)||'').replace(/[\r\n]+/g,' ').slice(0,120);
@@ -38238,7 +38310,9 @@ function _mlsGenTemplateContract(tpl){
   out.push('TEMPLATE_CONTRACT_BEGIN');
   out.push('This visit has an ACTIVE TEMPLATE'+(name?(': "'+name+'"'):'')+'. It governs the "note" field of your JSON answer - its layout, its section headings and its standard language. It changes no other field, and it relaxes no rule.');
   out.push('');
-  out.push('HOW TO PRODUCE THE NOTE - REPRODUCE, THEN FILL. Work through the TEMPLATE below from its first line to its last and reproduce EVERY line of it, in the order the template uses and in the words the template uses. The only text you may change is a fill field: a [[snake_case]] slot, a [BRACKETED] or [FILL: ...] token, an ALL-CAPS placeholder, or a run of underscores. Everything else - headings, field labels, boilerplate sentences, standing instructions, attestations - is reproduced VERBATIM. Do NOT summarize, condense, paraphrase, modernise, merge, re-order or omit any template line. Do NOT drop a template line because it looks routine or repetitive. Do NOT replace the outline of the template with your own, and do NOT substitute a generic SOAP outline for it. The finished "note" must be a completed copy of the template, not a description of the visit.');
+  out.push('HOW TO PRODUCE THE NOTE - REPRODUCE, THEN FILL. Work through the TEMPLATE below from its first line to its last and reproduce EVERY line of it, in the order the template uses and in the words the template uses. The only text you may change is a fill field: a [[snake_case]] slot, a [BRACKETED] or [FILL: ...] token, an ALL-CAPS placeholder, or a run of underscores. Everything else - headings, field labels, boilerplate sentences, standing instructions - is reproduced VERBATIM. Do NOT summarize, condense, paraphrase, modernise, merge, re-order or omit any template line. Do NOT drop a template line because it looks routine or repetitive. Do NOT replace the outline of the template with your own, and do NOT substitute a generic SOAP outline for it. The finished "note" must be a completed copy of the template, not a description of the visit.');
+  out.push('');
+  out.push('THE DRAFT IS UNSIGNED - SIGNATURE LINES ARE OMITTED. The practice applies its own signature after review. A signature or attestation line - one that opens with "Electronically signed by", "Signed by" or "/s/" - and the signer\'s name, credential and signing-date lines beside it have been taken out of the TEMPLATE below; never write one back in. A clinical line that only mentions signing, such as a patient-consent field, is an ordinary template line and is reproduced like any other.');
   out.push('');
   out.push('THEN FILL - EVERY SECTION, NOT ONLY THE FIRST. Each section the template defines - the history of present illness, the review of systems, the examination, the assessment and the plan alike - keeps its own heading and its own standing language, and is filled from TODAY_TRANSCRIPT and the chart facts already given to you. A template field with no answer KEEPS ITS LINE and gets the explicit placeholder "not documented" - never an invented finding, history, value or date, and never a deleted line. Never write a clinical fact TODAY_TRANSCRIPT does not support in order to make a template line look complete: an unfilled line is safe, a plausible invented one is not.');
   if(sections.length){
@@ -38263,8 +38337,9 @@ function _mlsGenTemplateContract(tpl){
     sections:sections,
     sanitizeSource:String(san.source||''),
     stripped:Number(san.stripped||0),
+    signatureLinesOmitted:Number(sig.omitted||0),
     block:out.join('\n'),
-    sysLine:'\n\nACTIVE TEMPLATE FOR THIS VISIT: the user message carries a TEMPLATE_CONTRACT block. It governs the "note" field only - reproduce every line of that template, in its order and in its words, and fill its fields from TODAY_TRANSCRIPT. It never changes the "athena_note" field, which stays exactly its five flat sections HPI, ROS, EXAM, ASSESSMENT, PLAN. Where the TEMPLATE_CONTRACT and the NOTE STYLE line disagree about the "note" field, the TEMPLATE_CONTRACT wins; every safety and coding rule above is unchanged.'
+    sysLine:'\n\nACTIVE TEMPLATE FOR THIS VISIT: the user message carries a TEMPLATE_CONTRACT block. It governs the "note" field only - reproduce every line of that template, in its order and in its words, and fill its fields from TODAY_TRANSCRIPT; the draft is unsigned, so no signature line is written. It never changes the "athena_note" field, which stays exactly its five flat sections HPI, ROS, EXAM, ASSESSMENT, PLAN. Where the TEMPLATE_CONTRACT and the NOTE STYLE line disagree about the "note" field, the TEMPLATE_CONTRACT wins; every safety and coding rule above is unchanged.'
   };
 }
 /* ONE RESOLVE PER GENERATION. resolveActiveTemplate is the ANNOUNCING path -
@@ -38690,6 +38765,7 @@ For red_flags/suggested_orders/differentials/opioids/recommendations: use ONLY w
   /* The receipt carries the DECISION and its shape, never the note. */
   try{ window.__mlsLastGenTemplateContract=tplContract?{name:tplContract.name,id:tplContract.id,
     sections:tplContract.sections.slice(),sanitizer:tplContract.sanitizeSource,stripped:tplContract.stripped,
+    signatureLines:tplContract.signatureLinesOmitted||0,
     chars:tplContract.templateText.length,at:Date.now()}:null; }catch(eGenTplReceipt){}
   var tplSysLine=tplContract?tplContract.sysLine:'';
   var tplBlock=tplContract?('\n\n'+tplContract.block):'';
@@ -38924,17 +39000,54 @@ function __mlsNoteQualityRecord(noteType,res,regenerated){
   }catch(eNoteqRecord){}
 }
 /* The better of two graded drafts. A regeneration that scored WORSE is
-   discarded and the original stands - the physician never pays for our retry. */
+   discarded and the original stands - the physician never pays for our retry.
+   avsq-1.0.0 (2026-09-24): A HARD FAILURE IS NOT BOUGHT OUT BY A SCORE. A
+   rubric may mark a check hard - the after-visit summary's chart-only content
+   check is one - and a draft that fails one never replaces a draft that does
+   not, while a draft that clears it replaces one that failed it. Measured
+   before this: a patient handout the repair pass had given a decision-making
+   line and a visit-level line scored HIGHER than the clean first draft on the
+   SOAP rubric, so the handout with the billing lines was the one kept. */
+function __mlsNoteQualityHard(res){
+  try{ return !!(res&&res.hardFailures&&res.hardFailures.length); }catch(eNoteqHard){ return false; }
+}
 function __mlsNoteQualityBetter(aText,aRes,bText,bRes){
   try{
     if(!bRes||!String(bText||'').trim()) return {text:aText,res:aRes,used:'first'};
     if(!aRes) return {text:bText,res:bRes,used:'second'};
+    var aHard=__mlsNoteQualityHard(aRes), bHard=__mlsNoteQualityHard(bRes);
+    if(bHard&&!aHard) return {text:aText,res:aRes,used:'first'};
+    if(aHard&&!bHard) return {text:bText,res:bRes,used:'second'};
     return (bRes.score>aRes.score)?{text:bText,res:bRes,used:'second'}:{text:aText,res:aRes,used:'first'};
   }catch(eNoteqBetter){ return {text:aText,res:aRes,used:'first'}; }
 }
-/* ONE regeneration for a FREEFORM site. `again(extraContract)` must return the
-   new note text. Bounded by NOTEQ_MAX_REGEN - there is no loop here and there
-   is no second pass. */
+/* gen-1.1.0 (2026-09-24): THE REPAIR PASS CARRIES THE REPAIR BLOCK, NOT A
+   SECOND CONTRACT. Every freeform caller re-sends its system text - which
+   already ends with this note type's contract - and appends what this returns.
+   It used to return the whole contract again with the findings under it, so a
+   repair pass carried two copies: the backend builders measured 17,260 then
+   33,969 characters on the fallback op-note generator and 9,712 then 18,132 on
+   the template re-format, and the backend, which delivers caller text within a per-family
+   budget, left out the middle of the second copy and now says so on
+   /api/complete (callerSystemTruncated). This asks the module for the repair
+   block alone (REGENERATION PASS / FAILURES TO REPAIR / RULES FOR THIS PASS).
+   A module from before regenOnly still answers with the whole contract in
+   front of that block, so everything before the block is cut here too: no
+   module build can put a duplicate contract on the wire. '' means there is
+   nothing to repair and no pass is taken. */
+function __mlsNoteQualityRepairOnly(noteType,ctx,res){
+  try{
+    var q=__mlsNoteQualityApi();
+    if(!q||typeof q.contractFor!=='function') return '';
+    var block=String(q.contractFor(noteType,{template:(ctx&&ctx.template)||'',findings:res,regenOnly:true})||'');
+    var at=block.indexOf('REGENERATION PASS');
+    return at>=0?('\n\n'+block.slice(at)):'';
+  }catch(eNoteqRepairOnly){ return ''; }
+}
+/* ONE regeneration for a FREEFORM site. `again(repairBlock)` must return the
+   new note text; the caller appends repairBlock to the system text it already
+   sent, which carries the contract once. Bounded by NOTEQ_MAX_REGEN - there is
+   no loop here and there is no second pass. */
 async function __mlsNoteQualityOnce(text,noteType,ctx,again){
   var res=__mlsNoteQualityGrade(text,noteType,ctx);
   if(!res||res.pass||typeof again!=='function'){
@@ -38945,8 +39058,7 @@ async function __mlsNoteQualityOnce(text,noteType,ctx,again){
   for(var attempt=0;attempt<NOTEQ_MAX_REGEN;attempt++){
     var retry='';
     try{
-      var q=__mlsNoteQualityApi();
-      retry=q?('\n\n'+q.contractFor(noteType,{template:(ctx&&ctx.template)||'',findings:res})):'';
+      retry=__mlsNoteQualityRepairOnly(noteType,ctx,res);
       if(!retry) break;
       var second=await again(retry);
       if(!String(second||'').trim()) break;
@@ -39055,6 +39167,27 @@ function _mlsOpNoteCreditExhausted(opts,status,providerCode,detail){
   e.mlsOpNoteCreditExhausted=true;
   return e;
 }
+/* gen-1.1.0 (2026-09-24): A CALLER MAY HAND aiCallRaw A RECEIPT. opts.receipt,
+   when it is an object, is filled with what that one request carried and what
+   came back about it - the draft-tuning payload sent (so a caller can tell
+   which saved format the draft was asked to follow) and, on /api/complete,
+   callerSystemTruncated. aiCallRaw still answers with the plain string every
+   caller reads, and a request made without a receipt is unchanged. Kept out of
+   aiCallRaw's body on purpose: the transport suite reads a fixed window of it. */
+function _mlsAiCallReceipt(opts,fields){
+  if(!opts||!opts.receipt||typeof opts.receipt!=='object') return;
+  for(var k in fields){ if(Object.prototype.hasOwnProperty.call(fields,k)) opts.receipt[k]=fields[k]; }
+}
+/* The backend delivers a caller's system text within a per-family budget and,
+   when the text ran over, sends the model its opening and its closing with a
+   marked middle span left out - and says so as callerSystemTruncated. A
+   backend from before the field sends nothing, which reads as false, so the
+   same client works against both. PHI-free: a family name, a flag, a time. */
+function _mlsCompleteReceipt(d,opts,family){
+  var truncated=!!(d&&d.callerSystemTruncated===true);
+  try{ window.__mlsLastCompleteReceipt={family:String(family||''),callerSystemTruncated:truncated,at:Date.now()}; }catch(eCompleteRcpt){}
+  _mlsAiCallReceipt(opts,{callerSystemTruncated:truncated});
+}
 async function aiCallRaw(sys,user,key,opts){
   opts=opts||{};
   /* Load account draft preferences only for an actual generation request. */
@@ -39126,6 +39259,7 @@ async function aiCallRaw(sys,user,key,opts){
     var _mlsSpecialty=String(opts.specialty==null?'':opts.specialty).trim().slice(0,80);
     if(_mlsSpecialty) _draftTuning=Object.assign({},_draftTuning||{},{specialty:_mlsSpecialty});
   }catch(eSpec){}
+  try{_mlsAiCallReceipt(opts,{draftTuning:_draftTuning||null});}catch(eRcpt){}
   if(backendMode()){
     // Structured note generation -> /api/generate ({transcript}->{result}).
     // Free-form helpers (referral, AVS, document analysis) -> /api/complete
@@ -39168,6 +39302,7 @@ async function aiCallRaw(sys,user,key,opts){
          served (its cascade can fall back). Stash it as a receipt so the
          caller can tell the doctor the truth instead of assuming the ask. */
       try{ window.__mlsLastAiModel=String((d&&d.model)||''); }catch(e){}
+      try{_mlsCompleteReceipt(d,opts,_draftFamily);}catch(eCst){}
       return String((d&&d.content)||'').trim();
     }
     /* tplnote-1.0.0 (2026-09-15): when the run attached a TEMPLATE_CONTRACT
@@ -43576,23 +43711,39 @@ async function generateAVS(){
     let sys=`You are a clinician writing a PATIENT-FACING after-visit summary (AVS). Convert the clinical note into clear, warm, plain language at about a 6th-grade reading level. When no saved template specifies the format, use short sections with simple headers: "Why you came in today", "What we found", "Your medicines", "What to do at home", "Tests / follow-up", and "When to get help right away". Use ONLY information in the note and the patient background provided — do not invent. The "Your medicines" section should reflect the patient's current/home medications plus anything changed today. Avoid jargon; explain any necessary terms. No coding/billing content. Address the patient as "you".`+avsSources.prefs;
     sys += '\n\nDEFAULT FORMAT: use these headings, each on its own line and in this order: Why you came in today; What we found; What to do at home. A selected strict or adapted template controls its own headings and order. Add content only when supported by the source.';
     const user='CLINICAL NOTE:\n'+avsSources.note+(avsSources.pctx?('\n\nPATIENT BACKGROUND (chart history — use for context only, do not invent new findings):\n'+avsSources.pctx):'');
-    /* noteq-1.0.0 (b1169): the after-visit summary is patient-facing prose and
-       has no rubric of its own; the SOAP contract is the closest honest fit and
-       its forbidden tier is what actually matters here - no AI voice, no
-       transcript artifacts, no stigmatizing language, no dangerous
-       abbreviations in a document the patient reads the day it is signed. */
-    const noteqAvsCtx={avs:true,template:''};
+    /* avsq-1.0.0 (2026-09-24): THE AFTER-VISIT SUMMARY IS GRADED AS ONE.
+       It used to take the SOAP visit-note contract and rubric. Measured: a
+       complete six-section handout scored 58 against a floor of 90, so a
+       paid regeneration fired on almost every one, and its repair block asked
+       the patient-facing model for SOAP sections, a decision-making line and
+       vitals; a handout that came back with those chart lines scored HIGHER
+       and was kept. The 'after-visit-summary' rubric checks what the backend
+       AVS validator requires (the three patient headings, alone on their
+       lines, in order, each with text) and patient-level language, and treats
+       chart-only billing, coding or decision-making content as a hard failure.
+       Its forbidden tier still covers AI voice, transcript artifacts,
+       stigmatizing language and dangerous abbreviations. */
+    const noteqAvsCtx={avs:true,template:'',savedFormat:false};
     /* noteq-1.1.0 (b1177): bounded await before the patient-facing summary. */
     try{ await __mlsNoteQualityEnsure(); }catch(eNoteqReadyAvs){}
-    const noteqAvs=__mlsNoteQualityContract('visit-note-soap',noteqAvsCtx);
-    let avsDraft=(await aiCallRaw(sys+noteqAvs,user,avsSources.key,{freeform:true,family:'avs',todayTranscript:avsSources.todayTranscript})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+    const noteqAvs=__mlsNoteQualityContract('after-visit-summary',noteqAvsCtx);
+    const avsReceipt={}, avsRetryReceipt={};
+    let avsDraft=(await aiCallRaw(sys+noteqAvs,user,avsSources.key,{freeform:true,family:'avs',todayTranscript:avsSources.todayTranscript,receipt:avsReceipt})).replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
+    /* A saved summary format that sets its own headings is read off the
+       payload this request actually carried. */
+    noteqAvsCtx.savedFormat=_mlsAvsSavedFormatActive(avsReceipt.draftTuning);
     try{
-      const avsGraded=await __mlsNoteQualityOnce(avsDraft,'visit-note-soap',noteqAvsCtx,async function(retry){
-        const again=await aiCallRaw(sys+noteqAvs+retry,user,avsSources.key,{freeform:true,family:'avs',todayTranscript:avsSources.todayTranscript});
+      const avsGraded=await __mlsNoteQualityOnce(avsDraft,'after-visit-summary',noteqAvsCtx,async function(retry){
+        const again=await aiCallRaw(sys+noteqAvs+retry,user,avsSources.key,{freeform:true,family:'avs',todayTranscript:avsSources.todayTranscript,receipt:avsRetryReceipt});
         return String(again||'').replace(/^```\w*\s*/,'').replace(/```$/,'').trim();
       });
       if(avsGraded&&String(avsGraded.text||'').trim()) avsDraft=avsGraded.text;
       try{ window.__mlsLastAvsQuality=avsGraded?avsGraded.res:null; }catch(eNoteqAvsStamp){}
+      /* PHI-free: which rubric, whether a repair pass ran, and whether the
+         backend said either request's system text ran over its budget. */
+      try{ window.__mlsLastAvsQualityPass={rubric:'after-visit-summary',savedFormat:!!noteqAvsCtx.savedFormat,
+        regenerated:!!(avsGraded&&avsGraded.regenerated),callerSystemTruncated:avsReceipt.callerSystemTruncated===true,
+        retryCallerSystemTruncated:avsRetryReceipt.callerSystemTruncated===true,at:Date.now()}; }catch(eNoteqAvsPass){}
     }catch(eNoteqAvs){}
     if(!_athenaAsyncBindingStillSafe(avsBinding,'patient-summary drafting',avsEpoch)) return;
     if(JSON.stringify(_readAvsSources())!==avsSourceFingerprint){
@@ -43606,6 +43757,20 @@ async function generateAVS(){
     toast('Patient summary ready. Review before handing out.','ok');
   }catch(err){ toast(friendlyError(err),'err'); }
   finally{ btn.disabled=false; btn.innerHTML='👤 Patient summary'; }
+}
+/* avsq-1.0.0: DOES A SAVED SUMMARY FORMAT SET THIS DRAFT'S HEADINGS? Read the
+   way the backend reads the draft-tuning payload: a strict or adapt format
+   with template text of its own. The backend then checks that format's
+   headings instead of the three defaults, so the rubric's default-heading
+   check steps aside rather than ask for the defaults against the doctor's own
+   format - which would be a paid repair pass on every such summary. */
+function _mlsAvsSavedFormatActive(tuning){
+  try{
+    if(!tuning||typeof tuning!=='object') return false;
+    var mode=String(tuning.templateMode||'').toLowerCase();
+    var text=String(tuning.templateText||tuning.profileTemplateText||'');
+    return (mode==='strict'||mode==='adapt')&&!!text.trim();
+  }catch(eAvsFmt){ return false; }
 }
 
 /* =========================================================
@@ -51657,7 +51822,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1338';
+  window.__MLS_AV='b1339';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

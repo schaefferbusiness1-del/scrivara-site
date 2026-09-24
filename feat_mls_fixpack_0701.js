@@ -1103,7 +1103,9 @@
                    same never-invent rule (and the backend route contract, rule 4).
                    A second syntax here left [FILL: ...] tokens in notes that the
                    room then counted as zero blanks. */
-                if (o && typeof o.system === 'string' && o.family !== 'opnote') {
+                /* avsq-1.1.0: nor for the patient handout ('avs'): its contract
+                   forbids placeholders, and this rule asked for [FILL: ...] ones */
+                if (o && typeof o.system === 'string' && o.family !== 'opnote' && o.family !== 'avs') {
                   o.system += FILL_RULES;
                   var init2 = {}; for (var k in init) init2[k] = init[k];
                   init2.body = JSON.stringify(o);

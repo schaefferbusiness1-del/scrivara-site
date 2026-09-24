@@ -461,8 +461,11 @@ const SITES = [
      context as a named const (noteqAvsCtx) rather than an inline object
      literal, so the original literal-shaped pin could never match. The pin
      that matters is that the contract is BUILT for this site and that the
-     built string is what reaches aiCallRaw - both are asserted below. */
-  ['after-visit summary', /const noteqAvs\s*=\s*__mlsNoteQualityContract\('visit-note-soap'/]
+     built string is what reaches aiCallRaw - both are asserted below.
+     Re-aimed again deliberately (avsq-1.0.0, 2026-09-24): the after-visit
+     summary now has its own rubric, 'after-visit-summary', instead of the
+     SOAP visit-note one; tests/avs-own-rubric-runtime.test.js proves why. */
+  ['after-visit summary', /const noteqAvs\s*=\s*__mlsNoteQualityContract\('after-visit-summary'/]
 ];
 SITES.forEach(([name, re]) => {
   ok(re.test(SHIP), `the quality contract is not appended at the ${name} generation site`);

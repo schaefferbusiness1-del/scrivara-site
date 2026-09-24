@@ -2841,7 +2841,17 @@ const tests = [
   'copilot-cut-draft-canvas-runtime.test.js',
   'copilot-cut-draft-assistant-runtime.test.js',
   /* repairadv-1.0.0: the served structured repair parks its own quality receipt */
-  'structured-repair-serves-its-own-receipt-runtime.test.js'
+  'structured-repair-serves-its-own-receipt-runtime.test.js',
+  /* avsq-1.0.0: the after-visit summary is graded on its own rubric, and a
+     draft carrying chart-only content is never the one kept */
+  'avs-own-rubric-runtime.test.js',
+  /* gen-1.1.0: a repair pass carries the repair block, never a second
+     contract; callerSystemTruncated is read, and its absence reads false */
+  'noteq-repair-pass-sends-repair-block-only.test.js',
+  /* gen-1.1.0: the unsigned visit draft's template carries no signature lines */
+  'visit-template-omits-signature-lines.test.js',
+  /* hbound-1.0.0: a heading word ends at a colon, a space or the line end */
+  'staging-heading-word-boundary.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

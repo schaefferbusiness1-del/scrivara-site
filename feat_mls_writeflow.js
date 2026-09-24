@@ -9023,7 +9023,10 @@
       return null;
     }
     var bodies = {}, current = null, seen = {}, order = [];
-    var flat = /^\s*(HPI|ROS|EXAM|ASSESSMENT|PLAN)\s*:?\s*(.*)$/i;
+    /* hbound-1.0.0 (2026-09-24): a heading word ends at a colon, a space or the
+       line end, as the backend's EXACT_NOTE_HEADING_RE does - "Examination:"
+       is exam text, not EXAM with the body "ination:". */
+    var flat = /^\s*(HPI|ROS|EXAM|ASSESSMENT|PLAN)(?=\s*:|\s|$)\s*:?\s*(.*)$/i;
     var malformedDestinationHeading = /^\s*(?:#{1,6}\s*|\*{1,3}\s*|_{1,3}\s*|`{1,3}\s*|\d+[.)]\s*|[-•]\s+)(?:HPI|ROS|EXAM|PHYSICAL\s+EXAM|REVIEW\s+OF\s+SYSTEMS|SUBJECTIVE|OBJECTIVE|ASSESSMENT(?:\s*(?:AND|&)\s*PLAN)?|PLAN)\b\s*(?:[*_`]+)?\s*:?\s*/i;
     var bareUnsupportedWrapperHeading = /^\s*(?:SUBJECTIVE|OBJECTIVE|ASSESSMENT\s*(?:AND|&)\s*PLAN)\s*:?\s*$/i;
     var malformedNestedHeading = /^\s*(?:#{1,6}\s*|\*{1,3}\s*|_{1,3}\s*|`{1,3}\s*|\d+[.)]\s*|[-•]\s+)(?:CHIEF\s+COMPLAINT|HISTORY|PMH|PAST\s+MEDICAL\s+HISTORY|MEDICATIONS?|ALLERGIES|VITALS?|VITAL\s+SIGNS|FINDINGS|LABS?|IMAGING|DIAGNOS(?:IS|ES)|REVIEW\s+OF\s+SYSTEMS)\b\s*(?:[*_`]+)?\s*:?\s*/i;
@@ -9113,7 +9116,10 @@
     if (!src) return { ok: false, reason: 'empty-note', sections: [] };
     if (src.length > 50000) return { ok: false, reason: 'note-too-large', sections: [] };
     var lines = src.split('\n'), bodies = {}, current = null, seen = {}, order = [];
-    var flat = /^\s*(HPI|ROS|EXAM|ASSESSMENT|PLAN)\s*:?\s*(.*)$/i;
+    /* hbound-1.0.0 (2026-09-24): a heading word ends at a colon, a space or the
+       line end, as the backend's EXACT_NOTE_HEADING_RE does - "Examination:"
+       is exam text, not EXAM with the body "ination:". */
+    var flat = /^\s*(HPI|ROS|EXAM|ASSESSMENT|PLAN)(?=\s*:|\s|$)\s*:?\s*(.*)$/i;
     var combinedWrapper = /^\s*(?:#{1,6}\s*|\*{1,3}\s*|_{1,3}\s*|`{1,3}\s*)?ASSESSMENT\s*(?:AND|&)\s*PLAN\b/i;
     var malformed = /^\s*(?:#{1,6}\s*|\*{1,3}\s*|_{1,3}\s*|`{1,3}\s*|\d+[.)]\s*|[-•]\s+)?(?:HPI|ROS|EXAM|EXAMINATION|ASSESSMENT|PLAN|SUBJECTIVE|OBJECTIVE|ASSESSMENT\s*(?:AND|&)\s*PLAN|CHIEF\s+COMPLAINT|HISTORY|PMH|PAST\s+MEDICAL\s+HISTORY|MEDICATIONS?|ALLERGIES|VITALS?|VITAL\s+SIGNS|FINDINGS|LABS?|IMAGING|DIAGNOS(?:IS|ES)|REVIEW\s+OF\s+SYSTEMS|PHYSICAL\s+EXAM)\b\s*(?:[*_`]+)?\s*:?(?:\s*)$/i;
     for (var i = 0; i < lines.length; i++) {

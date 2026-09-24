@@ -67,14 +67,24 @@
   var W = (typeof window !== 'undefined') ? window : null;
   if (W && W.__mlsNoteQuality && W.__mlsNoteQuality.version === VERSION) return;
 
-  /* noteq-1.0.0 (b1169): the six canonical rubric ids. */
+  /* noteq-1.0.0 (b1169): the six canonical rubric ids (avsq-1.0.0 adds a
+   * seventh, the after-visit summary, below). */
   var T_OP = 'operative-procedure-note';
   var T_HPI = 'hpi';
   var T_AP = 'assessment-plan';
   var T_PE = 'ros-pe';
   var T_SOAP = 'visit-note-soap';
   var T_TPL = 'template-fidelity';
-  var ALL_TYPES = [T_OP, T_HPI, T_AP, T_PE, T_SOAP, T_TPL];
+  /* avsq-1.0.0 (2026-09-24): the after-visit summary gets a rubric of its
+   * own. It was graded as a SOAP visit note, so a complete six-section
+   * patient handout scored 58 against a floor of 90 (measured), a paid
+   * regeneration fired on almost every one, and the repair pass asked the
+   * patient-facing model for SOAP headings, a decision-making line and
+   * vitals. The backend's AVS validator refuses only a draft without its
+   * three patient headings, so a SOAP-shaped handout carrying chart-only
+   * lines came back 200 and, scoring higher on the SOAP rubric, was kept. */
+  var T_AVS = 'after-visit-summary';
+  var ALL_TYPES = [T_OP, T_HPI, T_AP, T_PE, T_SOAP, T_TPL, T_AVS];
 
   /* noteq-1.0.0 (b1169): THE FLOOR IS A CONSTANT. Never read from settings.
    * Ranked by medico-legal exposure: an operative note carries wrong-site and
@@ -86,6 +96,8 @@
   FLOORS[T_TPL] = 92;
   FLOORS[T_AP] = 90;
   FLOORS[T_SOAP] = 90;
+  /* avsq-1.0.0: a handout the patient reads the day it is printed. */
+  FLOORS[T_AVS] = 90;
   FLOORS[T_PE] = 88;
   FLOORS[T_HPI] = 88;
   var DEFAULT_FLOOR = 88;
@@ -157,6 +169,28 @@
     "Internal consistency: one laterality and one level string per anatomic reference throughout, and the levels and sides enumerated in header slots must reconcile with the levels and sides described in the technique narrative and with any code slot. Template author-facing instructions - '(dictate findings here)', 'choose one', 'if applicable' - never appear in the output, literally or as prose paraphrase such as 'details as described above'.\n\n" +
     "Do not reuse another encounter's variable content. Once the template's fixed text is set aside, what remains must be this patient, this day, this procedure. Output the note unsigned, in draft status, with the signature and cosign block unexecuted; any addendum appends below the signature and never edits text above it.";
 
+  /* avsq-1.0.0: the patient handout's own contract. It matches what the
+   * backend AVS validator requires - the three patient headings, each alone on
+   * its own line and in order, with a body under each - plus patient-level
+   * language, and it names no clinician-only element as something to add.
+   * Kept short on purpose: the backend's avs lane delivers 4,800 characters of
+   * caller text (a 1,200-character opening, a 3,600-character closing), and
+   * the site's task text, this contract and a repair block must fit in it.
+   * Two words are kept out of it deliberately: the aiCallRaw code-table
+   * wrapper appends the practice's billing code table to any prompt naming a
+   * code system followed by "code", or "billable". */
+  CONTRACTS[T_AVS] =
+    "A PATIENT-FACING AFTER-VISIT SUMMARY, NOT A CHART NOTE. Write to the patient as \"you\" in plain words (about a 6th-grade reading level): short sentences, everyday words, and a brief explanation of any medical word you must use. " +
+    "Unless a selected saved TEMPLATE for the summary sets its own headings, open with Why you came in today, What we found and What to do at home, each alone on its own line, in that order, each with at least one sentence under it; short plain sections such as Your medicines may follow. " +
+    "Use only what the clinical note and patient background say; never add a diagnosis, test, medicine, dose, date, instruction or warning sign they do not state. " +
+    "Leave out codes, billing, how the visit was leveled or how complex the decision-making was, chart section labels, and clinician shorthand.";
+
+  var AVS_FORBIDDEN_LAW =
+    "NEVER EMIT: placeholders ([brackets], {{braces}}, TBD, TODO, runs of underscores); AI or authoring voice ('as an AI', 'Here is', 'In summary'); transcript artifacts (speaker labels, [inaudible], timestamps); stigmatizing words; U, IU, QD, QOD, MS, MSO4 or MgSO4 - write the word out. A decimal takes a leading zero (0.5 mL) and no trailing zero (1 mg).";
+
+  var AVS_PRECEDENCE =
+    "PRECEDENCE: the physician's note and edits, and a selected saved TEMPLATE for the summary, come first; then this contract. Each rule here asks you to explain what the note documents - it is never authority to invent a clinical fact. Where the note is silent the summary is silent: no guess, and no 'not documented' or chart placeholder in a patient handout.";
+
   /* noteq-1.0.0 (b1169): the precedence clause is appended to EVERY contract.
    * It is the spec's own law and it is what keeps a completeness rule from
    * becoming a licence to fabricate. */
@@ -178,7 +212,7 @@
   /* =========================================================================
    * NOTE-TYPE RESOLUTION
    * The app names its lanes 'soap', 'opnote', 'avs', 'hpi', 'assessment' and
-   * a dozen other spellings. One tolerant resolver maps them all onto the six
+   * a dozen other spellings. One tolerant resolver maps them all onto the
    * rubric ids, because an unrecognised type must still be graded against
    * something rather than silently skipped.
    * ========================================================================= */
@@ -186,13 +220,14 @@
     var s = String(t == null ? '' : t).toLowerCase().replace(/[^a-z]+/g, '');
     if (!s) return T_SOAP;
     if (ALL_TYPES.indexOf(String(t)) >= 0) return String(t);
+    /* avsq-1.0.0: the patient handout resolves to its own rubric, ahead of
+     * every clinician type below. */
+    if (/^(avs|aftervisit|aftervisitsummary|patientsummary|patienthandout|visitsummary)/.test(s)) return T_AVS;
     if (/^(op|opnote|operative|operativeprocedurenote|procedurenote|operativereport|proc|opprep|injection)/.test(s)) return T_OP;
     if (/^(hpi|historyofpresentillness|subjective|history|interval)/.test(s)) return T_HPI;
     if (/^(ap|anp|assessment|plan|assessmentplan|assessmentandplan|impression|impressionandplan)/.test(s)) return T_AP;
     if (/^(ros|pe|exam|physical|physicalexam|physicalexamination|rospe|reviewofsystems|objective)/.test(s)) return T_PE;
     if (/^(templatefidelity|template|tpl|reformat|templatereformat)/.test(s)) return T_TPL;
-    /* avs is patient-facing prose with no rubric of its own; the SOAP rubric
-     * is the closest honest fit and its warn tier is what actually applies. */
     return T_SOAP;
   }
 
@@ -204,14 +239,27 @@
   /* =========================================================================
    * contractFor(noteType, opts)
    * opts: { template, templateName, procedureClass, subtype, findings,
-   *         compact, includeTemplateLaw }
+   *         compact, includeTemplateLaw, heldSlotSyntax, regenOnly }
    * ========================================================================= */
   function contractFor(noteType, opts) {
     opts = opts || {};
     var t = normalizeType(noteType);
+    /* gen-1.1.0 (2026-09-24): regenOnly answers with the REPAIR BLOCK ALONE -
+     * REGENERATION PASS / FAILURES TO REPAIR / RULES FOR THIS PASS - and ''
+     * when there is nothing to repair. A freeform repair pass already carries
+     * the first pass's contract in the caller's system text, so asking for the
+     * whole contract again put it on the wire twice: the backend builders
+     * measured the fallback op-note generator at 17,260 characters on the first pass and 33,969 on the
+     * repair pass, whose budgeted delivery then left out the middle of the
+     * second copy (the backend now says so with callerSystemTruncated). */
+    if (opts.regenOnly) return repairBlock(t, opts.findings);
     var parts = [];
     parts.push('=== MLS PROFESSIONAL NOTE CONTRACT (' + VERSION + ', ' + t + ') ===');
     parts.push(CONTRACTS[t] || CONTRACTS[T_SOAP]);
+    /* avsq-1.0.0: the patient handout takes none of the clinician laws below
+     * (the chart-template law, the payer precedence, the leveling rule in
+     * FORBIDDEN_LAW); it takes its own short forms of them. */
+    if (t === T_AVS) return avsContractTail(parts, opts);
 
     /* The template clause rides on whenever a template is actually in play,
      * and the cross-cutting template-fidelity contract with it. */
@@ -252,20 +300,55 @@
 
     /* Regeneration pass: the findings are quoted back verbatim, and the pass
      * is bounded to repair only. This is the spec's own feedbackTemplate. */
-    if (opts.findings) {
-      var f = renderFindings(opts.findings);
-      if (f) {
-        parts.push('REGENERATION PASS 1 of 1. The prior draft failed automated review. Regenerate the SAME note from the SAME source material; do not add, infer, or supply any clinical fact that was not in the source. The template remains authoritative for structure - reproduce its headings verbatim, in order, with its fixed sentences character-for-character.\n\nFAILURES TO REPAIR:\n' + f +
-          '\n\nRULES FOR THIS PASS:\n' +
-          '1. Repair ONLY the listed failures. Do not rewrite passing content, do not restyle, do not add sections.\n' +
-          '2. If a repair would require a value not present in the transcript, chart context, order, or device record, write the practice\'s not-addressed marker or "not documented" - never a plausible number.\n' +
-          '3. Do not change any laterality, level, dose, date, or agent to make a check pass. If a check flags a contradiction, write only what the source supports and leave the rest for physician entry.\n' +
-          '4. Do not add "None", "No complications", or any negative that the source does not support.\n' +
-          '5. Preserve every negation in template boilerplate exactly.\n' +
-          '6. Output the complete corrected note, unsigned, in draft status.');
+    var repair = opts.findings ? repairBlock(t, opts.findings) : '';
+    if (repair) parts.push(repair);
+    return parts.join('\n\n');
+  }
+
+  /* avsq-1.0.0: the rest of the patient handout's contract. A saved summary
+   * format, when the caller names one, replaces the three default headings;
+   * it never brings the chart-template law with it. */
+  function avsContractTail(parts, opts) {
+    var tpl = (typeof opts.template === 'string') ? opts.template : '';
+    if (tpl && tpl.replace(/\s+/g, '') !== '') {
+      var heads = headingsOf(tpl);
+      if (heads.length) {
+        var names = [];
+        for (var i = 0; i < heads.length && i < 30; i++) names.push(heads[i].label);
+        parts.push('THE SELECTED SAVED TEMPLATE FOR THIS SUMMARY USES THESE HEADINGS, IN THIS ORDER, IN PLACE OF THE THREE ABOVE; keep each one spelled as written:\n' + names.join('\n'));
       }
     }
+    parts.push(AVS_FORBIDDEN_LAW);
+    parts.push(AVS_PRECEDENCE);
+    var repair = opts.findings ? repairBlock(T_AVS, opts.findings) : '';
+    if (repair) parts.push(repair);
     return parts.join('\n\n');
+  }
+
+  /* The repair block on its own: the one piece a regeneration pass adds. The
+   * clinician text below is byte-for-byte what every repair pass carried
+   * before regenOnly existed; the patient handout gets rules written for a
+   * patient handout, and none of them asks for a chart element. */
+  function repairBlock(t, findings) {
+    var f = renderFindings(findings);
+    if (!f) return '';
+    if (t === T_AVS) {
+      return 'REGENERATION PASS 1 of 1. The prior draft of this after-visit summary failed automated review. Rewrite the SAME summary from the SAME clinical note and patient background, adding no clinical fact they do not state.\n\nFAILURES TO REPAIR:\n' + f +
+        '\n\nRULES FOR THIS PASS:\n' +
+        '1. Repair ONLY the listed failures; keep every passing sentence as it is.\n' +
+        '2. If a repair needs something the note does not say, leave it out - never a guessed number, date, dose or instruction.\n' +
+        '3. Unless a selected saved format sets other headings, keep Why you came in today, What we found and What to do at home, each alone on its own line, in that order.\n' +
+        '4. Keep plain words for the patient, addressed as "you"; no chart labels, codes or billing content.\n' +
+        '5. Output the complete corrected summary and nothing else.';
+    }
+    return 'REGENERATION PASS 1 of 1. The prior draft failed automated review. Regenerate the SAME note from the SAME source material; do not add, infer, or supply any clinical fact that was not in the source. The template remains authoritative for structure - reproduce its headings verbatim, in order, with its fixed sentences character-for-character.\n\nFAILURES TO REPAIR:\n' + f +
+      '\n\nRULES FOR THIS PASS:\n' +
+      '1. Repair ONLY the listed failures. Do not rewrite passing content, do not restyle, do not add sections.\n' +
+      '2. If a repair would require a value not present in the transcript, chart context, order, or device record, write the practice\'s not-addressed marker or "not documented" - never a plausible number.\n' +
+      '3. Do not change any laterality, level, dose, date, or agent to make a check pass. If a check flags a contradiction, write only what the source supports and leave the rest for physician entry.\n' +
+      '4. Do not add "None", "No complications", or any negative that the source does not support.\n' +
+      '5. Preserve every negation in template boilerplate exactly.\n' +
+      '6. Output the complete corrected note, unsigned, in draft status.';
   }
 
   /* noteq-1.0.0 (b1169): the findings block quoted into the repair prompt. */
@@ -501,7 +584,7 @@
       label: 'Raw transcript artifacts (speaker labels, timestamps, or ASR markers) reached the note.'
     },
     {
-      id: 'stigmatizing-language', sev: 'block', types: [T_HPI, T_AP, T_PE, T_SOAP],
+      id: 'stigmatizing-language', sev: 'block', types: [T_HPI, T_AP, T_PE, T_SOAP, T_AVS],
       re: /\b(drug[- ]seeking|narcotic[- ]seeking|med[- ]seeking|malinger(ing|er)?|symptom magnificat\w*|drug abuser|abuser|addict|junkie|difficult patient|frequent flyer|poor historian|noncompliant patient)\b|\b(dirty|clean)\s+(urine|UDS|UDT|screen|tox)\b/gi,
       label: 'Stigmatizing language appears in a note the patient can read the day it is signed. Use neutral, factual phrasing.'
     },
@@ -1605,6 +1688,157 @@
     why: 'Anchor every comparison to a prior value and a prior date.'
   });
 
+  /* ---------- after-visit summary (avsq-1.0.0) ----------
+   * What the backend AVS validator requires, and patient-level language.
+   * Nothing here asks for a chart element: no SOAP section, no vitals, no
+   * medication reconciliation, no leveling line. A check marked `hard` is a
+   * failure no score can buy out - a draft carrying it never replaces one that
+   * does not (see hardFailures in grade()). */
+  var AVS_HEADINGS = ['WHY YOU CAME IN TODAY', 'WHAT WE FOUND', 'WHAT TO DO AT HOME'];
+
+  function avsHeadingKey(line) {
+    return String(line || '').trim().replace(/:\s*$/, '').replace(/\s+/g, ' ').toUpperCase();
+  }
+
+  /* The backend's validateRequiredSections(text, AVS_SECTION_HEADINGS) read
+   * line for line: each heading alone on its own line (a trailing colon is
+   * allowed, a list marker or emphasis is not), exactly once, in order, the
+   * first heading on the first non-empty line, and a body under each - the
+   * body running to the next of the three, so an optional section in between
+   * belongs to the one above it. Returns the problems; none means it passes. */
+  function avsSectionProblems(text) {
+    var lines = String(text || '').split(/\r?\n/);
+    var firstLine = -1, i, p;
+    for (i = 0; i < lines.length; i++) { if (lines[i].trim()) { firstLine = i; break; } }
+    var firsts = [], problems = [];
+    for (p = 0; p < AVS_HEADINGS.length; p++) {
+      var found = [];
+      for (i = 0; i < lines.length; i++) if (avsHeadingKey(lines[i]) === AVS_HEADINGS[p]) found.push(i);
+      if (!found.length) problems.push('missing ' + AVS_HEADINGS[p]);
+      if (found.length > 1) problems.push('duplicate ' + AVS_HEADINGS[p]);
+      firsts.push(found.length ? found[0] : -1);
+    }
+    var earliest = -1;
+    for (p = 0; p < firsts.length; p++) if (firsts[p] >= 0 && (earliest < 0 || firsts[p] < earliest)) earliest = firsts[p];
+    if (firstLine >= 0 && earliest !== firstLine) problems.push('text before the first heading');
+    var allFound = firsts[0] >= 0 && firsts[1] >= 0 && firsts[2] >= 0;
+    if (allFound && !(firsts[0] < firsts[1] && firsts[1] < firsts[2])) problems.push('headings out of order');
+    for (p = 0; p < firsts.length; p++) {
+      if (firsts[p] < 0) continue;
+      var next = lines.length;
+      for (var q = 0; q < firsts.length; q++) if (firsts[q] > firsts[p] && firsts[q] < next) next = firsts[q];
+      var words = lines.slice(firsts[p] + 1, next).join(' ').match(/[A-Za-z0-9]+/g) || [];
+      if (words.length < 2 || words.join('').length < 4) problems.push('nothing under ' + AVS_HEADINGS[p]);
+    }
+    return problems;
+  }
+
+  chk({
+    id: 'avs.patient-headings', sev: 'block', types: [T_AVS],
+    /* A selected saved summary format sets its own headings; the backend then
+     * checks those instead, so this rule steps aside rather than ask for the
+     * defaults against the doctor's own format. */
+    need: function (e) { return !e.tplText && !e.ctx.savedFormat; },
+    run: function (e) { return avsSectionProblems(e.text).length === 0; },
+    label: 'The summary does not carry its three patient headings - Why you came in today, What we found, What to do at home - each alone on its own line, in that order, with text under each.',
+    why: 'Put each of the three headings alone on its own line, in that order, with at least one plain sentence under each and nothing above the first one.'
+  });
+
+  /* Chart-only content in a patient handout: decision-making complexity,
+   * leveling and billing lines, and billing code systems or codes. Named in
+   * the finding only in general terms, so the repair text never quotes a
+   * clinician element back to the patient-facing model. */
+  /* Each pattern is a chart term a patient handout has no use for. Plain
+   * phrases a handout can carry ("the problems we addressed today", "your pain
+   * is leveling off", a clinic ZIP code) are deliberately not matched. */
+  var AVS_CHART_ONLY = [
+    /(?<!\bshared )\bmedical decision[- ]making\b|\bMDM\b|\bdecision[- ]making complexity\b|\b(low|moderate|high|straightforward)[- ]complexity (MDM|decision)/i,
+    /* time-based billing statements and bare codes (avsq-1.1.0) */
+    /\b(more than|over|greater than)\s+(50\s*%|half\b)[^.\n]{0,80}\bcounsel/i,
+    /\btotal (face[- ]to[- ]face )?time (spent )?(today|on (this|today'?s) visit|for (this|today'?s) visit)\b[^.\n]{0,40}\bminutes?\b/i,
+    /\b[A-TV-Z]\d{2}\.\d[0-9A-Z]{0,3}\b/,
+    /\b(CPT|procedure)\s*(code\s*)?[:#]?\s*\d{5}\b/i,
+    /\b(visit|service|E\/?M|billing) level\b|\blevel of (service|visit)\b|\blevel [1-5] (office )?visit\b|\bleveling basis\b|\bvisit (was )?leveled\b/i,
+    /^[ \t]*data reviewed[ \t]*:|\brisk of (patient )?management\b|\bprescription drug management\b/im,
+    /\btotal time (spent )?on the date of (the )?(encounter|service|visit)\b/i,
+    /\b(CPT|HCPCS|ICD-?(9|10)(-?CM)?|E\/M|E&M|RVUs?)\b/,
+    /\bmodifier\s*-?\s*(25|59)\b/i
+  ];
+  chk({
+    id: 'avs.no-chart-only-content', sev: 'block', types: [T_AVS], hard: true,
+    run: function (e) {
+      for (var i = 0; i < AVS_CHART_ONLY.length; i++) if (AVS_CHART_ONLY[i].test(e.text)) return false;
+      return true;
+    },
+    label: 'Chart-only billing, coding or decision-making content reached a patient handout.',
+    why: 'Remove every line about codes, billing, the level of the visit or how complex the decision-making was; a patient summary carries none of it.'
+  });
+
+  chk({
+    id: 'avs.no-chart-section-labels', sev: 'block', types: [T_AVS],
+    need: function (e) { return !e.tplText && !e.ctx.savedFormat; },
+    run: function (e) {
+      return !/^[ \t]*(?:[-*#]+[ \t]*)?(?:\*\*)?(SUBJECTIVE|OBJECTIVE|ASSESSMENT(?:[ \t]*(?:AND|&|\/)[ \t]*PLAN)?|A\/P|HPI|ROS|REVIEW OF SYSTEMS|PHYSICAL EXAM(?:INATION)?|CHIEF COMPLAINT|CC)(?:\*\*)?[ \t]*(?::|$)/im.test(e.text);
+    },
+    label: 'Chart section labels appear in a patient handout.',
+    why: 'Keep only plain-language headings written for the patient.'
+  });
+
+  /* Clinician shorthand a patient cannot read. An abbreviation spelled out
+   * beside it - "epidural steroid injection (ESI)" - is fine. */
+  var AVS_SHORTHAND = /\b(HPI|ROS|PMH|PSH|NKDA|TTP|SLR|DTRs?|BLE|BUE|WNL|NAD|HEENT|CTAB|RRR|BID|TID|QID|QHS|PRN|prn|NPO|RTC|TFESI|ILESI|ESI|MBB|RFA|y\/o|s\/p|c\/o|h\/o|f\/u|bilat)\b/g;
+  chk({
+    id: 'avs.plain-language', sev: 'warn', types: [T_AVS],
+    run: function (e) {
+      var re = new RegExp(AVS_SHORTHAND.source, 'g'), m;
+      while ((m = re.exec(e.text)) !== null) {
+        var before = e.text.charAt(m.index - 1), after = e.text.charAt(m.index + m[0].length);
+        if (!(before === '(' && after === ')')) return false;
+        if (m.index === re.lastIndex) re.lastIndex++;
+      }
+      return true;
+    },
+    label: 'Clinician shorthand appears in a patient handout.',
+    why: 'Write the words out in plain language, or explain the abbreviation beside it.'
+  });
+
+  chk({
+    id: 'avs.speaks-to-the-patient', sev: 'warn', types: [T_AVS],
+    run: function (e) {
+      if (!/\byou(r|rs)?\b/i.test(e.text)) return false;
+      /* 'the patient portal' is a place, not a third-person patient (avsq-1.1.0) */
+      return !/\bthe patient\b(?!\s+portal)|\bpatient (is|was|reports|reported|denies|denied|states|stated|presents|presented)\b/i.test(e.text);
+    },
+    label: 'The summary talks about the patient instead of to the patient.',
+    why: 'Address the patient directly as "you".'
+  });
+
+  chk({
+    id: 'avs.short-sentences', sev: 'warn', types: [T_AVS],
+    need: function (e) { return e.words >= 40; },
+    run: function (e) {
+      /* heading lines (short, no end punctuation) are not sentences */
+      var prose = [], lines = e.text.split(/\r?\n/);
+      for (var i = 0; i < lines.length; i++) {
+        var l = lines[i].trim();
+        if (!l) continue;
+        if (!/[.!?]["')\]]*$/.test(l) && wordCount(l) <= 8) continue;
+        prose.push(l);
+      }
+      var sents = sentencesOf(prose.join('\n\n'));
+      if (!sents.length) return true;
+      var total = 0, longest = 0;
+      for (var k = 0; k < sents.length; k++) {
+        var n = wordCount(sents[k]);
+        total += n;
+        if (n > longest) longest = n;
+      }
+      return (total / sents.length) <= 20 && longest <= 40;
+    },
+    label: 'Sentences are too long for a patient handout.',
+    why: 'Use short sentences - about 20 words or fewer, none over 40.'
+  });
+
   /* =========================================================================
    * ENVIRONMENT BUILDER - one pass, everything the checks read.
    * ========================================================================= */
@@ -1885,7 +2119,9 @@
 
   /* =========================================================================
    * grade(noteText, noteType, ctx)
-   * ctx: { template, templateName, procedureClass, subtype }
+   * ctx: { template, templateName, procedureClass, subtype, savedFormat }
+   *   savedFormat (avsq-1.0.0): true when a saved after-visit summary format
+   *   sets its own headings for this draft.
    * -> { score, pass, floor, noteType, missing[], forbidden[], templateGaps[],
    *      tips[], counts{}, skipped[] }
    * ========================================================================= */
@@ -1894,7 +2130,7 @@
     var text = String(noteText == null ? '' : noteText);
     var e = buildEnv(text, type, ctx);
 
-    var missing = [], skipped = [], tips = [];
+    var missing = [], skipped = [], tips = [], hardFailures = [];
     var blockTotal = 0, blockPass = 0, warnTotal = 0, warnPass = 0;
 
     for (var i = 0; i < CHECKS.length; i++) {
@@ -1909,6 +2145,7 @@
       if (C.sev === 'block') { blockTotal++; if (ok) blockPass++; }
       else { warnTotal++; if (ok) warnPass++; }
       if (!ok) missing.push({ id: C.id, severity: C.sev, label: C.label, why: C.why || '' });
+      if (!ok && C.hard) hardFailures.push(C.id);
     }
 
     var forbidden = runForbidden(e);
@@ -1955,6 +2192,9 @@
       missing: missing,
       forbidden: forbidden,
       templateGaps: templateGaps,
+      /* avsq-1.0.0: ids of failed `hard` checks. A draft that carries one is
+       * never preferred over a draft that does not, whatever the scores. */
+      hardFailures: hardFailures,
       tips: tips,
       skipped: skipped,
       counts: {

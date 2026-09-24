@@ -50,7 +50,7 @@ const nq = fs.readFileSync(path.join(ROOT, 'feat_mls_note_quality.js'), 'utf8');
 assert.ok(/other than the required ' \+ held \+ ' held-for-physician marker/.test(nq), 'the contract exempts the named held marker');
 /* the fetch-layer FILL rule (inside the capture point) must skip op notes */
 const fixpack = fs.readFileSync(path.join(ROOT, 'feat_mls_fixpack_0701.js'), 'utf8');
-assert.ok(/typeof o\.system === 'string' && o\.family !== 'opnote'\)/.test(fixpack),
+assert.ok(/typeof o\.system === 'string' && o\.family !== 'opnote'( && o\.family !== 'avs')?\)/.test(fixpack),
   'the fetch-layer STRICT DICTATION RULE must not add a second blank syntax to op-note requests');
 
 (async () => {

@@ -602,13 +602,23 @@ function headHarness() {
   const SHELLS = ['1pScribeFlow.html', path.join('1p', 'index.html'), 'ScribeFlow.html', path.join('cloned', 'index.html')];
   const A_ATH = 'function _mlsAthenaNoteQualityError(reason){';
   const B_ATH = 'function _mlsSetAthenaNote(';
+  /* hbound-1.0.0 (2026-09-24): the one deliberate change inside this region -
+     the heading word boundary on the flat-heading regex, proven by
+     tests/staging-heading-word-boundary.test.js - is normalised away on BOTH
+     sides, so every other byte of the validator stays pinned to HEAD before
+     and after that change lands. */
+  const hboundNormal = (v) => v
+    .replace(/[ \t]*\/\* hbound-1\.0\.0[\s\S]*?\*\/\n/g, '')
+    .split('(HPI|ROS|EXAM|ASSESSMENT|PLAN)(?=\\s*:|\\s|$)\\s*:?').join('(HPI|ROS|EXAM|ASSESSMENT|PLAN)\\s*:?');
   for (const f of SHELLS) {
     const now = fs.readFileSync(path.join(root, f), 'utf8');
     const was = execSync('git show HEAD:' + f.split(path.sep).join('/'), { cwd: root, maxBuffer: 1024 * 1024 * 64 }).toString('utf8');
     const nowV = sliceBetween(now, A_ATH, B_ATH, f + ' athena validator');
     const wasV = sliceBetween(was, A_ATH, B_ATH, f + ' athena validator (HEAD)');
     ok(nowV.length > 4000, f + ': the athena validator slice is implausibly small');
-    eq(nowV, wasV, f + ': _mlsValidateAthenaNote is NOT byte-identical to HEAD');
+    ok(nowV.indexOf('(HPI|ROS|EXAM|ASSESSMENT|PLAN)(?=\\s*:|\\s|$)') !== -1,
+      f + ': the athena validator lost the heading word boundary');
+    eq(hboundNormal(nowV), hboundNormal(wasV), f + ': _mlsValidateAthenaNote is NOT byte-identical to HEAD apart from the heading word boundary');
     /* the JSON athena_note field spec is untouched too */
     const nowSpec = sliceBetween(now, ' "athena_note": "<the SAME visit', ' "insurance_note"', f + ' athena_note spec');
     const wasSpec = sliceBetween(was, ' "athena_note": "<the SAME visit', ' "insurance_note"', f + ' athena_note spec (HEAD)');
