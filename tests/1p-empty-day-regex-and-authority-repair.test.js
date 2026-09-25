@@ -505,14 +505,12 @@ function testDayFactsContract() {
   });
   ok(ihPlain.length >= 2,
     'fewer than two includeHistory sites are a plain opt-out - the checkbox is deciding whether the batch runs again');
-  /* OPEN ENGINE GAP (narrowed, not frozen): exactly ONE site still ANDs the
-     checkbox into includeHistory - pullCalendarSelection, see the TODO at the
-     end of this function. <= 1 lets the fix land (0 coupled sites still
-     passes) while failing loudly if a SECOND coupling is introduced. */
+  /* dayfacts-1.0.1 decoupled the last site (pullCalendarSelection), so no
+     includeHistory site may AND the checkbox in again. */
   const ihCoupled = SI.split('\n').filter(function (l) {
     return /var includeHistory = opts\.includeHistory !== false &&/.test(l);
   });
-  ok(ihCoupled.length <= 1,
+  ok(ihCoupled.length === 0,
     'a new includeHistory site was coupled to the Full-visit-notes checkbox (' + ihCoupled.length + ' coupled sites)');
 
   /* --- no user-facing message may claim OFF opens no charts --------------- */
@@ -558,51 +556,12 @@ function testDayFactsContract() {
     eq(r[4].skipped, 'preference-off',
       'a MALFORMED onlyDate was accepted as a day-scoped read - an unscoped body sweep would follow');
 
-    /* ===================== OPEN ENGINE GAP (NOT ASSERTED) =================
-       dayfacts-1.0.0 requires the pulled-day encounter note to be attempted
-       for every exact scheduled row in day-facts mode, and the engine's own
-       comment at 1p-feat_mls_schedimport_exact.js:4931 claims "the proven tn
-       onlyDate lane below - its tail pass already selects visitsSkipped rows"
-       does that work. It does not. Three shipped bytes still hold the OLD
-       schedule-only meaning of OFF and were not flipped by dayfacts-1.0.0:
-
-         1p-feat_mls_schedimport_exact.js:5614
-           var pulledDayNoteLaneEnabled = false;
-           (guarded by a comment that still calls OFF "schedule + stable chart
-           facts only" and says "never enter it from this batch")
-         1p-feat_mls_schedimport_exact.js:6188
-           var pulledDayNoteTailEnabled = false;
-           ("Full Notes OFF never starts the legacy date-scoped tail reader" -
-           this IS the tail pass 4931 cites)
-         1p-feat_mls_schedimport_exact.js:5790
-           tnAggregate() short-circuits on receipt.visitNotesRequested !== true
-           and stamps every row todayNoteNotRequested, so a day-facts receipt
-           can never report a pulled-day note read even if one happened.
-         (1p-feat_mls_schedimport_exact.js:5884 tnDeferRow refuses to queue a
-           deferred day-note round for the same reason.)
-
-       tnBoundedRead - the only caller of vp.runForPatient({onlyDate}) inside
-       the batch - is reachable ONLY from 5661 and 6302, both inside those two
-       dead blocks. The month-complete OFF sentence pinned above therefore
-       promises an attempt the engine does not make.
-
-       This suite deliberately does NOT assert the day-facts note attempt: a
-       passing assertion here would have to pin the gap (freezing `= false`)
-       and a failing one would force the engine edit this lane may not make.
-       Reported to the orchestrator instead. Re-enable this TODO as a real
-       pin the moment those flags become live.
-
-       SECOND OPEN ENGINE GAP (NOT ASSERTED, see the <= 1 narrowing above):
-         1p-feat_mls_schedimport_exact.js:9531  (pullCalendarSelection)
-           var includeHistory = opts.includeHistory !== false && calendarPullVisitBodies !== false;
-       dayfacts-1.0.0 decouples includeHistory from the checkbox - only the
-       census phase-1 caller may pass false - but the Calendar pull route
-       still ANDs the checkbox in, so a Calendar day pull with Full Notes OFF
-       hands pull() includeHistory:false and lands in the branch section (5)
-       exercises with reason "not-requested" and zero chart opens: exactly the
-       revoked schedule-only no-op, reached from a live button. The day pull
-       (7821) and the month pull (9302) are both correctly decoupled; this one
-       route was missed. */
+    /* dayfacts-1.0.1 CLOSED both engine gaps this block used to document: the
+       pulled-day note lane and tail pass are live, and no route ANDs the
+       checkbox into includeHistory (pinned above). site-full-notes-host-contract
+       proves the recovery half at runtime. */
+    ok(!/var pulledDayNoteLaneEnabled = false;/.test(SI) && !/var pulledDayNoteTailEnabled = false;/.test(SI),
+      'a pulled-day note lane is hard-disabled again - the month-complete OFF sentence would promise an attempt the engine does not make');
   });
 }
 
@@ -613,7 +572,7 @@ async function main() {
   testRegexLiteralsAreIntact();
   testAuthorityStoreRepairs();
   testConvergenceIsOneContinuousPull();
-  console.log('PASS 1p-empty-day-regex-and-authority-repair: ' + checks + ' checks - a verified-empty day never reaches the AI schedule parser (and a text-only day still does); a provider-unknown appointment-census day now RUNS chart history as a second phase with its own progress instead of silently dropping it, while a census day with nothing provable keeps its established honest skip; under dayfacts-1.0.0 (superseding owner DAY contract, 2026-08-25) Full Notes OFF is an abbreviated CHART pass and no longer a schedule-only no-op - an OFF day pull and an OFF census phase 2 both open the day-scoped per-patient batch, the only OFF skip left is a day with nothing provable and it carries the census reason with day-facts mode and zero read counters, the batch receipt declares day-facts/chartFactsRequired/allVisitBodiesRequested with honest not-shipped insurance placeholders, an UNSET choice fails closed as visit-notes-unchosen/blocked-unchosen with zero reads and no armed retries, includeHistory is decoupled from the checkbox on the day and month routes, no OFF message claims charts were not opened, and mls-connect admits a well-formed onlyDate read in both settled modes while still refusing unscoped reads on OFF and everything on UNSET; no 1p-only file carries a lost-backslash regex or the control byte one leaves behind, and the calendar hero bar provably paints 44% for "7 of 16"; a top-level-alien authority blob is salvaged per-day or bounded-reset instead of wedging every future pull forever; and the automatic convergence lane is one continuous pull with exactly one verdict. TWO OPEN ENGINE GAPS are documented as TODOs in section 6 and NOT asserted: the pulled-day note lanes are hard-disabled, and pullCalendarSelection still ANDs the checkbox into includeHistory');
+  console.log('PASS 1p-empty-day-regex-and-authority-repair: ' + checks + ' checks - a verified-empty day never reaches the AI schedule parser (and a text-only day still does); a provider-unknown appointment-census day now RUNS chart history as a second phase with its own progress instead of silently dropping it, while a census day with nothing provable keeps its established honest skip; under dayfacts-1.0.0 (superseding owner DAY contract, 2026-08-25) Full Notes OFF is an abbreviated CHART pass and no longer a schedule-only no-op - an OFF day pull and an OFF census phase 2 both open the day-scoped per-patient batch, the only OFF skip left is a day with nothing provable and it carries the census reason with day-facts mode and zero read counters, the batch receipt declares day-facts/chartFactsRequired/allVisitBodiesRequested with honest not-shipped insurance placeholders, an UNSET choice fails closed as visit-notes-unchosen/blocked-unchosen with zero reads and no armed retries, includeHistory is decoupled from the checkbox on the day and month routes, no OFF message claims charts were not opened, and mls-connect admits a well-formed onlyDate read in both settled modes while still refusing unscoped reads on OFF and everything on UNSET; no 1p-only file carries a lost-backslash regex or the control byte one leaves behind, and the calendar hero bar provably paints 44% for "7 of 16"; a top-level-alien authority blob is salvaged per-day or bounded-reset instead of wedging every future pull forever; and the automatic convergence lane is one continuous pull with exactly one verdict. the pulled-day note lanes stay live and no route couples the checkbox into includeHistory');
 }
 
 main().then(() => {}, e => { console.error(e); process.exit(1); });

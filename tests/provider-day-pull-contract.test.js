@@ -58,8 +58,8 @@
        door runs the mandatory day-facts batch (section 2b, adversarial);
      - retryFailedHistory admits an OFF receipt's retry rows in day-facts mode
        instead of discarding them as "full-notes-off" (section 4b).
-   One element of the 1.0.1 delta is NOT in these bytes and is reported as an
-   engine finding rather than pinned - see the TODO at section 4b's tail.
+   tnDeferRow and niSyncFromReceipt admit day-facts rows too (pinned at the
+   tail of section 4b).
    ========================================================================= */
 
 /* harness hygiene 2026-09-15: the loaded module arms real timeouts (deferred retries, resume offers); un-ref'd they kept node alive after PASS, so run-all saw a hang, never a verdict. */
@@ -959,26 +959,15 @@ assert.strictEqual(selection.reason, 'provider-ambiguous');
   assert.strictEqual(countVisitReads(), visitReadsBeforeRetry, 'a day-facts retry must read no Athena historical visit bodies');
   assert.strictEqual(patient.visits.length, visitsStoredBeforeRetry, 'a day-facts retry must store no new historical visit bodies');
 
-  /* TODO(dayfacts-1.0.1, engine gap - reported as a finding, deliberately NOT
-     asserted, because the honest assertion here would pin the defect and the
-     dishonest one would forge it green): the 1.0.1 delta says "tnDeferRow and
-     niSyncFromReceipt no longer refuse day-facts rows", but both gates are
-     still keyed on the ON checkbox in these bytes:
-        feat_mls_schedimport_exact.js:5873  (tnDeferRow)
-          if (!entry || !day || sweepDepth || receipt.visitNotesRequested !== true) return false;
-        feat_mls_schedimport_exact.js:7064  (niSyncFromReceipt)
-          if (receipt.visitNotesRequested !== true) return 0;
-     niGate/niReadOnce WERE converted (they now refuse only an unchosen
-     preference, reason "visit-notes-unchosen"), so the idle backfill is
-     willing to drain a day-facts row that never reaches it: the two feeds that
-     would enqueue it both return early on an OFF receipt. Consequence under
-     the superseding contract: a pulled-day note that fails on a day-facts day
-     is neither deferred to the immediate round nor queued for the idle
-     backfill - it is dropped, while the same failure on an ON day is retried.
-     This fixture cannot see it because every note here succeeds; add the
-     positive pin (a failed day-facts note appears in the deferred queue /
-     niSyncFromReceipt returns > 0) the moment the two gates learn the settled
-     tri-state the rest of the engine already speaks. */
+  /* dayfacts-1.0.1: tnDeferRow and niSyncFromReceipt no longer refuse
+     day-facts rows (this used to be a TODO naming them as an open engine gap).
+     Pin it so neither gate is keyed on the checkbox again; the runtime proof
+     of the deferred queue and the idle backfill is in site-full-notes-host-contract. */
+  {
+    const gate = (name) => { const at = siSource.indexOf('function ' + name + '('); assert.ok(at >= 0, name + ' is missing'); return siSource.slice(at, at + 400); };
+    assert.ok(!/visitNotesRequested !== true/.test(gate('tnDeferRow')), 'tnDeferRow refuses day-facts rows again');
+    assert.ok(!/visitNotesRequested !== true/.test(gate('niSyncFromReceipt')), 'niSyncFromReceipt refuses day-facts receipts again');
+  }
 
   /* ============ 5. dayfacts-1.0.0 fail-closed: an UNCHOSEN account gets
      nothing read on its behalf. This replaces the old "visit-notes-off"

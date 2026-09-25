@@ -127,37 +127,14 @@ assert.ok(fenceIdx > tailIdx && fenceIdx - tailIdx < 1400,
 assert.ok(si.indexOf('finalizeVerdict();') > tailIdx,
   'the terminal history verdict is no longer reachable after the day-note tail pass');
 
-/* ============================================================================
-   TODO - dayfacts-1.0.0 ENGINE GAP, reported not forced green.
-   The contract says day-facts mode "attempts exactly the pulled-day encounter
-   note per row" via the tn/onlyDate tail pass. The engine does NOT do that yet:
+/* dayfacts-1.0.1 CLOSED the engine gap this block used to document (the
+   pulled-day note lane and tail pass were hard-coded off). Both flags are live
+   now, so the stale TODO is replaced by the pin it asked for: neither flag may
+   be switched off again. site-full-notes-host-contract proves the recovery
+   half (defer, idle backfill) at runtime. */
+assert.ok(!/var pulledDayNoteTailEnabled = false;/.test(si),
+  'the pulled-day note tail pass is hard-disabled again - day-facts rows would never get their own-day note');
+assert.ok(!/var pulledDayNoteLaneEnabled = false;/.test(si),
+  'the pulled-day note lane is hard-disabled again - day-facts rows would never get their own-day note');
 
-     feat_mls_schedimport_exact.js:6188  var pulledDayNoteTailEnabled = false;
-     feat_mls_schedimport_exact.js:5614  var pulledDayNoteLaneEnabled = false;
-
-   Both flags are hard-coded false literals, so the gate on line 6189
-   (`pulledDayNoteTailEnabled && pullVisitBodies !== true`) is dead and no OFF
-   row ever reaches tnBoundedRead - even though the reader half (section 7
-   above) now admits the day-scoped read. Three accounting seams would also
-   have to move with the flag, since all three still test the CHECKBOX:
-     5790  tnAggregate      - `if (receipt.visitNotesRequested !== true)` zeroes
-                              the whole day-note census for a day-facts pull
-     5884  tnDeferRow       - same test, so no day-facts row can be deferred
-     7080  niSyncFromReceipt- same test, so the idle backfill never sees them
-   and two more surfaces still reassert the retired schedule-only meaning:
-     6169-6172 the stop path stamps every OFF row todayNoteReason
-               "visit-notes-off" / todayNoteSkipped "visit-notes-off"
-     7688-7694 retryFailedHistory refuses OFF retry rows outright with
-               reason "full-notes-off", visitNotesMode "not-requested" - so a
-               day-facts chart-facts row that FAILED cannot be retried at all.
-
-   The assertions in section 8 are therefore deliberately NARROWED to what is
-   honestly true today: the tail-pass machinery still exists, still selects the
-   OFF rows, and still cannot strand the verdict. When the engine wires the
-   flag, replace section 8's first pin with the real contract pin - that the
-   tail pass is ENTERED in day-facts mode - e.g.
-     assert.ok(!/var pulledDayNoteTailEnabled = false;/.test(si), ...)
-   plus a positive pin on the day-facts entry condition.
-   ========================================================================== */
-
-console.log('qol-off-lane-never-crashes: OK (dayfacts-1.0.0 — OFF is day-facts: the batch runs, charts open, facts save, historical bodies are skipped; UNCHOSEN blocks everything; the OFF lane still reaches finalizeVerdict. Day-note tail pass remains a documented engine gap.)');
+console.log('qol-off-lane-never-crashes: OK (dayfacts-1.0.0 — OFF is day-facts: the batch runs, charts open, facts save, historical bodies are skipped; UNCHOSEN blocks everything; the OFF lane still reaches finalizeVerdict. The pulled-day note lane and tail pass stay live.)');
