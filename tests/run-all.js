@@ -2858,7 +2858,11 @@ const tests = [
   /* bla-1.0.0 (2026-09-25): the Admin console reads what the server sends and
      offers the owner's own row nothing the server refuses */
   'admin-console-reads-what-the-server-says-runtime.test.js',
-  'calendar-form-phone-follows-the-linked-chart.test.js'
+  'calendar-form-phone-follows-the-linked-chart.test.js',
+  /* teamname-1.0.0 (2026-09-25): a team member who signs their own notes is
+     never given the practice head's Provider name at sign-in; an invented
+     practice name is never stored */
+  'team-member-keeps-own-provider-name.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

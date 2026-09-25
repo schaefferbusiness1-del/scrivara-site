@@ -8434,6 +8434,18 @@ async function logout(force){
    HOSTED BACKEND: account info, access gating, redeem, admin
    ========================================================= */
 var _refreshMeInFlight=null, _refreshMeToken='', _refreshMeEpoch=0, _refreshMeIdentityReady=null;
+/* teamname-1.0.0 (2026-09-25): a team member who signs their OWN notes. These
+   are the roles suIsProvider() counts as providers (doctor, user), with a
+   head_id. /api/me builds `practice` for practiceId(), which is the PRACTICE
+   HEAD's id for a team member, so its provider_name is the head's. A nurse and
+   a front-desk login keep the head's Provider name exactly as before: their
+   Athena pulls are scoped by it, and a nurse's documents carry it. A lawyer is
+   seeded as before too. */
+function sfTeamMemberSignsOwnNotes(user){
+  if(!user||!user.head_id) return false;
+  const role=String(user.role||'doctor').toLowerCase();
+  return role==='doctor'||role==='user';
+}
 function refreshMe(opts){
   opts=opts||{};
   if(!backendMode()||!bkToken()) return Promise.resolve(false);
@@ -8495,13 +8507,32 @@ function refreshMe(opts){
         if(em){ session={email:em}; setSessionEmail(em); }
         try{
           var pp=d.practice||{};
-          if(pp.name) localStorage.setItem(uns('practiceName'),String(pp.name));
+          /* teamname-1.0.0 (2026-09-25): not a practice name the server
+             invents when none is set ("<login name> Practice" or "Medical
+             practice"), which it marks name_source 'none'. A
+             'provider-derived' name comes from the Provider name the doctor
+             set, and is stored as before, as the server's own practice
+             display name does. A server that sends no name_source is stored
+             as before too. */
+          if(pp.name&&pp.name_source!=='none') localStorage.setItem(uns('practiceName'),String(pp.name));
           /* Identity separation (2026-07-21): only an explicit provider
              PREFERENCE may seed the clinical provider identity. When the
              server marks provider_name as the login-account fallback, leave
              providerName alone — the verified Athena roster resolution owns
              it (a login/account name must never scope charts). */
-          if(pp.provider_name&&pp.provider_source!=='account-fallback') localStorage.setItem(uns('providerName'),String(pp.provider_name));
+          /* teamname-1.0.0 (2026-09-25): for a team member who signs their
+             own notes, provider_name here is the practice head's (see
+             sfTeamMemberSignsOwnNotes). Written here, it replaced the
+             member's own Provider name at every sign-in, and then signed the
+             member's notes and scoped the member's Athena pulls. It is not
+             written for them. The member's own Provider name stays on this
+             computer, and on a fresh computer it comes back from the member's
+             own account copy, which the sign-in's gap-filling account load
+             reads. The practice-level fields around it describe the shared
+             practice, so the head's values still arrive. */
+          if(!sfTeamMemberSignsOwnNotes(bkUser)){
+            if(pp.provider_name&&pp.provider_source!=='account-fallback') localStorage.setItem(uns('providerName'),String(pp.provider_name));
+          }
           if(pp.phone) localStorage.setItem(uns('clinicPhone'),String(pp.phone));
           if(pp.address) localStorage.setItem(uns('clinicAddress'),String(pp.address));
           if(pp.google_business_url) localStorage.setItem(uns('googleBusinessUrl'),String(pp.google_business_url));
