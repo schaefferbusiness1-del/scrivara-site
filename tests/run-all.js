@@ -2851,7 +2851,14 @@ const tests = [
   /* gen-1.1.0: the unsigned visit draft's template carries no signature lines */
   'visit-template-omits-signature-lines.test.js',
   /* hbound-1.0.0: a heading word ends at a colon, a space or the line end */
-  'staging-heading-word-boundary.test.js'
+  'staging-heading-word-boundary.test.js',
+  /* bla-1.0.0 (2026-09-25): the New-appointment form names and links one
+     patient, and the daily brief counts no cancelled or no-show appointment */
+  'calendar-follow-up-names-and-links-one-patient-runtime.test.js',
+  /* bla-1.0.0 (2026-09-25): the Admin console reads what the server sends and
+     offers the owner's own row nothing the server refuses */
+  'admin-console-reads-what-the-server-says-runtime.test.js',
+  'calendar-form-phone-follows-the-linked-chart.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

@@ -8787,7 +8787,9 @@ function fmtAccess(u){
   if(u.access_expires){
     try{ label+=' · until '+new Date(u.access_expires).toLocaleDateString(); }catch(e){}
   }
-  if(u.role==='owner'||u.isAdmin) label='Owner';
+  /* bla-1.0.0 (2026-09-25): /api/admin/users sends the owner as role 'admin'
+     with no isAdmin field. */
+  if(u.role==='owner'||u.role==='admin'||u.isAdmin) label='Owner';
   return label;
 }
 
@@ -8932,7 +8934,11 @@ function adminRenderCreateResult(record,restored){
   if(title){ title.textContent=setupPolicyReady?(state==='ready'?'✅ Account Ready':(expectedSetup?'✅ Ready for first login':'⛔ Account not ready')):'⛔ Account not ready'; title.style.color=(setupPolicyReady&&(state==='ready'||expectedSetup))?'#127a55':'#b4231e'; }
   var readinessReasons=d&&d.readiness&&Array.isArray(d.readiness.reasons)?d.readiness.reasons.map(String):[];
   var practiceSigningPending=readinessReasons.indexOf('PRACTICE_BAA_REQUIRED')>=0||readinessReasons.indexOf('PRACTICE_BAA_COUNTERSIGNATURE_REQUIRED')>=0;
-  if(detail) detail.textContent=(!setupPolicyReady?'The server did not confirm the protected first-login policy. Do not send this invite. ':(expectedSetup
+  /* bla-1.0.0 (2026-09-25): the box names the account the invite belongs to. */
+  var acct=(d&&d.user)||{}, req=record.request||{};
+  var whoName=String(acct.name||req.name||'').trim(), whoEmail=String(acct.email||req.email||'').trim();
+  var who=whoEmail?((whoName?whoName+' · ':'')+whoEmail):whoName;
+  if(detail) detail.textContent=(who?('Account: '+who+'. '):'')+(!setupPolicyReady?'The server did not confirm the protected first-login policy. Do not send this invite. ':(expectedSetup
     ? ('Admin-controlled access is approved. The recipient sets a password and signs only the forms assigned to their role on first login.'+(practiceSigningPending?' Patient work then waits safely for the practice agreement and MLS countersignature.':''))
     : adminReadinessText(d)))+(restored?' · restored from this tab':'');
   var invite=accountInviteLinkForCurrentLane(record.inviteUrl||d.inviteUrl||'',''); var canSend=setupPolicyReady&&(state==='ready'||expectedSetup)&&!!invite;
@@ -8961,6 +8967,10 @@ async function adminProvisionAccount(btn){
   var trialDays=accessMode==='trial'?Number((document.getElementById('adminCreateTrialDays')||{}).value||0):null;
   var clinicalApproved=!!((document.getElementById('adminCreateClinicalApproved')||{}).checked);
   var status=document.getElementById('adminCreateStatus'); var setStatus=function(m,bad){ if(status){status.textContent=m;status.style.color=bad?'#b4231e':'var(--muted)';} };
+  /* bla-1.0.0 (2026-09-25): a new create starts by clearing the last result and
+     its private invite. A create that fails never leaves the previous person's
+     invite on screen under the next person's name. */
+  adminClearCreatedInvite();
   if(!name){ setStatus('Enter the account holder’s full name.',true); return false; }
   if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ setStatus('Enter a valid email address.',true); return false; }
   if(role!=='head'&&!practiceUserId){ setStatus('Choose the practice this account joins.',true); return false; }
@@ -9048,7 +9058,10 @@ async function loadAdminBilling(){
         '<td style="padding:8px 6px">'+esc(u.email)+'</td>'+
         '<td style="padding:8px 6px">'+esc(u.role||'user')+'</td>'+
         '<td style="padding:8px 6px">'+esc(currentPlan?adminPlanLabel(currentPlan):(u.plan||'—'))+'</td>'+
-        '<td style="padding:8px 6px"><b>'+esc(adminReadinessText(u))+'</b><div class="mini">'+esc(commercial.source||u.accessSource||'none')+'</div></td>'+
+        /* bla-1.0.0 (2026-09-25): show the access source the server reports.
+           commercial.source is only ever direct / none / practice-enterprise,
+           so it is shown only for practice Enterprise coverage. */
+        '<td style="padding:8px 6px"><b>'+esc(adminReadinessText(u))+'</b><div class="mini">'+esc(commercial.source==='practice-enterprise'?'practice-enterprise':(u.accessSource||commercial.source||'none'))+'</div></td>'+
         '<td style="padding:8px 6px">'+esc(stripeState)+'</td>'+
         '<td style="padding:8px 6px">'+esc(connectState)+'</td>'+
         '<td style="padding:8px 6px;white-space:nowrap">'+planControls+'</td>';
@@ -9124,7 +9137,10 @@ async function loadAdminUsers(){
       ? '<tr><td colspan="6" style="padding:6px;color:var(--muted);font-size:12px">'+(wkspErr&&wkspErr.status===404?'Clinical workspace grants are not available yet.':'Clinical workspace grants could not be read just now. Press Refresh users to try again.')+'</td></tr>'
       : (wksp.releaseConfigured?'':'<tr><td colspan="6" style="padding:6px;color:var(--muted);font-size:12px">Clinical workspace grants are off until the legal release is set up.</td></tr>'))
       + users.map(u=>{
-      const isOwner=(u.role==='owner'||u.isAdmin);
+      /* bla-1.0.0 (2026-09-25): the server sends the owner as role 'admin'. The
+         owner's row offers no customer actions: the server refuses Comp, Trial,
+         Block and a self revoke, and Reset PW would sign the owner out everywhere. */
+      const isOwner=(u.role==='owner'||u.role==='admin'||u.isAdmin);
       const serverReadiness=u&&u.readiness&&u.readiness.state?u.readiness:null;
       const inferredState=String(u.access||'').toLowerCase()==='blocked'?'blocked':(wkspActive[String(u.id)]?'ready':'setup-only');
       const readiness={readiness:serverReadiness||{state:inferredState,reasons:inferredState==='setup-only'?['Clinical workspace grant required']:[]}};
@@ -9222,6 +9238,17 @@ async function adminSetPremium(id,on){
 /* Owner-only fallback: set a new password for a user directly (works before email is configured). */
 async function adminResetPassword(id){
   var target=adminUserById(id), email=target&&target.email;
+  /* bla-1.0.0 (2026-09-25): a reset ends every session of that account. On the
+     signed-in account or an owner account it asks first, in plain words. */
+  var me=(typeof bkUser!=='undefined'&&bkUser)||null;
+  var isSelf=!!(me&&((me.id!=null&&String(me.id)===String(id))||(email&&me.email&&String(me.email).trim().toLowerCase()===String(email).trim().toLowerCase())));
+  var ownerTarget=!!(target&&(target.role==='admin'||target.role==='owner'||target.isAdmin));
+  if(isSelf||ownerTarget){
+    var warn=isSelf
+      ? 'Resetting your own password signs you out of every session, including this one. You will need the new password to sign in again. Continue?'
+      : 'Resetting the password for '+(email||'this owner account')+' signs that account out of every session. Continue?';
+    if(!await mlsConfirm(warn,{danger:true,okLabel:'Reset and sign out everywhere'})) return;
+  }
   const pw=await mlsPrompt('Set a new password for '+(email||'this user')+' (min 8 characters):','');
   if(pw===null) return;
   if(!pw || pw.length<8){ toast('Password must be at least 8 characters.','err'); return; }
@@ -9324,7 +9351,9 @@ async function loadAdminAudit(){
   adminCardLoading(empty,table,'📜','the audit log');
   try{
     const d=await adminFetch('/api/admin/audit?limit=100');
-    let rows=Array.isArray(d)?d:((d&&d.entries)||[]);
+    /* bla-1.0.0 (2026-09-25): GET /api/admin/audit answers { audit: rows };
+       an array or { entries } is still read. */
+    let rows=Array.isArray(d)?d:(Array.isArray(d&&d.audit)?d.audit:(Array.isArray(d&&d.entries)?d.entries:[]));
     if(!rows.length){ empty.style.display='block'; empty.innerHTML='<span class="big">📜</span>No audit entries yet.'; table.style.display='none'; return; }
     // newest first
     rows=rows.slice().sort((a,b)=>{
@@ -9335,7 +9364,9 @@ async function loadAdminAudit(){
     empty.style.display='none'; table.style.display='table';
     body.innerHTML=rows.map(r=>{
       let when='—';
-      if(r.ts){ try{ when=new Date(r.ts).toLocaleString(); }catch(e){ when=esc(String(r.ts)); } }
+      /* bla-1.0.0 (2026-09-25): the server writes ts as UTC 'YYYY-MM-DD HH:MM:SS'
+         with no zone; read it as UTC, not as the browser's local time. */
+      if(r.ts){ try{ var tsv=String(r.ts); if(/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(tsv)) tsv=tsv.replace(' ','T')+'Z'; var wd=new Date(tsv); when=isNaN(wd.getTime())?String(r.ts):wd.toLocaleString(); }catch(e){ when=String(r.ts); } }
       return '<tr style="border-bottom:1px solid var(--line)">'+
         '<td style="padding:8px 6px;white-space:nowrap">'+esc(when)+'</td>'+
         '<td style="padding:8px 6px">'+esc(r.user_id!=null?String(r.user_id):'—')+'</td>'+
@@ -9413,8 +9444,11 @@ function copyNewCode(){
   catch(e){ toast('Copy failed — select and copy manually.','err'); }
 }
 
+/* bla-1.0.0 (2026-09-25): the server sends active as the SQLite integer 0 for
+   a revoked code; false and '0' mean the same. A missing field is not revoked. */
+function adminCodeRevoked(c){ return !!(c&&(c.revoked||c.active===false||c.active===0||c.active==='0')); }
 function fmtCodeStatus(c){
-  if(c.active===false||c.revoked) return 'Revoked';
+  if(adminCodeRevoked(c)) return 'Revoked';
   if(c.redeemed_by||c.redeemed_email) return 'Used by '+esc(c.redeemed_email||c.redeemed_by);
   return 'Available';
 }
@@ -9432,7 +9466,7 @@ async function loadAdminCodes(){
     empty.style.display='none'; table.style.display='table';
     body.innerHTML=codes.map(c=>{
       const used=(c.redeemed_by||c.redeemed_email);
-      const revoked=(c.active===false||c.revoked);
+      const revoked=adminCodeRevoked(c);
       const typeLabel=c.type==='trial'?('Trial'+(c.days?(' '+c.days+'d'):'')):'Forever';
       const action=(used||revoked)?'<span style="color:var(--muted)">—</span>':
         '<button class="btn-ghost" style="font-size:12px;padding:5px 9px;color:var(--danger,#c0392b)" onclick="adminRevokeCode(\''+c.id+'\')">Revoke</button>';
@@ -18202,18 +18236,59 @@ function calOpenDay(key){
 function calJump(v){ if(!v) return; var p=String(v).split('-'); var y=parseInt(p[0],10), m=parseInt(p[1],10); if(y&&m){ _calYear=y; _calMonth=m-1; _calMonthMoved(); var pn=document.getElementById('calDayPanel'); if(pn) pn.style.display='none'; renderCalendar(); } }
 // Jump to the calendar and open the new-appointment form, prefilled with a
 // patient's name — connects Patients / History / Profile straight to scheduling.
-function calScheduleForPatient(name){
+/* bla-1.0.0 (2026-09-25): the form names and links ONE patient.
+   - An optional second argument is the chart id; it wins over a name.
+   - A chart id passed where the name belongs is resolved to that chart's name,
+     so the Patient name box never shows an internal id.
+   - When the form is already open for someone else, it is rebuilt for this
+     patient, so the earlier patient's chart link, badge and phone never carry
+     over. Writing the name in code fires no input event, so the link is set
+     here, not left to the field's oninput. */
+function _calScheduleTarget(arg, ptId){
+  var pts=[], ap=null;
+  try{ pts=(typeof getPatients==='function'?getPatients():[])||[]; }catch(e){}
+  try{ ap=(typeof activePatient==='function'&&activePatient())||null; }catch(e){}
+  var byId=function(id){ id=String(id==null?'':id).trim(); if(!id) return null; if(ap&&String(ap.id)===id) return ap; return pts.find(function(x){ return x&&String(x.id)===id; })||null; };
+  if(ptId!=null&&String(ptId).trim()){ var p=byId(ptId); if(p&&String(p.name||'').trim()) return p; }
+  var s=String(arg==null?'':arg).trim();
+  if(!s) return (ap&&String(ap.name||'').trim())?ap:null;
+  var low=s.toLowerCase(), named=function(x){ return !!x&&String(x.name||'').trim().toLowerCase()===low; };
+  if(named(ap)) return ap;
+  var n=pts.find(named); if(n) return n;
+  var i=byId(s); if(i&&String(i.name||'').trim()) return i;
+  return null;
+}
+function calScheduleForPatient(name, ptId){
   try{ if(typeof showView==='function') showView('calendar'); }catch(e){}
   setTimeout(function(){ try{
+    var pt=_calScheduleTarget(name, ptId);
+    var nm=pt?String(pt.name||'').trim():String(name==null?'':name).trim();
     var box=document.getElementById('calNewApptBox');
-    if(box && box.style.display==='none'){ calNewAppt(); }
+    if(box && box.style.display!=='none' && nm){
+      var curNm=String(((document.getElementById('calNewName')||{}).value)||'').trim().toLowerCase();
+      var curExt=String(((document.getElementById('calNewExtId')||{}).value)||'');
+      var same=curNm===nm.toLowerCase() && (!pt || !curExt || curExt===String(pt.id));
+      if(!same) box.style.display='none';
+    }
+    var fresh=false;
+    if(box && box.style.display==='none'){ calNewAppt(); fresh=true; }
     var f=document.getElementById('calNewName');
-    if(f){ var nm=name||((typeof activePatient==='function'&&activePatient())?activePatient().name:'')||''; if(nm) f.value=nm; f.focus(); }
+    if(f){
+      if(nm){
+        /* a fresh form was filled for the active patient; a phone filled for
+           another chart is not this patient's */
+        var ph=document.getElementById('calNewPhone'), ex=document.getElementById('calNewExtId');
+        if(fresh && ph && ex && String(ex.value||'')!==String(pt?pt.id:'')) ph.value='';
+        f.value=nm; try{ _calLinkPt(pt); }catch(e){}
+      }
+      f.focus();
+    }
   }catch(e){} }, 90);
 }
 /* ===== Cross-feature connectors (one connected app) ===== */
 function legalOpenPatient(id){ try{ if(typeof selectPatient==='function') selectPatient(id); if(typeof showView==='function') showView('patients'); }catch(e){} }
-function legalSchedulePatient(id){ try{ var list=(typeof getPatients==='function'?getPatients():[])||[]; var p=list.find(function(x){return String(x.id)===String(id);}); if(typeof selectPatient==='function') selectPatient(id); if(typeof calScheduleForPatient==='function') calScheduleForPatient(p?p.name:''); }catch(e){} }
+/* bla-1.0.0 (2026-09-25): the chart id goes with the name, so a same-named chart is never linked instead. */
+function legalSchedulePatient(id){ try{ var list=(typeof getPatients==='function'?getPatients():[])||[]; var p=list.find(function(x){return String(x.id)===String(id);}); if(typeof selectPatient==='function') selectPatient(id); if(typeof calScheduleForPatient==='function') calScheduleForPatient(p?p.name:'', id); }catch(e){} }
 /* Team → AI Studio: open the builder seeded with a team-dashboard idea. */
 function teamToStudio(){ try{ if(typeof showView==='function') showView('studio'); setTimeout(function(){ var p=document.getElementById('studioPrompt'); if(p){ p.value='A team dashboard: each of my doctors with their patient count and recent documentation volume, as a sorted table, with a button to open each.'; p.focus(); p.scrollIntoView({behavior:'smooth',block:'center'}); } }, 90); }catch(e){} }
 // ---- Schedule a new appointment from the calendar toolbar ----
@@ -18233,7 +18308,7 @@ function calNewAppt(){
   h+='<datalist id="calNewPtList">'+ptOpts+'</datalist>';
   h+='<input type="hidden" id="calNewExtId" value="'+esc(_apExt)+'">';
   h+='<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">';
-  h+='<input id="calNewName" list="calNewPtList" autocomplete="off" oninput="_calLinkPt()" value="'+esc(_apn)+'" placeholder="Patient name * — type to link a chart" style="flex:2;min-width:210px;border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:13px">';
+  h+='<input id="calNewName" list="calNewPtList" autocomplete="off" oninput="_calLinkPt(typeof activePatient===\'function\'?activePatient():null)" value="'+esc(_apn)+'" placeholder="Patient name * — type to link a chart" style="flex:2;min-width:210px;border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:13px">';
   h+='<input id="calNewDate" type="date" value="'+esc(today)+'" style="border:1px solid var(--line);border-radius:10px;padding:7px 9px;font-size:13px">';
   h+='<input id="calNewTime" type="time" style="border:1px solid var(--line);border-radius:10px;padding:7px 9px;font-size:13px">';
   h+='<select id="calNewDur" title="Duration" style="border:1px solid var(--line);border-radius:10px;padding:7px 9px;font-size:13px">'+durOpts+'</select>';
@@ -18248,19 +18323,32 @@ function calNewAppt(){
   h+='<div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn-primary" style="font-size:13px;padding:8px 16px" onclick="calCreateAppt(this)">📅 Schedule it</button><button class="btn-ghost" style="font-size:13px;padding:8px 13px" onclick="calNewAppt()">Close</button><span id="calNewMsg" class="mini" style="color:var(--muted)"></span></div>';
   box.innerHTML=h; box.style.display='block';
   var f=document.getElementById('calNewName'); if(f) f.focus();
-  try{ _calLinkPt(); }catch(e){}
+  /* bla-1.0.0 (2026-09-25): keep the active patient's own chart when another
+     chart has the same name. */
+  try{ _calLinkPt(typeof activePatient==='function'?activePatient():null); }catch(e){}
 }
 /* Link the New-appointment name field to a real patient chart as the user types.
    Exact name match → store the patient's external id (so Start-visit/Open-patient
-   load the real chart) and autofill phone; otherwise mark it a new (unlinked) name. */
-function _calLinkPt(){
+   load the real chart) and autofill phone; otherwise mark it a new (unlinked) name.
+   bla-1.0.0 (2026-09-25): `prefer` is the chart the caller means; it is used
+   when its name is the name in the field. */
+function _calLinkPt(prefer){
   var nmEl=document.getElementById('calNewName'); if(!nmEl) return;
   var nm=String(nmEl.value||'').trim().toLowerCase();
   var ext=document.getElementById('calNewExtId'), ph=document.getElementById('calNewPhone'), ind=document.getElementById('calNewLinkInd');
   var pts=(typeof getPatients==='function'?getPatients():[])||[];
-  var p=pts.find(function(x){ return String(x.name||'').trim().toLowerCase()===nm; });
-  if(p){ if(ext) ext.value=p.id; if(ph && !ph.value && p.phone) ph.value=p.phone; if(ind){ ind.textContent='🔗 linked to '+(p.name||'chart'); ind.style.color='#127a55'; } }
-  else { if(ext) ext.value=''; if(ind){ ind.textContent=nm?'＋ new name (no chart linked)':''; ind.style.color='var(--muted)'; } }
+  var p=(prefer&&prefer.id!=null&&nm&&String(prefer.name||'').trim().toLowerCase()===nm)?prefer:pts.find(function(x){ return String(x.name||'').trim().toLowerCase()===nm; });
+  /* bla-1.0.1: a phone number the form filled in from a chart follows that
+     chart - it is replaced when the link moves and cleared when it drops, so
+     one patient's number never rides along to another name. A number the
+     person typed is never touched. */
+  var autoFrom=ph?ph.getAttribute('data-auto-from'):null, autoIsShown=!!(ph&&autoFrom&&ph.value===ph.getAttribute('data-auto-val'));
+  if(p){ if(ext) ext.value=p.id;
+    if(ph && (!ph.value || (autoIsShown && autoFrom!==String(p.id)))){ ph.value=p.phone||''; if(p.phone){ ph.setAttribute('data-auto-from',String(p.id)); ph.setAttribute('data-auto-val',String(p.phone)); } else { ph.removeAttribute('data-auto-from'); ph.removeAttribute('data-auto-val'); } }
+    if(ind){ ind.textContent='🔗 linked to '+(p.name||'chart'); ind.style.color='#127a55'; } }
+  else { if(ext) ext.value='';
+    if(ph && autoIsShown){ ph.value=''; ph.removeAttribute('data-auto-from'); ph.removeAttribute('data-auto-val'); }
+    if(ind){ ind.textContent=nm?'＋ new name (no chart linked)':''; ind.style.color='var(--muted)'; } }
 }
 async function calCreateAppt(btn){
   var name=((document.getElementById('calNewName')||{}).value||'').trim();
@@ -18277,6 +18365,20 @@ async function calCreateAppt(btn){
   var dur=parseInt((document.getElementById('calNewDur')||{}).value||'0',10)||0;
   // Re-resolve the chart link in case the name was typed without firing input.
   try{ if(!ext){ var pts=(typeof getPatients==='function'?getPatients():[])||[]; var mp=pts.find(function(x){ return String(x.name||'').trim().toLowerCase()===name.toLowerCase(); }); if(mp) ext=mp.id; } }catch(e){}
+  /* bla-1.0.0 (2026-09-25): a chart link must belong to the name on the form.
+     A link to a chart with another name is refused and nothing is saved; the
+     link is worked out again from the name, for the next press. */
+  try{
+    if(ext){
+      var lpts=(typeof getPatients==='function'?getPatients():[])||[];
+      var lp=lpts.find(function(x){ return x&&String(x.id)===String(ext); });
+      if(lp && String(lp.name||'').trim().toLowerCase()!==name.toLowerCase()){
+        try{ _calLinkPt(); }catch(e){}
+        if(msg){ msg.style.color='#c0392b'; msg.textContent='Nothing was saved: this form was linked to '+String(lp.name||'another patient').trim()+'’s chart, not '+name+'’s. Check the link above, then press Schedule it again.'; }
+        return;
+      }
+    }
+  }catch(e){}
   var reason=[type, notes].filter(Boolean).join(' — ');
   var startIso=null, endIso=null;
   if(time){ try{ startIso=_acctWallToUtcIso(date,time); if(startIso&&dur){ endIso=new Date(new Date(startIso).getTime()+dur*60000).toISOString(); } }catch(e){} }
@@ -18714,6 +18816,8 @@ async function _renderDailyBrief(){
   if(!bar){ bar=document.createElement('div'); bar.id='dailyBriefBar'; bar.style.cssText='margin:0 0 12px'; host.insertBefore(bar, host.firstChild); }
   var today=_acctTodayKey(); var appts=[];
   try{ var r=await fetch(bkBase()+'/api/appointments?date='+today,{headers:{Authorization:'Bearer '+bkToken()}}); if(r.ok){ var d=await r.json(); appts=d.appointments||[]; } }catch(e){}
+  /* bla-1.0.0 (2026-09-25): cancelled and no-show appointments are not counted. */
+  appts=(Array.isArray(appts)?appts:[]).filter(function(a){ var s=String((a&&a.status)||'').trim().toLowerCase().replace(/[\s-]+/g,'_'); return s!=='cancelled'&&s!=='canceled'&&s!=='no_show'&&s!=='noshow'; });
   if(!appts.length){ bar.style.display='none'; bar.innerHTML=''; return; }
   var checkedIn=appts.filter(function(a){ return a.status==='checked_in'||a.status==='roomed'; }).length;
   var done=appts.filter(function(a){ return a.status==='completed'; }).length;
@@ -51822,7 +51926,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1339';
+  window.__MLS_AV='b1340';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

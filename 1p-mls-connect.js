@@ -33355,8 +33355,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           var today = ""; try { if (typeof window._acctTodayKey === "function") today = S(window._acctTodayKey()).slice(0, 10); } catch (e) {}
           if (!/^\d{4}-\d{2}-\d{2}$/.test(today)) { var _dNow = new Date(); today = _dNow.getFullYear() + "-" + ("0" + (_dNow.getMonth() + 1)).slice(-2) + "-" + ("0" + _dNow.getDate()).slice(-2); }
           var appts = [];
-          try { appts = (window._calAppts || []).filter(function (a) { return S(a.appt_date || "").slice(0, 10) === today && S(a.name).trim(); }); } catch (e) {}
-          if (!appts.length) { bar.style.display = "none"; bar.innerHTML = ""; return; }
+          /* bla-1.0.0 (2026-09-25): a cancelled or no-show appointment is not one
+             of today's appointments. It is not counted and is never named as
+             Next, so the Patient list's NEXT glow cannot land on it either. */
+          var gone = function (a) { var s = S(a && a.status).trim().toLowerCase().replace(/[\s-]+/g, "_"); return s === "cancelled" || s === "canceled" || s === "no_show" || s === "noshow"; };
+          try { appts = (window._calAppts || []).filter(function (a) { return S(a.appt_date || "").slice(0, 10) === today && S(a.name).trim() && !gone(a); }); } catch (e) {}
+          if (!appts.length) { bar.style.display = "none"; bar.innerHTML = ""; bar.removeAttribute("data-next-patient"); return; }
           var me = myName(); var withProv = appts.filter(function (a) { return S(a.provider).trim(); });
           var mine = (me && withProv.length) ? appts.filter(function (a) { return a.provider && provMatch(a.provider, me); }) : [];
           var scoped = mine.length > 0;
@@ -41710,7 +41714,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 
   function copy(txt){ safe(function(){ if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(txt); } else { var t=document.createElement('textarea'); t.value=txt; document.body.appendChild(t); t.select(); document.execCommand('copy'); t.remove(); } toastMini('Copied'); }); }
   function toastMini(msg){ safe(function(){ if(window.toast){ window.toast(msg,'ok'); return; } var d=document.createElement('div'); d.textContent=msg; d.style.cssText='position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1A211C;color:#fff;padding:8px 14px;border-radius:10px;z-index:100001;font-size:13px'; document.body.appendChild(d); setTimeout(function(){d.remove();},1400); }); }
-  function scheduleFollowup(){ safe(function(){ var id=activeId(); close(); if(window.calScheduleForPatient&&id){ window.calScheduleForPatient(id); } else if(window.showView){ window.showView('calendar'); } }); }
+  /* bla-1.0.0 (2026-09-25): calScheduleForPatient takes the patient's NAME
+     first; the chart id goes second, so the form never shows the id. */
+  function scheduleFollowup(){ safe(function(){ var id=activeId(), nm=activeName(); close(); if(window.calScheduleForPatient&&id){ window.calScheduleForPatient(nm, id); } else if(window.showView){ window.showView('calendar'); } }); }
 
   var SECTIONS=[
     {type:'followup', title:'Follow-up interval', act:'schedule'},
@@ -41860,6 +41866,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   function showCascade(){
     var id=activeId(); if(!id) return;
+    var nm=activeName();
     safe(function(){ if(window.__mlsCard) window.__mlsCard.refresh(); if(window.__mlsSync) window.__mlsSync.render(); });
     var ex=document.getElementById('mlsCascade'); if(ex) ex.remove();
     injectCss();
@@ -41877,7 +41884,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     c.querySelectorAll('[data-a]').forEach(function(b){
       b.addEventListener('click', function(){
         var a=b.getAttribute('data-a'); c.remove();
-        if(a==='followup') safe(function(){ if(window.calScheduleForPatient) window.calScheduleForPatient(id); else if(window.showView) window.showView('calendar'); });
+        /* bla-1.0.0 (2026-09-25): the patient's NAME fills the form; the chart
+           id goes second, so the follow-up is linked to this chart. */
+        if(a==='followup') safe(function(){ if(window.calScheduleForPatient) window.calScheduleForPatient(nm, id); else if(window.showView) window.showView('calendar'); });
         else if(a==='recs') safe(function(){ if(window.__mlsRecs) window.__mlsRecs.open(); else if(window.showView) window.showView('recs'); });
         else if(a==='history') safe(function(){ if(window.showView) window.showView('history'); });
       });
