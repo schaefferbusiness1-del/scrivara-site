@@ -148,13 +148,19 @@ h1{font-size:23px;margin:0}
   function LINK_LABELS() { return { google: 'Google', healthgrades: 'Healthgrades', vitals: 'Vitals', webmd: 'WebMD', ratemds: 'RateMDs', zocdoc: 'Zocdoc' }; }
 
   /* ---------------- DIRECTORY ---------------- */
+  /* h9-1.0.0 (2026-09-25): only the newest search may paint. A slow answer for
+     an older query ("jo") used to land after the current one ("johnson") and
+     replace its results while the box still read "johnson". */
+  var dirSeq = 0;
   function loadDirectory() {
     $('foot').textContent = FOOT;
     var url = '/api/best-doctors?sort=' + encodeURIComponent($('sort').value)
       + '&q=' + encodeURIComponent($('q').value)
       + '&specialty=' + encodeURIComponent($('specialty').value)
       + '&city=' + encodeURIComponent($('city').value);
+    var seq = ++dirSeq;
     jget(url).then(function (j) {
+      if (seq !== dirSeq) return;
       $('disclosure').innerHTML = '<b>How this works:</b> ' + esc(j.disclosure || '');
       $('placedisc').innerHTML = j.placementDisclosure ? ('<b>Paid placement:</b> ' + esc(j.placementDisclosure)) : '';
       if (j.live === false) {
@@ -178,6 +184,7 @@ h1{font-size:23px;margin:0}
       } else { $('featuredBand').className = 'sponsored-band hide'; }
       renderGrid(j.doctors || []);
     }).then(null, function () {
+      if (seq !== dirSeq) return;
       $('grid').innerHTML = '';
       $('dirEmpty').className = 'empty';
       $('dirEmpty').textContent = 'Could not load the directory right now.';

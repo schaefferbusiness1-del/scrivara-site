@@ -133,22 +133,21 @@ const cleanProfile = {
   await settle();
   assert(missingReleaseDirectory.document.getElementById('dirStateMsg').innerHTML.includes('No independently verified public experts are released yet'), 'missing directory release flag did not fail closed');
 
-  const leakedProfile = { ...cleanProfile, id: 'leaked-1', name: 'Morgan Ellis, MD', credentials: 'Sample profile; edit certifications here' };
-  const releasedDirectory = browserHarness(lawyersScript, 'lawyers.html', { released: true, experts: [leakedProfile, cleanProfile] });
+  /* h9-1.0.0 (2026-09-25): ONE release rule, the server's
+     (expertDirectoryRelease.js, pinned in the backend suites). These pages
+     used to re-check released rows with a different list and hid a profile the
+     doctor was told is released: "Co-edited" in a bio, or a "Sample IME report"
+     document. A released row is shown as released; a row with no id or name is
+     still dropped because there is nothing to show. */
+  const coEdited = { ...cleanProfile, id: 'released-2', name: 'Dana Reyes, MD', bio: 'Co-edited the 2024 regional spine trauma protocol.' };
+  const nameless = { ...cleanProfile, id: 'nameless-1', name: '' };
+  const releasedDirectory = browserHarness(lawyersScript, 'lawyers.html', { released: true, experts: [coEdited, cleanProfile, nameless] });
   await settle();
   assertPrivateFetch(releasedDirectory, 'released directory');
-  assert(releasedDirectory.document.getElementById('dirGrid').innerHTML.includes(cleanProfile.name), 'clean explicitly released profile did not render');
-  assert(!releasedDirectory.document.getElementById('dirGrid').innerHTML.includes(leakedProfile.name), 'placeholder profile leaked beside a clean released profile');
-
-  const markers = ['Sample profile', 'Placeholder text', 'Lorem ipsum', 'Synthetic physician', 'Edit this biography'];
-  for (const marker of markers) {
-    const profile = { ...cleanProfile, id: `held-${marker}`, bio: marker };
-    const run = browserHarness(lawyersScript, 'lawyers.html', { released: true, experts: [profile] });
-    await settle();
-    const text = run.document.getElementById('dirStateMsg').innerHTML;
-    assert(text.includes('No independently verified public experts are released yet'), `directory rendered held marker: ${marker}`);
-    assert(!run.document.getElementById('dirGrid').innerHTML.includes(profile.name), `directory leaked held identity for marker: ${marker}`);
-  }
+  const releasedGrid = releasedDirectory.document.getElementById('dirGrid').innerHTML + releasedDirectory.document.getElementById('dirFeatured').innerHTML;
+  assert(releasedGrid.includes(cleanProfile.name), 'clean explicitly released profile did not render');
+  assert(releasedGrid.includes(coEdited.name), 'a profile the server released was hidden by a second, client-side rule');
+  assert(!releasedGrid.includes('nameless-1'), 'a released row with no name rendered');
 
   const heldDetail = browserHarness(expertScript, 'expert.html', { released: false, expert: cleanProfile });
   await settle();
@@ -160,13 +159,14 @@ const cleanProfile = {
   await settle();
   assert(missingReleaseDetail.document.getElementById('loadState').innerHTML.includes('No independently verified public expert profile is released here'), 'detail accepted a missing release flag');
 
-  const markerDetail = browserHarness(expertScript, 'expert.html', {
+  const documentDetail = browserHarness(expertScript, 'expert.html', {
     released: true,
-    expert: { ...cleanProfile, documents: [{ label: 'CV', note: 'lorem ipsum', url: '/api/public/experts/clean-1/documents/1' }] }
+    expert: { ...cleanProfile, documents: [{ label: 'Sample IME report (redacted)', url: '/api/public/experts/clean-1/documents/1' }] }
   });
   await settle();
-  assert(markerDetail.document.getElementById('loadState').innerHTML.includes('No independently verified public expert profile is released here'), 'detail accepted a nested placeholder marker');
-  assert.strictEqual(markerDetail.document.getElementById('content').style.display, 'none', 'placeholder detail exposed profile content');
+  assert(!documentDetail.document.getElementById('loadState').innerHTML.includes('No independently verified public expert profile is released here'),
+    'a released profile read as unreleased because of a document label');
+  assert.strictEqual(documentDetail.document.getElementById('content').style.display, 'block', 'a released profile with a document did not render');
 
   const releasedDetail = browserHarness(expertScript, 'expert.html', { released: true, expert: cleanProfile });
   await settle();
@@ -177,7 +177,7 @@ const cleanProfile = {
   assert(content.innerHTML.includes('not independently verified by MLS'), 'released detail fails to qualify physician-supplied claims');
   assert(content.innerHTML.includes('Case intake and physician engagement are unavailable'), 'released detail looks actionable');
 
-  console.log('PASS expert public release boundary: explicit release required, held markers rejected, directory and detail fail closed');
+  console.log('PASS expert public release boundary: explicit release required, the server release rule is the only one, directory and detail fail closed');
 })().catch(error => {
   console.error(error);
   process.exit(1);

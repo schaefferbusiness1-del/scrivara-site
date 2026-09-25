@@ -9016,7 +9016,18 @@ async function adminProvisionAccount(btn){
     if(adminReadinessState(d)==='ready'){ setStatus('Ready. Copy the private invite below.'); loadAdminUsers(); loadAdminBilling(); return true; }
     if(adminExpectedRecipientSetup(d)){ setStatus('Admin-controlled access is approved. Send the invite; patient work will remain locked until all required signatures are verified.'); loadAdminUsers(); loadAdminBilling(); return true; }
     setStatus('The account exists but is not Ready. Do not send an invite yet. '+adminReadinessText(d),true); return false;
-  }catch(e){ setStatus('Nothing was reported as Ready: '+(e.message||'request failed'),true); return false; }
+  }catch(e){
+    /* bla-1.2.0 (2026-09-25): the server refuses to replace the plan of an
+       account that already exists (409 ACCOUNT_EXISTS_PLAN_CHANGE) and says
+       so in a sentence. Show that sentence; a plan changes in Billing, which
+       is where this points - this form has no confirm step, so the server's
+       own "confirm the change" is not offered. */
+    if(e&&e.code==='ACCOUNT_EXISTS_PLAN_CHANGE'){
+      setStatus(String(e.message||'That email already has an account, so no changes were made.').replace(/[;,]?\s*to change its plan, confirm the change\.?\s*$/i,'.').replace(/\.\.$/,'.')+' To change its plan, use Grant & make Ready for that account in Admin › Billing & plans below.',true);
+      return false;
+    }
+    setStatus('Nothing was reported as Ready: '+(e.message||'request failed'),true); return false;
+  }
   finally{ if(btn){btn.disabled=false;btn.textContent=old||'Create account & make ready';} }
 }
 
@@ -45728,7 +45739,7 @@ async function generateExpertReportSections(ctx){
   for(let i=0;i<sections.length;i++){
     const header=sections[i][0], instr=sections[i][1];
     if(btn) btn.innerHTML='<span class="spin"></span> Drafting expert report… '+(i+1)+'/'+sections.length;
-    let part='';
+    let part='', lastError=null;
     for(let attempt=1;attempt<=2;attempt++){
       if(attempt===2 && btn) btn.innerHTML='<span class="spin"></span> Retrying expert report section… '+(i+1)+'/'+sections.length;
       try{
@@ -45738,8 +45749,16 @@ async function generateExpertReportSections(ctx){
         if(!part){ const qualityError=new Error('empty section response'); qualityError.legalQualityFailure=true; throw qualityError; }
         break;
       }catch(e){
+        lastError=e;
         if(attempt===2 || !legalSectionRetryable(e)) break;
       }
+    }
+    /* bla-1.2.0 (2026-09-25): a section the server's safety check refused
+       read only "could not be generated", so the doctor could not tell a
+       refusal from an outage. The refusal is said as one, naming the section;
+       a retry drafts every section again, and the message says that too. */
+    if(!part&&lastError&&lastError.mlsAi&&lastError.mlsAi.code==='draft_quality_failed'){
+      throw new Error('Expert report section '+(i+1)+' ('+header+') was refused by the server’s safety check: it did not accept the text written for that section, so no report was made. Generate the report again to retry; every section is drafted again.');
     }
     if(!part) throw new Error('Expert report section '+(i+1)+' could not be generated; retry the complete report.');
     outParts.push(header+'\n'+part);
@@ -49327,12 +49346,21 @@ async function returnLegalToAttorney(){
     let d={}; try{ d=await r.json(); }catch(e){}
     if(!r.ok){ toast((d&&(d.error||d.message))||'Could not send — the server may be waking up. Wait a few seconds and click Sign & send again (your report is saved here).','err'); return; }
     // Save the engagement fee so the attorney can pay to unlock the full report.
+    /* bla-1.2.0 (2026-09-25): the server refuses a fee change once the report
+       is paid (409 LEGAL_FEE_LOCKED_PAID) and while the attorney has a checkout
+       open at another fee (409 LEGAL_FEE_LOCKED_CHECKOUT). The answer was never
+       read, so the doctor read "Sent to attorney." with the fee unchanged. */
+    var feeNote='';
     try{
       var feeIn=document.getElementById('legalFeeInput');
       var dollars=feeIn?Math.max(0,Math.round(Number(feeIn.value)||0)):0;
-      if(dollars>0){ await fetch(bkBase()+'/api/legal/requests/'+encodeURIComponent(rid)+'/fee',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},body:JSON.stringify({fee_cents:dollars*100})}); }
-    }catch(e){}
-    toast('Sent to attorney.','ok');
+      if(dollars>0){
+        var feeRes=await fetch(bkBase()+'/api/legal/requests/'+encodeURIComponent(rid)+'/fee',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+bkToken()},body:JSON.stringify({fee_cents:dollars*100})});
+        if(!feeRes.ok) feeNote=await _legalFeeRefusal(feeRes);
+      }
+    }catch(e){ feeNote='The server could not be reached to save the fee.'; }
+    if(feeNote) toast('The report was sent to the attorney, but the fee did not change. '+feeNote,'err');
+    else toast('Sent to attorney.','ok');
     currentLegalRequestId=null;
     legalReqFilesText=''; // MLS additive — counsel file text is per-request; clear with it
     if(btn) btn.style.display='none';
@@ -49352,6 +49380,15 @@ async function _legalErrText(r, fallback){
   var d=null; try{ d=await r.json(); }catch(e){}
   var said=d&&typeof d.error==='string'?d.error.trim():'';
   return (said&&said.length<=300&&/\s/.test(said))?said:fallback;
+}
+/* bla-1.2.0 (2026-09-25): why a fee did not change, in the server's words when it gave them. */
+async function _legalFeeRefusal(r){
+  var d=null; try{ d=await r.json(); }catch(e){}
+  var code=d&&typeof d.code==='string'?d.code:'', said=d&&typeof d.error==='string'?d.error.trim():'';
+  if(code==='LEGAL_FEE_LOCKED_PAID') return said||'This report has already been paid for, so its fee can no longer change.';
+  if(code==='LEGAL_FEE_LOCKED_CHECKOUT') return said||'The attorney has a checkout open at the current fee, so the fee cannot change until that checkout ends.';
+  if(r.status===401) return 'Your sign-in expired before the fee was saved.';
+  return (said&&said.length<=300&&/\s/.test(said))?said:'The server did not save the fee.';
 }
 function _legalReqId(){ return (typeof currentLegalRequestId!=='undefined' && currentLegalRequestId) ? currentLegalRequestId : null; }
 function _invToday(){ try{ return new Date().toLocaleDateString(); }catch(e){ return ''; } }
@@ -51957,7 +51994,7 @@ function _ptGroupSort(mode){
      from the production app. This marker changes preview requests only. */
   var P1_BUILD='main-20260823-r2';
   window.__MLS_MAIN=Object.freeze({enabled:true,route:'/ScribeFlow.html',build:P1_BUILD});
-  window.__MLS_AV='b1341';
+  window.__MLS_AV='b1342';
   var CRITICAL=[
     'ctxbar-stabilize.js','feat_mls_topbar_unify.js','feat_mls_redesign.js',
     'feat_mls_simpleview_global.js','feat_mls_viewtoggle.js','feat_mls_visit_exact.js',

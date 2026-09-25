@@ -3,11 +3,11 @@
  "charter": "UI_CHARTER_CALM_SHELL_2026-07-24.md",
  "sources": 312,
  "totals": {
-  "controls": 4672,
+  "controls": 4673,
   "gated": 377,
-  "active": 4295,
+  "active": 4296,
   "byKind": {
-   "button": 4347,
+   "button": 4348,
    "handler": 249,
    "navtab": 76
   }
@@ -31,7 +31,7 @@
   "analysisView": 76,
   "legalReqView": 8,
   "studioView": 48,
-  "dynamic": 1610,
+  "dynamic": 1611,
   "page:AuthPilot.html": 9,
   "page:app.html": 3,
   "page:appointment.html": 4,
@@ -65,7 +65,7 @@
   "page:1p/index.html": 675,
   "auth": 60,
   "intakeView": 24,
-  "global": 1905,
+  "global": 1906,
   "chrome:header": 28,
   "chrome:rail": 50,
   "chrome:patientbar": 4,
@@ -111,7 +111,7 @@
  },
  "surfaces": {
   "1p": 675,
-  "clinician": 3146,
+  "clinician": 3147,
   "public": 166,
   "cloned": 675,
   "phone": 6,
@@ -66555,6 +66555,23 @@
    "handler": null
   },
   {
+   "id": "mlsBdCopy",
+   "label": "Copy link",
+   "accessibleName": "Copy link",
+   "title": "",
+   "kind": "button",
+   "tag": "button",
+   "domId": "mlsBdCopy",
+   "view": "dynamic",
+   "route": "global",
+   "surface": "clinician",
+   "shellChecked": true,
+   "file": "feat_mls_best_doctors.js",
+   "line": 75,
+   "gated": false,
+   "handler": null
+  },
+  {
    "id": "feat-mls-calendar-exact-js-164-day-dot",
    "label": "' + day + (dot ? ' ' : '') + '",
    "accessibleName": "' + day + (dot ? ' ' : '') + '",
@@ -77571,23 +77588,6 @@
    "handler": null
   },
   {
-   "id": "setSave",
-   "label": "Save settings",
-   "accessibleName": "Save settings",
-   "title": "",
-   "kind": "button",
-   "tag": "button",
-   "domId": "setSave",
-   "view": "page:mls-marketing-console.html",
-   "route": "page:mls-marketing-console.html",
-   "surface": "public",
-   "shellChecked": false,
-   "file": "mls-marketing-console.html",
-   "line": 160,
-   "gated": false,
-   "handler": null
-  },
-  {
    "id": "draftGo",
    "label": "&#9997;&#65039; Draft replies for my latest reviews",
    "accessibleName": "&#9997;&#65039; Draft replies for my latest reviews",
@@ -77758,6 +77758,23 @@
    "handler": null
   },
   {
+   "id": "mls-marketing-console-html-663-read-feedback",
+   "label": "Read feedback",
+   "accessibleName": "Read feedback",
+   "title": "",
+   "kind": "button",
+   "tag": "button",
+   "domId": null,
+   "view": "page:mls-marketing-console.html",
+   "route": "page:mls-marketing-console.html",
+   "surface": "public",
+   "shellChecked": false,
+   "file": "mls-marketing-console.html",
+   "line": 663,
+   "gated": false,
+   "handler": null
+  },
+  {
    "id": "mls-marketing-console-html-770-approve-day-budget",
    "label": "Approve $ /day budget",
    "accessibleName": "Approve $ /day budget",
@@ -77856,23 +77873,6 @@
    "shellChecked": false,
    "file": "mls-marketing.html",
    "line": 145,
-   "gated": false,
-   "handler": null
-  },
-  {
-   "id": "setSave",
-   "label": "Save settings",
-   "accessibleName": "Save settings",
-   "title": "",
-   "kind": "button",
-   "tag": "button",
-   "domId": "setSave",
-   "view": "page:mls-marketing.html",
-   "route": "page:mls-marketing.html",
-   "surface": "public",
-   "shellChecked": false,
-   "file": "mls-marketing.html",
-   "line": 160,
    "gated": false,
    "handler": null
   },
@@ -78043,6 +78043,23 @@
    "shellChecked": false,
    "file": "mls-marketing.html",
    "line": 532,
+   "gated": false,
+   "handler": null
+  },
+  {
+   "id": "mls-marketing-html-657-read-feedback",
+   "label": "Read feedback",
+   "accessibleName": "Read feedback",
+   "title": "",
+   "kind": "button",
+   "tag": "button",
+   "domId": null,
+   "view": "page:mls-marketing.html",
+   "route": "page:mls-marketing.html",
+   "surface": "public",
+   "shellChecked": false,
+   "file": "mls-marketing.html",
+   "line": 657,
    "gated": false,
    "handler": null
   },

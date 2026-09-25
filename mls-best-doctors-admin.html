@@ -74,6 +74,7 @@ textarea{min-height:84px;line-height:1.5}
 .vis th,.vis td{text-align:left;padding:7px 9px;border-bottom:1px solid #eef2f8}
 .vis th{position:sticky;top:0;background:#f7faff}
 .muted td{color:#9aa8bd}
+.vis .btn{padding:5px 10px;font-size:12px}
 .foot{font-size:11.5px;color:var(--sub);margin-top:22px;line-height:1.55}
 .hide{display:none}
 </style>
@@ -142,8 +143,9 @@ textarea{min-height:84px;line-height:1.5}
   <!-- RECENT VISITS (numbers only) -->
   <div class="card">
     <h2>Recent rated visits</h2>
-    <div class="note">Per-visit scores (numbers only — never any patient identity or visit content). Ask us to exclude a visit if a patient requests it.</div>
+    <div class="note">Per-visit scores (numbers only — never any patient identity or visit content). If a patient asks, exclude their visit here.</div>
     <div id="visitsBody" class="vis"></div>
+    <div class="note" id="visitNote" role="status" aria-live="polite"></div>
   </div>
 
   <div class="foot" id="foot"></div>
@@ -172,12 +174,18 @@ textarea{min-height:84px;line-height:1.5}
     fetch(BK + '/api/best-doctors/profile', { headers: hdr() })
       .then(function (r) { return r.ok ? r.json() : null; }, function () { return null; })
       .then(function (j) {
-        if (!j || !j.ok) { $('statusBody').innerHTML = '<div class="status bad">The Best Doctors service is not available yet. Your changes will be saved once it is live.</div>'; return; }
+        if (!j || !j.ok) { $('statusBody').innerHTML = '<div class="status bad">The Best Doctors service is not available right now, so changes cannot be saved yet.</div>'; return; }
         fillProfile(j.profile || {});
         fillRating(j.rating || {});
         fillStatus(j);
         fillPlacement(j.placement || {});
       }, function () {});
+    loadVisits();
+  }
+  /* h9-1.1.0 (2026-09-25): the rating and visits alone. Exclude/Restore used
+     loadAll, which re-ran fillProfile and silently overwrote profile edits the
+     doctor had typed but not saved. */
+  function loadVisits() {
     fetch(BK + '/api/ratings/me', { headers: hdr() })
       .then(function (r) { return r.ok ? r.json() : null; }, function () { return null; })
       .then(function (j) { if (j && j.ok) { fillRating(j.rating || {}); fillVisits(j.visits || [], j.totals || {}); } }, function () {});
@@ -240,17 +248,46 @@ textarea{min-height:84px;line-height:1.5}
     $('statusBody').innerHTML = html;
   }
 
+  /* h9-1.0.0 (2026-09-25): the console now carries the exclusion it told doctors
+     to ask for. The route is addressed by the visit's ref, the handle
+     /api/ratings/me returns. A visit the patient opted out of needs nothing. */
   function fillVisits(visits, totals) {
     if (!visits.length) { $('visitsBody').innerHTML = '<div class="note" style="padding:10px">No rated visits yet. Complete and sign visits in MLS — each one is scored automatically.</div>'; return; }
-    var html = '<table><thead><tr><th>Date</th><th>Score</th><th>Conf.</th><th>Counts?</th><th>Verified</th></tr></thead><tbody>';
+    var html = '<table><thead><tr><th>Date</th><th>Score</th><th>Conf.</th><th>Counts?</th><th>Verified</th><th>Patient request</th></tr></thead><tbody>';
     for (var i = 0; i < visits.length; i++) {
       var v = visits[i];
       html += '<tr class="' + (v.countsToward ? '' : 'muted') + '"><td>' + esc(v.date || '') + '</td><td>' + esc(String(v.score)) + '</td><td>' + esc(String(v.confidence)) + '</td><td>'
-        + (v.countsToward ? 'yes' : ('no — ' + esc(v.reason || ''))) + '</td><td>' + (v.verified ? '✓' : '–') + '</td></tr>';
+        + (v.countsToward ? 'yes' : ('no — ' + esc(String(v.reason || '').replace(/_/g, ' ')))) + '</td><td>' + (v.verified ? '✓' : '–') + '</td><td>'
+        + (v.optout ? '–' : ('<button type="button" class="btn ghost vx" data-ref="' + esc(v.ref) + '" data-on="' + (v.excluded ? '0' : '1') + '">' + (v.excluded ? 'Restore' : 'Exclude') + '</button>'))
+        + '</td></tr>';
     }
     html += '</tbody></table>';
     $('visitsBody').innerHTML = html;
+    var bs = $('visitsBody').getElementsByClassName('vx');
+    for (var b = 0; b < bs.length; b++) bs[b].onclick = excludeVisit;
   }
+  /* h9-1.1.0 (2026-09-25): a refusal says why. A 401/403 says to sign in again
+     (retrying cannot help), and a refused restore (409: another visit with the
+     same patient that day already counts) shows the server's plain reason. */
+  function excludeVisit() {
+    var btn = this, on = btn.getAttribute('data-on') === '1';
+    btn.disabled = true;
+    $('visitNote').textContent = on ? 'Excluding…' : 'Restoring…';
+    fetch(BK + '/api/ratings/visit/' + encodeURIComponent(btn.getAttribute('data-ref')) + '/exclude', { method: 'POST', headers: hdr(), body: JSON.stringify({ excluded: on }) })
+      .then(failedOr, function () { return null; })
+      .then(function (j) {
+        if (j && j.ok) { $('visitNote').textContent = on ? '✓ Excluded. It no longer counts toward your rating.' : '✓ Restored.'; loadVisits(); return; }
+        btn.disabled = false;
+        $('visitNote').textContent = (on ? 'Not excluded. ' : 'Not restored. ')
+          + (signInAgain(j) ? ('Sign in to MLS again, then press ' + (on ? 'Exclude' : 'Restore') + '.') : ((j && j.message) || 'Please try again.'));
+      }, function () { btn.disabled = false; $('visitNote').textContent = 'Not changed. Please try again.'; });
+  }
+  /* A refused answer keeps its status and the server's message. */
+  function failedOr(r) {
+    if (r.ok) return r.json();
+    return r.json().then(function (e) { return { failed: r.status, message: e && e.message }; }, function () { return { failed: r.status }; });
+  }
+  function signInAgain(j) { return !!j && (j.failed === 401 || j.failed === 403); }
 
   /* ---------- placement (paid visibility; never the rating) ---------- */
   var PLACEMENT_STATE = { selected: 'none', available: ['none'] };
@@ -322,12 +359,16 @@ textarea{min-height:84px;line-height:1.5}
       directoryOptin: $('directoryOptin').checked, consentAck: $('consentAck').checked
     };
     $('saveNote').textContent = 'Saving…';
+    /* h9-1.0.0 (2026-09-25): a refused save said "Saved locally (service not
+       live yet)." The page keeps no local copy, so a reload lost every edit.
+       A failure now says it was not saved and leaves the form as typed. */
     fetch(BK + '/api/best-doctors/profile', { method: 'POST', headers: hdr(), body: JSON.stringify(body) })
-      .then(function (r) { return r.ok ? r.json() : null; }, function () { return null; })
+      .then(failedOr, function () { return null; })
       .then(function (j) {
         if (j && j.ok) { $('saveNote').textContent = '✓ Saved'; loadAll(); if (j.note) $('saveStatus').innerHTML = '<div class="status bad">' + esc(j.note) + '</div>'; else $('saveStatus').innerHTML = ''; }
-        else { $('saveNote').textContent = 'Saved locally (service not live yet).'; }
-      }, function () { $('saveNote').textContent = 'Could not save right now.'; });
+        else if (signInAgain(j)) { $('saveNote').textContent = 'Not saved. Sign in to MLS again, then press Save.'; }
+        else { $('saveNote').textContent = 'Not saved. ' + ((j && j.message) || 'Please try again.'); }
+      }, function () { $('saveNote').textContent = 'Not saved. Please try again.'; });
   };
 
   /* pull the review-finder cache (public reviews) and publish DOCTOR-scoped highlights */

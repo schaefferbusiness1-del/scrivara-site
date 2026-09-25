@@ -186,16 +186,22 @@ a{color:var(--blue)}
     if(!msg){ note.textContent='Write a note first.'; return; }
     note.textContent='Sending…';
     if(!TOKEN){ note.textContent='Thank you — please share this with the office directly.'; return; }
+    /* h9-1.0.0 (2026-09-25): "sent" only when the office has it. A refused or
+       failed send used to read "Saved — thank you." while nothing was saved. */
+    var failed='It could not be sent. Please try again, or contact the office directly.';
     try{
       fetch(BK+'/api/reviews/request/'+encodeURIComponent(TOKEN)+'/feedback',{method:'POST',
         headers:{'Content-Type':'application/json'}, body:JSON.stringify({message:msg.slice(0,2000)})})
-        .then(function(r){ note.textContent=(r&&r.ok)?'Sent to the office — thank you.':'Saved — thank you.'; },function(){ note.textContent='Thank you.'; });
-    }catch(e){ note.textContent='Thank you.'; }
+        .then(function(r){ note.textContent=(r&&r.ok)?'Sent to the office — thank you.':failed; },function(){ note.textContent=failed; });
+    }catch(e){ note.textContent=failed; }
   }
 
   /* -------- load context -------- */
   function applyCtx(){
-    $('hSub').textContent = CTX.doctor ? ('A quick note about your visit with '+CTX.doctor+(CTX.practice?' at '+CTX.practice:'')) : ($('hSub').textContent);
+    /* h9-1.1.0: a request that names the practice but no clinician still says
+       who it is from (the engine no longer passes the practice as the doctor). */
+    $('hSub').textContent = CTX.doctor ? ('A quick note about your visit with '+CTX.doctor+(CTX.practice&&CTX.practice!==CTX.doctor?' at '+CTX.practice:''))
+      : CTX.practice ? ('A quick note about your visit at '+CTX.practice) : ($('hSub').textContent);
     $('draft').value = CTX.draft ? fillTokens(CTX.draft) : fillTokens(STARTERS[0]);
     renderPlatforms();
     $('footNote').innerHTML = 'You’re in control: edit freely, post only if you want, on whatever site you choose. MLS never posts for you and never writes a review in your name. This is optional and there’s no reward for leaving one.';

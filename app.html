@@ -522,7 +522,13 @@ function usDob(dob){
 }
 
 /* ---------- the API. One door, so one place decides what an error means. -- */
+/* h9-1.0.0 (2026-09-25): an answer belongs to the session that asked. A day or
+   check-in list still loading when one doctor signed out used to land in the
+   next doctor's Today screen on the same phone. The token a request went out
+   with is kept; if the session changed before the answer came back, the answer
+   is dropped here (the promise never settles), so no caller can paint it. */
 function api(method, path, body){
+  var sentWith = S.token;
   var opt = {
     method: method,
     headers: { 'Accept':'application/json' },
@@ -534,6 +540,7 @@ function api(method, path, body){
   if (body !== undefined){ opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
   return fetch(API + path, opt).then(function(r){
     return r.text().then(function(t){
+      if (S.token !== sentWith) return new Promise(function(){});
       var j = null; try { j = t ? JSON.parse(t) : null; } catch(e){ j = null; }
       if (r.ok) return j || {};
       var err = new Error((j && (j.message || j.error)) || ('Request failed (' + r.status + ')'));
@@ -542,6 +549,7 @@ function api(method, path, body){
       throw err;
     });
   }, function(){
+    if (S.token !== sentWith) return new Promise(function(){});
     var err = new Error('No connection. Check your signal and try again.');
     err.status = 0;
     throw err;
@@ -861,31 +869,33 @@ function enrichPatient(p){
     for (var i = 0; i < rows.length; i++){
       var c = toPatient(rows[i]);
       var sameId = p.external_id && c.external_id && c.external_id === p.external_id;
-      var sameWho = normName(c.name) === normName(p.name) && (!p.dob || !c.dob || c.dob === p.dob);
+      /* h9-1.0.0: a name alone is not a patient. The chart id is adopted only
+         when the name AND the date of birth both match. */
+      var sameWho = normName(c.name) === normName(p.name) && !!p.dob && c.dob === p.dob;
       if (sameId || sameWho){ hit = c; break; }
     }
     if (!hit) return;
     if (hit.mrn) p.mrn = hit.mrn;
     if (!p.dob && hit.dob) p.dob = hit.dob;
-    if (!p.external_id && hit.external_id){ p.external_id = hit.external_id; loadVisits(); }
+    /* h9-1.1.0: the chart just linked is loading, not empty. loadVisits had
+       set [] for the unlinked patient, so until this read answered the screen
+       said "No visits in this chart yet" about a chart that has visits. */
+    if (!p.external_id && hit.external_id){ p.external_id = hit.external_id; S.visits = null; loadVisits(); }
     render();
   }, function(){ /* enrichment is a nicety; its failure is not news */ });
 }
+/* h9-1.0.0 (2026-09-25): visits are read by chart id and nothing else. With
+   no chart id, this used to fetch the practice's recent records and keep the
+   ones whose patient NAME matched, so a self-booked John Smith was shown
+   another John Smith's procedure. An unlinked patient shows no visits and says
+   why; Pull chart (or a name + DOB match in enrichPatient) links the chart. */
 function loadVisits(){
   var p = S.patient;
   if (!p) return Promise.resolve();
-  var q = p.external_id
-    ? ('?patient_external_id=' + encodeURIComponent(p.external_id) + '&limit=60')
-    : ('?limit=60');
-  return api('GET','/api/records' + q).then(function(j){
+  if (!p.external_id){ S.visits = []; render(); return Promise.resolve(); }
+  return api('GET','/api/records?patient_external_id=' + encodeURIComponent(p.external_id) + '&limit=60').then(function(j){
     if (S.patient !== p) return;
     var recs = (j && j.records) || [];
-    /* No external id means the server could not scope it, so filter here on the
-       name the row itself carries rather than showing another patient's chart. */
-    if (!p.external_id){
-      var want = normName(p.name);
-      recs = recs.filter(function(r){ return want && normName(r.record && r.record.patientName) === want; });
-    }
     S.visits = recs.map(function(r){
       return {
         date: r.note_date || '',
@@ -1184,7 +1194,7 @@ function renderToday(){
         name: a.name || 'Unnamed patient',
         meta: bits.join(' · '),
         onTap: function(){
-          openPatient({ name: a.name, dob: a.dob, external_id: a.patient_external_id || '', mrn: '' });
+          openPatient({ name: a.name, dob: a.dob, external_id: a.patient_external_id || '', mrn: '', fromSchedule: true });
         }
       };
     })));
@@ -1331,7 +1341,9 @@ function renderPatient(){
   if (S.visits === null){
     body.appendChild(emptyState('◌','Loading the chart…',''));
   } else if (!S.visits.length){
-    body.appendChild(emptyState('○','No visits in this chart yet',
+    /* h9-1.1.0: a patient opened from Find is not an appointment. */
+    body.appendChild(emptyState('○', p.external_id ? 'No visits in this chart yet' : 'No linked chart',
+      (p.external_id ? '' : (p.fromSchedule ? 'This appointment is' : 'This patient record is') + ' not linked to a chart, so no visits are shown. ') +
       'Pull the chart to read ' + (p.name ? firstName(p.name) + '’s' : 'this patient’s') + ' history from athenaOne.'));
   } else {
     body.appendChild(el('div','sechead', S.visits.length + (S.visits.length === 1 ? ' visit' : ' visits')));

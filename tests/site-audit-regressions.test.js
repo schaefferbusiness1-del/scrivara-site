@@ -76,7 +76,9 @@ assert(directory.includes('sample profile;\\s*edit your board certifications her
 assert(profile.includes('function publicCredentials') && profile.includes('function publicExperience') && profile.includes('function publicDocuments'), 'public profile needs placeholder sanitizers');
 assert(directory.includes('if(d.released!==true)') && directory.includes('.filter(isReleasedProfile)'), 'directory must require explicit release and reject held profile content');
 assert(profile.includes('d.released!==true||!isReleasedProfile(d.expert)'), 'profile detail must require explicit release and clean content');
-assert(directory.includes('HELD_PROFILE_MARKER') && profile.includes('HELD_PROFILE_MARKER'), 'public profile surfaces must reject draft, sample, placeholder, lorem, and synthetic markers');
+/* h9-1.0.0 (2026-09-25): the placeholder rule is the server's alone
+   (expertDirectoryRelease.js); a second client list hid released profiles. */
+assert(!directory.includes('HELD_PROFILE_MARKER') && !profile.includes('HELD_PROFILE_MARKER'), 'public profile surfaces must show what the server released, not re-decide it with a second rule');
 assert(directory.includes('No independently verified public experts are released yet') && profile.includes('No independently verified public expert profile is released here'), 'held public profiles need a calm, honest empty state');
 
 for (const html of [home, directory, profile, portal]) {

@@ -59,8 +59,51 @@
   }
   function sentHashes() { try { return JSON.parse(sessionStorage.getItem(SENT_KEY) || '[]') || []; } catch (e) { return []; } }
   function rememberHash(h) { try { var a = sentHashes(); if (a.indexOf(h) === -1) { a.push(h); if (a.length > 200) a.shift(); sessionStorage.setItem(SENT_KEY, JSON.stringify(a)); } } catch (e) {} }
+  function forgetHash(h) { try { var a = sentHashes(), i = a.indexOf(h); if (i !== -1) { a.splice(i, 1); sessionStorage.setItem(SENT_KEY, JSON.stringify(a)); } } catch (e) {} }
 
-  function toast(html) {
+  /* h9-1.0.0 (2026-09-25): the patient's opt-out link. The server returns it on
+     every ingest, including a deduped retry, and MLS does not send it to the
+     patient, so the clinician is shown it with a Copy control. A toast carrying
+     it stays until dismissed rather than vanishing after 12 s.
+     h9-1.1.0 (2026-09-25): the link names the visit it belongs to (ref and
+     date), so it cannot pass for the next patient's. */
+  function optoutHtml(url, ref, date) {
+    if (!/^https:\/\/[^\s"'<>]+$/.test(String(url || ''))) return '';
+    var which = (ref ? ' for visit ' + esc(ref) : '') + (date ? (ref ? ', ' : ' for the visit of ') + esc(date) : '');
+    return '<div style="margin-top:8px;font-weight:600">Patient opt-out link' + which + '. MLS has not sent it; give it to the patient:'
+      + '<input id="mlsBdOptUrl" readonly value="' + esc(url) + '" style="display:block;width:100%;margin:6px 0;font:12px monospace">'
+      + '<button type="button" id="mlsBdCopy">Copy link</button></div>';
+  }
+  function wireCopy() {
+    var b = $('mlsBdCopy'), f = $('mlsBdOptUrl');
+    if (!b || !f) return;
+    b.onclick = function () {
+      function manual() { try { f.focus(); f.select(); } catch (e) {} b.textContent = 'Selected: press Ctrl+C'; }
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(f.value).then(function () { b.textContent = 'Copied'; }, manual);
+          return;
+        }
+      } catch (e) {}
+      manual();
+    };
+  }
+
+  /* h9-1.1.0 (2026-09-25): which visit (transcript hash) was signed last, and
+     which visit the toast on screen is for. The link toast stays until
+     dismissed, so it used to outlive the visit: sign the next patient, have
+     that send fail, be skipped or be silent, and the previous patient's link
+     sat under "give it to the patient". A Sign for a different visit now
+     clears it at once, and a late answer for an earlier visit is dropped like
+     a lost one (its next Sign asks again) instead of painting that link. */
+  var signing = null, shownFor = null;
+  function startSign(h) {
+    signing = h;
+    var d = $(TOAST_ID);
+    if (d && d.parentNode && shownFor !== h) d.parentNode.removeChild(d);
+  }
+
+  function toast(html, sticky) {
     try {
       css();
       var old = $(TOAST_ID); if (old && old.parentNode) old.parentNode.removeChild(old);
@@ -68,7 +111,8 @@
       d.innerHTML = html + ' <button type="button" id="mlsBdX" aria-label="dismiss">&times;</button>';
       document.body.appendChild(d);
       var x = $('mlsBdX'); if (x) x.onclick = function () { if (d.parentNode) d.parentNode.removeChild(d); };
-      setTimeout(function () { if (d && d.parentNode) d.parentNode.removeChild(d); }, 12000);
+      wireCopy();
+      if (!sticky) setTimeout(function () { if (d && d.parentNode) d.parentNode.removeChild(d); }, 12000);
     } catch (e) {}
   }
   function css() {
@@ -85,11 +129,12 @@
 
   /* ---- send the transcript for server-side scoring (earned; no score sent) ---- */
   function submitVisit(silent) {
+    var text = transcriptText();
+    var h = hash32(text);
+    startSign(h);                                    // another visit's link leaves the screen now
     var t = tok();
     if (!t) return;                                  // not signed in -> no-op, nothing faked
-    var text = transcriptText();
     if (text.length < MIN_CHARS) return;             // too little to score meaningfully
-    var h = hash32(text);
     if (sentHashes().indexOf(h) !== -1) return;      // already sent this session
 
     var p = activePt();
@@ -106,7 +151,9 @@
         body: JSON.stringify(body) })
         .then(function (r) { return (r && r.ok) ? r.json() : null; }, function () { return null; })
         .then(function (j) {
-          if (!j || !j.ok) return;
+          /* Not recorded, or the answer was lost: let the next Sign send it
+             again. The server dedupes and answers with the same opt-out link. */
+          if (!j || !j.ok || signing !== h) { forgetHash(h); return; }
           if (silent) return;
           var d = j.doctor || {};
           var msg;
@@ -116,8 +163,10 @@
             var prog = (d.published ? ('Rating: ' + d.stars + '\u2605') : ('Earned rating in progress \u2014 ' + (d.countedVisits || 0) + '/' + (d.minVisits || '?') + ' visits'));
             msg = '\u2B50 Visit sentiment recorded (earned, server-computed). ' + prog + '. <a href="' + ADMIN_PAGE + '" target="_blank">View</a>';
           }
-          toast(msg);
-        }, function () {});
+          var opt = optoutHtml(j.optoutUrl, j.ref, j.date || body.occurred_at);
+          shownFor = h;
+          toast(msg + opt, !!opt);
+        }, function () { forgetHash(h); });
     } catch (e) {}
   }
   function reasonText(reason) {
@@ -133,7 +182,7 @@
       var el = e.target; if (!el) return;
       var btn = el.closest ? el.closest('button,a,[role="button"]') : null;
       var label = (btn ? (btn.textContent || '') : (el.textContent || '')).replace(/\s+/g, ' ');
-      if (btn && TRIGGERS.test(label)) { setTimeout(function () { submitVisit(false); }, 1500); }
+      if (btn && TRIGGERS.test(label)) { startSign(hash32(transcriptText())); setTimeout(function () { submitVisit(false); }, 1500); }
     } catch (err) {}
   }
   document.addEventListener('click', onDocClick, true);

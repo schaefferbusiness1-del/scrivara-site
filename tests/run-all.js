@@ -2852,6 +2852,12 @@ const tests = [
   'visit-template-omits-signature-lines.test.js',
   /* hbound-1.0.0: a heading word ends at a colon, a space or the line end */
   'staging-heading-word-boundary.test.js',
+  /* h9-1.0.0 (2026-09-25): the phone app drops an answer that comes back to a
+     different session, and reads visits by chart id only */
+  'phone-app-answers-belong-to-the-session-and-the-chart-runtime.test.js',
+  /* h9-1.1.0 (2026-09-25): the homepage demo form names a refused email
+     address instead of reporting a failure to send */
+  'homepage-demo-form-names-a-refused-email-runtime.test.js',
   /* bla-1.0.0 (2026-09-25): the New-appointment form names and links one
      patient, and the daily brief counts no cancelled or no-show appointment */
   'calendar-follow-up-names-and-links-one-patient-runtime.test.js',
@@ -2862,7 +2868,26 @@ const tests = [
   /* teamname-1.0.0 (2026-09-25): a team member who signs their own notes is
      never given the practice head's Provider name at sign-in; an invented
      practice name is never stored */
-  'team-member-keeps-own-provider-name.test.js'
+  'team-member-keeps-own-provider-name.test.js',
+  /* bla-1.2.0 (2026-09-25): the Legal / IME workspace asks before Generate or
+     the patient picker discards an edited draft, keeps it through a refused
+     replacement, says a refusal in plain words, and settles a question naming
+     a patient at every session boundary; the shell says the fee-lock and
+     existing-account refusals; an expert report section the safety check
+     refused says so; a legal prompt never carries the op-note FILL rule */
+  'legal-workspace-never-drops-an-edited-draft-runtime.test.js',
+  'shell-says-fee-lock-and-plan-change-refusals.test.js',
+  'expert-report-section-refusal-says-why.test.js',
+  'legal-prompts-carry-no-op-note-fill-rule-runtime.test.js',
+  /* h9-1.0.0 (2026-09-25): the Best Doctors pages say only what happened - the
+     opt-out link reaches the clinician, the console excludes by ref and never
+     claims an unsaved save, the newest search wins, a reloaded opt-out page
+     asks to reopen the link */
+  'best-doctors-console-optout-and-search-runtime.test.js',
+  /* h9-1.0.0 (2026-09-25): the marketing console and the patient review page
+     show only what happened - no success the server did not confirm, no
+     publishing or scheduled sending MLS does not do, and nothing off a phone */
+  'marketing-console-shows-only-what-happened-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

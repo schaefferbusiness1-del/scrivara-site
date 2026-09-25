@@ -257,23 +257,16 @@ function publicDocuments(list){
     return d && d.url;
   });
 }
-const HELD_PROFILE_MARKER=/\b(?:sample|placeholder|lorem|synthetic)\b|\bedit(?:ed|ing|able)?\b|\b(?:replace|update)\s+(?:this|me)\b/i;
-function profileValueText(value,seen){
-  if(value==null) return '';
-  if(typeof value==='string'||typeof value==='number'||typeof value==='boolean') return String(value);
-  if(typeof value!=='object') return '';
-  seen=seen||[];
-  if(seen.indexOf(value)!==-1) return '';
-  seen.push(value);
-  const parts=Array.isArray(value)?value.map(function(v){return profileValueText(v,seen);}):Object.keys(value).map(function(k){return profileValueText(value[k],seen);});
-  seen.pop();
-  return parts.join(' ');
-}
+/* h9-1.0.0 (2026-09-25): the server decides release with one placeholder rule
+   (expertDirectoryRelease.js) and says so with released:true. This page used
+   to re-check every value, document labels included, with a different list,
+   so a profile the doctor was told is released ("Co-edited" in a bio, a
+   "Sample IME report" document) was hidden here. It now shows what the server
+   released and checks only that there is something to show. */
 function isReleasedProfile(e){
   if(!e||typeof e!=='object') return false;
   if(!String(e.id||e.user_id||e.expert_id||'').trim()) return false;
-  if(!String(e.name||e.display_name||e.doctor_name||e.full_name||'').trim()) return false;
-  return !HELD_PROFILE_MARKER.test(profileValueText(e));
+  return !!String(e.name||e.display_name||e.doctor_name||e.full_name||'').trim();
 }
 function showHeldProfile(){
   const ls=document.getElementById('loadState');

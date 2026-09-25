@@ -80,6 +80,20 @@ p{font-size:14px;line-height:1.55;color:#2b3a52}
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   var captured = (window.__mlsSensitiveUrl && window.__mlsSensitiveUrl.query) || {};
   var token = captured.t || captured.token || '';
+  /* h9-1.0.0 (2026-09-25): no token at all is not a broken link. The head
+     bootstrap strips it from the address bar, so a refresh - even right after
+     "Done" - or a phone restoring the tab arrives here with a working link.
+     The "incomplete" wording blamed the email and implied the saved choice
+     had failed. Same neutral state as appointment, intake and booking.
+     h9-1.1.0 (2026-09-25): this state cannot know what happened before the
+     reload - the save may have failed - so it claims nothing about a saved
+     choice. Opening the link again shows whether the visit is already
+     excluded. */
+  if (!token) {
+    $('body').innerHTML = '<p><b>Please open your link again.</b></p>'
+      + '<p class="note">For your privacy the link address is removed from the browser bar once the page opens, so a refresh or the Back button loses it. Open the original link again from your message; it still works, and it shows whether your visit is already excluded.</p>';
+    return;
+  }
   /* visitRatings.newToken() emits exactly 24 random bytes as lowercase hex. */
   /* A malformed token is a dead end with a route forward, like the retired-link
      path - not a bare error. The commonest cause is a link broken across two

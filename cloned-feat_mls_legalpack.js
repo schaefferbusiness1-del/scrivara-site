@@ -354,7 +354,7 @@
     if (!state.open || bindingCurrent(state.bound)) return false;
     abortCurrentRun('patient-changed');
     cancelAllImports();
-    state.session++;
+    nextSession();
     state.bound = null;
     state.model = null;
     state.providerFilter = null;
@@ -1447,10 +1447,27 @@
     /* the box may be hidden behind the formatted view; its text is still the draft */
     return !!(clean(state.draft) || (box && clean(box.value)));
   }
+  /* bla-1.2.0 (2026-09-25): a question names the patient ("Change to Bea
+     Sample? ...") and sits on document.body, above the sheet. It used to
+     outlive the sheet: a sign-out, an idle lock or the overlay closing left it
+     in the page, and the next doctor to sign in saw the previous account's
+     patient and could press "Discard and change" inside their own session.
+     A question now belongs to the workspace session it was asked in: every
+     session boundary and every close settles it (removed, answered with
+     null, which callers read as "nobody answered"), and an answer given after
+     the session moved on is null too. */
+  var openAsk = null;
+  function settleAsk() {
+    var ask = openAsk; openAsk = null;
+    if (ask) ask.done(null);
+    var stray = byId('mlsP1LegalAsk'); if (stray && stray.parentNode) stray.parentNode.removeChild(stray);
+  }
+  function nextSession() { state.session++; settleAsk(); }
   function askInSheet(question, yesLabel) {
     return new Promise(function (resolve) {
       var root = byId(ROOT_ID); if (!root) { resolve(true); return; }
-      var old = byId('mlsP1LegalAsk'); if (old && old.parentNode) old.parentNode.removeChild(old);
+      settleAsk();
+      var session = state.session;
       var back = document.createElement('div'); back.id = 'mlsP1LegalAsk';
       back.setAttribute('role', 'alertdialog'); back.setAttribute('aria-modal', 'true'); back.setAttribute('aria-label', question);
       back.style.cssText = 'position:fixed;inset:0;z-index:2147483003;background:rgba(15,25,20,.45);display:flex;align-items:center;justify-content:center;padding:16px';
@@ -1463,17 +1480,21 @@
       [keep, go].forEach(function (b) { b.style.cssText = 'min-height:40px;padding:8px 14px;border-radius:10px;font:inherit;cursor:pointer;border:1px solid #D9D6CD;background:#fff'; });
       go.style.background = '#9a3d29'; go.style.color = '#fff'; go.style.borderColor = '#9a3d29';
       row.appendChild(keep); row.appendChild(go); card.appendChild(row); back.appendChild(card);
-      var before = document.activeElement;
+      var before = document.activeElement, answered = false, ask = { done: done };
       function done(v) {
+        if (answered) return; answered = true;
+        if (openAsk === ask) openAsk = null;
         document.removeEventListener('keydown', onKey, true); if (back.parentNode) back.parentNode.removeChild(back);
+        if (v !== null && session !== state.session) v = null;
         /* focus goes back to what was pressed, inside the sheet, so Escape keeps working */
-        if (!v && before && before.isConnected && isFn(before.focus)) { try { before.focus(); } catch (e) {} }
+        if (v === false && before && before.isConnected && isFn(before.focus)) { try { before.focus(); } catch (e) {} }
         resolve(v);
       }
       function onKey(e) { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(false); } }
       keep.addEventListener('click', function () { done(false); });
       go.addEventListener('click', function () { done(true); });
       document.addEventListener('keydown', onKey, true);
+      openAsk = ask;
       document.body.appendChild(back);
       try { keep.focus(); } catch (e) {}
     });
@@ -2194,6 +2215,39 @@
       Promise.resolve(raw).then(function (value) { finish(true, value); }, function (error) { finish(false, error); });
     });
   }
+  /* bla-1.2.0 (2026-09-25): a refusal from the hosted route used to reach the
+     doctor as "502 The draft did not satisfy its family safety contract.." -
+     a status code, jargon and a doubled period. Say what happened and what to
+     do next, in plain words; this workspace's own evidence-check messages
+     (errors without a server receipt) are kept as they are. With a per-device
+     key the request goes to the AI provider directly, so a 401 there means
+     that provider refused the key on this device - not that the MLS sign-in
+     expired (the hosted route's own 401 signs out). */
+  function draftFailureWords(error) {
+    var ai = error && error.mlsAi, status = ai ? Number(ai.status) || 0 : 0, code = ai ? String(ai.code || '') : '';
+    if (ai && code === 'draft_quality_failed') return 'the server\u2019s safety check did not accept the draft it wrote, so nothing is shown. Press Generate to try again; if it is refused again, the records may not support this report type.';
+    if (ai && /legal_subtype/.test(code + ' ' + String(ai.detail || ''))) return 'the server does not offer this report type yet. Pick another report type, or use Records chronology only.';
+    if (ai && (status === 402 || code === 'no_access')) return 'this account does not have AI drafting access. Check your plan in Settings.';
+    if (ai && status === 429) return 'the AI service is busy. Wait a minute, then press Generate again.';
+    var said = clean(error && error.message).replace(/[\s.]+$/, '');
+    /* bla-1.2.1: any other hosted refusal carries the server's own plain
+       sentence (src/aiFailure.js writes it for exactly this) and its retryable
+       flag. Show that sentence, and offer Generate again only when retrying can
+       help - never "try again" for a quota, sign-in or input-size refusal. */
+    if (ai && status >= 400) {
+      var server = said.replace(/^\d{3}\s+/, '').replace(/[\s.]+$/, '');
+      var again = ai.retryable === false ? '' : ' Press Generate to try again.';
+      if (server && !/^\d{3}$/.test(server)) return server + '.' + again;
+      return (status >= 500 ? 'the AI service could not finish the draft.' : 'the server refused this request.') + (again || ' If it keeps happening, contact support.');
+    }
+    var hosted = isFn(window.backendMode) ? !!window.backendMode() : true;
+    if (!hosted && /^(?:401|403)\b/.test(said)) return 'the AI provider refused the API key saved on this device. Check the key in Settings, then press Generate again.';
+    if (!hosted && /^429\b/.test(said)) return 'the AI provider is busy or this key is over its limit. Wait a minute, then press Generate again.';
+    if (!hosted && /^5\d\d\b/.test(said)) return 'the AI provider could not finish the draft. Press Generate to try again.';
+    if (/^401\b/.test(said)) return 'your sign-in has expired. Sign in again, then press Generate.';
+    if (/failed to fetch|networkerror|load failed/i.test(said)) return 'the server could not be reached. Check the connection, then press Generate again.';
+    return (said || 'AI request failed') + '.';
+  }
   function cancelGeneration(message) {
     var canceled = abortCurrentRun('user-canceled');
     if (canceled && state.open) setStatus(message || 'Generation canceled. Any late response is blocked from this workspace.', false);
@@ -2211,6 +2265,18 @@
       updateControls(); return Promise.resolve(false);
     }
     if (!state.bound || !bindingCurrent(state.bound)) { abortForPatientChange(); return Promise.resolve(false); }
+    /* bla-1.2.0 (2026-09-25): pressing Generate again replaced a generated
+       and doctor-edited draft at once, with nothing asked and nothing kept.
+       Like Close, Escape and a report-type change (legalfix-1.0.0), it now
+       asks inside the sheet, and "Keep the draft" leaves every character. */
+    if (hasDraft() && !generateDraft.__confirmed) {
+      var again = reportTypeFor(state.reportType) || reportTypeFor('ime');
+      return askInSheet('Generate the ' + again.label + ' again? The draft on screen, including your edits, will be replaced.', 'Replace the draft').then(function (ok) {
+        if (!ok) { if (ok === false) setStatus('The draft on screen was kept. Nothing was generated.', false); return false; }
+        generateDraft.__confirmed = true;
+        try { return generateDraft(); } finally { generateDraft.__confirmed = false; }
+      });
+    }
     /* p1-legal-reports-2.0.0: an API caller that never picked a type still gets
        exactly the IME document this workspace has always produced, and the
        state now SAYS which type was used rather than leaving it blank. */
@@ -2320,7 +2386,7 @@
       if (!runSlotOwned(run)) return false;
       if (!bindingCurrent(run.binding)) { abortForPatientChange(); return false; }
       finishOwnedRun(run);
-      setStatus('Drafting stopped: ' + (clean(error && error.message) || 'AI request failed') + '. No partial draft was exported.', true);
+      setStatus('Drafting stopped: ' + draftFailureWords(error) + ' No partial draft was exported.', true);
       return false;
     });
   }
@@ -2521,7 +2587,7 @@
     var binding = captureBinding();
     abortCurrentRun(reason || 'rebind');
     cancelAllImports();
-    state.session++;
+    nextSession();
     state.rebindIntent = null;
     state.generating = false;
     state.model = null; state.providerFilter = null; state.sources = []; state.draft = '';
@@ -2558,6 +2624,21 @@
     if (state.athenaOp) { setStatus('Wait for the current read to finish before changing patient.', true); return false; }
     var p = patientById(wanted);
     if (!p) { setStatus('That patient is not in this account’s roster. Nothing was changed.', true); return false; }
+    /* bla-1.2.0 (2026-09-25): a pick under "Change to another patient" -
+       even the patient already bound, which re-freezes the snapshot - threw a
+       generated, doctor-edited draft away with no question. It asks first now,
+       like Close, Escape and a report-type change; "Keep the draft" changes
+       nothing at all. */
+    if (hasDraft() && !requestBind.__asked) {
+      var same = !!(state.bound && state.bound.patientId === wanted);
+      askInSheet((same ? 'Re-bind ' + (clean(p.name) || 'this patient') + ' from a fresh snapshot?' : 'Change to ' + (clean(p.name) || 'this patient') + '?') +
+        ' The draft on screen will be discarded - download or copy it first to keep it.', same ? 'Discard and re-bind' : 'Discard and change').then(function (ok) {
+        if (!ok) { if (ok === false) setStatus('The draft on screen was kept. The patient was not changed.', false); return; }
+        requestBind.__asked = true;
+        try { requestBind(wanted); } finally { requestBind.__asked = false; }
+      });
+      return false;
+    }
     if (activeIdNow() === wanted) { return adoptBinding('picked'); }
     var switcher = isFn(window.openPatient) ? window.openPatient : (isFn(window.setActivePtId) ? window.setActivePtId : null);
     if (!switcher) {
@@ -3123,6 +3204,10 @@
     var drop = byId('mlsP1LegalDrop'); if (drop) drop.disabled = running || reading;
     var input = byId('mlsP1LegalFile'); if (input) input.disabled = running || reading;
     var compile = byId('mlsP1LegalCompile'); if (compile) compile.disabled = !state.bound || running || reading;
+    /* bla-1.2.0 (2026-09-25): a run replaces the box when it lands, so the
+       box takes no typing while it drafts - an edit made then would be lost
+       unasked. */
+    var draftBox = byId('mlsP1LegalDraft'); if (draftBox) draftBox.readOnly = running;
     var root = byId(ROOT_ID);
     if (root && isFn(root.setAttribute)) {
       root.setAttribute('data-mls-legal-report', state.reportType || '');
@@ -3569,7 +3654,7 @@
   }
   function closeOverlayInternal(restoreFocus) {
     var prior = state.priorFocus;
-    abortCurrentRun('closed'); cancelAllImports(); state.session++;
+    abortCurrentRun('closed'); cancelAllImports(); nextSession();
     state.open = false; state.generating = false; state.bound = null;
     state.model = null; state.providerFilter = null; state.sources = []; state.draft = '';
     state.stage = 'unbound'; state.reportType = '';
@@ -3637,6 +3722,7 @@
     /* Account identity is an unconditional lifetime boundary, even when both
        accounts are clinicians. Never let account B inherit account A's PHI. */
     if (state.open) closeOverlayInternal(false);
+    settleAsk();
     /* Do not consume a pending deep link against the pre-boundary patient.
        A post-boundary patient event (or an explicit door click) may open it. */
     syncDoor();

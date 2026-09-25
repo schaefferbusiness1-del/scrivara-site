@@ -1053,6 +1053,8 @@ try{
 const r=await fetch(DEMO_ENDPOINT,{method:'POST',cache:'no-store',credentials:'omit',referrerPolicy:'no-referrer',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify(payload)});
 const data=await r.json();
 if(r.ok&&(data.success===true||data.success==='true')){ f.reset(); status.style.color='#2E6A4B'; status.textContent='✓ Thanks! Your demo request was sent. We\'ll be in touch shortly.'; }
+/* h9-1.1.0: the email field accepts a dotless address (lee@clinic) that the server refuses; say which field to fix. */
+else if(r.status===400&&data&&data.error==='invalid_email'){ status.style.color='#B23B3B'; status.textContent='Check the email address. It needs the full domain, such as you@clinic.com.'; f.email.focus(); }
 else { throw new Error(data.message||'Submission failed'); }
 }catch(err){ status.style.color='#B23B3B'; status.textContent='Something went wrong sending the form. Please email michael@mlsscribe.com directly.'; }
 finally{ if(btn){btn.disabled=false;} }

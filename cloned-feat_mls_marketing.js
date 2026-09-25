@@ -280,7 +280,7 @@
       '#mlsP1MktDoor{min-height:44px}'+
       '#mlsP1MktCalmDoor{min-height:76px}'+
       '#mlsPtab_reviews,.mls-menu-reviews,#mlsEasyTools [data-target="mlsPtab_reviews"],#ez3sReviews{display:none!important}'+
-      '@media(max-width:760px){#mlsP1MktWorkspace .mkt-grid{grid-template-columns:1fr}#mlsP1MktWorkspace .mkt-card.wide{grid-column:auto}#mlsP1MktChecklist{grid-template-columns:1fr}#mlsP1MktWorkspace .mkt-top{align-items:stretch}#mlsP1MktWorkspace .mkt-top button{flex:none}}'+
+      '@media(max-width:760px){#mlsP1MktWorkspace .mkt-grid{grid-template-columns:1fr}#mlsP1MktWorkspace .mkt-card.wide{grid-column:auto}#mlsP1MktChecklist{grid-template-columns:1fr}#mlsP1MktWorkspace .mkt-top{align-items:stretch;flex-wrap:wrap}#mlsP1MktWorkspace .mkt-top button{flex:none}}'+
       '@media(prefers-reduced-motion:reduce){#mlsP1MktWorkspace *{scroll-behavior:auto!important;animation:none!important;transition:none!important}}';
     (D.head || D.documentElement).appendChild(styleNode);
   }

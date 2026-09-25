@@ -1105,7 +1105,16 @@
                    room then counted as zero blanks. */
                 /* avsq-1.1.0: nor for the patient handout ('avs'): its contract
                    forbids placeholders, and this rule asked for [FILL: ...] ones */
-                if (o && typeof o.system === 'string' && o.family !== 'opnote' && o.family !== 'avs') {
+                /* bla-1.2.0 (2026-09-25): nor for any legal request. The Legal /
+                   IME workspace's IME, narrative and records review, and every
+                   expert report section, travel as family 'legal_ime' (legal:
+                   true, a legal_* or report subtype), and any chart with an
+                   injection matched the op-note test above, so their prompts
+                   were told to write [FILL: ...] placeholders their own
+                   contract forbids. A legal report never gets this rule. */
+                var legalRequest = !!(o && (o.legal === true || /^legal/i.test(String(o.family || '')) ||
+                  /^(?:legal_|ime$|narrative_medical_report$|records_review$|utilization_review$)/i.test(String(o.draftSubtype || ''))));
+                if (!legalRequest && o && typeof o.system === 'string' && o.family !== 'opnote' && o.family !== 'avs') {
                   o.system += FILL_RULES;
                   var init2 = {}; for (var k in init) init2[k] = init[k];
                   init2.body = JSON.stringify(o);
