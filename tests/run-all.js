@@ -1721,6 +1721,17 @@ const tests = [
   'startup-explicit-pull-contract.test.js',
   'phone-pairing-explicit-click-runtime.test.js',
   'phone-secure-lifecycle.test.js',
+  /* micfix-1.0.0 (2026-09-24), micfix-1.1.0 and micfix-1.2.0 (2026-09-25):
+     phone.html in Chromium against the upload contract and today's server -
+     Done never drops waiting clips and never says Done early, clipId and the
+     clip's start time t ride every retry and t never goes back across a
+     reload, a failing clip never blocks the others, a slow answer from
+     today's server is waited for instead of re-sent, an ended session is not
+     a mistyped code, a 402/403 stops recording and holds the clips, MLS
+     unable to transcribe keeps recording and retries, one tap opens one
+     microphone and none is left on after Done, and a late answer for an old
+     code never touches the current one. */
+  'phone-upload-contract-runtime.test.js',
   'startup-ai-notice-explicit-action-contract.test.js',
   'visible-control-context-accessibility-contract.test.js',
   'performance-lifecycle-contract.test.js',
@@ -2887,7 +2898,13 @@ const tests = [
   /* h9-1.0.0 (2026-09-25): the marketing console and the patient review page
      show only what happened - no success the server did not confirm, no
      publishing or scheduled sending MLS does not do, and nothing off a phone */
-  'marketing-console-shows-only-what-happened-runtime.test.js'
+  'marketing-console-shows-only-what-happened-runtime.test.js',
+  /* micfix-1.2.0 (2026-09-25): the phone upload guard's numbers - an attempt
+     is given up (and re-sent) only after MLS has shown dedupe:true for that
+     code, MLS unable to transcribe keeps the phone recording and retries
+     after 6 s doubling to 60 s with new clips kept in order behind the
+     waiting ones, and clipIds come from crypto.getRandomValues. */
+  'phone-upload-guard-rules.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

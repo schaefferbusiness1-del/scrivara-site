@@ -78,6 +78,7 @@ assert(!phoneUi.includes('phone.html?code='), 'phone UI mirror must not retain t
 const elements = {
   status: { textContent: '', style: {} },
   recErr: { textContent: '', style: {} },
+  waitErr: { textContent: '', style: {} },
   sent: { textContent: '', style: {} }
 };
 const listeners = {};
@@ -138,6 +139,8 @@ class FakeFileReader {
 const context = {
   Promise,
   Blob,
+  /* micfix-1.2.0 (2026-09-25): clipIds are drawn from crypto.getRandomValues. */
+  crypto: require('crypto').webcrypto,
   FileReader: FakeFileReader,
   indexedDB: { open: fakeOpen, deleteDatabase: fakeDelete },
   setTimeout(fn, ms) { const id = ++timerId; timers.set(id, { fn, ms }); return id; },
@@ -179,19 +182,26 @@ function flush() {
   await flush();
   assert(openCalls >= 1 && clearCalls >= 1 && deleteCalls >= 1 && closeCalls >= 1, 'startup did not clear and delete the legacy audio database');
 
-  context.uploadChunk(new Blob(['accepted'], { type: 'audio/webm' }), 'audio/webm');
+  /* micfix-1.1.0 (2026-09-25): the recorder hands over each clip with the
+     time it started recording; that start time is the clip's t. */
+  const startedAt = Date.now() - 5000;
+  context.uploadChunk(new Blob(['accepted'], { type: 'audio/webm' }), 'audio/webm', startedAt, 'SYN123');
   await flush();
   assert.strictEqual(context.__mlsPhoneGuard.pending(), 0, 'successful upload retained a volatile audio item');
   assert.strictEqual(context.sentCount, 1, 'successful upload was not counted');
   assert.strictEqual(fetchCalls[0].options.cache, 'no-store');
   assert.strictEqual(fetchCalls[0].options.credentials, 'omit');
   assert.strictEqual(fetchCalls[0].options.referrerPolicy, 'no-referrer');
+  const firstBody = JSON.parse(fetchCalls[0].options.body);
+  assert.strictEqual(firstBody.t, startedAt, 'the clip was not sent with its recording start time as t');
+  assert(!('seq' in firstBody), 'the clip still carries a per-page seq, which restarts on a reload');
+  assert(typeof firstBody.clipId === 'string' && firstBody.clipId.length > 0 && firstBody.clipId.length <= 64, 'the clip was sent without a clipId of at most 64 characters');
 
   fetchMode = 'fail';
   context.uploadChunk(new Blob(['offline'], { type: 'audio/webm' }), 'audio/webm');
   await flush();
   assert.strictEqual(context.__mlsPhoneGuard.pending(), 1, 'failed active-session upload was not retained in the volatile retry queue');
-  assert.match(elements.recErr.textContent, /temporary memory while this page stays open/i, 'offline status overstated volatile clip durability');
+  assert.match(elements.waitErr.textContent, /temporary memory while this page stays open/i, 'offline status overstated volatile clip durability');
   assert([...timers.values()].some(timer => timer.ms === 6000), 'volatile failure did not schedule a bounded retry');
 
   const clearsBeforeFinish = clearCalls;
@@ -199,8 +209,30 @@ function flush() {
   context.finishRec();
   await flush();
   assert.strictEqual(finishCalls, 1, 'secure lifecycle did not preserve the real Done behavior');
-  assert.strictEqual(context.__mlsPhoneGuard.pending(), 0, 'Done retained failed audio in memory');
+  /* micfix-1.0.0 (2026-09-24): Done used to empty this queue on the spot and
+     blank its warning, so the clip was lost without a word. Still offline,
+     Done keeps it in temporary memory, keeps retrying, and says so. */
+  assert.strictEqual(context.__mlsPhoneGuard.pending(), 1, 'Done dropped a clip that was still waiting to upload');
+  assert.match(elements.waitErr.textContent, /1 clip waiting to upload/, 'Done erased the waiting warning while a clip still waits');
+  assert.match(elements.status.textContent, /1 clip still waiting to upload/, 'Done claimed to be finished while a clip still waits');
   assert(clearCalls > clearsBeforeFinish && deleteCalls > deletesBeforeFinish, 'Done did not clear and delete the legacy audio database again');
+  const retry = [...timers.entries()].filter(([, timer]) => timer.ms === 6000);
+  assert.strictEqual(retry.length, 1, 'Done offline did not keep exactly one retry scheduled');
+  fetchMode = 'ok';
+  timers.delete(retry[0][0]);
+  retry[0][1].fn();
+  await flush();
+  await flush();
+  assert.strictEqual(context.__mlsPhoneGuard.pending(), 0, 'Done retained audio after it was sent');
+  assert.strictEqual(context.sentCount, 2, 'the waiting clip was not sent once the connection returned');
+  assert.strictEqual(elements.waitErr.textContent, '', 'the waiting warning outlived the queue');
+  assert.match(elements.status.textContent, /^Done\. Return to your computer/, 'Done did not finish once nothing was waiting');
+  const offlineBody = JSON.parse(fetchCalls[1].options.body);
+  const retriedBody = JSON.parse(fetchCalls[fetchCalls.length - 1].options.body);
+  assert(Number.isFinite(offlineBody.t) && offlineBody.t > startedAt, 'a clip handed over without a start time was not given a later t');
+  assert.strictEqual(retriedBody.t, offlineBody.t, 'the retried clip changed its t');
+  assert.strictEqual(retriedBody.clipId, offlineBody.clipId, 'the retried clip changed its clipId');
+  fetchMode = 'fail';
 
   context.uploadChunk(new Blob(['late-final'], { type: 'audio/webm' }), 'audio/webm');
   await flush();

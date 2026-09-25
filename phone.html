@@ -272,6 +272,9 @@
       <div class="status" id="status" role="status" aria-live="polite" aria-atomic="true">Tap to start recording</div>
       <div class="meta" id="sent"></div>
       <div class="err" id="recErr" role="alert" aria-live="assertive"></div>
+      <!-- micfix-1.0.0 (2026-09-24): the count of clips still waiting to upload
+           has its own line, so no other message can erase it while one waits. -->
+      <div class="err" id="waitErr" role="status" aria-live="polite" style="color:#ffdcae"></div>
       <!-- Revealed only when a code is rejected. Without it the recorder was a
            dead end: the page told the user to get a fresh code from their
            computer, with no field on the phone to type it into. -->
@@ -284,6 +287,17 @@
 <script>
   var BK='https://scrivara-backend.onrender.com';
   var code='', rec=null, stream=null, sentCount=0, active=false; var segTimer=null, recMime='';
+  /* micfix-1.1.0 (2026-09-25): segsOpen = recorders started whose clip has not
+     been handed over yet, so Done knows a last clip is still coming. lastSegAt
+     keeps each clip's start time (t) strictly increasing on this page.
+     micfix-1.2.0 (2026-09-25): the base time one upload attempt may take
+     before it is given up and retried (a larger clip gets more) is
+     UPLOAD_TIMEOUT_MS only once MLS has said, for that clip's code, that it
+     answers a re-sent clip as a duplicate. Until then it is
+     NO_DEDUPE_TIMEOUT_MS, longer than today's server can take (300 s), so a
+     slow answer is waited for instead of being sent and added again.
+     starting = Record was tapped and the microphone is not granted yet. */
+  var segsOpen=0, lastSegAt=0, UPLOAD_TIMEOUT_MS=40000, NO_DEDUPE_TIMEOUT_MS=330000, starting=false;
 
   function hp(name){ try{ return new URLSearchParams((location.hash||'').replace(/^#/, '')).get(name)||''; }catch(e){ return ''; } }
   function show(id){ document.getElementById('connectScreen').classList.toggle('hidden', id!=='connect'); document.getElementById('recScreen').classList.toggle('hidden', id!=='rec'); }
@@ -299,6 +313,10 @@
      guard wrapper, so the mic and wake lock are released before leaving. */
   function reconnectCode(){
     try{ if(typeof stopRec==='function') stopRec(); }catch(e){}
+    /* micfix-1.1.0 (2026-09-25): the old code stops being the current one here,
+       so a late answer for one of its clips can never touch the next code's
+       screen. Each clip keeps the code it was recorded under. */
+    code='';
     var b=document.getElementById('recodeBtn'); if(b) b.style.display='none';
     var d=document.getElementById('doneBtn'); if(d) d.style.display='none';
     var er=document.getElementById('recErr'); if(er) er.textContent='';
@@ -310,6 +328,10 @@
   }
   function enterRecorder(c){
     code=c;
+    /* micfix-1.1.0 (2026-09-25): rebuild the pill; a message about the last code
+       may have replaced the element that shows the code. */
+    var pill=document.getElementById('linkPill');
+    if(pill) pill.innerHTML='📱 Code <b id="codeShown">----</b> · not confirmed yet';
     document.getElementById('codeShown').textContent=c;
     var input=document.getElementById('codeInput'); if(input) input.value='';
     show('rec');
@@ -330,33 +352,60 @@
   // what lets the backend transcribe each clip and stream the transcript live, and it
   // also works on iOS Safari (which does not fire timeslice dataavailable reliably).
   var SEG_MS=8000;
+  /* micfix-1.2.0 (2026-09-25): t never goes backwards for a code, not even
+     after a reload once the phone's clock has stepped back. The last t used
+     for each code is kept in sessionStorage: a number only, never audio. */
+  function nextT(c){
+    var key='mlsPhoneT:'+c, floor=0, t;
+    try{ floor=Number(sessionStorage.getItem(key))||0; }catch(e){}
+    t=Math.max(Date.now(), floor+1, lastSegAt+1);
+    lastSegAt=t;
+    try{ sessionStorage.setItem(key,String(t)); }catch(e){}
+    return t;
+  }
   function startSegment(){
     if(!active || !stream) return;
     var r;
     try{ r = recMime ? new MediaRecorder(stream,{mimeType:recMime}) : new MediaRecorder(stream); }
     catch(e){ try{ r=new MediaRecorder(stream); }catch(e2){ var er=document.getElementById('recErr'); if(er) er.textContent='Could not start recording on this device.'; return; } }
     rec=r;
-    var parts=[];
+    /* micfix-1.1.0 (2026-09-25): each clip carries the time it STARTED
+       recording (t, from this phone's clock) and the code it was recorded
+       under. micfix-1.2.0 (2026-09-25): MLS keeps t with the clip but orders
+       the transcript by arrival. */
+    var parts=[], segCode=code, segAt=nextT(segCode), counted=false;
     r.ondataavailable=function(ev){ if(ev.data && ev.data.size>0) parts.push(ev.data); };
     r.onstop=function(){
-      try{ if(parts.length){ var blob=new Blob(parts,{type:(r.mimeType||recMime||'audio/webm')}); if(blob.size>0) uploadChunk(blob, blob.type); } }catch(e){}
+      try{ if(parts.length){ var blob=new Blob(parts,{type:(r.mimeType||recMime||'audio/webm')}); if(blob.size>0) uploadChunk(blob, blob.type, segAt, segCode); } }catch(e){}
+      if(counted){ counted=false; segsOpen--; }
       if(active){ startSegment(); }
       else if(stream){ try{ stream.getTracks().forEach(function(t){ t.stop(); }); }catch(e){} stream=null; }
     };
     try{ r.start(); }catch(e){ try{ r.start(); }catch(e2){ return; } }
+    counted=true; segsOpen++;
     if(segTimer){ try{ clearTimeout(segTimer); }catch(e){} }
     segTimer=setTimeout(function(){ try{ if(rec && rec.state!=='inactive') rec.stop(); }catch(e){} }, SEG_MS);
   }
+  /* micfix-1.2.0 (2026-09-25): a second tap while the microphone is still
+     being granted starts nothing; it used to start a second recorder whose
+     microphone stayed on after Done. A Stop or Done in that time wins: the
+     microphone that arrives late is turned off again. */
   async function startRec(){
+    if(starting||active) return;
     var err=document.getElementById('recErr'); err.textContent='';
     if(typeof MediaRecorder==='undefined' || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ err.textContent='Recording isn\u2019t supported in this browser. Use a recent Safari or Chrome.'; return; }
-    try{ stream=await navigator.mediaDevices.getUserMedia({audio:true}); }
-    catch(e){ err.textContent='Microphone access was blocked. Allow the mic in your browser settings, then tap Record again.'; return; }
+    starting=true;
+    var s;
+    try{ s=await navigator.mediaDevices.getUserMedia({audio:true}); }
+    catch(e){ if(starting) err.textContent='Microphone access was blocked. Allow the mic in your browser settings, then tap Record again.'; starting=false; return; }
+    if(!starting){ try{ s.getTracks().forEach(function(t){ t.stop(); }); }catch(e){} return; }
+    starting=false; stream=s;
     recMime=pickMime();
     active=true;
     var btn=document.getElementById('recBtn'); btn.classList.add('on');
     document.getElementById('recIc').textContent='\u25A0'; document.getElementById('recLabel').textContent='Stop';
-    document.getElementById('status').textContent='\u25CF Recording\u2026 talk normally';
+    /* micfix-1.2.0 (2026-09-25): the colour of an earlier stop is reset too. */
+    var st=document.getElementById('status'); st.style.color=''; st.textContent='\u25CF Recording\u2026 talk normally';
     document.getElementById('doneBtn').style.display='inline-block';
     startSegment();
   }
@@ -376,7 +425,7 @@
     reader.readAsDataURL(blob);
   }
     function stopRec(){
-    active=false;
+    active=false; starting=false;
     if(segTimer){ try{ clearTimeout(segTimer); }catch(e){} segTimer=null; }
     if(rec && rec.state!=='inactive'){ try{ rec.stop(); }catch(e){} }
     else { if(stream){ try{ stream.getTracks().forEach(function(t){ t.stop(); }); }catch(e){} stream=null; } }
@@ -385,7 +434,10 @@
     document.getElementById('recIc').textContent='\u25CF'; document.getElementById('recLabel').textContent='Record';
     document.getElementById('status').textContent=sentCount?'Stopped \u2014 '+sentCount+' clip'+(sentCount===1?'':'s')+' uploaded to MLS.':'Stopped.';
   }
-  function finishRec(){ stopRec(); document.getElementById('status').textContent='Done. Return to your computer and confirm the transcript before closing this page.'; }
+  /* micfix-1.1.0 (2026-09-25): Done no longer says 'Done' here. It used to,
+     before the last clip was even handed over, and then changed to 'Not done
+     yet'. The upload guard below says 'Done' once nothing is left to send. */
+  function finishRec(){ stopRec(); document.getElementById('status').textContent='Finishing — sending the last clip to MLS. Keep this page open.'; }
 
   function scrubPairingUrl(){
     try{
@@ -415,11 +467,36 @@
    Audio clips exist only in memory while this page uploads or retries them.
    The retired IndexedDB backup is erased on startup and session end. Failed
    clips are never downloaded or persisted, and the UI states that plainly.
-   Wake lock and mic interruption recovery remain active only while recording.
+   Wake lock and mic interruption recovery remain active only while recording,
+   and (micfix-1.1.0) the wake lock also while Done still has clips to send.
    ===================================================================== */
 (function(){
   var LEGACY_DB='mlsPhoneRec', LEGACY_STORE='clips';
   var queue=[], sending=false, retryTimer=null, wake=null, closing=false, sessionEpoch=1;
+  /* micfix-1.0.0 (2026-09-24) and micfix-1.1.0 (2026-09-25): every clip carries
+     its code, its start time t and one clipId that every retry repeats, so a
+     server that dedupes answers a re-sent clip as a duplicate instead of
+     adding its words twice.
+     finishing = Done was tapped and clips still wait; live = first attempts in
+     flight; hold = MLS refused this phone's clips for a reason on this
+     account (no access, 403), so the clips are kept and sending pauses until
+     the doctor taps Record or Done; outageMs = the wait before the next retry
+     while MLS itself cannot transcribe (0 = no outage); behind = since an
+     outage began, new clips wait at the back of the queue until it is empty;
+     dedupes = codes MLS has answered with dedupe:true (micfix-1.2.0,
+     2026-09-25);
+     linked = codes the server accepted a clip for; gone = codes that take
+     nothing more, and how many clips each cost; refused = clips answered
+     retryable:false; notes = the parts of the error line. */
+  var live=0, finishing=false, finishPolls=0, pollTimer=null, lastT=0, hold=null, wakeAsk=false, outageMs=0, behind=false;
+  var linked=Object.create(null), gone=Object.create(null), refused=Object.create(null), dedupes=Object.create(null);
+  var notes=Object.create(null), noteKeys=[], notesShown='';
+  var DONE_TEXT='Done. Return to your computer and confirm the transcript before closing this page.';
+  var STOPPED_COLOR='#FFB4B4';
+  /* Answers that every clip gets while MLS itself cannot transcribe (today's
+     server: 502 retryable:false with one of these codes). They cost no
+     transcription, so the clips wait and are retried (micfix-1.2.0). */
+  var SERVICE_WIDE={'ai-quota':1,'ai-auth':1,'ai-model-unavailable':1};
 
   function deleteLegacyDatabase(done){
     var settled=false, timer=null;
@@ -457,6 +534,7 @@
   purgeLegacyAudio();
 
   function releaseItem(item){ if(!item) return; item.blob=null; item.mt=''; }
+  function unqueue(item){ var at=queue.indexOf(item); if(at>=0) queue.splice(at,1); }
   function clearVolatileAudio(){
     if(retryTimer){ clearTimeout(retryTimer); retryTimer=null; }
     for(var i=0;i<queue.length;i++) releaseItem(queue[i]);
@@ -464,7 +542,35 @@
     pendBadge();
   }
   function setStatus(txt,color){ try{ var s=document.getElementById('status'); if(s){ s.textContent=txt; s.style.color=color||''; } }catch(e){} }
-  function pendBadge(){ try{ var er=document.getElementById('recErr'); if(queue.length){ er.style.color='#ffdcae'; er.textContent='⏳ '+queue.length+' clip'+(queue.length===1?'':'s')+' waiting to upload — held only in temporary memory while this page stays open; retrying…'; } else if(/waiting to upload/.test(er.textContent||'')){ er.textContent=''; } }catch(e){} }
+  /* micfix-1.2.0 (2026-09-25): news about uploads is shown only while this
+     phone records, and never over 'Mic interrupted — resuming…': a clip
+     accepted then used to say 'talk normally' into a dead microphone. */
+  function recStatus(txt,color){ if(active&&!recovering) setStatus(txt,color); }
+  function clips(n){ return n+' clip'+(n===1?'':'s'); }
+  /* micfix-1.0.0 (2026-09-24): the waiting count has its own line and is
+     written only from the queue, so no other message can erase it. A clip
+     being retried stays in the queue until it is sent or can never be. */
+  function pendBadge(){
+    if(!queue.length){ behind=false; if(hold){ hold=null; note('hold',''); } if(outageMs){ outageMs=0; note('outage',''); } }
+    else if(outageMs) recStatus('● Recording… — MLS cannot add clips right now; '+queue.length+' waiting, retrying','#ffdcae');
+    try{ var w=document.getElementById('waitErr'); if(w) w.textContent=queue.length?'⏳ '+clips(queue.length)+' waiting to upload — held only in temporary memory while this page stays open; '+(hold?'paused until you tap Record or Done.':'retrying…'):''; }catch(e){}
+  }
+  /* micfix-1.1.0 (2026-09-25): the error line is built from separate notes, so
+     a note about an earlier code never replaces what is wrong with the
+     current one. The hold comes first, then the current code, then the rest.
+     A message the recorder wrote itself (mic blocked, and so on) is left alone. */
+  function noteRank(k){ return k==='hold'||k==='outage'?0:(k==='code:'+code?1:2); }
+  function note(key, txt){
+    if(txt){ if(!(key in notes)) noteKeys.push(key); notes[key]=txt; }
+    else if(key in notes){ delete notes[key]; noteKeys.splice(noteKeys.indexOf(key),1); }
+    try{
+      var er=document.getElementById('recErr'); if(!er) return;
+      var out=noteKeys.slice().sort(function(a,b){ return noteRank(a)-noteRank(b); }).map(function(k){ return notes[k]; }).join(' ');
+      if(out||er.textContent===notesShown){ er.style.color='#ffd9d9'; er.textContent=out; }
+      notesShown=out;
+    }catch(e){}
+  }
+  function clearNotes(){ notes=Object.create(null); noteKeys=[]; notesShown=''; }
 
   /* ---- volatile retry queue: wrap uploadChunk without writing audio at rest ---- */
   function readBlob(blob){
@@ -478,86 +584,278 @@
     });
   }
   function showDiscarded(){
-    try{
-      var er=document.getElementById('recErr');
-      if(er){ er.style.color='#ffd9d9'; er.textContent='An audio clip could not upload and was discarded from temporary memory. It was not saved on this phone. Return to your computer and confirm what MLS received.'; }
-    }catch(e){}
+    note('discarded','An audio clip could not upload and was discarded from temporary memory. It was not saved on this phone. Return to your computer and confirm what MLS received.');
+  }
+  /* micfix-1.2.0 (2026-09-25): 128 random bits from crypto.getRandomValues,
+     so no two clips share an id, not even across a reload. Old browsers
+     stand in for crypto.randomUUID with Math.random (see the compat layer). */
+  function newClipId(){
+    var b=new Uint8Array(16), id='', i;
+    window.crypto.getRandomValues(b);
+    for(i=0;i<b.length;i++) id+=(b[i]<16?'0':'')+b[i].toString(16);
+    return id;
+  }
+  /* micfix-1.0.0 (2026-09-24) and micfix-1.1.0 (2026-09-25): a code whose
+     session is gone takes nothing more.
+     'ended' is a 410, or a 404 for a code that already accepted a clip
+     (today's server): the session was stopped or expired, which is not a
+     mistyped code. 'refused' is a 404 before any clip got in.
+     After a 410, every clip still waiting for that code is sent once more:
+     one whose reply was lost is answered 'duplicate' and counts as added, so
+     the phone never calls added words 'not added'. A 404 means today's
+     server, where each such request counts toward the lock for wrong codes,
+     so the waiting clips are released without being sent.
+     Only the CURRENT code's end stops recording and changes the pill and the
+     buttons; a late answer for an earlier code is a note that names it. */
+  function lost(item, why, st){
+    var c=item.code, g=gone[c]||(gone[c]={why:why,n:0}), i;
+    if(why==='ended') g.why='ended';
+    unqueue(item); releaseItem(item); g.n++;
+    if(st===404){
+      for(i=queue.length-1;i>=0;i--){ if(queue[i].code===c&&!queue[i].busy){ releaseItem(queue[i]); queue.splice(i,1); g.n++; } }
+    } else kick();
+    var one=g.n===1;
+    if(c===code){
+      try{ if(active&&typeof stopRec==='function') stopRec(); }catch(e){}
+      var rb=document.getElementById('recodeBtn'); if(rb) rb.style.display='inline-block';
+      if(g.why==='ended'){
+        var lp=document.getElementById('linkPill'); if(lp) lp.textContent='⛔ Session ended · code '+c;
+        setStatus('⛔ Recording stopped — the session on your computer has ended.',STOPPED_COLOR);
+        note('code:'+c,'The recording session on your computer has ended (stopped there, or expired). '+(one?'1 clip was':g.n+' clips were')+' not added to MLS and not saved on this phone. To keep recording, open 📱 Phone mic on your computer for a new code and enter it below.');
+      } else {
+        setStatus('⛔ Recording stopped — that code was not accepted.',STOPPED_COLOR);
+        note('code:'+c,'That code was not accepted — it may be mistyped or expired. '+(one?'This clip was':'These '+g.n+' clips were')+' not saved on this phone. Check the code on your computer (Visit → Phone mic), then enter it again below.');
+      }
+    } else {
+      note('code:'+c,(one?'1 clip':g.n+' clips')+' recorded for the earlier code '+c+' could not be added: '+(g.why==='ended'?'that session had already ended on your computer.':'that code was not accepted.')+' '+(one?'It was':'They were')+' not saved on this phone.');
+    }
+    pendBadge(); settleDone();
+  }
+  /* micfix-1.1.0 (2026-09-25): no account access (402 NO_ACCESS) or a 403.
+     Recording stops at once and the status says why; the clips already
+     recorded stay in temporary memory (never discarded without a word) and
+     are sent when the doctor taps Record or Done, or when any clip is
+     accepted again. */
+  function held(item, st, why, mayRetry){
+    if(!mayRetry||closing||item.epoch!==sessionEpoch){ unqueue(item); releaseItem(item); showDiscarded(); return; }
+    /* Every clip is refused alike, so a waiting clip keeps its place. */
+    if(queue.indexOf(item)<0) queue.push(item);
+    hold={st:st, why:why};
+    if(retryTimer){ clearTimeout(retryTimer); retryTimer=null; }
+    if(item.code===code){
+      try{ if(active&&typeof stopRec==='function') stopRec(); }catch(e){}
+      setStatus('⛔ Recording stopped — MLS is not accepting clips from this phone right now.',STOPPED_COLOR);
+    }
+    var n=queue.length, reason, next;
+    if(why==='NO_ACCESS'||st===402){ reason='MLS did not add this phone’s clips because the MLS account on your computer does not have active access.'; next='Once access is restored on your computer, tap Record (or Done) to send them.'; }
+    else { reason='MLS refused this phone’s clips (server 403).'; next='Check MLS on your computer, then tap Record (or Done) to send them.'; }
+    note('hold',reason+' '+(n===1?'1 clip is':n+' clips are')+' held in temporary memory on this page and not saved on this phone; closing this page discards '+(n===1?'it':'them')+'. '+next);
+    pendBadge(); settleDone();
+  }
+  /* micfix-1.2.0 (2026-09-25): MLS itself cannot transcribe right now (today's
+     ai-quota, ai-auth, ai-model-unavailable). That is not this phone's doing
+     and costs no transcription, so recording goes on: the clip keeps its
+     place, new clips wait behind it (also while the waiting clips are sent
+     afterwards, so none is added out of turn), and the first one is retried
+     after 6 s, then 12, 24, 48 and 60 s, until MLS takes a clip again. */
+  function outage(item, mayRetry){
+    if(!mayRetry||closing||item.epoch!==sessionEpoch){ unqueue(item); releaseItem(item); showDiscarded(); return; }
+    /* A first try answered late goes in front of the newer clips that already wait. */
+    if(queue.indexOf(item)<0){ var at=queue.length; while(at>0&&queue[at-1].t>item.t) at--; queue.splice(at,0,item); }
+    if(!outageMs) outageMs=6000;
+    behind=true;
+    note('outage','MLS cannot transcribe audio right now (a problem on the MLS side, not on this phone). This phone keeps recording and keeps trying to add the waiting clips on its own. They are held in temporary memory on this page and not saved on this phone; closing this page discards them.');
+    pendBadge(); scheduleRetry(); settleDone();
+  }
+  /* micfix-1.0.0 (2026-09-24): an answer marked retryable:false, or a 4xx
+     other than 408/429, cannot succeed on a resend, so it is never retried.
+     micfix-1.1.0 (2026-09-25): the status stops saying 'talk normally' until a
+     clip is added again. */
+  function refusedClip(status, why){
+    var k=refused[why]=(refused[why]||0)+1, one=k===1, it=one?'It was':'They were';
+    if(why==='AUDIO_UNREADABLE') note('refused:'+why,(one?'One clip':k+' clips')+' could not be read as audio, so MLS could not transcribe '+(one?'it':'them')+'. '+it+' not saved on this phone. Check the transcript on your computer for the gap.');
+    else note('refused:'+(why||status),'MLS could not accept '+(one?'a clip':k+' clips')+' (server '+status+'), so this phone will not send '+(one?'it':'them')+' again. '+it+' not saved on this phone. Check the transcript on your computer for the gap.');
+    recStatus('● Recording… — '+(one?'a clip':k+' clips')+' could not be added (see below)','#ffdcae');
+  }
+  function accepted(item, dup){
+    unqueue(item); releaseItem(item);
+    sentCount++; linked[item.code]=true;
+    var el=document.getElementById('sent'); if(el) el.textContent=clips(sentCount)+' uploaded to MLS';
+    /* micfix-1.1.0 (2026-09-25): any clip accepted means MLS takes clips again. */
+    if(hold||outageMs){ hold=null; outageMs=0; note('hold',''); note('outage',''); kick(); }
+    /* The link is only real once the backend has accepted a clip. A duplicate
+       answer only confirms an earlier clip, so it says nothing about now. */
+    if(!dup&&item.code===code){
+      if(gone[code]){ delete gone[code]; note('code:'+code,''); }
+      var lp=document.getElementById('linkPill'); if(lp) lp.textContent='🔗 Linked to computer · code '+code;
+      recStatus('● Recording… talk normally','#A9E3C4');
+    }
+    pendBadge();
   }
   function scheduleRetry(){
-    if(retryTimer||sending||closing||!queue.length) return;
-    retryTimer=setTimeout(function(){ retryTimer=null; retryNext(); },6000);
+    if(retryTimer||sending||closing||hold||!queue.length) return;
+    retryTimer=setTimeout(function(){ retryTimer=null; retryNext(); },outageMs||6000);
   }
+  function kick(){ if(retryTimer){ clearTimeout(retryTimer); retryTimer=null; } retryNext(); }
+  function resume(){ if(hold){ hold=null; note('hold',''); pendBadge(); } kick(); }
+  /* micfix-1.1.0 (2026-09-25): a clip that failed goes to the BACK of the
+     queue. It used to stay at the front, so one clip that kept failing with a
+     retryable answer kept every clip behind it from being sent. */
   function queueForRetry(item){
-    if(closing||item.epoch!==sessionEpoch){ releaseItem(item); showDiscarded(); return; }
-    queue.push(item); pendBadge();
-    if(active) setStatus('● Recording… (offline — retrying from temporary memory)','#ffdcae');
+    if(closing||item.epoch!==sessionEpoch){ unqueue(item); releaseItem(item); showDiscarded(); return; }
+    unqueue(item); queue.push(item); pendBadge();
+    recStatus('● Recording… (offline — retrying from temporary memory)','#ffdcae');
     scheduleRetry();
   }
-  async function sendOne(item, mayRetry){
-    var audio='';
+  /* micfix-1.1.0 (2026-09-25): an attempt that never settles is given up after
+     a time sized to the clip and retried with the same clipId and t, so a
+     copy that did land answers 'duplicate'.
+     micfix-1.2.0 (2026-09-25): only once MLS has answered a clip for this code
+     with dedupe:true. Today's server holds every later clip's answer behind a
+     slow one and still adds a clip whose sender gave up, so giving up after
+     40 s there added a slow stretch of the visit two or three times. Until
+     the marker, an attempt waits 330 s + 1 s per 16 KB, longer than today's
+     server can take, so its answer always comes first. */
+  function attemptMs(item){
+    var kb=1000*Math.ceil(((item.blob&&item.blob.size)||0)/16384);
+    if(!dedupes[item.code]) return (Number(window.NO_DEDUPE_TIMEOUT_MS)>0?Number(window.NO_DEDUPE_TIMEOUT_MS):330000)+kb;
+    return Math.min((Number(window.UPLOAD_TIMEOUT_MS)>0?Number(window.UPLOAD_TIMEOUT_MS):40000)+kb,330000);
+  }
+  function within(ms, work, onLate){
+    var timer=null;
+    var late=new Promise(function(resolve,reject){ timer=setTimeout(function(){ timer=null; try{ onLate(); }catch(e){} reject(new Error('upload timed out')); },ms); });
+    return Promise.race([work,late]).then(function(v){ if(timer) clearTimeout(timer); return v; },function(e){ if(timer) clearTimeout(timer); throw e; });
+  }
+  async function postClip(item, ctl){
+    var audio=await readBlob(item.blob), rr=null, info=null;
     try{
-      audio=await readBlob(item.blob);
-      var rr=await fetch(BK+'/api/mic/'+encodeURIComponent(code)+'/audio',{
+      rr=await fetch(BK+'/api/mic/'+encodeURIComponent(item.code)+'/audio',{
         method:'POST', headers:{'Content-Type':'application/json'},
-        cache:'no-store', credentials:'omit', referrerPolicy:'no-referrer',
-        body:JSON.stringify({audio:audio,mimetype:item.mt||item.blob.type||'audio/webm'})
+        cache:'no-store', credentials:'omit', referrerPolicy:'no-referrer', signal:ctl?ctl.signal:undefined,
+        body:JSON.stringify({audio:audio,mimetype:item.mt||'audio/webm',clipId:item.clipId,t:item.t})
       });
-      if(rr.ok){
-        sentCount++;
-        var el=document.getElementById('sent'); if(el) el.textContent=sentCount+' clip'+(sentCount===1?'':'s')+' uploaded to MLS';
-        /* The link is only real once the backend has accepted a clip. */
-        var lp=document.getElementById('linkPill');
-        if(lp) lp.textContent='🔗 Linked to computer · code '+code;
-        releaseItem(item); pendBadge();
-        if(active) setStatus('● Recording… talk normally','#A9E3C4');
-        return true;
-      }
-      if(rr.status===404){
-        releaseItem(item);
-        /* Stop recording. Continuing to capture into a code the server does not
-           know is recording into nothing, and the pulsing Record button says
-           the opposite. Also cover the far more likely cause than expiry: a
-           mistyped code, since entry never verified it. */
-        try{ if(typeof stopRec==='function') stopRec(); }catch(e){}
-        var expired=document.getElementById('recErr');
-        if(expired) expired.textContent='That code was not accepted — it may be mistyped or expired. This clip was not saved on this phone. Check the code on your computer (Visit → Phone mic), then enter it again below.';
-        var rb=document.getElementById('recodeBtn');
-        if(rb) rb.style.display='inline-block';
-        return false;
-      }
-      throw new Error('http '+rr.status);
-    }catch(e){
-      if(mayRetry&&!closing&&item.epoch===sessionEpoch) queueForRetry(item);
-      else { releaseItem(item); showDiscarded(); }
-      return false;
     }finally{
       audio='';
     }
+    try{ info=await rr.json(); }catch(e){ info=null; }
+    return {ok:!!rr.ok, status:rr.status|0, info:info};
+  }
+  /* Resolves to 'ok' (added, or already there), 'final' (a definite answer:
+     never sent again), 'retry' (waits at the back of the queue), 'hold' or
+     'outage'. */
+  async function sendOne(item, mayRetry){
+    var ctl=null, ans=null;
+    item.busy=true;
+    try{ if(typeof AbortController==='function') ctl=new AbortController(); }catch(e){ ctl=null; }
+    try{ ans=await within(attemptMs(item), postClip(item,ctl), function(){ if(ctl) ctl.abort(); }); }
+    catch(e){ ans=null; }
+    finally{ item.busy=false; }
+    /* micfix-1.0.0 (2026-09-24): {ok:true, duplicate:true} is a clip whose
+       first reply was lost: the server already has it; it counts once. */
+    if(ans&&ans.ok){ if(ans.info&&ans.info.dedupe===true) dedupes[item.code]=true; accepted(item,!!(ans.info&&ans.info.duplicate)); return 'ok'; }
+    if(!item.blob){ unqueue(item); return 'final'; }
+    if(ans){
+      var st=ans.status, why=String(ans.info&&ans.info.code||'');
+      if(st===410||why==='MIC_SESSION_ENDED'){ lost(item,'ended',st); return 'final'; }
+      /* Stop recording on a code the server does not know: continuing is
+         recording into nothing, and the pulsing Record button says the
+         opposite. A mistyped code is the likelier cause, since entry never
+         verified it. */
+      if(st===404){ lost(item,linked[item.code]?'ended':'refused',st); return 'final'; }
+      if(st===402||st===403||why==='NO_ACCESS'){ held(item,st,why,mayRetry); return 'hold'; }
+      if(SERVICE_WIDE[why]){ outage(item,mayRetry); return 'outage'; }
+      if((ans.info&&ans.info.retryable===false)||(st>=400&&st<500&&st!==408&&st!==429)){ unqueue(item); releaseItem(item); refusedClip(st,why); return 'final'; }
+    }
+    if(mayRetry&&!closing&&item.epoch===sessionEpoch){ queueForRetry(item); return 'retry'; }
+    unqueue(item); releaseItem(item); showDiscarded();
+    return 'final';
   }
   async function retryNext(){
-    if(sending||closing||!queue.length){ if(closing) clearVolatileAudio(); return; }
+    if(closing){ clearVolatileAudio(); return; }
+    if(sending||hold||!queue.length){ settleDone(); return; }
     sending=true;
-    var item=queue.shift(); pendBadge();
-    await sendOne(item,true);
-    sending=false; pendBadge(); scheduleRetry();
+    var r='retry';
+    try{ r=await sendOne(queue[0],true); }catch(e){}
+    sending=false;
+    pendBadge();
+    /* micfix-1.0.0 (2026-09-24): while answers come back, send the rest at once;
+       after a failure, wait before the next attempt (micfix-1.2.0: twice as
+       long each time MLS still cannot transcribe, up to 60 s). */
+    if(r==='ok'||r==='final') retryNext();
+    else { if(r==='outage'&&outageMs) outageMs=Math.min(outageMs*2,60000); scheduleRetry(); }
+    settleDone();
   }
-  window.uploadChunk=function(blob,mimetype){
+  /* micfix-1.0.0 (2026-09-24): Done finishes only when nothing is waiting.
+     Until then the clips stay in temporary memory and keep retrying, and the
+     status says how many are left. Leaving the page still discards them.
+     micfix-1.1.0 (2026-09-25): 'Done' is written only here, once the last
+     recorder has handed over its clip and every clip has an answer, so it is
+     never followed by 'Not done yet'. The screen stays awake while clips wait. */
+  function settleDone(){
+    if(!finishing) return;
+    var waiting=queue.length+live, segs=Number(window.segsOpen)||0;
+    if(queue.length){
+      grabWake();
+      if(hold) setStatus('Not done yet — '+clips(waiting)+' not added: MLS is not accepting clips from this phone right now (see below).',STOPPED_COLOR);
+      else if(outageMs) setStatus('Not done yet — '+clips(waiting)+' not added yet: MLS cannot add clips right now, and this page keeps retrying. Keep it open.','#ffdcae');
+      else setStatus('Not done yet — '+clips(waiting)+' still waiting to upload. Keep this page open until they are sent.','#ffdcae');
+      return;
+    }
+    if(live||(segs>0&&finishPolls<34)){
+      grabWake();
+      setStatus('Finishing — sending the last '+(live>1?live+' clips':'clip')+' to MLS. Keep this page open.','');
+      if(!live&&!pollTimer) pollTimer=setTimeout(function(){ pollTimer=null; finishPolls++; settleDone(); },300);
+      return;
+    }
+    finishing=false; closing=true; sessionEpoch++;
+    clearVolatileAudio(); dropWake();
+    setStatus(DONE_TEXT,'');
+  }
+  window.uploadChunk=function(blob,mimetype,startedAt,clipCode){
     if(!blob||!blob.size) return;
-    var item={blob:blob,mt:mimetype||blob.type||'audio/webm',epoch:sessionEpoch};
-    sendOne(item,!closing);
+    var t=Number(startedAt); if(!(t>0)) t=Date.now();
+    if(t<=lastT) t=lastT+1;
+    lastT=t;
+    var item={blob:blob,mt:mimetype||blob.type||'audio/webm',epoch:sessionEpoch,code:clipCode||code,t:t,clipId:newClipId()};
+    /* micfix-1.2.0 (2026-09-25): while MLS cannot transcribe, and until the
+       clips that waited are all sent, a new clip waits behind them, so they
+       are added in the order they were recorded. */
+    if(behind&&!closing){ queue.push(item); pendBadge(); scheduleRetry(); settleDone(); return; }
+    live++;
+    sendOne(item,!closing).then(function(){ live--; settleDone(); },function(){ live--; settleDone(); });
   };
 
   /* ---- 3) wake lock ---- */
-  async function grabWake(){ try{ if(navigator.wakeLock&&!wake){ wake=await navigator.wakeLock.request('screen'); wake.addEventListener('release',function(){ wake=null; }); } }catch(e){} }
-  function dropWake(){ try{ if(wake){ wake.release(); wake=null; } }catch(e){} }
-  document.addEventListener('visibilitychange', function(){ if(document.visibilityState==='visible'&&active){ grabWake(); nudge(); } });
+  /* micfix-1.1.0 (2026-09-25): one request at a time, and the release of an
+     old lock never clears a newer one. */
+  async function grabWake(){
+    if(wake||wakeAsk||!navigator.wakeLock) return;
+    wakeAsk=true;
+    try{
+      var s=await navigator.wakeLock.request('screen');
+      if(!active&&!finishing){ try{ s.release(); }catch(e){} }
+      else { wake=s; s.addEventListener('release',function(){ if(wake===s) wake=null; }); }
+    }catch(e){}
+    wakeAsk=false;
+  }
+  function dropWake(){ try{ if(wake){ var s=wake; wake=null; s.release(); } }catch(e){} }
+  document.addEventListener('visibilitychange', function(){
+    if(document.visibilityState!=='visible') return;
+    if(active){ grabWake(); nudge(); }
+    else if(finishing){ grabWake(); if(!hold) kick(); }
+  });
 
   /* ---- 4) interruption recovery ---- */
   var _origStart = window.startRec;
   window.startRec = async function(){
+    finishing=false;
+    /* The recorder blanks the error line when recording starts. */
+    clearNotes();
     if(closing){ closing=false; sessionEpoch++; clearVolatileAudio(); purgeLegacyAudio(); }
     var r = await _origStart.apply(this, arguments);
     if(active){ grabWake(); watchTrack(); scheduleNudge(); }
+    /* micfix-1.1.0 (2026-09-25): Record also sends clips held by a refusal. */
+    resume();
     return r;
   };
   var _origStop = window.stopRec;
@@ -568,10 +866,20 @@
   };
   var _origFinish = window.finishRec;
   window.finishRec = function(){
+    /* micfix-1.1.0 (2026-09-25): a second press while Done is still finishing
+       is ignored. It used to stop the recorder again before its last clip was
+       handed over, and that clip was then sent only once. A press while clips
+       are held by a refusal tries them again. */
+    if(finishing){ if(hold) resume(); return; }
     var result=_origFinish.apply(this, arguments);
-    closing=true; sessionEpoch++;
-    clearVolatileAudio();
+    /* micfix-1.0.0 (2026-09-24): Done used to empty the retry queue on the
+       spot and blank its warning, so clips one retry away from MLS were lost
+       without a word. Done now sends the waiting clips at once, and clears
+       temporary memory (settleDone) only when none is left. */
+    finishing=true; finishPolls=0;
     purgeLegacyAudio();
+    resume();
+    settleDone();
     return result;
   };
   function watchTrack(){
@@ -588,8 +896,11 @@
     if(recovering||!active) return; recovering=true;
     for(var i=0;i<20&&active;i++){
       try{
-        stream=await navigator.mediaDevices.getUserMedia({audio:true});
-        watchTrack(); startSegment();
+        var s=await navigator.mediaDevices.getUserMedia({audio:true});
+        /* micfix-1.2.0 (2026-09-25): Stop or Done came first; the microphone
+           that arrives late is turned off, not left on after Done. */
+        if(!active){ try{ s.getTracks().forEach(function(t){ t.stop(); }); }catch(e2){} break; }
+        stream=s; watchTrack(); startSegment();
         setStatus('● Recording… (mic recovered — confirm received clips on your computer)','#A9E3C4');
         recovering=false; return;
       }catch(e){ await new Promise(function(r){ setTimeout(r,1500); }); }
@@ -604,9 +915,11 @@
     nudgeTimer=setTimeout(function(){ nudgeTimer=null; nudge(); scheduleNudge(); },5000);
   }
   function endVolatileSession(){
-    closing=true; sessionEpoch++;
+    closing=true; sessionEpoch++; finishing=false; hold=null;
     clearVolatileAudio();
-    try{ if(active||rec||stream) window.stopRec(); else dropWake(); }catch(e){ dropWake(); }
+    /* micfix-1.2.0 (2026-09-25): also while the microphone is still being
+       granted, so it is not turned on after the page was left. */
+    try{ if(active||rec||stream||window.starting) window.stopRec(); else dropWake(); }catch(e){ dropWake(); }
     purgeLegacyAudio();
   }
   window.addEventListener('pagehide',endVolatileSession);

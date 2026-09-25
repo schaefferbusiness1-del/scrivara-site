@@ -373,9 +373,14 @@ async function waitForFile(file, timeoutMs) {
     await waitFor(cdp, 'second fake microphone recording', "typeof active!=='undefined'&&active===true");
     await sleep(900);
     await evaluate(cdp, "document.getElementById('recBtn').click();true");
-    await waitFor(cdp, 'volatile offline retry', "window.__mlsPhoneGuard.pending()===1&&document.getElementById('recErr').textContent.includes('temporary memory')");
+    await waitFor(cdp, 'volatile offline retry', "window.__mlsPhoneGuard.pending()===1&&document.getElementById('waitErr').textContent.includes('temporary memory')");
     await evaluate(cdp, "document.getElementById('doneBtn').click();true");
-    await waitFor(cdp, 'Done cleanup', "window.__mlsPhoneGuard.pending()===0&&document.getElementById('status').textContent.includes('confirm the transcript')");
+    /* micfix-1.0.0 (2026-09-24): Done while still offline keeps the waiting
+       clip in temporary memory and says how many wait, instead of dropping it
+       without a word; it finishes once the clip is sent. */
+    await waitFor(cdp, 'Done holding the waiting clip', "window.__mlsPhoneGuard.pending()===1&&document.getElementById('waitErr').textContent.includes('1 clip waiting to upload')&&document.getElementById('status').textContent.includes('1 clip still waiting to upload')");
+    backendMode = 'ok';
+    await waitFor(cdp, 'Done cleanup', "window.__mlsPhoneGuard.pending()===0&&document.getElementById('waitErr').textContent===''&&document.getElementById('status').textContent.includes('confirm the transcript')", 20000);
     const databaseAfterDone = await evaluate(cdp, "indexedDB.databases().then(rows=>rows.some(row=>row.name==='mlsPhoneRec'))", true);
     assert.strictEqual(databaseAfterDone, false, 'legacy audio database existed after live Done cleanup');
 
