@@ -2089,6 +2089,24 @@ const tests = [
   '1p-phone-send-to-athena-contract.test.js',
   '1p-phone-desktop-open-visit-relay.test.js',
   '1p-phone-direct-mediarecorder-runtime.test.js',
+  /* micfix-1.0.0 (2026-09-24), micfix-1.1.0 and micfix-1.2.0 (2026-09-25): the
+     phone mic in real Chromium against the upload contract and today's
+     server. Desktop 1400x900: Stop, New visit, a patient switch and Try again
+     collect every clip before the session closes (and Stop's own answer
+     carries the last one); a dead code is never Ready; an ended or expired
+     link lets the idle lock work; a failed last read or Stop says words may
+     be missing; the pause pill stops a phone link and never starts this
+     computer's recorder; a refused read is said at once. Phone 390x844 and
+     iPad 1180x820: a failed clip is kept and retried in order, t and clipId
+     ride every retry, an attempt is never given up before a server that has
+     not said it dedupes can answer, a refusal on MLS's side keeps recording
+     and retrying, a refusal for the account stops through the doctor's Stop,
+     every self-stop releases both microphones, 410/422 answers are final, the
+     mic ending keeps its audio, Stop shows Finishing and says done only when
+     it saw every word, a visit re-bind waits for the last clips, and a saved
+     visit keeps no local audio backup. */
+  '1p-phone-mic-stop-collects-runtime.test.js',
+  '1p-phone-direct-upload-contract-runtime.test.js',
   '1p-phone-press-375.test.js',
   /* The old product name reached seven surfaces across four lanes. This sweeps
      the reviewed publication inventory rather than a hand-list, and asserts the

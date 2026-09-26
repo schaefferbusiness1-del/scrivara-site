@@ -65,6 +65,7 @@ const sandbox = {
   $: id => id === 'transcript' ? transcript : (id === 'genBtn' ? hiddenGenerate : null),
   toast: () => { throw new Error('non-empty facade path must not diagnose generation'); },
   requireExactScheduledBinding: () => true,
+  captureFinishingReason: () => '',   /* micfix-1.3.0: no recording is starting or finishing */
   genBtnResolve: () => hiddenGenerate,
   render: () => { renders += 1; },
   Date
@@ -84,6 +85,7 @@ const exactRefusal = 'Add one specific detail from today—symptom, exam finding
 const lifecycleSandbox = {
   S: { phase: 'idle', genClickedAt: 0, signedAt: 0, lastWarn: '', generationRunId: 0 },
   isRecording: () => false,
+  directCaptureStatus: () => '',   /* micfix-1.3.0: computePhase asks the iPhone recorder first */
   noteText: () => '',
   $: () => ({ disabled: false }),
   bindingNotice() {},

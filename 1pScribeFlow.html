@@ -8370,7 +8370,7 @@ async function logout(force){
   stopIdle();            // clear the inactivity timer
   // Stop/forget volatile capability and case state while the account identity
   // is still available. The dedicated phone.html recorder remains unchanged.
-  try{ if(typeof phoneMicCode!=='undefined'&&phoneMicCode) stopPhoneMic(); }catch(e){}
+  try{ if(typeof phoneMicCode!=='undefined'&&phoneMicCode) stopPhoneMic({now:true}); }catch(e){}
   try{ resetToken=''; regTwofaRecoveryCodes=[]; regTwofaEmail=''; _lastLawyerCreds=null; }catch(e){}
   try{ currentLegalRequestId=null; legalReqFilesText=''; }catch(e){}
   try{ if(typeof _wipeVisitDraft==='function') _wipeVisitDraft(); }catch(e){}
@@ -18719,6 +18719,9 @@ function _calDupSurvivor(pool){
 function calStartVisit(id){
   var a=(_calAppts||[]).find(function(x){ return String(x.id)===String(id); });
   if(!a) return {ok:false,bound:false,patientId:'',reason:'appointment-not-found'};
+  /* micfix-1.2.0 (2026-09-25): nothing - not even the patient - changes while a
+     recording is still sending this visit (see _mlsPhoneMicHoldsVisit) */
+  if(typeof _mlsPhoneMicHoldsVisit==='function'&&_mlsPhoneMicHoldsVisit()) return {ok:false,bound:false,patientId:'',reason:'capture-finishing'};
   var _localPid=null;
   try{
     _localPid=_calResolveLocalPatient(a);
@@ -18752,7 +18755,7 @@ function calStartVisit(id){
       selectPatient(_localPid);
       var _active=(typeof activePatient==='function')?activePatient():null;
       if(_active&&String(_active.id||'')===String(_localPid)&&typeof goNewVisitForPatient==='function'){
-        goNewVisitForPatient();
+        if(goNewVisitForPatient()===false) return {ok:false,bound:false,patientId:'',reason:'phone-mic-finishing'};
         /* visitfix-1.1.0: keeps what New visit said about the unfinished note */
         try{ (typeof _mlsNewVisitToast==='function'?_mlsNewVisitToast:toast)('Started a visit for '+_calLabelOf(a)+'.','ok'); }catch(e){}
         return {ok:true,bound:true,patientId:String(_localPid),reason:'exact-patient'};
@@ -18767,12 +18770,12 @@ function calStartVisit(id){
      clear the old canonical patient before any new visit state is created. */
   var _started=false;
   try{
-    if(typeof goNewUnassignedVisit==='function'){ goNewUnassignedVisit(); _started=true; }
+    if(typeof goNewUnassignedVisit==='function'){ _started=goNewUnassignedVisit()!==false; }
     else{
       if(typeof newVisit==='function'){
         if(typeof setActivePtId==='function') setActivePtId('');
         if(typeof showView==='function') showView('visit');
-        newVisit(); _started=true;
+        _started=newVisit()!==false;
       }
     }
   }catch(e2){}
@@ -23449,7 +23452,7 @@ function goNewUnassignedVisit(){
   if(currentView==='patients') renderPatients(); else updateNavCounts();
   renderProfile(); renderPatientBar();
   showView('visit');
-  newVisit();
+  return newVisit();
 }
 /* ptfix-1.0.0 (b1169): NAME EVERYTHING THAT GOES WITH THE RECORD.
    The delete dialog enumerated what SURVIVES ("their saved visit notes stay in
@@ -24254,7 +24257,7 @@ function renderPtTimeline(p){
 function goNewVisitForPatient(){
   if(!activePatient()){ toast('Select a patient first.','err'); return; }
   showView('visit');
-  newVisit();
+  if(newVisit()===false) return false; // micfix-1.0.0: the phone mic is still finishing this visit
   // prefill context from profile so the note accounts for known problems/meds
   prefillContextFromProfile();
 }
@@ -31515,6 +31518,8 @@ function _mlsKeepUnsavedBeforeNewVisit(){
 
 function newVisit(opts){
   opts=opts||{};
+  /* micfix-1.0.0: the phone may still be sending this visit (see _mlsPhoneMicHoldsVisit) */
+  if(!opts.patientSwitchReset&&typeof _mlsPhoneMicHoldsVisit==='function'&&_mlsPhoneMicHoldsVisit()) return false;
   /* visitfix-1.1.0: the doctor's own New visit, not the switch's internal
      reset or startup (they keep their own recovery rules) */
   var realNewVisit=!opts.patientSwitchReset&&!opts.preserveRecovery;
@@ -32233,6 +32238,8 @@ function _mlsSavedRecordCanReopen(n){
 }
 function _mlsContinueSavedRecord(n){
   if(!_mlsSavedRecordCanReopen(n)) return false;
+  /* micfix-1.2.0 (2026-09-25): loading a saved record re-binds the visit */
+  if(typeof _mlsPhoneMicHoldsVisit==='function'&&_mlsPhoneMicHoldsVisit()) return false;
   if(n.patientId){
     const p=typeof findPatient==='function'?findPatient(n.patientId):null;
     if(!p){ try{ toast('This saved draft is not attached to a patient chart, so it was not loaded into the editor.','err'); }catch(e){} return false; }
@@ -32548,12 +32555,30 @@ function showMicWarn(msg){
    ========================================================= */
 const _mlsDirectPhone={
   status:'idle',serial:0,stream:null,recorder:null,segTimer:null,pollTimer:null,
-  code:'',seen:0,uploadTail:Promise.resolve(),pendingUploads:0,uploadFailures:0,
-  bindingId:'',bindingEpoch:null,stopPromise:null,segmentStopResolve:null
+  code:'',seen:0,uploadFailures:0,
+  bindingId:'',bindingEpoch:null,lossEpoch:null,stopPromise:null,segmentStopResolve:null,
+  queue:[],pumping:0,pumpTimer:null,delay:500,waiters:[],gone:false,denied:0,kept:false,lost:0,refused:0,
+  lastT:0,dedupe:false,busy:0,attemptBaseMs:40000,plainAttemptMs:330000,polls:null,polling:false,note:'',
+  /* micfix-1.3.0 (2026-09-25): a Stop keeps sending for at most stopBoundMs,
+     retrying at least every stopRetryMs (see _mlsStopDirectPhoneCapture). */
+  stopBoundMs:45000,stopCapMs:600000,stopRetryMs:5000,cut:0,cutByCap:0,cutGate:null,cutLost:0,pumpDue:0,waitShown:false
 };
+/* micfix-1.1.0 (2026-09-25): state() also carries the sentence the phone keeps
+   on screen (why recording stopped, or how many clips still wait to upload),
+   so the phone shell can show it for as long as it is true, not for a toast's
+   four seconds. micfix-1.2.0 (2026-09-25): nothing is held for the doctor to
+   send again any more; while MLS refuses every clip for a reason on its own
+   side, the sentence says so and how many clips wait. */
 window.__mlsDirectPhoneCapture={
-  version:'1.0.0',
-  state:function(){return {status:_mlsDirectPhone.status,pendingUploads:_mlsDirectPhone.pendingUploads,uploadFailures:_mlsDirectPhone.uploadFailures};},
+  version:'1.2.0',
+  state:function(){
+    const D=_mlsDirectPhone,n=D.queue.length;
+    return {status:D.status,pendingUploads:n,uploadFailures:D.uploadFailures,
+      waiting:(!D.busy&&D.queue.some(function(it){return it.tries>=3;}))?n:0,
+      note:D.busy?_mlsDirectPhoneBusyNote():D.note,
+      /* micfix-1.3.1: the failures counted belong to the visit still open */
+      lossHere:D.uploadFailures>0&&D.lossEpoch!=null&&Number(D.lossEpoch)===Number(currentVisitAthenaEpoch)};
+  },
   stop:function(reason){return _mlsStopDirectPhoneCapture(reason||'external-stop');}
 };
 /* phcap-1.0.0 (2026-08-27): this used to require body.mls-ph3 - a CSS class -
@@ -32594,17 +32619,41 @@ function _mlsDirectPhoneRead(blob){
     try{const r=new FileReader();r.onerror=function(){reject(new Error('audio-read-failed'));};r.onloadend=function(){resolve(r.result);};r.readAsDataURL(blob);}catch(e){reject(e);}
   });
 }
+/* micfix-1.1.0 (2026-09-25): one request with its own deadline. A request that
+   never settles (a stalled connection) used to hold the lane forever; it is
+   now given up (and aborted where the browser can) and answered null.
+   micfix-1.3.0 (2026-09-25): cut, when given, settles when a Stop reaches its
+   bound; the attempt is then given up the same way. */
+function _mlsDirectPhoneFetch(url,init,ms,cut){
+  const ac=(typeof AbortController==='function')?new AbortController():null;
+  let timer=null;
+  const work=fetch(url,Object.assign({},init,ac?{signal:ac.signal}:{})).then(async function(res){
+    let body=null;try{body=await res.json();}catch(e){body=null;}
+    return {res:res,body:body};
+  });
+  const late=new Promise(function(resolve){timer=setTimeout(function(){timer=null;try{if(ac)ac.abort();}catch(e){}resolve(null);},ms);});
+  const racers=[work,late];
+  if(cut)racers.push(cut.then(function(){try{if(ac)ac.abort();}catch(e){}return null;}));
+  return Promise.race(racers).then(function(v){if(timer)clearTimeout(timer);return v;},function(e){if(timer)clearTimeout(timer);throw e;});
+}
 function _mlsDirectPhoneBindingSafe(serial){
   if(serial!==_mlsDirectPhone.serial||!_mlsDirectPhone.bindingId||_mlsDirectPhone.bindingEpoch==null)return false;
   if(Number(currentVisitAthenaEpoch)!==Number(_mlsDirectPhone.bindingEpoch))return false;
   if(!currentVisitAthenaBinding||currentVisitAthenaBinding.id!==_mlsDirectPhone.bindingId)return false;
   try{return _athenaCurrentMatchesBound(currentVisitAthenaBinding)===true;}catch(e){return false;}
 }
+/* micfix-1.2.0 (2026-09-25): MLS gives every reader the phone's words in the
+   order they ARRIVED, so each read only grows at the end, and the part past
+   what this visit already has is added, as before. true = this visit took the
+   read (whether or not it grew); false = it could not, because the open visit
+   is no longer this recording's. */
 function _mlsDirectPhoneAppend(full,serial){
   full=String(full||'');
-  if(!_mlsDirectPhoneBindingSafe(serial)||full.length<=_mlsDirectPhone.seen)return false;
-  const tail=full.slice(_mlsDirectPhone.seen),ta=document.getElementById('transcript');
+  if(!_mlsDirectPhoneBindingSafe(serial))return false;
+  const ta=document.getElementById('transcript');
   if(!ta)return false;
+  if(full.length<=_mlsDirectPhone.seen)return true;
+  const tail=full.slice(_mlsDirectPhone.seen);
   const sep=ta.value&&!/\s$/.test(ta.value)?' ':'';
   ta.value=ta.value+sep+tail;
   finalText=ta.value+' ';
@@ -32613,51 +32662,353 @@ function _mlsDirectPhoneAppend(full,serial){
   try{const words=ta.value.trim().split(/\s+/).filter(Boolean).length;_updateLiveCapture(words);}catch(e){}
   return true;
 }
-async function _mlsDirectPhonePoll(serial){
-  const code=_mlsDirectPhone.code;
+/* micfix-1.1.0 (2026-09-25): reads run one at a time, each with a deadline, so
+   an older answer can never land after a newer one and a stalled read cannot
+   hold up Stop. micfix-1.2.0: a read answers true only when MLS answered and
+   this visit took the words; Stop reads that. */
+function _mlsDirectPhonePoll(serial){
+  const D=_mlsDirectPhone;
+  D.polls=Promise.resolve(D.polls).then(function(){return _mlsDirectPhonePollOnce(serial);},function(){return _mlsDirectPhonePollOnce(serial);});
+  return D.polls;
+}
+async function _mlsDirectPhonePollOnce(serial){
+  const D=_mlsDirectPhone,code=D.code;
   if(!code||!_mlsDirectPhoneBindingSafe(serial))return false;
+  D.polling=true;
   try{
-    const r=await fetch(bkBase()+'/api/mic/'+encodeURIComponent(code),{headers:{'Authorization':'Bearer '+bkToken()},cache:'no-store'});
-    if(r.status===401){handle401();return false;}
-    if(!r.ok)return false;
-    const d=await r.json();
-    if(serial!==_mlsDirectPhone.serial||code!==_mlsDirectPhone.code)return false;
-    return _mlsDirectPhoneAppend(d&&d.transcript,serial);
+    const ans=await _mlsDirectPhoneFetch(bkBase()+'/api/mic/'+encodeURIComponent(code),{headers:{'Authorization':'Bearer '+bkToken()},cache:'no-store'},10000);
+    if(!ans)return false;
+    if(ans.res.status===401){handle401();return false;}
+    if(!ans.res.ok)return false;
+    const d=ans.body||{};
+    if(serial!==D.serial||code!==D.code)return false;
+    const took=_mlsDirectPhoneAppend(d.transcript,serial);
+    if(d.ended===true&&D.status==='recording')_mlsDirectPhoneSessionEnded({code:code},serial);
+    return took;
   }catch(e){return false;}
+  finally{D.polling=false;}
 }
-async function _mlsDirectPhoneUpload(blob,mimetype,serial){
-  const code=_mlsDirectPhone.code;
-  if(!blob||!blob.size||!code||serial!==_mlsDirectPhone.serial)return false;
-  const audio=await _mlsDirectPhoneRead(blob);
-  let delay=500,last='';
-  for(let attempt=0;attempt<4;attempt++){
-    if(serial!==_mlsDirectPhone.serial||code!==_mlsDirectPhone.code)return false;
+/* micfix-1.2.0 (2026-09-25): a clipId is random (the browser's cryptographic
+   generator), so no two clips ever share one. */
+function _mlsDirectPhoneClipId(){
+  try{if(typeof crypto!=='undefined'&&crypto&&typeof crypto.randomUUID==='function')return crypto.randomUUID();}catch(e){}
+  try{const b=new Uint8Array(16);crypto.getRandomValues(b);return 'c'+Array.prototype.map.call(b,function(x){return (x+256).toString(16).slice(1);}).join('');}catch(e){}
+  return 'c'+Date.now().toString(36)+Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2);
+}
+/* micfix-1.1.0 (2026-09-25): a clip's t is when it BEGAN recording, on this
+   device's clock, strictly increasing, and the same on every retry.
+   micfix-1.2.0: MLS stores it with the clip; the order is arrival. */
+function _mlsDirectPhoneNextT(){
+  const D=_mlsDirectPhone;D.lastT=Math.max(Date.now(),D.lastT+1);return D.lastT;
+}
+function _mlsDirectPhoneWaitingNote(){
+  const n=_mlsDirectPhone.queue.length;
+  return n+' recording segment'+(n===1?' is':'s are')+' waiting to reach MLS. '+(n===1?'It is':'They are')+' kept on this page and sent as soon as the connection allows. Keep this page open.';
+}
+function _mlsDirectPhoneRelease(item){if(item){item.blob=null;item.audio=null;}}
+function _mlsDirectPhoneDrop(item){
+  const D=_mlsDirectPhone,at=D.queue.indexOf(item);
+  if(at>=0)D.queue.splice(at,1);
+  _mlsDirectPhoneRelease(item);
+  _mlsDirectPhoneNotify();
+}
+/* Stop waits here until every clip has an answer (or the recording was closed).
+   micfix-1.3.0 (2026-09-25): and never past its deadline. true = every clip
+   answered; false = the deadline came first. */
+/* micfix-1.3.1 (2026-09-26): with idleMs, the deadline moves each time a clip
+   lands - the bound is "nothing reached MLS for idleMs", not "idleMs after
+   Stop" - so a slow MLS that is still taking clips is never cut off, up to the
+   hard cap capAt. */
+function _mlsDirectPhoneDrained(serial,deadline,idleMs,capAt){
+  const D=_mlsDirectPhone;
+  return new Promise(function(resolve){
+    let timer=null,last=D.queue.length;
+    const fire=function(){
+      timer=null;
+      /* micfix-1.3.2 (2026-09-26): a clip whose own attempt is still inside its
+         deadline is MLS working, not an outage - today's server can take up to
+         300 s on one transcription - so the Stop waits for that attempt (never
+         past capAt) instead of cutting it and everything behind it. */
+      const head=D.queue[0];
+      if(idleMs&&head&&head.inFlight&&head.attemptEnds>Date.now()&&(!capAt||Date.now()<capAt)){arm(Math.min(head.attemptEnds,capAt||Infinity));return;}
+      if(capAt&&Date.now()>=capAt-50)D.cutByCap=serial;
+      const at=D.waiters.indexOf(check);if(at>=0)D.waiters.splice(at,1);if(!check())resolve(false);
+    };
+    const arm=function(at){if(timer)clearTimeout(timer);timer=setTimeout(fire,Math.max(0,at-Date.now()));};
+    const check=function(){
+      if(serial!==D.serial||(!D.queue.length&&D.pumping!==serial)){if(timer){clearTimeout(timer);timer=null;}resolve(true);return true;}
+      if(idleMs&&timer){if(D.queue.length<last)arm(Math.min(Date.now()+idleMs,capAt||Infinity));last=D.queue.length;}
+      return false;
+    };
+    if(check())return;
+    D.waiters.push(check);
+    if(deadline)arm(deadline);
+  });
+}
+/* micfix-1.3.0 (2026-09-25): the gate a Stop opens when it reaches its bound.
+   Every attempt of this recording races it (_mlsDirectPhoneFetch). */
+function _mlsDirectPhoneCutGate(serial){
+  const D=_mlsDirectPhone;
+  if(!D.cutGate||D.cutGate.serial!==serial){let open=null;const p=new Promise(function(resolve){open=resolve;});D.cutGate={serial:serial,p:p,open:open};}
+  return D.cutGate;
+}
+/* micfix-1.3.0 (2026-09-25): the Stop reached its bound. Nothing more is sent:
+   a retry that is waiting is cancelled, an attempt in flight is given up, and
+   the queue settles. Answers the first clip if it was ever sent (MLS may have
+   stored it: the attempt was in flight, or an earlier reply was lost) and why
+   the clips did not go. The clips behind it were never sent. */
+function _mlsDirectPhoneCut(serial){
+  const D=_mlsDirectPhone,head=D.queue[0]||null,inFlight=!!(head&&head.inFlight),sent=!!(head&&head.sent);
+  const why=D.busy?'busy':inFlight?'slow':(head&&head.unreached)?'unreached':'refused';
+  const detail=why==='refused'&&head?String(head.last||''):'';
+  D.cut=serial;
+  if(D.pumpTimer){clearTimeout(D.pumpTimer);D.pumpTimer=null;}
+  _mlsDirectPhoneCutGate(serial).open();
+  return new Promise(function(resolve){
+    const check=function(){if(serial!==D.serial||D.pumping!==serial){resolve({head:sent?head:null,why:why,detail:detail});return true;}return false;};
+    if(!check())D.waiters.push(check);
+  });
+}
+/* micfix-1.3.0 (2026-09-25): after the session is closed, the clips that did
+   not go are settled the way a refusal for the account is: counted, named, and
+   their audio left in the local backup (the recording is not marked clean).
+   On a server that dedupes, the one clip that was sent is asked about by its
+   clipId alone - no audio, so the question can neither transcribe nor
+   store anything: 200 duplicate = MLS stored it before Stop, and its words came
+   with the transcript Stop answered; 410 = never stored. */
+async function _mlsDirectPhoneCutSettle(cut,fin,seen,serial){
+  const D=_mlsDirectPhone,head=cut.head;
+  let stored=false;
+  if(head&&fin&&seen&&D.dedupe&&D.queue.indexOf(head)>=0){
     try{
-      const r=await fetch(bkBase()+'/api/mic/'+encodeURIComponent(code)+'/audio',{
+      const ans=await _mlsDirectPhoneFetch(bkBase()+'/api/mic/'+encodeURIComponent(head.code)+'/audio',{
         method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',credentials:'omit',referrerPolicy:'no-referrer',
-        body:JSON.stringify({audio:audio,mimetype:mimetype||blob.type||'audio/webm'})
-      });
-      if(r.ok){
-        try{const d=await r.clone().json();if(d&&d.transcript)_mlsDirectPhoneAppend(d.transcript,serial);}catch(e){}
-        await _mlsDirectPhonePoll(serial);
-        return true;
-      }
-      last='server '+r.status;
-      if(r.status===404)break;
-    }catch(e){last=String(e&&e.message||e||'network error');}
-    if(attempt<3){await _mlsDirectPhoneSleep(delay);delay*=2;}
+        body:JSON.stringify({clipId:head.clipId,t:head.t,mimetype:head.mimetype})
+      },10000);
+      stored=!!(ans&&ans.res.ok&&ans.body&&ans.body.duplicate===true);
+    }catch(e){stored=false;}
+    if(serial!==D.serial)return;
   }
-  _mlsDirectPhone.uploadFailures++;
-  showMicWarn('A recording segment could not reach MLS ('+last+'). Keep this page open and check the connection before stopping; everything already transcribed is safe.');
-  return false;
+  if(stored)_mlsDirectPhoneDrop(head);
+  const n=D.queue.length+D.cutLost;
+  D.queue.forEach(_mlsDirectPhoneRelease);D.queue.length=0;D.busy=0;
+  _mlsDirectPhoneNotify();
+  if(!n)return;
+  D.lost+=n;D.uploadFailures+=n;D.kept=_mlsDirectPhoneBackupHolds();
+  D.note=_mlsDirectPhoneCutNote(n,cut.why,cut.detail)+
+    (seen?'':' MLS could not confirm the end of the transcript either, so words from earlier segments may be missing too. Check the transcript before writing the note.')+
+    (D.note?' '+D.note:'');
 }
-function _mlsDirectPhoneQueue(blob,mimetype,serial){
-  _mlsDirectPhone.pendingUploads++;
-  const run=function(){return _mlsDirectPhoneUpload(blob,mimetype,serial);};
-  _mlsDirectPhone.uploadTail=Promise.resolve(_mlsDirectPhone.uploadTail).then(run,run).then(function(ok){
-    _mlsDirectPhone.pendingUploads=Math.max(0,_mlsDirectPhone.pendingUploads-1);return ok;
-  },function(){_mlsDirectPhone.pendingUploads=Math.max(0,_mlsDirectPhone.pendingUploads-1);_mlsDirectPhone.uploadFailures++;return false;});
-  return _mlsDirectPhone.uploadTail;
+function _mlsDirectPhoneCutNote(n,why,detail){
+  const D=_mlsDirectPhone,one=n===1,secs=Math.round(D.stopBoundMs/1000);
+  /* micfix-1.3.2: the 10-minute cap is named as the cap, not as 45 quiet seconds */
+  if(D.cutByCap&&D.cutByCap===D.serial)return 'Recording stopped: '+(one?'1 recording segment':n+' recording segments')+' could not be added to the transcript, because the recording was still being sent to MLS '+Math.round(D.stopCapMs/60000)+' minutes after Stop. '+
+    (D.kept?(one?'Its':'Their')+' audio is kept on this device, in the MLS recording backup (\uD83C\uDFA7), for up to 24 hours.':'This device has no copy of '+(one?'its':'their')+' audio.')+' Everything already in the transcript is safe.';
+  const cause=why==='busy'?'MLS could not transcribe audio (a problem on the MLS side, not on this device)'
+    :why==='unreached'?'this device could not reach MLS'
+    :why==='slow'?'MLS had not answered'
+    :'MLS did not accept '+(one?'it':'them')+(detail?' ('+detail+')':'');
+  return 'Recording stopped: '+(one?'1 recording segment':n+' recording segments')+' could not be added to the transcript, because '+cause+', and nothing more reached MLS for '+secs+' seconds. '+
+    (D.kept?(one?'Its':'Their')+' audio is kept on this device, in the MLS recording backup (\uD83C\uDFA7), for up to 24 hours.':'This device has no copy of '+(one?'its':'their')+' audio.')+
+    ' Everything already in the transcript is safe.';
+}
+/* micfix-1.3.0 (2026-09-25): the recorder is starting, or has begun to
+   finish. The Easy room turns 'finishing' at once (its Generate disabled)
+   rather than on its next 700 ms tick. */
+function _mlsDirectPhoneAnnounce(){
+  try{window.dispatchEvent(new CustomEvent('mls:direct-capture-status',{detail:{status:_mlsDirectPhone.status}}));}catch(e){}
+}
+/* micfix-1.3.0 (2026-09-25): the waiting sentence of the lane comes off
+   #micWarn once the lane is idle and nothing is pending. */
+function _mlsDirectPhoneClearWaiting(){
+  const D=_mlsDirectPhone;
+  if(!D.waitShown)return;
+  D.waitShown=false;
+  try{
+    const w=document.getElementById('micWarn'),s=w&&w.querySelector('span'),t=s?String(s.textContent||''):'';
+    if(w&&/^(MLS cannot add clips right now|A recording segment could not reach MLS yet)/.test(t))w.style.display='none';
+  }catch(e){}
+}
+function _mlsDirectPhoneNotify(){
+  const D=_mlsDirectPhone,w=D.waiters;D.waiters=[];
+  w.forEach(function(check){if(!check())D.waiters.push(check);});
+}
+/* micfix-1.2.0 (2026-09-25): why recording stopped when no more clips can
+   land - MLS closed the session, or refused this account - and how many clips
+   are missing because of it. */
+function _mlsDirectPhoneLostNote(){
+  const D=_mlsDirectPhone,n=D.lost,one=n===1;
+  if(D.denied)return 'Recording stopped: '+(one?'1 recording segment':n+' recording segments')+' could not be added to the transcript ('+
+    (D.denied===403?'MLS refused the recording, server 403':'this MLS account does not have active access')+'). '+
+    (D.kept?(one?'Its':'Their')+' audio is kept on this device, in the MLS recording backup, for up to 24 hours.':'This device has no copy of '+(one?'its':'their')+' audio.')+' Everything already in the transcript is safe.';
+  return 'Recording stopped: MLS closed this recording session (it was stopped or it expired)'+(n?', so '+(one?'1 recording segment is':n+' recording segments are')+' not in the transcript':'')+'. Everything above is safe. Tap Start recording to continue.';
+}
+/* Whether the local audio backup (feat_mls_record_backup.js) holds this
+   recording's audio on this device. */
+function _mlsDirectPhoneBackupHolds(){
+  try{const b=window.__mlsRecBackup;return !!(b&&b.installed&&typeof b.holds==='function'&&b.holds());}catch(e){return false;}
+}
+/* micfix-1.0.0 (2026-09-24) and micfix-1.1.0 (2026-09-25): the server no
+   longer has this session (410, or an older server's 404: stopped or expired;
+   this lane's code came from the server itself, so a 404 is never a mistyped
+   code). Nothing more can land, so recording stops, the transcript is read
+   once more, and the doctor is told how much is missing. Only the CURRENT
+   recording's code can end it: an answer for an earlier code says nothing
+   about this one. */
+function _mlsDirectPhoneSessionEnded(item,serial){
+  const D=_mlsDirectPhone;
+  if(serial!==D.serial||!item||item.code!==D.code)return;
+  const n=D.queue.length;
+  D.queue.forEach(_mlsDirectPhoneRelease);D.queue.length=0;
+  D.gone=true;D.lost+=n;D.uploadFailures+=n;
+  D.note=_mlsDirectPhoneLostNote();
+  showMicWarn(D.note);
+  _mlsDirectPhoneNotify();
+  if(D.status==='recording')_mlsDirectPhoneSelfStop();
+}
+/* micfix-1.2.0 (2026-09-25): a refusal for THIS ACCOUNT (402 no active
+   access, or a 403) will not change on a resend. Recording stops through the
+   doctor's own Stop, so the microphone AND the local audio backup are
+   released; the clips MLS did not take are counted and named, and the backup
+   keeps their audio (it is not marked clean). Round 2 held them in memory
+   behind Send them again, which the full layout never showed, and left the
+   backup recording the room. */
+function _mlsDirectPhoneDenied(serial,status){
+  const D=_mlsDirectPhone;
+  if(serial!==D.serial)return;
+  const n=D.queue.length;
+  D.queue.forEach(_mlsDirectPhoneRelease);D.queue.length=0;
+  if(!D.denied)D.kept=_mlsDirectPhoneBackupHolds();
+  D.denied=status===403?403:402;D.lost+=n;D.uploadFailures+=n;
+  D.note=_mlsDirectPhoneLostNote();
+  showMicWarn(D.note);
+  _mlsDirectPhoneNotify();
+  if(D.status==='recording')_mlsDirectPhoneSelfStop();
+}
+/* micfix-1.2.0 (2026-09-25): a refusal every clip gets for a reason on MLS's
+   side (today's 502 ai-quota, ai-auth or ai-model-unavailable) costs no
+   transcription and ends when MLS is fixed. Recording goes on, the clips stay
+   queued in order, and the first one is tried again after 6 s, then 12, 24,
+   up to every 60 s; the phone says so for as long as it lasts. */
+const _MLS_DIRECT_SERVICE_WIDE=/^(ai-quota|ai-auth|ai-model-unavailable)$/;
+function _mlsDirectPhoneBusyNote(){
+  const n=_mlsDirectPhone.queue.length;
+  /* micfix-1.3.0 (2026-09-25): 'this device' - the iPad layout records here too */
+  return 'MLS cannot add clips right now (a problem on the MLS side, not on this device); '+n+' waiting, retrying. Keep this screen open.';
+}
+/* One answer the server can never change on a resend (retryable:false, or a
+   4xx other than 408/429): that clip is named and not sent again. */
+function _mlsDirectPhoneRefused(status,why){
+  const D=_mlsDirectPhone,n=++D.refused,one=n===1;
+  D.uploadFailures++;
+  D.note=why==='AUDIO_UNREADABLE'||why==='LOCAL_READ'
+    ?(one?'One recording segment':n+' recording segments')+' could not be read as audio'+(why==='LOCAL_READ'?' on this iPhone':'')+', so '+(one?'its':'their')+' words are not in the transcript. Check the transcript for the gap.'
+    :'MLS could not accept '+(one?'one recording segment':n+' recording segments')+' (server '+status+'), so '+(one?'its':'their')+' words are not in the transcript. Check the transcript for the gap.';
+  showMicWarn(D.note);
+}
+/* One attempt for one clip: 'ok' (added, or already there), 'final' (a
+   definite answer, never sent again), 'retry', 'busy' (refused on MLS's side)
+   or 'ended' (nothing more can land). */
+async function _mlsDirectPhoneSend(item,serial){
+  const D=_mlsDirectPhone;
+  if(serial!==D.serial||item.code!==D.code||!item.blob)return 'final';
+  if(!item.audio){
+    try{item.audio=await _mlsDirectPhoneRead(item.blob);}
+    catch(e){if(serial!==D.serial)return 'final';_mlsDirectPhoneRefused(0,'LOCAL_READ');return 'final';}
+  }
+  /* micfix-1.2.0 (2026-09-25): a retry repeats clipId and t, but only a server
+     that has said it dedupes (dedupe:true, from /start or any accepted clip)
+     answers a repeated clip once. Until then an attempt is never given up
+     before today's server can answer (300 s): given up and sent again, a slow
+     but successful transcription was added twice. */
+  const kb=1000*Math.ceil((item.blob.size||0)/16384);
+  const ms=D.dedupe?Math.min(D.attemptBaseMs+kb,330000):D.plainAttemptMs+kb;
+  /* micfix-1.3.0 (2026-09-25): once a Stop has reached its bound nothing more is sent. */
+  if(D.cut===serial)return 'cut';
+  let ans=null;
+  item.inFlight=true;item.sent=true;item.attemptEnds=Date.now()+ms;
+  try{
+    ans=await _mlsDirectPhoneFetch(bkBase()+'/api/mic/'+encodeURIComponent(item.code)+'/audio',{
+      method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',credentials:'omit',referrerPolicy:'no-referrer',
+      body:JSON.stringify({audio:item.audio,mimetype:item.mimetype,clipId:item.clipId,t:item.t})
+    },ms,_mlsDirectPhoneCutGate(serial).p);
+    if(!ans)item.last='no answer within '+Math.round(ms/1000)+' s';
+  }catch(e){item.last=String(e&&e.message||e||'network error');}
+  item.inFlight=false;
+  if(serial!==D.serial)return 'final';
+  item.unreached=!ans;
+  if(!ans)return 'retry';
+  const st=ans.res.status,d=ans.body||{},why=String(d.code||'');
+  if(ans.res.ok){
+    /* {duplicate:true}: the server already has this clip (an earlier reply was lost). */
+    if(d.dedupe===true)D.dedupe=true;
+    if(d.transcript)_mlsDirectPhoneAppend(d.transcript,serial);
+    _mlsDirectPhonePoll(serial);
+    return 'ok';
+  }
+  if(st===410||why==='MIC_SESSION_ENDED'||st===404){_mlsDirectPhoneSessionEnded(item,serial);return 'ended';}
+  if(st===402||st===403||why==='NO_ACCESS'){_mlsDirectPhoneDenied(serial,st);return 'ended';}
+  if(_MLS_DIRECT_SERVICE_WIDE.test(why)){item.last='MLS cannot transcribe audio right now';return 'busy';}
+  if(d.retryable===false||(st>=400&&st<500&&st!==408&&st!==429)){_mlsDirectPhoneRefused(st,why);return 'final';}
+  item.last='server '+st;
+  return 'retry';
+}
+/* micfix-1.0.0 (2026-09-24), micfix-1.1.0 and micfix-1.2.0 (2026-09-25): a
+   clip that fails to upload is never dropped; it stays queued and is retried,
+   with backoff, for as long as this page is open, and Stop waits for it. Every
+   clip carries its start time t and one clipId that every retry repeats. The
+   queue is strict first-in first-out, one request at a time: MLS adds clips in
+   the order they arrive, so the order they are sent in is the order of the
+   transcript, which is the order they were spoken. */
+async function _mlsDirectPhonePump(serial){
+  const D=_mlsDirectPhone;
+  if(D.pumping===serial||serial!==D.serial)return;
+  if(D.pumpTimer){clearTimeout(D.pumpTimer);D.pumpTimer=null;}
+  D.pumping=serial;
+  try{
+    while(serial===D.serial&&D.queue.length&&D.cut!==serial){
+      const item=D.queue[0];
+      const r=await _mlsDirectPhoneSend(item,serial);
+      if(serial!==D.serial)return;
+      if(r==='ok'||r==='final'){
+        _mlsDirectPhoneDrop(item);D.delay=500;D.busy=0;
+        if(!D.queue.some(function(it){return it.tries>=3;})){const w=document.getElementById('micWarn');if(w&&D.status==='recording'&&!D.note)w.style.display='none';}
+        continue;
+      }
+      if(r!=='retry'&&r!=='busy')break;
+      if(D.cut===serial)break;   /* micfix-1.3.0: the Stop reached its bound */
+      item.tries++;
+      let wait;
+      if(r==='busy'){
+        if(!D.busy){showMicWarn(_mlsDirectPhoneBusyNote());D.waitShown=true;}
+        wait=D.busy=D.busy?Math.min(D.busy*2,60000):6000;
+      }else{
+        if(item.tries===3&&!D.busy&&!D.queue.some(function(it){return it!==item&&it.tries>=3;})){showMicWarn('A recording segment could not reach MLS yet ('+item.last+'). '+_mlsDirectPhoneWaitingNote());D.waitShown=true;}
+        wait=D.delay;D.delay=Math.min(D.delay*2,30000);
+      }
+      /* micfix-1.3.0 (2026-09-25): after Stop the queue is tried at least every
+         stopRetryMs, so a clip MLS can take before the bound is not left
+         waiting out a long backoff. */
+      if(D.status==='stopping')wait=Math.min(wait,D.stopRetryMs);
+      D.pumpDue=Date.now()+wait;
+      D.pumpTimer=setTimeout(function(){D.pumpTimer=null;_mlsDirectPhonePump(serial);},wait);
+      break;
+    }
+  }finally{
+    if(D.pumping===serial)D.pumping=0;
+    _mlsDirectPhoneNotify();
+  }
+}
+function _mlsDirectPhoneQueue(blob,mimetype,serial,t){
+  const D=_mlsDirectPhone;
+  if(serial!==D.serial||!blob||!blob.size)return;
+  /* The session is gone, or MLS refused this account: this clip cannot land,
+     and it is counted as missing. */
+  if(D.cut===serial){D.cutLost++;D.uploadFailures++;return;}   /* micfix-1.3.0: after the bound of a Stop */
+  if(D.gone||D.denied||!D.code){D.lost++;D.uploadFailures++;D.note=_mlsDirectPhoneLostNote();return;}
+  D.queue.push({blob:blob,mimetype:mimetype||blob.type||'audio/webm',t:t,clipId:_mlsDirectPhoneClipId(),code:D.code,tries:0,audio:null,last:''});
+  /* While MLS refuses every clip on its side, a new clip does not cut the wait. */
+  if(!(D.busy&&D.pumpTimer))_mlsDirectPhonePump(serial);
 }
 function _mlsDirectPhoneStartSegment(serial){
   if(serial!==_mlsDirectPhone.serial||_mlsDirectPhone.status!=='recording'||!_mlsDirectPhone.stream)return false;
@@ -32665,22 +33016,63 @@ function _mlsDirectPhoneStartSegment(serial){
   try{r=mime?new MediaRecorder(_mlsDirectPhone.stream,{mimeType:mime}):new MediaRecorder(_mlsDirectPhone.stream);}catch(e){try{r=new MediaRecorder(_mlsDirectPhone.stream);}catch(e2){showMicWarn('MLS could not start the iPhone recorder. Reload this page and try once more.');return false;}}
   _mlsDirectPhone.recorder=r;
   const parts=[];
+  let startedAt=0;
   r.ondataavailable=function(ev){if(ev.data&&ev.data.size>0)parts.push(ev.data);};
   r.onstop=function(){
+    r.__mlsStopped=true;
     if(_mlsDirectPhone.segTimer){clearTimeout(_mlsDirectPhone.segTimer);_mlsDirectPhone.segTimer=null;}
     if(serial===_mlsDirectPhone.serial&&parts.length){
-      try{const blob=new Blob(parts,{type:r.mimeType||mime||'audio/webm'});if(blob.size)_mlsDirectPhoneQueue(blob,blob.type,serial);}catch(e){}
+      try{const blob=new Blob(parts,{type:r.mimeType||mime||'audio/webm'});if(blob.size)_mlsDirectPhoneQueue(blob,blob.type,serial,startedAt);}catch(e){}
     }
     if(_mlsDirectPhone.segmentStopResolve){const done=_mlsDirectPhone.segmentStopResolve;_mlsDirectPhone.segmentStopResolve=null;done(true);}
+    /* micfix-1.0.0 (2026-09-24): a recorder that stopped because its
+       microphone ended is not a segment rollover. The clip it just produced
+       is queued above; recording then finishes like a Stop. */
+    if(serial===_mlsDirectPhone.serial&&_mlsDirectPhone.status==='recording'&&_mlsDirectPhoneMicEnded()){
+      _mlsDirectPhoneMicLost(serial,_MLS_DIRECT_MIC_ENDED);return;
+    }
     if(serial===_mlsDirectPhone.serial&&_mlsDirectPhone.status==='recording')setTimeout(function(){
       if(!_mlsDirectPhoneStartSegment(serial)&&serial===_mlsDirectPhone.serial&&_mlsDirectPhone.status==='recording'){
-        _mlsAbortDirectPhoneCapture('segment-restart-failed');
+        _mlsDirectPhoneMicLost(serial,'Recording stopped: MLS could not start the next part of the recording on this iPhone. Everything recorded up to that moment is kept and added to the transcript. Tap Start recording to continue.');
       }
     },0);
   };
+  startedAt=_mlsDirectPhoneNextT();
   try{r.start();}catch(e){showMicWarn('MLS could not start the iPhone recorder. Reload this page and try once more.');return false;}
   _mlsDirectPhone.segTimer=setTimeout(function(){try{if(r.state!=='inactive')r.stop();}catch(e){}},8000);
   return true;
+}
+const _MLS_DIRECT_MIC_ENDED='Recording stopped: the iPhone microphone stopped (another app may have taken it, or microphone access was turned off). Everything recorded up to that moment is kept and added to the transcript. Tap Start recording to continue.';
+function _mlsDirectPhoneMicEnded(){
+  try{const t=_mlsDirectPhone.stream?_mlsDirectPhone.stream.getTracks():[];return t.length>0&&t.every(function(x){return x.readyState==='ended';});}catch(e){return false;}
+}
+/* micfix-1.0.0 (2026-09-24): the microphone went away mid-recording. This used
+   to abort: the clip in progress was never made, queued clips were dropped and
+   the session was deleted under a clip the server was still transcribing. It
+   now stops the way Stop does - the partial clip is uploaded, queued clips are
+   sent, the transcript is read once more, then the session closes - and says
+   why recording stopped. */
+function _mlsDirectPhoneMicLost(serial,note){
+  if(serial!==_mlsDirectPhone.serial||_mlsDirectPhone.status!=='recording')return;
+  _mlsDirectPhone.note=note;
+  showMicWarn(note);
+  _mlsDirectPhoneSelfStop();
+}
+/* micfix-1.2.0 (2026-09-25): every stop this lane makes on its own (MLS ended
+   the session or refused this account, the microphone ended, the next part
+   could not start, another recorder took the microphone) goes through the
+   doctor's Stop, the wrapped stopCapture, so the lane's microphone AND the
+   local audio backup's recorder both stop. The lane's own stop left the backup
+   recording the room. */
+function _mlsDirectPhoneSelfStop(){
+  try{if(typeof window.stopCapture==='function')return window.stopCapture();}catch(e){}
+  return _mlsStopDirectPhoneCapture('self-stop');
+}
+function _mlsDirectPhoneReleaseMic(serial){
+  const D=_mlsDirectPhone;
+  if(serial!==D.serial||!D.stream)return;
+  try{D.stream.getTracks().forEach(function(t){t.onended=null;t.stop();});}catch(e){}
+  D.stream=null;
 }
 function _mlsDirectPhoneResetUi(){
   const b=document.getElementById('captureBtn');
@@ -32688,32 +33080,55 @@ function _mlsDirectPhoneResetUi(){
   try{_hideLiveCapture();}catch(e){}
   try{mlsSpeechHub().release('visit');}catch(e){}
 }
+/* micfix-1.1.0 (2026-09-25): answers the server's reply: a server that keeps
+   an ended session's words for a short while answers Stop with the final
+   transcript, which closes the last gap between the final read and Stop. */
 async function _mlsDirectPhoneCloseSession(code){
-  if(!code)return;
-  try{await fetch(bkBase()+'/api/mic/'+encodeURIComponent(code)+'/stop',{method:'POST',headers:{'Authorization':'Bearer '+bkToken()},keepalive:true});}catch(e){}
+  if(!code)return null;
+  try{
+    const ans=await _mlsDirectPhoneFetch(bkBase()+'/api/mic/'+encodeURIComponent(code)+'/stop',{method:'POST',headers:{'Authorization':'Bearer '+bkToken()},keepalive:true},10000);
+    return ans&&ans.res.ok?(ans.body||{}):null;
+  }catch(e){return null;}
 }
 function _mlsAbortDirectPhoneCapture(reason){
-  if(_mlsDirectPhone.status==='idle')return false;
-  const code=_mlsDirectPhone.code,rec=_mlsDirectPhone.recorder,stream=_mlsDirectPhone.stream;
-  _mlsDirectPhone.serial++;
-  _mlsDirectPhone.status='idle';_mlsDirectPhone.code='';_mlsDirectPhone.bindingId='';_mlsDirectPhone.bindingEpoch=null;
-  if(_mlsDirectPhone.segTimer){clearTimeout(_mlsDirectPhone.segTimer);_mlsDirectPhone.segTimer=null;}
-  if(_mlsDirectPhone.pollTimer){clearInterval(_mlsDirectPhone.pollTimer);_mlsDirectPhone.pollTimer=null;}
+  const D=_mlsDirectPhone;
+  if(D.status==='idle')return false;
+  const code=D.code,rec=D.recorder,stream=D.stream,dropped=D.queue.length;
+  D.serial++;
+  D.status='idle';D.code='';D.bindingId='';D.bindingEpoch=null;D.stopPromise=null;
+  if(D.segTimer){clearTimeout(D.segTimer);D.segTimer=null;}
+  if(D.pollTimer){clearInterval(D.pollTimer);D.pollTimer=null;}
+  if(D.pumpTimer){clearTimeout(D.pumpTimer);D.pumpTimer=null;}
   try{if(rec){rec.ondataavailable=null;rec.onstop=null;if(rec.state!=='inactive')rec.stop();}}catch(e){}
   try{if(stream)stream.getTracks().forEach(function(t){t.onended=null;t.stop();});}catch(e){}
-  _mlsDirectPhone.recorder=null;_mlsDirectPhone.stream=null;_mlsDirectPhone.pendingUploads=0;_mlsDirectPhone.uploadTail=Promise.resolve();
+  D.recorder=null;D.stream=null;D.queue.forEach(_mlsDirectPhoneRelease);D.queue=[];
+  _mlsDirectPhoneNotify();
   capturing=false;captureSessionEpoch++;_mlsDirectPhoneResetUi();
   _mlsDirectPhoneCloseSession(code);
+  /* micfix-1.1.0 (2026-09-25): clips still waiting are never dropped silently. */
+  if(dropped&&reason!=='pagehide'){
+    D.uploadFailures+=dropped;
+    D.note=(dropped===1?'1 recording segment':dropped+' recording segments')+' of the visit that was open had not reached MLS and '+(dropped===1?'was':'were')+' discarded when that recording was closed, so '+(dropped===1?'its':'their')+' words are not in its transcript.';
+    showMicWarn(D.note);
+  }
   return true;
 }
 function _mlsStartDirectPhoneCapture(captureBindingCandidate){
   if(/^(starting|recording|stopping)$/.test(_mlsDirectPhone.status))return true;
   if(!backendMode()||!bkToken()){showMicWarn('Phone recording needs an active MLS sign-in. Sign in again, then tap Start recording.');return false;}
   const serial=++_mlsDirectPhone.serial,requestEpoch=currentVisitAthenaEpoch;
-  _mlsDirectPhone.status='starting';_mlsDirectPhone.seen=0;_mlsDirectPhone.uploadFailures=0;_mlsDirectPhone.pendingUploads=0;_mlsDirectPhone.uploadTail=Promise.resolve();
+  /* micfix-1.2.0 (2026-09-25): a start that fails after the doctor's Start
+     (no microphone, no session, the visit changed, the recorder would not
+     start) ends through the doctor's Stop as well (_mlsDirectPhoneSelfStop):
+     the local audio backup began with the Start and went on recording. */
+  _mlsDirectPhone.status='starting';_mlsDirectPhone.uploadFailures=0;
+  _mlsDirectPhone.queue=[];_mlsDirectPhone.gone=false;_mlsDirectPhone.denied=0;_mlsDirectPhone.kept=false;_mlsDirectPhone.lost=0;_mlsDirectPhone.refused=0;
+  _mlsDirectPhone.note='';_mlsDirectPhone.delay=500;_mlsDirectPhone.busy=0;_mlsDirectPhone.seen=0;_mlsDirectPhone.dedupe=false;
+  _mlsDirectPhone.cut=0;_mlsDirectPhone.cutGate=null;_mlsDirectPhone.cutLost=0;_mlsDirectPhone.pumpDue=0;_mlsDirectPhone.waitShown=false;
+  _mlsDirectPhoneAnnounce();
   const b=document.getElementById('captureBtn');if(b){b.classList.remove('btn-primary');b.innerHTML='Starting recording…';}
   const hub=mlsSpeechHub();
-  hub.register('visit','Visit recording',function(){return _mlsStopDirectPhoneCapture('microphone-handoff');});
+  hub.register('visit','Visit recording',function(){return _mlsDirectPhoneSelfStop();});
   const lease=hub.claim('visit');
   /* Ask for the microphone in the original tap task. Speech-hub handoff can
      wait asynchronously for another recognizer to end; calling getUserMedia
@@ -32735,13 +33150,13 @@ function _mlsStartDirectPhoneCapture(captureBindingCandidate){
       let d={};try{d=await r.json();}catch(e){}
       if(r.status===401)handle401();
       if(!r.ok||!d.code)throw new Error((d&&(d.error||d.message))||('server '+r.status));
-      return d.code;
+      return d;
     });
     Promise.all([
       Promise.resolve(micRequest).then(function(stream){return {ok:true,value:stream};},function(error){return {ok:false,error:error};}),
       Promise.resolve(sessionRequest).then(function(code){return {ok:true,value:code};},function(error){return {ok:false,error:error};})
     ]).then(async function(result){
-      const mic=result[0],session=result[1],stream=mic.ok?mic.value:null,code=session.ok?session.value:'';
+      const mic=result[0],session=result[1],stream=mic.ok?mic.value:null,code=session.ok?session.value.code:'';
       if(serial!==_mlsDirectPhone.serial||_mlsDirectPhone.status!=='starting'){
         try{if(stream)stream.getTracks().forEach(function(t){t.stop();});}catch(e){}
         await _mlsDirectPhoneCloseSession(code);return;
@@ -32750,7 +33165,7 @@ function _mlsStartDirectPhoneCapture(captureBindingCandidate){
         try{if(stream)stream.getTracks().forEach(function(t){t.stop();});}catch(e){}
         _mlsDirectPhone.stream=null;
         await _mlsDirectPhoneCloseSession(code);
-        _mlsDirectPhone.status='idle';_mlsDirectPhoneResetUi();
+        _mlsDirectPhone.status='idle';_mlsDirectPhoneResetUi();_mlsDirectPhoneSelfStop();
         const n=String(mic.error&&mic.error.name||'');
         showMicWarn(!mic.ok
           ? (/NotAllowed|PermissionDenied|Security/i.test(n)
@@ -32764,20 +33179,20 @@ function _mlsStartDirectPhoneCapture(captureBindingCandidate){
         try{stream.getTracks().forEach(function(t){t.stop();});}catch(e){}
         _mlsDirectPhone.stream=null;
         await _mlsDirectPhoneCloseSession(code);
-        _mlsDirectPhone.status='idle';_mlsDirectPhoneResetUi();
+        _mlsDirectPhone.status='idle';_mlsDirectPhoneResetUi();_mlsDirectPhoneSelfStop();
         showMicWarn('The visit changed before recording started. Open the intended appointment and tap Start recording again.');
         return;
       }
       _mlsDirectPhone.stream=stream;_mlsDirectPhone.code=code;
+      /* micfix-1.2.0: this server dedupes a repeated clipId (its capability marker). */
+      _mlsDirectPhone.dedupe=!!(session.value.caps&&session.value.caps.dedupe===true);
       try{stream.getTracks().forEach(function(track){track.onended=function(){
-        if(serial!==_mlsDirectPhone.serial||_mlsDirectPhone.status!=='recording')return;
-        showMicWarn('The iPhone microphone stopped unexpectedly. The transcript already visible is safe. Tap Start recording to continue.');
-        _mlsAbortDirectPhoneCapture('microphone-ended');
+        _mlsDirectPhoneMicLost(serial,_MLS_DIRECT_MIC_ENDED);
       };});}catch(e){}
       _mlsDirectPhone.bindingId=currentVisitAthenaBinding&&currentVisitAthenaBinding.id||'';
-      _mlsDirectPhone.bindingEpoch=currentVisitAthenaEpoch;
+      _mlsDirectPhone.bindingEpoch=currentVisitAthenaEpoch;_mlsDirectPhone.lossEpoch=currentVisitAthenaEpoch;
       if(!_mlsDirectPhoneBindingSafe(serial)){
-        _mlsAbortDirectPhoneCapture('binding-refused');
+        _mlsAbortDirectPhoneCapture('binding-refused');_mlsDirectPhoneSelfStop();
         showMicWarn('MLS could not lock this recording to the selected patient. Choose the appointment again and retry.');
         return;
       }
@@ -32786,8 +33201,8 @@ function _mlsStartDirectPhoneCapture(captureBindingCandidate){
       const btn=document.getElementById('captureBtn');if(btn){btn.classList.add('recording');btn.innerHTML='<span class="live-dot"></span> Recording… Stop Visit';}
       const warn=document.getElementById('micWarn');if(warn)warn.style.display='none';
       try{const words=(document.getElementById('transcript').value||'').trim().split(/\s+/).filter(Boolean).length;_updateLiveCapture(words);}catch(e){}
-      if(!_mlsDirectPhoneStartSegment(serial)){_mlsAbortDirectPhoneCapture('recorder-start-failed');return;}
-      _mlsDirectPhone.pollTimer=setInterval(function(){_mlsDirectPhonePoll(serial);},1500);
+      if(!_mlsDirectPhoneStartSegment(serial)){_mlsAbortDirectPhoneCapture('recorder-start-failed');_mlsDirectPhoneSelfStop();return;}
+      _mlsDirectPhone.pollTimer=setInterval(function(){if(!_mlsDirectPhone.polling)_mlsDirectPhonePoll(serial);},1500);
       _mlsDirectPhonePoll(serial);
     });
   };
@@ -32795,36 +33210,81 @@ function _mlsStartDirectPhoneCapture(captureBindingCandidate){
   return true;
 }
 function _mlsStopDirectPhoneCapture(reason){
-  if(_mlsDirectPhone.status==='idle')return Promise.resolve(false);
-  if(_mlsDirectPhone.status==='stopping'&&_mlsDirectPhone.stopPromise)return _mlsDirectPhone.stopPromise;
-  if(_mlsDirectPhone.status==='starting'){
+  const D=_mlsDirectPhone;
+  if(D.status==='idle')return Promise.resolve(false);
+  if(D.status==='stopping'&&D.stopPromise)return D.stopPromise;
+  if(D.status==='starting'){
     _mlsAbortDirectPhoneCapture(reason||'cancel-start');
     return Promise.resolve(true);
   }
-  const serial=_mlsDirectPhone.serial,code=_mlsDirectPhone.code,stream=_mlsDirectPhone.stream,rec=_mlsDirectPhone.recorder;
-  _mlsDirectPhone.status='stopping';capturing=false;captureSessionEpoch++;
+  const serial=D.serial,code=D.code,rec=D.recorder;
+  D.status='stopping';capturing=false;captureSessionEpoch++;
+  _mlsDirectPhoneAnnounce();
   const b=document.getElementById('captureBtn');if(b)b.innerHTML='Finishing recording…';
-  if(_mlsDirectPhone.segTimer){clearTimeout(_mlsDirectPhone.segTimer);_mlsDirectPhone.segTimer=null;}
+  if(D.segTimer){clearTimeout(D.segTimer);D.segTimer=null;}
   let segmentDone=Promise.resolve(true);
-  if(rec&&rec.state!=='inactive'){
-    segmentDone=new Promise(function(resolve){_mlsDirectPhone.segmentStopResolve=resolve;try{rec.stop();}catch(e){_mlsDirectPhone.segmentStopResolve=null;resolve(false);}});
+  /* micfix-1.0.0 (2026-09-24): a recorder that already went inactive on its own
+     (its microphone ended) has not necessarily delivered its last clip yet;
+     wait for its stop event, not for its state. */
+  if(rec&&!rec.__mlsStopped){
+    segmentDone=new Promise(function(resolve){
+      D.segmentStopResolve=resolve;
+      try{if(rec.state!=='inactive')rec.stop();}catch(e){D.segmentStopResolve=null;resolve(false);return;}
+      setTimeout(function(){if(D.segmentStopResolve===resolve){D.segmentStopResolve=null;resolve(false);}},4000);
+    });
   }
-  _mlsDirectPhone.stopPromise=segmentDone.then(function(){return _mlsDirectPhone.uploadTail;}).then(async function(){
-    await _mlsDirectPhonePoll(serial);
-    await _mlsDirectPhoneCloseSession(code);
-    if(serial!==_mlsDirectPhone.serial)return false;
-    if(_mlsDirectPhone.pollTimer){clearInterval(_mlsDirectPhone.pollTimer);_mlsDirectPhone.pollTimer=null;}
-    try{if(stream)stream.getTracks().forEach(function(t){t.onended=null;t.stop();});}catch(e){}
-    _mlsDirectPhone.stream=null;_mlsDirectPhone.recorder=null;_mlsDirectPhone.code='';
-    _mlsDirectPhone.bindingId='';_mlsDirectPhone.bindingEpoch=null;_mlsDirectPhone.status='idle';_mlsDirectPhone.stopPromise=null;
+  /* micfix-1.0.0 (2026-09-24) and micfix-1.1.0 (2026-09-25): wait until every
+     clip has an answer - including one that is still retrying and one queued
+     while this stop began. Then read the transcript once more, close the
+     session and add what its reply holds.
+     micfix-1.3.0 (2026-09-25): bounded. The queue is sent for at most
+     stopBoundMs (45 s) after Stop, retried at least every stopRetryMs; a clip
+     that lands meanwhile is added as usual. Clips still unsent then are
+     settled like a refusal for the account (_mlsDirectPhoneCutSettle): the
+     lane goes idle, the doctor is told how many were not added and that their
+     audio is kept on this device, the backup is not marked clean, and Stop
+     never reports them as delivered. Round 3 waited for MLS forever. */
+  const stopAt=Date.now();
+  if(D.pumpTimer&&D.pumpDue-stopAt>D.stopRetryMs){
+    clearTimeout(D.pumpTimer);D.pumpDue=stopAt+D.stopRetryMs;
+    D.pumpTimer=setTimeout(function(){D.pumpTimer=null;_mlsDirectPhonePump(serial);},D.stopRetryMs);
+  }
+  D.stopPromise=segmentDone.then(function(){
+    /* micfix-1.3.0 (2026-09-25): the queue does not need the microphone. It is
+       released as soon as the last segment has stopped, not after the queue
+       drains: during an outage it stayed live for as long as MLS was down. */
+    _mlsDirectPhoneReleaseMic(serial);
+    return _mlsDirectPhoneDrained(serial,stopAt+D.stopBoundMs,D.stopBoundMs,stopAt+D.stopCapMs);
+  }).then(async function(drained){
+    if(serial!==D.serial)return false;
+    const cut=drained?null:await _mlsDirectPhoneCut(serial);
+    if(serial!==D.serial)return false;
+    const read=await _mlsDirectPhonePoll(serial);
+    const fin=await _mlsDirectPhoneCloseSession(code);
+    if(serial!==D.serial)return false;
+    /* micfix-1.2.0 (2026-09-25): a server that sends one answers Stop with the
+       final transcript (the part past what was read is added). An older server
+       answers {ok:true} alone, and the final read above is the last word. When
+       neither was seen - the read or the Stop failed - words may be missing:
+       Stop says so, and never reports the recording as complete. */
+    const seen=(fin&&typeof fin.transcript==='string')?_mlsDirectPhoneAppend(fin.transcript,serial):(!!fin&&read===true);
+    if(cut){await _mlsDirectPhoneCutSettle(cut,fin,seen,serial);if(serial!==D.serial)return false;}
+    if(D.pollTimer){clearInterval(D.pollTimer);D.pollTimer=null;}
+    _mlsDirectPhoneReleaseMic(serial);
+    D.recorder=null;D.code='';
+    D.bindingId='';D.bindingEpoch=null;D.status='idle';D.stopPromise=null;
     _mlsDirectPhoneResetUi();
-    if(_mlsDirectPhone.uploadFailures)showMicWarn('Recording stopped, but one or more audio segments could not upload. Review the transcript before writing the note; everything visible there is safe.');
-    return _mlsDirectPhone.uploadFailures===0;
+    /* micfix-1.3.0 (2026-09-25): 'This device' - the iPad layout records here too. */
+    if(!cut&&!seen&&!D.gone&&!D.denied)D.note='Recording stopped, but some words may be missing from the transcript: MLS could not confirm its end (the connection failed while stopping). '+
+      (_mlsDirectPhoneBackupHolds()?'This device still has the audio, in the MLS recording backup, for up to 24 hours. ':'')+'Check the transcript before writing the note.'+(D.note?' '+D.note:'');
+    if(D.uploadFailures||!seen)showMicWarn(D.note||'Recording stopped, but one or more audio segments could not upload. Review the transcript before writing the note; everything visible there is safe.');
+    else _mlsDirectPhoneClearWaiting();
+    return D.uploadFailures===0&&seen;
   },function(){
-    if(serial===_mlsDirectPhone.serial)_mlsAbortDirectPhoneCapture('stop-failed');
+    if(serial===D.serial)_mlsAbortDirectPhoneCapture('stop-failed');
     return false;
   });
-  return _mlsDirectPhone.stopPromise;
+  return D.stopPromise;
 }
 window.addEventListener('pagehide',function(){_mlsAbortDirectPhoneCapture('pagehide');});
 window.addEventListener('mls:session-boundary',function(){_mlsAbortDirectPhoneCapture('session-boundary');});
@@ -35119,8 +35579,35 @@ function _hideLiveCapture(){ var el=document.getElementById('liveCaptureInfo'); 
    tail into the active visit transcript on this computer.
    ========================================================= */
 let phoneMicCode='', phoneMicPollT=null, phoneMicSeen=0, phoneMicBindingId='', phoneMicBindingEpoch=null;
+/* micfix-1.2.0 (2026-09-25): the doctor was told the open visit changed under
+   the phone link (once per link). */
+let phoneMicRefusedTold=false;
+/* micfix-1.0.0 (2026-09-24): the phone-mic owner's lifecycle state.
+   phoneMicStopP  - the running stop (final read, grace, read, close); every
+                    caller joins it, and phoneMicCode stays set until it ends,
+                    so the patient lock, idle sign-out and New visit all see
+                    the phone as busy while its last words are collected.
+   phoneMicPollP  - polls run one at a time, so a final read can never race
+                    the 3 s read and append the same words twice.
+   phoneMicStartedAt / phoneMicGrewAt - when the link opened and when the
+                    phone's transcript last grew; a link with no new words
+                    for 2 h (or open 12 h) is closed. */
+let phoneMicStopP=null, phoneMicPollP=Promise.resolve(), phoneMicPolling=false, phoneMicStartBusy=false, phoneMicStartedAt=0, phoneMicGrewAt=0;
+const PHONE_MIC_STOP_GRACE_MS=5000, PHONE_MIC_QUIET_END_MS=2*60*60*1000, PHONE_MIC_MAX_MS=12*60*60*1000;
 async function startPhoneMic(clickEvent){
   if(!clickEvent || clickEvent.isTrusted!==true) return;
+  if(phoneMicStartBusy) return;   // micfix-1.0.0: one pairing at a time, from every surface
+  phoneMicStartBusy=true;
+  try{ return await _mlsStartPhoneMicOwned(); }
+  finally{ phoneMicStartBusy=false; }
+}
+async function _mlsStartPhoneMicOwned(){
+  /* micfix-1.0.0 (2026-09-24): "Try again" used to take a second code and
+     leave the first one live, so a phone still on it kept uploading into a
+     session nobody read. The live link now closes first - its last words are
+     collected into this visit before any gate below can re-bind the visit -
+     and the phone is told on its next clip. */
+  if(phoneMicCode||phoneMicStopP) await stopPhoneMic();
   if(!_mlsExactScheduledClinicalAction('phone recording')) return false;
   if(!backendMode()){ toast('Phone mic requires the hosted version.','err'); return; }
   if(!_athenaPrepareRecording('phone recording')) return;
@@ -35149,12 +35636,13 @@ async function startPhoneMic(clickEvent){
       return;
     }
     phoneMicCode=data.code;
+    phoneMicStartedAt=Date.now(); phoneMicGrewAt=0;
     if(!currentVisitAthenaBinding) _athenaSetVisitBinding(phoneBindingCandidate);
     phoneMicBindingId=currentVisitAthenaBinding&&currentVisitAthenaBinding.id||'';
     phoneMicBindingEpoch=currentVisitAthenaEpoch;
     // how much of the server transcript we've already pulled in — start from
     // whatever the doctor has typed so far is NOT counted; server starts empty.
-    phoneMicSeen=0;
+    phoneMicSeen=0; phoneMicRefusedTold=false;
     // Open the lightweight phone-recorder app (fast load, installable) instead of the full app.
     // Keep the one-use pairing code out of HTTP requests, server logs, and referrers.
     const link=location.origin+'/phone.html#code='+encodeURIComponent(phoneMicCode);
@@ -35164,56 +35652,209 @@ async function startPhoneMic(clickEvent){
     // The pairing code stays on this device; no third-party QR request is made.
     mlsSetLocalQrImage('phoneMicQR',link,180);
     document.getElementById('phoneMicPanel').style.display='block';
-    document.getElementById('phoneMicListening').style.display='inline';
+    const listening=document.getElementById('phoneMicListening');
+    listening.textContent='🎙 listening from phone…'; listening.style.display='inline';
     if(phoneMicPollT) clearInterval(phoneMicPollT);
-    phoneMicPollT=setInterval(pollPhoneMic,3000);
+    phoneMicPollT=setInterval(_mlsPhoneMicTick,3000);
     toast('Phone mic ready — scan the QR or open the link on your phone.','ok');
   }catch(e){ toast('Network problem starting phone mic.','err'); }
   finally{ if(btn){ btn.disabled=false; btn.textContent=orig; } }
 }
 async function pollPhoneMic(){
-  const code=phoneMicCode, bindingId=phoneMicBindingId, bindingEpoch=phoneMicBindingEpoch;
-  if(!code||!bindingId||bindingEpoch==null) return;
+  /* micfix-1.0.0 (2026-09-24): one read at a time; a caller that needs a fresh
+     read (the final one before closing) waits for the read in flight first.
+     Answers 'ok', 'ended' (micfix-1.1.0: the server answers ended:true, with
+     its final words, which are added first), 'gone' (the server no longer has
+     this session: 404, 410 or 403 - stopped, deleted or expired; micfix-1.2.0:
+     its last words were not seen), 'refused' (words arrived after the open
+     visit changed, so they were not added), 'error' or 'idle'. */
+  const prior=phoneMicPollP; let release; phoneMicPollP=new Promise(function(r){ release=r; });
+  try{ await prior; }catch(e){}
+  phoneMicPolling=true;
   try{
-    const r=await fetch(bkBase()+'/api/mic/'+encodeURIComponent(code),{
-      headers:{'Authorization':'Bearer '+bkToken()}
-    });
-    if(r.status===401){ handle401(); stopPhoneMic(); return; }
-    if(!r.ok) return;
-    const d=await r.json();
-    if(code!==phoneMicCode||bindingId!==phoneMicBindingId||Number(bindingEpoch)!==Number(phoneMicBindingEpoch)||Number(bindingEpoch)!==Number(currentVisitAthenaEpoch)||!currentVisitAthenaBinding||currentVisitAthenaBinding.id!==bindingId||!_athenaCurrentMatchesBound(currentVisitAthenaBinding)) return;
-    const full=(d&&d.transcript)||'';
-    if(full.length>phoneMicSeen){
-      // Append ONLY the new tail — never clobber what the doctor typed.
-      const tail=full.slice(phoneMicSeen);
-      const ta=document.getElementById('transcript');
-      if(ta){
-        const sep=(ta.value && !/\s$/.test(ta.value))?' ':'';
-        ta.value=ta.value+sep+tail;
-        // keep the SpeechRecognition buffer in sync so it doesn't overwrite us
-        finalText=ta.value+' ';
-        try{_markVisitDirty();}catch(_){}
-      }
-      phoneMicSeen=full.length;
-    }
-  }catch(e){/* transient — keep polling */}
+    const code=phoneMicCode, bindingId=phoneMicBindingId, bindingEpoch=phoneMicBindingEpoch;
+    if(!code||!bindingId||bindingEpoch==null) return 'idle';
+    const ac=(typeof AbortController==='function')?new AbortController():null;
+    const giveUp=setTimeout(function(){ try{ if(ac) ac.abort(); }catch(e){} },10000);
+    try{
+      const r=await fetch(bkBase()+'/api/mic/'+encodeURIComponent(code),{
+        headers:{'Authorization':'Bearer '+bkToken()}, signal:ac?ac.signal:undefined
+      });
+      if(r.status===401){ handle401(); stopPhoneMic({now:true}); return 'gone'; }
+      if(r.status===404||r.status===410||r.status===403){ _mlsPhoneMicEnded(code); return 'gone'; }
+      if(!r.ok) return 'error';
+      const d=await r.json();
+      const st=_mlsPhoneMicAdd(d&&d.transcript,code,bindingId,bindingEpoch);
+      if(d&&d.ended===true){ _mlsPhoneMicEnded(code); return st==='refused'?'refused':'ended'; }
+      return st;
+    }catch(e){ return 'error'; /* transient — keep polling */ }
+    finally{ clearTimeout(giveUp); }
+  }finally{ phoneMicPolling=false; release(); }
 }
-async function stopPhoneMic(){
-  const code=phoneMicCode;
+/* micfix-1.1.0 (2026-09-25): add one read of the phone's transcript to the
+   visit it was paired with. 'refused' = it holds words this visit has not
+   got, but the open visit is no longer that one, so they were not added.
+   micfix-1.2.0 (2026-09-25): MLS gives every reader the phone's words in the
+   order they ARRIVED, so each read only grows at the end: the part past what
+   this visit already has is added, as before. */
+function _mlsPhoneMicAdd(full,code,bindingId,bindingEpoch){
+  full=String(full||'');
+  if(code!==phoneMicCode||bindingId!==phoneMicBindingId||Number(bindingEpoch)!==Number(phoneMicBindingEpoch)||Number(bindingEpoch)!==Number(currentVisitAthenaEpoch)||!currentVisitAthenaBinding||currentVisitAthenaBinding.id!==bindingId||!_athenaCurrentMatchesBound(currentVisitAthenaBinding)){
+    return full.length>phoneMicSeen?'refused':'ok';
+  }
+  if(full.length>phoneMicSeen){
+    // Append ONLY the new tail — never clobber what the doctor typed.
+    const tail=full.slice(phoneMicSeen);
+    const ta=document.getElementById('transcript');
+    if(ta){
+      const sep=(ta.value && !/\s$/.test(ta.value))?' ':'';
+      ta.value=ta.value+sep+tail;
+      // keep the SpeechRecognition buffer in sync so it doesn't overwrite us
+      finalText=ta.value+' ';
+      try{_markVisitDirty();}catch(_){}
+    }
+    phoneMicSeen=full.length;
+    phoneMicGrewAt=Date.now();
+  }
+  return 'ok';
+}
+/* micfix-1.0.0 (2026-09-24): the 3 s tick. It skips while a read is still in
+   flight, and it ends a link whose session the server has let expire: no new
+   words for 2 h, or 12 h after it opened. */
+function _mlsPhoneMicTick(){
+  if(!phoneMicCode||phoneMicStopP) return;
+  const now=Date.now();
+  if(now-Math.max(phoneMicStartedAt,phoneMicGrewAt)>=PHONE_MIC_QUIET_END_MS||now-phoneMicStartedAt>=PHONE_MIC_MAX_MS){
+    stopPhoneMic({why:'expired'});
+    return;
+  }
+  if(!phoneMicPolling) pollPhoneMic().then(_mlsPhoneMicRefusedNow);
+}
+/* micfix-1.2.0 (2026-09-25): the open visit changed under a live phone link,
+   so the regular read refused the phone's new words. The doctor used to hear
+   of it only at Stop; it is said at once (once per link). */
+function _mlsPhoneMicRefusedNow(st){
+  if(st!=='refused'||phoneMicRefusedTold||!phoneMicCode) return;
+  phoneMicRefusedTold=true;
+  try{ toast('The phone is still recording, but the visit it was paired with is no longer open, so MLS is not adding the phone’s words to this visit. Stop the phone mic, then pair the phone again for this visit.','err'); }catch(e){}
+}
+/* micfix-1.0.0 (2026-09-24): forget a phone link that is over. The code, link
+   and QR on the page are reset too, so no surface can offer a dead code as
+   Ready, and idle sign-out applies again once nothing is recording. */
+function _mlsPhoneMicClear(){
   if(phoneMicPollT){ clearInterval(phoneMicPollT); phoneMicPollT=null; }
   phoneMicCode='';
-  phoneMicBindingId=''; phoneMicBindingEpoch=null;
-  document.getElementById('phoneMicPanel').style.display='none';
-  document.getElementById('phoneMicListening').style.display='none';
-  if(code){
-    try{
-      await fetch(bkBase()+'/api/mic/'+encodeURIComponent(code)+'/stop',{
-        method:'POST',
-        headers:{'Authorization':'Bearer '+bkToken()}
-      });
-    }catch(e){/* best-effort */}
-  }
+  phoneMicBindingId=''; phoneMicBindingEpoch=null; phoneMicStartedAt=0; phoneMicGrewAt=0;
+  const c=document.getElementById('phoneMicCode'); if(c) c.textContent='------';
+  const l=document.getElementById('phoneMicLink'); if(l){ l.textContent=''; l.setAttribute('href','#'); }
+  const q=document.getElementById('phoneMicQR'); if(q){ q.removeAttribute('src'); q.removeAttribute('data-qr-error'); }
+  const p=document.getElementById('phoneMicPanel'); if(p) p.style.display='none';
+  const w=document.getElementById('phoneMicListening'); if(w) w.style.display='none';
 }
+/* The server says this session is gone (a 404 from an older server, or 410). */
+function _mlsPhoneMicEnded(code){
+  if(!code||code!==phoneMicCode||phoneMicStopP) return;
+  _mlsPhoneMicClear();
+  try{ toast('The phone recording link has ended (it was stopped or it expired), so MLS is no longer listening for that phone. To keep recording on the phone, open Record on phone for a new code.','err'); }catch(e){}
+}
+function _mlsPhoneMicSleep(ms){ return new Promise(function(r){ setTimeout(r,ms); }); }
+/* micfix-1.0.0 (2026-09-24): Stop used to clear the 3 s read and delete the
+   session at once, so text the server had taken since the last read, and a
+   clip still being transcribed, never reached the visit while the phone said
+   it had uploaded them. Stop now reads once more, waits a few seconds for
+   clips still in flight (saying so), reads again, and only then closes the
+   session. {now:true} closes at once, for sign-out and account boundaries. */
+async function stopPhoneMic(){
+  const opts=arguments[0]||{}, now=!!opts.now, expired=opts.why==='expired';
+  if(phoneMicStopP&&!now) return phoneMicStopP;
+  const code=phoneMicCode;
+  if(!code){ if(!phoneMicStopP) _mlsPhoneMicClear(); return true; }
+  if(now){
+    const token=bkToken();
+    _mlsPhoneMicClear();
+    try{ await fetch(bkBase()+'/api/mic/'+encodeURIComponent(code)+'/stop',{ method:'POST', headers:{'Authorization':'Bearer '+token} }); }catch(e){/* best-effort */}
+    return true;
+  }
+  phoneMicStopP=(async function(){
+    if(phoneMicPollT){ clearInterval(phoneMicPollT); phoneMicPollT=null; }
+    const listening=document.getElementById('phoneMicListening');
+    if(listening) listening.textContent='🎙 finishing — adding the phone’s last words…';
+    let st=await pollPhoneMic(), refused=st==='refused';
+    if(phoneMicCode!==code) return true;
+    const over=function(){ return st==='ended'||st==='gone'; };
+    if(!over()){
+      try{ toast('Stopping the phone mic: adding the last words the phone sent before closing the link (a few seconds)…',''); }catch(e){}
+      const until=Date.now()+PHONE_MIC_STOP_GRACE_MS;
+      while(!over()&&phoneMicCode===code&&Date.now()<until){
+        await _mlsPhoneMicSleep(1000);
+        st=await pollPhoneMic(); if(st==='refused') refused=true;
+      }
+    }
+    if(phoneMicCode!==code) return true;
+    /* micfix-1.2.0 (2026-09-25): what this Stop actually saw. The last read
+       answered (or ended the session with its last words), or Stop's own
+       answer carried the final transcript. A failed read or a failed Stop is
+       never reported as every word being in the transcript. */
+    let seen=st==='ok'||st==='ended'||st==='refused';
+    if(!over()){
+      /* micfix-1.1.0 (2026-09-25): a server that keeps an ended session's words
+         for a short while answers Stop with the final transcript: every clip it
+         stored before the stop. Adding it closes the last gap, a clip stored
+         between the final read and the stop. (An older server deletes the
+         session and answers {ok:true}.) */
+      const bindingId=phoneMicBindingId, bindingEpoch=phoneMicBindingEpoch;
+      try{
+        const r=await fetch(bkBase()+'/api/mic/'+encodeURIComponent(code)+'/stop',{ method:'POST', headers:{'Authorization':'Bearer '+bkToken()} });
+        let d=null; try{ d=await r.json(); }catch(e){ d=null; }
+        if(!r.ok) seen=false;
+        else if(d&&typeof d.transcript==='string'){ if(_mlsPhoneMicAdd(d.transcript,code,bindingId,bindingEpoch)==='refused') refused=true; else seen=true; }
+      }catch(e){ seen=false; }
+    }
+    if(phoneMicCode===code) _mlsPhoneMicClear();
+    try{
+      if(refused) toast('The phone sent more words after the open visit changed, so MLS did not add them to this visit.','err');
+      else if(st==='gone') toast('The phone recording link had already ended (stopped or expired) before MLS could read the phone’s last words, so some may be missing from this transcript. The phone still shows what it sent; check the transcript before writing the note.','err');
+      else if(!seen) toast('Phone mic stopped, but MLS could not read the phone’s last words (a connection problem), so some may be missing from this transcript. The phone still shows what it sent; check the transcript before writing the note.','err');
+      else if(expired) toast('The phone mic link closed because its session has expired (2 hours without new words, or 12 hours in all). The words the phone sent are in the transcript.','');
+      else if(st==='ended') toast('The phone recording link had already ended (stopped or expired). The words MLS received from it are in the transcript.','err');
+      else toast('Phone mic stopped. The words the phone sent are in the transcript.','ok');
+    }catch(e){}
+    return !refused&&seen;
+  })();
+  try{ return await phoneMicStopP; }
+  finally{ phoneMicStopP=null; }
+}
+/* micfix-1.0.0 (2026-09-24): New visit while the phone may still be sending
+   this visit's last words. Emptying the editor then lost them: the phone link
+   was deleted without a final read, and the phone was told they had uploaded.
+   Like a patient switch mid-recording, New visit now waits: the phone link is
+   closed first (final read, a few seconds for clips in flight, one more read),
+   this visit keeps every word, and nothing is emptied. newVisit answers false,
+   so its wrappers and callers do not treat the visit as ended. */
+function _mlsPhoneMicHoldsVisit(){
+  /* micfix-1.2.0 (2026-09-25): the in-app iPhone recorder holds the visit the
+     same way while it records or still sends its last clips. A re-bind then
+     refused the words of every clip still on its way, without a word. */
+  if(/^(recording|stopping)$/.test(_mlsDirectPhone.status)){
+    /* micfix-1.3.0 (2026-09-25): when this stopped the recording, it says so
+       ('nothing was changed' was untrue then). */
+    const stoppedNow=_mlsDirectPhone.status==='recording';
+    if(stoppedNow) _mlsDirectPhoneSelfStop();
+    try{ toast(stoppedNow
+      ? 'Recording stopped. It is still sending this visit to MLS, so the visit was not changed. Try again once the recording has finished; every word stays in this visit.'
+      : 'The recording is still sending this visit to MLS, so nothing was changed. Try again once the recording has stopped; every word stays in this visit.','err'); }catch(e){}
+    return true;
+  }
+  if(!phoneMicCode) return false;
+  stopPhoneMic();
+  try{ toast('The phone mic is still sending this visit. MLS is adding its last words and closing the phone link first. Nothing was cleared; start the new visit again once it says the phone mic stopped.','err'); }catch(e){}
+  return true;
+}
+/* micfix-1.0.0 (2026-09-24): read-only state for the Record-on-phone popup. */
+window.__mlsPhoneMic={
+  version:'1.0.0',
+  state:function(){ return { code:phoneMicCode, stopping:!!phoneMicStopP, starting:phoneMicStartBusy }; }
+};
 
 /* =========================================================
    EXAMPLE VISIT
@@ -36629,6 +37270,18 @@ function _mlsGenerationEvidenceDecision(text){
   if(words.length>=4&&currentStatusPhrase.test(sparse)&&_mlsHasTrustedVerifiedHistory())return {ok:true,basis:'trusted-history-sparse'};
   return {ok:false,basis:'insufficient',code:'sparse-today-evidence',message:'Add one specific detail from today—symptom, exam finding, assessment, or plan—before generating. Nothing from old chart history will be invented.'};
 }
+/* micfix-1.0.0 (2026-09-24): after Stop, the iPhone recorder keeps finishing
+   while its last clips upload (they are retried until they land). A note
+   written in that window would silently miss the end of the visit. */
+function _mlsCaptureFinishingReason(){
+  try{
+    /* micfix-1.3.0 (2026-09-25): so does one that is still starting. */
+    if(_mlsDirectPhone.status==='starting')return 'The recording is still starting. Write the note once it has stopped, so the note has every word.';
+    if(_mlsDirectPhone.status!=='stopping')return '';
+    var n=_mlsDirectPhone.queue.length, segs=n+' recording segment'+(n===1?'':'s');
+    return 'The recording is still finishing'+(n?' ('+segs+' still uploading)':'')+'. Write the note once it has stopped, so the note has every word.';
+  }catch(e){return '';}
+}
 /* gcx-1.0.0: a READ-ONLY question for the visible controls -- "would a click
    be refused right now, and what is the sentence". It runs the SAME shipped
    evidence gate that generateNote() runs, so the button's blocked state can
@@ -36642,6 +37295,8 @@ function _mlsGenerationBlockReason(text){
   }catch(e){raw=String(text==null?'':text);}
   raw=raw.trim();
   if(!raw)return {code:'empty-transcript',message:'Capture or paste a visit first.'};
+  var finishing=typeof _mlsCaptureFinishingReason==='function'?_mlsCaptureFinishingReason():'';
+  if(finishing)return {code:'capture-finishing',message:finishing};
   var evidence;
   try{evidence=_mlsGenerationEvidenceDecision(raw);}catch(e2){return null;}
   if(evidence&&evidence.ok)return null;
@@ -36690,6 +37345,8 @@ async function generateNote(){
   const transcriptEl=document.getElementById('transcript');
   const transcript=transcriptEl?transcriptEl.value.trim():'';
   if(!transcript)return _mlsRefuseGeneration('empty-transcript','Capture or paste a visit first.');
+  const finishing=typeof _mlsCaptureFinishingReason==='function'?_mlsCaptureFinishingReason():'';
+  if(finishing)return _mlsRefuseGeneration('capture-finishing',finishing);
   const evidence=_mlsGenerationEvidenceDecision(transcript);
   if(!evidence.ok)return _mlsRefuseGeneration(evidence.code,evidence.message);
   if(!_mlsExactScheduledClinicalAction('note generation'))return _mlsRefuseGeneration('visit-action-blocked','MLS could not verify the active visit for note generation. Re-open the intended visit and try again.',false);
@@ -40647,7 +41304,7 @@ function _athenaPrepareRecording(actionLabel){
   if(!binding||_athenaCurrentMatchesBound(binding))return _athenaGuardBoundEditor(actionLabel);
   var cleanCompleted=typeof _visitDirty!=='undefined'&&!_visitDirty&&(_athenaEditorIsEmpty()||_athenaEditorMatchesSavedVisit());
   if(!currentVisitAthenaCompromised&&cleanCompleted){
-    try{newVisit();if(typeof prefillContextFromProfile==='function')prefillContextFromProfile();(typeof _mlsNewVisitToast==='function'?_mlsNewVisitToast:toast)('Started a fresh visit for '+String(((typeof activePatient==='function'&&activePatient())||{}).name||'the selected patient')+'.','ok');return true;}catch(e){}
+    try{if(newVisit()===false)return false;if(typeof prefillContextFromProfile==='function')prefillContextFromProfile();(typeof _mlsNewVisitToast==='function'?_mlsNewVisitToast:toast)('Started a fresh visit for '+String(((typeof activePatient==='function'&&activePatient())||{}).name||'the selected patient')+'.','ok');return true;}catch(e){}
   }
   return _athenaGuardBoundEditor(actionLabel);
 }
@@ -60643,6 +61300,9 @@ html body[data-mls-dock="top"] #opPrepModal.opr-room > .modal{
   wrapOnce('newVisit', function (orig) {
     return function () {
       var r = orig.apply(this, arguments);
+      /* micfix-1.0.0 (2026-09-24): false = New visit refused (the phone mic is
+         still finishing this visit); the visit is still open, keep it whole. */
+      if (r === false) return r;
       safe(clearVisitResidue);
       window.__mlsVisitEditorOwnerId = activeId();
       var opts = arguments[0] || {};
@@ -72473,6 +73133,8 @@ html [aria-busy="true"][data-mls-busy-paint]{ opacity:.72; cursor:progress; }
     return function () {
       var real = safe(hadWork, false);
       var out = orig.apply(this, arguments);
+      /* micfix-1.0.0 (2026-09-24): a refused New visit ended nothing. */
+      if (out === false) return out;
       if (real) begin('new-visit'); else announce(current(), 'new-visit-empty');
       return out;
     };

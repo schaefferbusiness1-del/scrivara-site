@@ -299,8 +299,22 @@
    *   'ask'       - unsaved work, refuse now and open the abandon dialog
    *   'confirmed' - the doctor already answered OK; consume the token and go
    *   'allow'     - nothing to protect */
+  /* micfix-1.0.0 (2026-09-24): a paired phone recording is recording too. It
+     never passes through startCapture, so LOCK.capturing never saw it, and any
+     switch went through, deleted the phone's session and lost the rest of the
+     visit. The shell keeps phoneMicCode set until Stop has collected the
+     phone's last words. */
+  /* micfix-1.2.0 (2026-09-25): so is the in-app iPhone recorder while it starts,
+     records or still sends its last clips; LOCK.capturing drops at its Stop. */
+  function phoneMicLive() {
+    return safe(function () {
+      if (typeof phoneMicCode !== 'undefined' && !!phoneMicCode) return true;
+      var d = window.__mlsDirectPhoneCapture;
+      return !!(d && typeof d.state === 'function' && /^(starting|recording|stopping)$/.test(String((d.state() || {}).status || '')));
+    }, false);
+  }
   function switchState(targetId) {
-    if (LOCK.capturing) return 'blocked';
+    if (LOCK.capturing || phoneMicLive()) return 'blocked';
     if (LOCK.hasPendingWork && LOCK.snapshot && LOCK.snapshot.id) {
       var cur = currentActive();
       var stillOnLockedPatient = cur && cur.id === LOCK.snapshot.id;
@@ -394,7 +408,8 @@
   }
   if (isFn(window.newVisit)) {
     var origNewVisit = window.newVisit;
-    window.newVisit = function () { var r = origNewVisit.apply(this, arguments); safe(function () { if (!LOCK.capturing) clearLock(); }); return r; };
+    /* micfix-1.0.0: false = New visit refused (the phone mic is still finishing); nothing ended */
+    window.newVisit = function () { var r = origNewVisit.apply(this, arguments); if (r === false) return r; safe(function () { if (!LOCK.capturing) clearLock(); }); return r; };
   }
 
   /* ---------------- item 12: writeback name/DOB/destination confirmation, with a fallback

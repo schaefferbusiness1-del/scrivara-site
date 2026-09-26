@@ -34,6 +34,7 @@ function makeContext() {
   const context = vm.createContext({
     get S() { return state.S; },
     isRecording: () => false,
+    directCaptureStatus: () => '',   /* micfix-1.3.0: computePhase asks the iPhone recorder first */
     noteText: () => state.note,
     $: () => null,
     Date,

@@ -1,12 +1,16 @@
-/* feat_mls_record_backup.js — v rb-1.0.1 (2026-07-14)
+/* feat_mls_record_backup.js — v rb-1.1.0 (2026-09-24)
  *
  * RECORDING SAFETY NET (additive, reversible — window.__mlsRecBackup.revert()).
  * The visit recorder is Web Speech recognition only: if the recognizer hiccups or the tab
  * sleeps, spoken audio is gone and the note with it. This module adds three protections:
  *
  *   1. AUDIO BACKUP — while the doctor records, a parallel MediaRecorder captures the mic
- *      to IndexedDB in 5-second chunks (survives tab crash/reload). Last 10 sessions kept,
- *      on THIS device only — nothing is uploaded anywhere.
+ *      to IndexedDB in 5-second chunks (survives tab crash/reload), on THIS device only —
+ *      nothing is uploaded anywhere. micfix-1.0.0 (2026-09-24): the consent the patient
+ *      hears says audio is deleted after processing, so a backup lives only until its
+ *      visit's transcript is safely stored: it is deleted when that visit is saved after a
+ *      recording that delivered every clip, and in any case 24 hours after it was made
+ *      (at most 10 are kept meanwhile).
  *   2. CUT-OUT SENTINEL — if the speech recognizer silently ends while the app still says
  *      "recording", it is restarted within ~2s and the doctor sees a small notice, so
  *      dictation never quietly stops mid-visit.
@@ -20,7 +24,7 @@
   "use strict";
   if (window.__mlsRecBackup && window.__mlsRecBackup.installed) return;
 
-  var VERSION = "rb-1.0.1";
+  var VERSION = "rb-1.1.0";
   function safe(fn, d) { try { return fn(); } catch (e) { return d; } }
   function isFn(f) { return typeof f === "function"; }
 
@@ -48,15 +52,18 @@
   function putSess(meta) {
     db().then(function (d) { if (!d) return; safe(function () { d.transaction(SESS, "readwrite").objectStore(SESS).put(meta); }); });
   }
+  /* micfix-1.0.0 (2026-09-24): these two passed res([]) as safe()'s fallback,
+     which evaluates it at once, so they always answered an empty list: the
+     10-session prune never deleted anything and the recovery list was empty. */
   function allSess() {
     return db().then(function (d) {
       return new Promise(function (res) {
         if (!d) return res([]);
-        safe(function () {
+        try {
           var q = d.transaction(SESS, "readonly").objectStore(SESS).getAll();
           q.onsuccess = function () { res((q.result || []).sort(function (a, b) { return b.sess - a.sess; })); };
           q.onerror = function () { res([]); };
-        }, res([]));
+        } catch (e) { res([]); }
       });
     });
   }
@@ -64,15 +71,16 @@
     return db().then(function (d) {
       return new Promise(function (res) {
         if (!d) return res([]);
-        safe(function () {
+        try {
           var q = d.transaction(CHUNKS, "readonly").objectStore(CHUNKS).getAll(IDBKeyRange.bound([sess, 0], [sess, 1e9]));
           q.onsuccess = function () { res((q.result || []).sort(function (a, b) { return a.seq - b.seq; })); };
           q.onerror = function () { res([]); };
-        }, res([]));
+        } catch (e) { res([]); }
       });
     });
   }
   function dropSess(sess) {
+    if (sess === heldId) heldId = null;
     db().then(function (d) {
       if (!d) return;
       safe(function () {
@@ -84,8 +92,60 @@
   function prune(keep) {
     allSess().then(function (list) { for (var i = keep; i < list.length; i++) dropSess(list[i].sess); });
   }
+  /* micfix-1.0.0 (2026-09-24): session writes are read-modify-write in one
+     transaction and run in order, and the deletions below wait for them, so a
+     save that follows a Stop in the same tick sees the Stop's verdict. */
+  var lastWrite = Promise.resolve();
+  function updateSess(id, patch) {
+    lastWrite = lastWrite.then(function () {
+      return db().then(function (d) {
+        return new Promise(function (res) {
+          if (!d) return res();
+          try {
+            var tx = d.transaction(SESS, "readwrite"), st = tx.objectStore(SESS), q = st.get(id);
+            q.onsuccess = function () { var m = q.result; if (!m) return; for (var k in patch) m[k] = patch[k]; st.put(m); };
+            tx.oncomplete = tx.onerror = tx.onabort = function () { res(); };
+          } catch (e) { res(); }
+        });
+      });
+    });
+    return lastWrite;
+  }
+  var DAY_MS = 24 * 60 * 60 * 1000, lastAgePrune = 0;
+  /* At the latest 24 h after it was made, a backup is gone. */
+  function pruneOld() {
+    lastAgePrune = Date.now();
+    return allSess().then(function (list) {
+      for (var i = 0; i < list.length; i++) if (list[i].sess !== sessId && !(Date.now() - Number(list[i].at || list[i].sess || 0) < DAY_MS)) dropSess(list[i].sess);
+    });
+  }
+  /* A visit was saved (its record carries the visit token). Every backup of
+     that visit whose recording delivered all of its audio is deleted; one
+     that did not (a clip never reached MLS) stays until the 24 h limit, since
+     it then holds words the transcript does not. */
+  function forgetSavedVisit(token) {
+    if (!token) return;
+    lastWrite.then(allSess).then(function (list) {
+      for (var i = 0; i < list.length; i++) {
+        var m = list[i];
+        if (m.visit === token && m.clean === 1 && m.sess !== sessId) dropSess(m.sess);
+      }
+    });
+  }
+  function visitToken() {
+    return safe(function () { var v = window.__mlsVisitIdentity; return (v && isFn(v.current)) ? String(v.current() || "") : ""; }, "");
+  }
+  /* The capture's own stop tells whether every clip reached MLS: the in-page
+     iPhone recorder answers a promise of true only when none failed; the
+     Web Speech recorder has no clips and answers synchronously. */
+  function afterStop(id, out) {
+    if (!id) return;
+    if (out && isFn(out.then)) out.then(function (ok) { updateSess(id, { open: 0, clean: ok === false ? 0 : 1 }); }, function () { updateSess(id, { open: 0, clean: 0 }); });
+    else updateSess(id, { open: 0, clean: out === false ? 0 : 1 });
+  }
   function purge() {
     stopBackup();
+    heldId = null;
     safe(function () { if (_db) _db.close(); });
     _db = null;
     return new Promise(function (resolve) {
@@ -104,6 +164,10 @@
 
   /* ---------------- backup recorder ---------------- */
   var rec = null, stream = null, sessId = null;
+  /* micfix-1.2.0 (2026-09-25): the backup of the latest recording, for as long
+     as it is on this device. The in-app iPhone recorder names it (holds())
+     only when it is there. */
+  var heldId = null;
   /* getUserMedia can resolve after Stop/New Visit/a patient switch. Every
      request therefore owns one epoch. stopBackup() invalidates that epoch even
      when MediaRecorder has not been created yet, and a stale resolved stream is
@@ -168,11 +232,12 @@
            event from a stopped visit must never use the next visit's globals. */
         nextRec.ondataavailable = function (ev) { if (ev.data && ev.data.size) putChunk(nextSessId, nextSeq++, ev.data); };
         nextRec.onerror = function () { chip("Audio backup hit an error — dictation itself is unaffected.", true); };
-        rec = nextRec; stream = s; sessId = nextSessId;
+        rec = nextRec; stream = s; sessId = nextSessId; heldId = nextSessId;
         nextRec.start(5000); /* one durable chunk every 5s */
-        putSess({ sess: nextSessId, at: nextSessId, patient: ptLabel(), mime: mime, open: 1 });
+        putSess({ sess: nextSessId, at: nextSessId, patient: ptLabel(), mime: mime, open: 1, visit: visitToken() });
         prune(10);
-        chip("Backup recording ✓ (audio kept on this device)");
+        safe(pruneOld);
+        chip("Backup recording ✓ (kept on this device until the visit is saved)");
       } catch (e) {
         if (rec === nextRec) { rec = null; stream = null; sessId = null; }
         safe(function () { if (nextRec && nextRec.state !== "inactive") nextRec.stop(); });
@@ -191,26 +256,22 @@
     if (!r) { if (s) stopStreamTracks(s); return; }
     safe(function () { r.stop(); });
     setTimeout(function () { stopStreamTracks(s); }, 400);
-    if (id) { putSessOpen(id, 0); chip("Audio backup saved ✓ — tap 🎧 to recover it any time"); }
-  }
-  function putSessOpen(id, open) {
-    allSess().then(function (list) {
-      for (var i = 0; i < list.length; i++) { if (list[i].sess === id) { list[i].open = open; putSess(list[i]); return; } }
-    });
+    if (id) { updateSess(id, { open: 0 }); chip("Audio backup kept ✓ until this visit is saved (24 hours at most) — tap 🎧 to recover it"); }
   }
 
   /* ---------------- wrap startCapture / stopCapture ---------------- */
   var wrapped = null, wrapPoll = null, wrapTries = 0;
   function wrapCore() {
     if (wrapped) return true;
-    var sc = window.startCapture, xc = window.stopCapture;
+    var sc = window.startCapture, xc = window.stopCapture, up = window.upsertNote;
     if (!isFn(sc) || !isFn(xc)) return false;
-    wrapped = { sc: sc, xc: xc };
+    wrapped = { sc: sc, xc: xc, up: up };
     window.startCapture = function () {
       /* A new base attempt supersedes any pending/active backup. Run the base
          start first so a refused microphone/visit binding never owns backup
          audio; only a successful capture receives one request epoch. */
       safe(stopBackup);
+      heldId = null;
       var result;
       try { result = sc.apply(this, arguments); }
       catch (e) { safe(stopBackup); throw e; }
@@ -218,7 +279,22 @@
       safe(startBackup);
       return result;
     };
-    window.stopCapture = function () { safe(stopBackup); return xc.apply(this, arguments); };
+    window.stopCapture = function () {
+      var id = sessId;
+      safe(stopBackup);
+      var out = xc.apply(this, arguments);
+      safe(function () { afterStop(id, out); });
+      return out;
+    };
+    /* micfix-1.0.0: upsertNote is the one local write of a visit record; it
+       throws when nothing was stored. */
+    if (isFn(up)) {
+      window.upsertNote = function (rec) {
+        var out = up.apply(this, arguments);
+        safe(function () { forgetSavedVisit(rec && rec.visitToken); });
+        return out;
+      };
+    }
     return true;
   }
 
@@ -393,7 +469,7 @@
   function ensureBtn() {
     var h = host(); if (!h || document.getElementById(BTN_ID)) return;
     var b = document.createElement("button");
-    b.id = BTN_ID; b.type = "button"; b.title = "Recording backups — every visit is audio-backed-up on this device";
+    b.id = BTN_ID; b.type = "button"; b.title = "Recording backups — kept on this device until the visit is saved, 24 hours at most";
     b.textContent = "🎧";
     b.style.cssText = "margin-left:6px;padding:2px 8px;border-radius:10px;border:1px solid #d5dde6;background:#f6f9fc;cursor:pointer;font-size:13px;vertical-align:middle;";
     b.addEventListener("click", function (ev) { safe(function () { ev.preventDefault(); ev.stopPropagation(); }); toggleList(); });
@@ -403,6 +479,7 @@
   /* ---------------- boot / revert ---------------- */
   function tick() {
     if (!wrapCore()) { wrapTries++; if (wrapTries > 300) stopPolls(); }
+    if (Date.now() - lastAgePrune > 10 * 60 * 1000) safe(pruneOld);
     safe(wrapProto);
     safe(ensureBtn);
     safe(sentinel);
@@ -413,7 +490,7 @@
 
   function revert() {
     stopPolls();
-    safe(function () { if (wrapped) { window.startCapture = wrapped.sc; window.stopCapture = wrapped.xc; wrapped = null; } });
+    safe(function () { if (wrapped) { window.startCapture = wrapped.sc; window.stopCapture = wrapped.xc; if (isFn(wrapped.up)) window.upsertNote = wrapped.up; wrapped = null; } });
     safe(function () { protoWrapped.forEach(function (w) { w.proto.start = w.start; w.proto.stop = w.stop; w.proto.abort = w.abort; delete w.proto.__mlsRbWrapped; }); protoWrapped = []; });
     safe(stopBackup);
     safe(function () { var e1 = document.getElementById(CHIP_ID); if (e1) e1.remove(); });
@@ -438,6 +515,7 @@
     _dropWake: dropWake,
     _startBackup: startBackup,
     _stopBackup: stopBackup,
+    holds: function () { return heldId !== null; },
     purge: purge,
     revert: revert
   };

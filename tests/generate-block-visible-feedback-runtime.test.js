@@ -110,6 +110,8 @@ const runOverlayFn = extractFn(connect, 'function genRunOverlay() {');
 const syncGateFn = extractFn(connect, 'function syncGenGateUi() {');
 const shoutFn = extractFn(connect, 'function shoutGenBlock(message) {');
 const ez3GenHandler = handlerExpression(connect, "on('ez3Gen', function () {");
+/* micfix-1.3.0: the handler asks first whether the iPhone recorder is starting or finishing */
+const finishingFn = extractFn(connect, 'function captureFinishingReason() {');
 
 /* The exact refusal sentence is READ from the shipped gate, never retyped:
  * this control must never be the place a second wording is invented. */
@@ -230,6 +232,10 @@ const BOOT = `
   window.S = S;
   function render(){ window.__renders += 1; }
   function requireExactScheduledBinding(){ window.__bindingCalls += 1; return true; }
+  /* micfix-1.3.0: no iPhone recorder is starting or finishing here */
+  function safe(fn, d){ try { return fn(); } catch (e) { return d; } }
+  function directCaptureStatus(){ return ''; }
+  ${finishingFn}
   function genBtnResolve(){ var g = $('genBtn'); return (g && !g.disabled) ? g : null; }
   /* The hidden engine runs for real in parts A and B (that is the whole point
      of those parts). Part D measures only what the HANDLER contributes to an

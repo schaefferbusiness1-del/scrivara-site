@@ -752,6 +752,22 @@
       return !!(d && typeof d.state === 'function' && String((d.state() || {}).status || '') === 'stopping');
     }, false);
   }
+  /* micfix-1.0.0 (2026-09-24): the in-page recorder's own state - finishing
+     after Stop, clips still waiting to upload, and why recording stopped. */
+  function directCap() {
+    return safe(function () {
+      var d = window.__mlsDirectPhoneCapture;
+      var st = (d && typeof d.state === 'function') ? (d.state() || {}) : {};
+      /* micfix-1.3.2: a note about segments not added belongs to the visit that
+         lost them (lossHere); after another visit starts it is not repeated here */
+      var note = String(st.note || '');
+      if (note && Number(st.uploadFailures) > 0 && st.lossHere !== true) note = '';
+      return { status: String(st.status || ''), waiting: Number(st.waiting) || 0, note: note };
+    }, { status: '', waiting: 0, note: '' });
+  }
+  function waitingLine(n) {
+    return n ? ' ' + n + ' recording segment' + (n === 1 ? ' is' : 's are') + ' waiting to upload and will be retried; keep this screen open.' : '';
+  }
   function expectPhase(wanted, ms, message, opts) {
     clearConfirm();
     confirmTimer = setTimeout(function () {
@@ -1840,11 +1856,18 @@
     }
     var phase = String(sn.phase || 'idle');
     var sub = '', row = '';
-    if (phase === 'rec') {
-      sub = 'Recording <span id="mlsPh3Timer">' + mmss(sn.recSecs) + '</span>';
+    var cap = directCap();
+    /* micfix-1.0.0 (2026-09-24): after Stop the last clips are still uploading.
+       This used to read as Recording again, the clock restarting from 0:00
+       under a live Stop button. */
+    if (cap.status === 'stopping') {
+      sub = esc(cap.note || 'Finishing the last few seconds of the recording…') + esc(waitingLine(cap.waiting));
+      row = '<button type="button" class="ph3-primary" disabled id="mlsPh3Go">Finishing the recording&hellip;</button>';
+    } else if (phase === 'rec') {
+      sub = 'Recording <span id="mlsPh3Timer">' + mmss(sn.recSecs) + '</span>' + esc(waitingLine(cap.waiting)) + (cap.note ? ' ' + esc(cap.note) : '');
       row = btn('stop', '<span class="ph3-rec"></span> Stop recording', 'stop');
     } else if (phase === 'stopped') {
-      sub = 'Recording stopped. Nothing is written until you ask for the note.';
+      sub = cap.note ? esc(cap.note) : 'Recording stopped. Nothing is written until you ask for the note.';
       row = btn('generate', '&#10024; Write the note', 'primary') +
         btn('record', '&#127908; Resume', 'secondary', 'narrow');
     } else if (phase === 'gen') {
@@ -2287,6 +2310,7 @@
       S.screen, today(), rows().length, pulling() ? 1 : 0, pullSentence(), S.q,
       sn ? sn.phase : '', sn ? (sn.active ? sn.active.id : '') : '',
       sn ? sn.warn : '', sn ? sn.noteLen : 0, sn ? (sn.signed ? 1 : 0) : 0,
+      (function () { var c = directCap(); return c.status + '/' + c.waiting + '/' + c.note; })(),
       ckSig, S.ckErr, api._presence ? 1 : 0, api._presenceErr, installKind()
     ].join('~');
   }

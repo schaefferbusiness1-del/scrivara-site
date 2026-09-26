@@ -8675,6 +8675,12 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       return;
     }
     var live = recordingNow();
+    /* micfix-1.2.0 (2026-09-25): while only a phone link is live the pill reads
+       Pause/Stop (syncTopLane counts the link as live), so a press stops that
+       link, the same as the pairing popup's Stop. It used to read only
+       #captureBtn: the press STARTED this computer's own recorder and re-bound
+       the visit, and every later word from the phone was refused. */
+    try { if (!live && typeof phoneMicCode !== 'undefined' && phoneMicCode) live = true; } catch (ePh) {}
     if (!live) {
       var patient = verifiedActivePatient();
       if (!patient) {
@@ -9329,10 +9335,24 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (_noteTranscriptProof.note !== nt) _noteTranscriptProof.note = nt;
     return tx !== _noteTranscriptProof.transcript;
   }
+  function directLaneLossNote() {
+    try {
+      var cap = window.__mlsDirectPhoneCapture, st = cap && typeof cap.state === 'function' ? cap.state() : null;
+      if (st && st.status === 'idle' && st.lossHere === true && st.note) return '\u26a0\ufe0f ' + String(st.note);
+    } catch (e) {}
+    return '';
+  }
   function laneHintDefault(live, text, noteTextValue, noteTranscriptStale) {
     var tx = String(text == null ? '' : text);
     var nt = String(noteTextValue == null ? '' : noteTextValue);
     if (live) return 'Recording now. Pause whenever you need to; everything captured stays here so you can resume later.';
+    /* micfix-1.3.1 (2026-09-26): segments the in-app recorder could not add stay
+       named here until the next recording starts. A toast alone was missed on
+       iPad: it came 45 s after the last tap, so the quiet-notify rules kept it
+       off screen, and Generate sat next to "Recording stopped" with nothing
+       saying the end of the visit was missing. */
+    var lostNote = directLaneLossNote();
+    if (lostNote) return lostNote;
     if (noteTranscriptStale) return NOTE_TRANSCRIPT_STALE_WHY;
     if (nt.trim()) return 'Your note is ready below. Review and edit it here before using any send tools.';
     if (tx.trim()) return _recSessionSeen
@@ -22662,7 +22682,24 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       return d && typeof d.state === 'function' ? String((d.state() || {}).status || '') : '';
     }, '');
   }
-  function captureBusy() { return isRecording() || /^(starting|recording|stopping)$/.test(directCaptureStatus()); }
+  /* micfix-1.0.0 (2026-09-24): a paired phone recording (phone.html) is a live
+     recording too. It was missing here, so a tap on another appointment
+     switched patients mid-recording, deleted the phone's session and the phone
+     then blamed a mistyped code. The link stays set while Stop collects the
+     phone's last words, so a pending switch waits for that as well. */
+  function phoneMicLive() { return safe(function () { return typeof phoneMicCode !== 'undefined' && !!phoneMicCode; }, false); }
+  function captureBusy() { return isRecording() || /^(starting|recording|stopping)$/.test(directCaptureStatus()) || phoneMicLive(); }
+  /* micfix-1.3.0 (2026-09-25): while the iPhone recorder starts, or still sends
+     its last clips after Stop, the note waits. The sentence comes from the
+     engine (it is the one generateNote refuses with), so the room and the
+     engine say the same words. Empty when the recorder is not starting or
+     finishing. */
+  function captureFinishingReason() {
+    var st = directCaptureStatus();
+    if (st !== 'starting' && st !== 'stopping') return '';
+    var said = safe(function () { return isFn(window._mlsCaptureFinishingReason) ? String(window._mlsCaptureFinishingReason() || '') : ''; }, '');
+    return said || 'The recording is still finishing. Write the note once it has stopped, so the note has every word.';
+  }
   function noteText() { var n = $('noteBox'); return n ? (n.value || '') : ''; }
   /* WHAT IS ACTUALLY THERE TO CONTINUE — read once, in one tick, so the offer
      and the sentence under it can never describe different things.
@@ -23747,7 +23784,30 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
    * ===================================================================== */
   function computePhase() {
     var activationWarn = String(S.activationRefusalWarn || '');
-    if (isRecording()) { if (S.phase !== 'rec') { S.phase = 'rec'; if (!S.recStart) S.recStart = Date.now(); } return; }
+    /* micfix-1.0.0 (2026-09-24): after Stop the iPhone recorder keeps its
+       capture button marked recording while its last clips upload. That read
+       as Recording again and restarted the clock from 0:00 under a live Stop
+       button. Finishing is not recording, and the phone shell draws its own
+       Finishing state.
+       micfix-1.3.0 (2026-09-25): while that recorder starts or finishes, the
+       phase is 'finishing', not 'stopped'. As 'stopped' the room drew a
+       tappable Generate whose handler re-bound an unlinked visit before the
+       engine could refuse, and the visit then refused every clip still on its
+       way. renderDoctor draws Generate disabled in this phase. Once the
+       recorder settles, the room goes back to where it was (stopped, after a
+       Stop). */
+    var dcs = directCaptureStatus();
+    if (dcs === 'starting' || dcs === 'stopping') {
+      if (S.phase !== 'finishing') S.finishingBack = (dcs === 'stopping' || S.phase === 'rec') ? 'stopped' : S.phase;
+      else if (dcs === 'stopping') S.finishingBack = 'stopped';
+      S.phase = 'finishing'; S.recStart = 0;
+      return;
+    }
+    if (S.phase === 'finishing') { S.phase = S.finishingBack || 'stopped'; S.finishingBack = ''; }
+    if (isRecording()) {
+      if (S.phase !== 'rec') { S.phase = 'rec'; if (!S.recStart) S.recStart = Date.now(); }
+      return;
+    }
     if (S.phase === 'rec') { S.phase = 'stopped'; S.recStart = 0; }
     var n = noteText();
     if (S.genClickedAt && n.trim().length < 30) {
@@ -24318,8 +24378,9 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
      identity check as an appointment row. */
   function lockAndStartPatient(p, opts) {
     opts = opts || {};
-    /* v3.3: same mid-recording switch block as appointment rows */
-    if (isRecording() && !(S.appt && S.appt._pt && String(S.appt._patientId) === String(p.id))) { blockSwitchWhileRecording(); return; }
+    /* v3.3: same mid-recording switch block as appointment rows
+       (micfix-1.0.0: captureBusy, so a phone recording counts too) */
+    if (captureBusy() && !(S.appt && S.appt._pt && String(S.appt._patientId) === String(p.id))) { blockSwitchWhileRecording(); return; }
     var a = { id: null, name: p.name || '', dob: p.dob || '', _patientId: p.id, _pt: true };
     S.appt = a; S.locked = { id: p.id, name: a.name, dob: a.dob, key: 'pt|' + String(p.id) };
     S.editing = false; S.genClickedAt = 0; S.signedAt = 0; S.lastWarn = ''; S.query = '';
@@ -25751,6 +25812,13 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
           h += '<div class="ez3-row2"><button type="button" class="ez3-sm ez3-portal" id="ez3PortalAsk">Ask about the patient portal</button></div>';
         }
       }
+    } else if (S.phase === 'finishing') {
+      /* micfix-1.3.0 (2026-09-25): Generate is really disabled while the
+         recorder starts or finishes - the disabled attribute takes the tap, not
+         only aria-disabled - and its handler refuses first as well. Resume
+         waits for the recorder too, so it is not drawn. */
+      h += '<button type="button" class="ez3-big dim" id="ez3Gen" disabled aria-disabled="true">✨ Generate one note' +
+           '<small>' + esc(captureFinishingReason() || GEN_NO_TEXT_HINT) + '</small></button>';
     } else { /* idle / stopped */
       var tx = ($('transcript') && $('transcript').value) || '';
       h += idlePrimaryHtml(S.phase === 'stopped', !!tx.trim().length);
@@ -25816,6 +25884,14 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
       });
     });
     on('ez3Gen', function () {
+      /* micfix-1.3.0 (2026-09-25): FIRST, before any binding logic. While the
+         iPhone recorder starts or still sends its last clips, the press is
+         refused in the same words as the engine, and nothing else runs:
+         requireExactScheduledBinding below demotes an unlinked visit (a new
+         binding epoch), and the visit then refused every clip still on its
+         way. */
+      var finishing = captureFinishingReason();
+      if (finishing) { try { shoutGenBlock(finishing); } catch (eFin) { try { toast(finishing); } catch (eFin2) {} } return; }
       /* gcx-1.0.0: EVERY exit from this handler now answers the click. The
          `!S.appt` arm below used to be a bare `return` -- no toast, no banner,
          no repaint: the literal silent dead click. The evidence gate itself is
@@ -26227,6 +26303,20 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   function stopRecordingOnly(fromLane) {
     var c = captureBtn();
     var wasRecording = isRecording();
+    /* micfix-1.1.0 (2026-09-25): a second press while the iPhone recorder (or
+       the paired phone's link) is still finishing the first Stop is that same
+       Stop: nothing more to do and nothing more to say. */
+    var direct = function () {
+      try { var d = window.__mlsDirectPhoneCapture; return (d && typeof d.state === 'function') ? d : null; } catch (e) { return null; }
+    };
+    var directFinishing = function () {
+      try { var d = direct(); return !!d && String((d.state() || {}).status || '') === 'stopping'; } catch (e) { return false; }
+    };
+    /* the paired phone's link collects the phone's last words before it closes */
+    var phoneFinishing = function () {
+      try { var m = window.__mlsPhoneMic; return !!(m && typeof m.state === 'function' && (m.state() || {}).stopping); } catch (e) { return false; }
+    };
+    var wasFinishing = directFinishing() || phoneFinishing();
     /* 2026-08-24: the lane and the engine share this idempotent transition.
        Always invoke the low-level canonical stop, even when the engine's
        recording flag has already gone false: a segment, phone mic, or
@@ -26237,7 +26327,32 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     if (!c && !did) { toast('Recorder not found.'); return false; }
     if (stopIv) { clearInterval(stopIv); stopIv = null; }
     S.phase = 'stopped'; S.recStart = 0; S.genClickedAt = 0;
-    if (wasRecording || did) toast('Recording stopped. Everything captured is saved below — resume or generate one note.');
+    if (wasFinishing) { render(); return true; }
+    /* micfix-1.1.0 (2026-09-25): the iPhone recorder is still sending its last
+       clips, or the paired phone's link is still collecting its last words.
+       "Everything captured is saved" was said at once, and then, when a clip
+       did not make it, "one or more segments could not upload": done, then not
+       done. The success line now waits for the recorder's own answer; a
+       recording that missed words says so itself, and nothing claims more. */
+    var directNow = directFinishing(), phoneNow = !directNow && phoneFinishing();
+    if (directNow || phoneNow) {
+      toast(directNow
+        ? 'Finishing the recording: its last seconds are still being sent to MLS. Keep this screen open.'
+        : 'Finishing the recording: adding the last words the phone sent before closing its link.');
+      var finished = null;
+      try {
+        var dp = direct();
+        finished = directNow
+          ? ((dp && typeof dp.stop === 'function') ? dp.stop('engine-stop') : null)
+          : (isFn(window.stopPhoneMic) ? window.stopPhoneMic() : null);   /* joins the stop already running */
+      } catch (eDp) { finished = null; }
+      if (finished && typeof finished.then === 'function') {
+        finished.then(function (clean) {
+          if (clean === true) toast('Recording stopped. Everything captured is in the transcript below — resume or generate one note.');
+          try { render(); } catch (eR) {}
+        }, function () {});
+      }
+    } else if (wasRecording || did) toast('Recording stopped. Everything captured is saved below — resume or generate one note.');
     render();
     return true;
   }
@@ -26382,6 +26497,19 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
             if (Date.now() - started < 45000) { setTimeout(settleAndSwitch, 180); return; }
             S._switchingAfterStop = 0;
             S.lastWarn = 'Recording is still finishing. Nothing was switched — wait for Stopped, then choose the patient again.';
+            S.activationRefusalWarn = S.lastWarn;
+            render();
+            return;
+          }
+          /* micfix-1.3.2 (2026-09-26): a Stop that could not add every segment keeps
+             the doctor on this visit. Switching on made the loss invisible: the
+             toast came ~45 s after the last tap (muted), and the note belongs to
+             this visit, so the next patient's room rightly does not show it. */
+          var lossSt = null;
+          try { var dpc = window.__mlsDirectPhoneCapture; lossSt = dpc && typeof dpc.state === 'function' ? dpc.state() : null; } catch (eL) { lossSt = null; }
+          if (lossSt && lossSt.lossHere === true && lossSt.note) {
+            S._switchingAfterStop = 0;
+            S.lastWarn = String(lossSt.note) + ' Nothing was switched, so you can check this visit first. Choose the patient again when ready.';
             S.activationRefusalWarn = S.lastWarn;
             render();
             return;
@@ -28233,6 +28361,22 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   }
   function stopPoll() { if (pollIv) { clearInterval(pollIv); pollIv = null; } }
   cleanup.push(stopPoll);
+  /* micfix-1.3.0 (2026-09-25): the iPhone recorder says when it starts or
+     begins to finish (mls:direct-capture-status), so the room turns
+     'finishing' - Generate disabled - at once rather than on the next 700 ms
+     tick. One task later: the recorder says so from inside the press that
+     started it. */
+  function onDirectCaptureStatus() {
+    setTimeout(function () {
+      safe(function () {
+        if (!host || host.offsetParent === null || S.mode !== 'doctor' || S.screen !== 'doctor') return;
+        var before = S.phase; computePhase();
+        if (S.phase !== before) render();
+      });
+    }, 0);
+  }
+  try { window.addEventListener('mls:direct-capture-status', onDirectCaptureStatus); } catch (eDcs) {}
+  cleanup.push(function () { try { window.removeEventListener('mls:direct-capture-status', onDirectCaptureStatus); } catch (eDcs2) {} });
 
   /* =======================================================================
    *  legacy launcher re-route → the Visit tab (no overlay anymore)
@@ -28305,7 +28449,8 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
     try { cancelBgWaits(); abortPullFetches(); releasePullLease(); } catch (e1) {}
     P = null;
     try { if (isRecording() && typeof window.stopCapture === 'function') window.stopCapture(); } catch (e2) {}
-    try { if (typeof phoneMicCode !== 'undefined' && phoneMicCode && typeof window.stopPhoneMic === 'function') window.stopPhoneMic(); } catch (e3) {}
+    /* micfix-1.0.0 (2026-09-24): an account boundary closes the phone link at once. */
+    try { if (typeof phoneMicCode !== 'undefined' && phoneMicCode && typeof window.stopPhoneMic === 'function') window.stopPhoneMic({ now: true }); } catch (e3) {}
     S.mode = 'doctor'; S.screen = 'home'; S.visitDay = todayLocal();
     S.appt = null; S.locked = null; S.phase = 'idle'; S.recStart = 0;
     S.genClickedAt = 0; S.signedAt = 0; S.expanded = null; S.editing = false;
@@ -35695,7 +35840,11 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
   /* Appointment reads are mutation-sensitive and must never reuse a pre-write
      empty response. They intentionally bypass both this TTL and in-flight
      coalescing; base loadCalendar also requests cache:'no-store'. */
-  var HOT=/\/api\/(connect\/status|providers|intake\/pending|calls\/active|mic\/)/;
+  /* micfix-1.0.0 (2026-09-24): so do phone-mic transcript reads. Each clip
+     appends to the session, and the read taken after a clip lands, or the last
+     one before Stop closes the session, has to see it: a reply up to 1.5 s old
+     dropped the visit's final clip from the transcript. */
+  var HOT=/\/api\/(connect\/status|providers|intake\/pending|calls\/active)/;
   var APPOINTMENT_MUTATION=/\/api\/appointments(?:[\/?#]|$)/;
   var ATHENA_SCHEDULE_MUTATION=/\/api\/emr-sync\/schedule(?:[?#]|$)/;
   var TTL=1500, inflight={}, ttlCache={}, origFetch=window.fetch;
@@ -47191,7 +47340,7 @@ try { window.__mlsManualToursOnly = true; } catch (e) {}
 ;(function(){try{var sched=window.__mlsDeferAsset||window.requestIdleCallback||function(f){return setTimeout(f,900);};sched(function(){var A="feat_mls_lastmonth_b51.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260706b51c1";s.setAttribute("data-mls-asset",A);s.async=true;(document.body||document.head||document.documentElement).appendChild(s);},{timeout:2500});}catch(e){}})(); /* b51: Pull Last Month button + honest relabel of the rolling pull button - see feat_mls_lastmonth_b51.js header. Revert: window.__mlsLastMonthB51.revert() */
 
 
-;(function(){try{var A="feat_mls_patientlock_b53.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260910b53c8";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b53: patient-context lock + writeback confirmation fallback (covers MLS Easy v2 too) - see feat_mls_patientlock_b53.js header. Token moved for nonag-1.0.0 (2026-09-02): the module changed, and a versioned asset is served cache-first, so a returning browser would keep replaying the nagging copy. Revert: window.__mlsPatientLock.revert() */
+;(function(){try{var A="feat_mls_patientlock_b53.js";if(document.querySelector('script[data-mls-asset="'+A+'"]'))return;var s=document.createElement("script");s.src=A+"?v=20260924micfix1";s.setAttribute("data-mls-asset",A);s.async=false;(document.body||document.head||document.documentElement).appendChild(s);}catch(e){}})(); /* b53: patient-context lock + writeback confirmation fallback (covers MLS Easy v2 too) - see feat_mls_patientlock_b53.js header. Token moved for nonag-1.0.0 (2026-09-02): the module changed, and a versioned asset is served cache-first, so a returning browser would keep replaying the nagging copy. Token moved again for micfix-1.0.0 (2026-09-24): a paired phone recording now blocks a switch too. Revert: window.__mlsPatientLock.revert() */
 
 
 /* =========================================================================

@@ -229,6 +229,8 @@ function makeEngineHarness(blocks, gate) {
     _mlsAbortActiveGeneration() { return false; },
     _mlsGenerationEvidenceDecision() { return { ok: true, basis: 'today' }; },
     _mlsRefuseGeneration(code, message) { calls.toasts.push({ message, type: code }); return false; },
+    /* micfix-1.0.0 (2026-09-24): the phone-mic owner's state, idle */
+    phoneMicCode: '', phoneMicStopP: null, phoneMicStartBusy: false,
     fetch() { calls.network += 1; throw new Error('network effect reached'); }
   };
   context.window.window = context.window;

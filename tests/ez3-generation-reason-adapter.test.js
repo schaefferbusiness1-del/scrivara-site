@@ -169,6 +169,7 @@ function phaseHarness(genErrorText, preClickErrorText) {
   const ctx = vm.createContext({
     S, Date,
     isRecording: () => false,
+    directCaptureStatus: () => '',   /* micfix-1.3.0: computePhase asks the iPhone recorder first */
     noteText: () => '',
     bindingNotice: () => {},
     $: id => nodes[id] || null,

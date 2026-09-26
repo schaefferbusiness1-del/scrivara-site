@@ -14,7 +14,8 @@
  *     iPhone screenshots);
  *   - recording opens one authenticated server session, creates complete
  *     MediaRecorder segments, and does not claim Stop until the final segment
- *     has uploaded and the final transcript poll has completed;
+ *     has uploaded and the final transcript poll has completed (the
+ *     microphone itself is released once that segment is made: micfix-1.3.0);
  *   - transcript text is appended once and only while the immutable visit
  *     binding is still exact;
  *   - a patient/session boundary stops the stream and closes the server
@@ -307,7 +308,12 @@ async function happyLifecycle() {
   const stopped = h.ctx._mlsStopDirectPhoneCapture('test-stop');
   await flush(1);
   eq(h.ctx.__mlsDirectPhoneCapture.state().status, 'stopping', 'Stop did not enter a truthful finishing state');
-  eq(h.calls.trackStops, 0, 'phone released the microphone before its final segment was uploaded');
+  /* micfix-1.3.0 (2026-09-25): the queue does not need the microphone. It is
+     released once the final segment has been made, while that segment is
+     still uploading (it used to stay live for as long as MLS was down); the
+     session still waits for the upload. */
+  eq(h.recorders[h.recorders.length - 1].state, 'inactive', 'the final segment was not made at Stop');
+  eq(h.calls.trackStops, 1, 'phone kept the microphone live while its final segment was still uploading');
   eq(h.calls.stop, 0, 'phone closed the server session before the final upload completed');
 
   gate.resolve();

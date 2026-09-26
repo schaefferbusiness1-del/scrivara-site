@@ -20,6 +20,9 @@ let acceptSelection = true;
 const context = {
   S: {},
   isRecording() { return recording; },
+  /* micfix-1.0.0 (2026-09-24): the switch block reads captureBusy(), which also
+     counts a paired phone and the in-app iPhone recorder; none is live here. */
+  captureBusy() { return recording; },
   blockSwitchWhileRecording() { calls.push('blocked'); },
   setEasyMode() { calls.push('doctor'); },
   isFn(v) { return typeof v === 'function'; },

@@ -216,6 +216,7 @@ function harness(options) {
     S: { appt: { id: 'appointment-synthetic' }, phase: 'idle', genClickedAt: 0, signedAt: 0, lastWarn: '' },
     $: id => id === 'transcript' ? transcript : null,
     requireExactScheduledBinding() { return true; },
+    captureFinishingReason() { return ''; },   /* micfix-1.3.0: no recording is starting or finishing */
     genBtnResolve() { return genBtn; },
     render() {}
   };

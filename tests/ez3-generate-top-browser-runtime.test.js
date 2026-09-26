@@ -73,6 +73,7 @@ async function main() {
       function $(id) { return document.getElementById(id); }
       function recordingNow() { return false; }
       function isRecording() { return false; }
+      function directCaptureStatus() { return ''; }   /* micfix-1.3.0: computePhase asks the iPhone recorder first */
       function noteText() { return String(($('noteBox') || {}).value || ''); }
       function bindingNotice() {}
       function render() {}

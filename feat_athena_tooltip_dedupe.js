@@ -2075,7 +2075,17 @@
     var codeText = String((code && code.textContent) || '').trim();
     var href = String((link && (link.href || link.textContent)) || '').trim();
     var src = String((qr && qr.src) || '').trim();
-    var ready = !!(codeText && !/^[-]+$/.test(codeText) && href && href !== '#');
+    /* micfix-1.0.0 (2026-09-24): Ready means the shell's phone link is live
+       with THIS code. The page's code/link/QR outlived a stopped or deleted
+       session, so the popup offered a dead code as Ready, skipped pairing and
+       consent, and the phone was refused on every clip. */
+    var live = safe(function () { var m = W.__mlsPhoneMic; return (m && typeof m.state === 'function') ? m.state() : null; });
+    var ready = !!(codeText && !/^[-]+$/.test(codeText) && href && href !== '#' && (!live || (live.code === codeText && !live.stopping)));
+    var closing = !!(live && live.stopping);
+    /* The link this popup showed as Ready is gone (stopped elsewhere, ended or
+       expired on the server) and no new one is being made. */
+    var ended = !ready && !closing && !!(live && !live.code && !live.starting) && !!ui.readyCode;
+    if (ready) ui.readyCode = codeText;
     var status = ui.body.querySelector('[data-qtp-phone-status]');
     var codeOut = ui.body.querySelector('[data-qtp-phone-code]');
     var linkOut = ui.body.querySelector('[data-qtp-phone-link]');
@@ -2085,6 +2095,8 @@
     var refused = !ready && pairingStartedAt === -1;
     if (status) status.textContent = ready
       ? (qrErr ? 'Ready. QR unavailable - open the secure link on your phone instead.' : 'Ready. Scan the code or open the secure link on your phone.')
+      : closing ? 'Closing the phone link - adding the last words the phone sent to this visit first…'
+      : ended ? 'The phone link has ended. Tap Try again for a new code.'
       : (refused ? 'Phone pairing needs a direct tap - tap Try again.'
         : (failed ? 'Could not prepare the phone link. Make sure you are signed in and a scheduled patient is open, then tap Try again.' : 'Preparing a secure phone link…'));
     if (codeOut) codeOut.textContent = ready ? codeText : '------';
@@ -2101,6 +2113,7 @@
        without one, say so honestly instead of pretending. */
     if (ev && ev.isTrusted === true && typeof W.startPhoneMic === 'function') {
       pairingStartedAt = Date.now();
+      safe(function () { var m = byId(MODAL_ID); if (m && m.__mlsQtpUi) m.__mlsQtpUi.readyCode = ''; });
       safe(function () { W.startPhoneMic(ev); });
       return true;
     }
@@ -2123,10 +2136,18 @@
       '<img class="mls-qtp-qr" data-qtp-phone-qr alt="QR code for phone recording"></div>';
     ui.foot.appendChild(button('Close', '', closePopup));
     ui.foot.appendChild(button('Stop phone mic', 'danger', function () {
-      safe(function () { if (typeof W.stopPhoneMic === 'function') W.stopPhoneMic(); });
-      closePopup();
+      /* micfix-1.0.0 (2026-09-24): Stop now collects the phone's last words
+         before it closes the link; the popup stays up and says so meanwhile. */
+      var stopping = safe(function () { return (typeof W.stopPhoneMic === 'function') ? W.stopPhoneMic() : null; });
+      if (stopping && typeof stopping.then === 'function') {
+        pairingStartedAt = 0;
+        syncPhonePopup(ui);
+        var done = function () { if (byId(MODAL_ID) === ui.overlay) closePopup(); };
+        stopping.then(done, done);
+      } else closePopup();
     }));
     ui.foot.appendChild(button('Try again', 'primary', function (ev2) { startPhonePairing(ev2); }));
+    ui.overlay.__mlsQtpUi = ui;
     var alreadyReady = syncPhonePopup(ui);
     if (!alreadyReady) startPhonePairing(ev);
     phoneSyncT = setInterval(function () {
