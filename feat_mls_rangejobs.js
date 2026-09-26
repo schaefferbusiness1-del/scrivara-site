@@ -852,6 +852,13 @@
     reason = reasonCode(reason);
     return { ok: false, complete: false, status: manifest ? manifest.status : 'refused', reason: reason, state: manifest ? copy(manifest) : null };
   }
+  /* h10-1.0.0 (2026-09-25): the running engine may belong to the PREVIOUS
+     account while its in-flight day settles. Only its own account hears
+     "already running" and sees its state; any other account hears that
+     another pull is still active, and nothing of that job. */
+  function busyRefusal(key) {
+    return active && active.key === key ? refusal('job-busy', active.manifest) : refusal('pull-in-flight');
+  }
   function withAccountLock(key, work) {
     var locks = lockApi();
     if (!locks) return Promise.resolve(refusal('range-lock-unavailable'));
@@ -936,13 +943,21 @@
     var entry = safe(function () { return roster.resolve(stored.stableKey || stored.id); }, null);
     if (!entry) return { ok: false, reason: 'provider-unverified' };
     var entryId = cleanText(entry.id), entryStable = cleanText(entry.stableKey);
-    if ((stored.id && stored.id !== entryId) || (stored.stableKey && stored.stableKey !== entryStable)) return { ok: false, reason: 'provider-unverified' };
+    /* h10-1.0.0 (2026-09-25): a job frozen to a 'calendar-seen:' clinician
+       continues with the entry the roster answers that key with - the
+       clinician's verified entry once the roster has verified them. The stored
+       key could never equal a verified stableKey, so Resume refused for ever
+       and the picker stayed locked to "Saved verified provider". The importer
+       gate below must still agree with that entry. */
+    var wantStable = stored.stableKey;
+    if (!stored.id && /^calendar-seen:/.test(wantStable)) wantStable = entryStable;
+    if ((stored.id && stored.id !== entryId) || (wantStable && wantStable !== entryStable)) return { ok: false, reason: 'provider-unverified' };
     var gate = safe(function () {
       return si._resolveProviderRequest(entry, { allowAll: false, allowDetectedProvider: true });
     }, null);
     if (!gate || gate.ok !== true || !gate.provider || gate.provider === 'all') return { ok: false, reason: reasonCode(gate && gate.reason || 'provider-unverified') };
     var gateId = cleanText(gate.provider.id), gateStable = cleanText(gate.provider.stableKey);
-    if ((stored.id && stored.id !== gateId) || (stored.stableKey && stored.stableKey !== gateStable)) return { ok: false, reason: 'provider-unverified' };
+    if ((stored.id && stored.id !== gateId) || (wantStable && wantStable !== gateStable)) return { ok: false, reason: 'provider-unverified' };
     return { ok: true, provider: {
       id: gateId, stableKey: gateStable, raw: String(gate.provider.raw || gate.provider.name || ''),
       name: String(gate.provider.name || ''), rosterVerified: gate.provider.rosterVerified === true,
@@ -1050,10 +1065,10 @@
   function rearmOutdatedVersions() {
     var key = currentManifestKey();
     if (!key || !sessionReady()) return Promise.resolve(refusal('signin'));
-    if (active) return Promise.resolve(refusal('job-busy', active.manifest));
+    if (active) return Promise.resolve(busyRefusal(key));
     if (!lockApi()) return Promise.resolve(refusal('range-lock-unavailable'));
     return withAccountLock(key, function () {
-      if (active) return refusal('job-busy', active.manifest);
+      if (active) return busyRefusal(key);
       var read = readManifestAt(key), manifest = read.manifest;
       if (!read.ok) return refusal(read.reason);
       if (!manifest) return refusal('manifest-invalid');
@@ -1585,7 +1600,7 @@
     var manifest = createManifest(kind, parsed.target, parsed.opts, provider.stored);
     if (!manifest) return Promise.resolve(refusal('invalid-range'));
     return withAccountLock(key, function () {
-      if (active) return refusal('job-busy');
+      if (active) return busyRefusal(key);
       var existing = readManifestAt(key);
       if (!existing.ok) return refusal(existing.reason);
       if (existingBlocksStart(existing.manifest)) return refusal('job-exists', existing.manifest);
@@ -1601,7 +1616,7 @@
     var key = currentManifestKey();
     if (!key || !sessionReady()) return Promise.resolve(refusal('signin'));
     if (!lockApi()) return Promise.resolve(refusal('range-lock-unavailable'));
-    if (active) return Promise.resolve(refusal('job-busy', active.manifest));
+    if (active) return Promise.resolve(busyRefusal(key));
     return withAccountLock(key, function () {
       var read = readManifestAt(key), manifest = read.manifest;
       if (!read.ok) return refusal(read.reason);
@@ -1624,7 +1639,14 @@
     });
   }
   function setControl(kind) {
-    var key = active ? active.key : currentManifestKey();
+    /* h10-1.0.0 (2026-09-25): the key is the SIGNED-IN account's, never the
+       engine's. After a sign-out/sign-in the previous account's engine can
+       still be settling its in-flight day; taking active.key here applied the
+       new doctor's Pause/Cancel to the previous doctor's job and left the new
+       doctor's own job untouched. Another account's engine is left to settle
+       under its own session-boundary stop; this account's job is written
+       under this account's own lock below. */
+    var key = currentManifestKey();
     if (!key) return Promise.resolve(refusal('signin'));
     if (active && active.key === key) {
       active.control = kind;
@@ -1656,13 +1678,20 @@
     var read = readManifestAt(key);
     return read.ok ? copy(read.manifest) : null;
   }
+  /* h10-1.0.0 (2026-09-25): a session boundary stops a running job as
+     'waiting-login' (signed out) or 'account-changed' (another account signed
+     in). Either way the job is waiting for its OWN account, and a manifest is
+     only ever read back under that account's namespace. 'account-changed' was
+     admitted by nothing - no boot resume, no Resume button - so a Year pull
+     stopped that way was stranded while its card said "then Resume". */
+  function waitsForOwner(status) { return status === 'waiting-login' || status === 'account-changed'; }
   function maybeResume(opts) {
     opts = opts && typeof opts === 'object' ? opts : {};
     if (active || !sessionReady() || !safe(function () { return window.__mlsSI && isFn(window.__mlsSI.pullMonth); }, false)) return Promise.resolve(refusal('importer-not-ready'));
     var manifest = state();
     if (!manifest) return Promise.resolve(refusal('manifest-invalid'));
     var eligible = manifest.status === 'running' || manifest.status === 'pending';
-    if (opts.allowWaitingLogin === true && manifest.status === 'waiting-login') eligible = true;
+    if (opts.allowWaitingLogin === true && waitsForOwner(manifest.status)) eligible = true;
     if (!eligible) return Promise.resolve(refusal(manifest.reason || manifest.status, manifest));
     var providerReady = resolveStoredProvider(manifest.provider, frozenScopeForResume(manifest));
     if (!providerReady.ok) return Promise.resolve(refusal(providerReady.reason, manifest));
@@ -1965,7 +1994,8 @@
     exception: 'The pull stopped safely after an unexpected error. Check Athena, then Resume.',
     'pull-failed': 'The pull stopped safely before the next unverified step. Check Athena, then Resume.',
     'job-exists': 'A saved range pull already exists. Resume, pause, or cancel it before starting another.',
-    'job-busy': 'This range pull is already running.'
+    'job-busy': 'This range pull is already running.',
+    'account-changed': 'This pull stopped when another account signed in. Resume continues it from the saved checkpoint.'
   };
   function uiReasonCopy(reason) {
     return UI_REASON_COPY[reasonCode(reason)] || 'The pull stopped safely before the next unverified step. Check Athena, then Resume.';
@@ -2218,7 +2248,7 @@
        admitted) AND resumable (one more bounded round on those days). */
     var terminal = status === 'complete' || status === 'cancelled' || status === 'needs-attention';
     var blocksStart = !!(manifest && !terminal);
-    var resumable = status === 'paused' || status === 'waiting-login' || status === 'waiting-retry' ||
+    var resumable = status === 'paused' || waitsForOwner(status) || status === 'waiting-retry' ||
       status === 'storage-failed' || status === 'needs-attention';
     /* yearpicker-1.0.0: fill and freeze the card's own scope selector BEFORE
        anything reads a selection from it. uiProviderSelection() now prefers
@@ -2967,7 +2997,7 @@
         var manifest = state();
         if (!manifest) return;
         var eligible = manifest.status === 'running' || manifest.status === 'pending' ||
-          (allowWaitingLogin === true && manifest.status === 'waiting-login');
+          (allowWaitingLogin === true && waitsForOwner(manifest.status));
         if (!eligible) return;
         if (resolveStoredProvider(manifest.provider, frozenScopeForResume(manifest)).ok) {
           maybeResume({ allowWaitingLogin: allowWaitingLogin === true });

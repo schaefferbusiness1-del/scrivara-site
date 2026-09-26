@@ -2904,7 +2904,20 @@ const tests = [
      code, MLS unable to transcribe keeps the phone recording and retries
      after 6 s doubling to 60 s with new clips kept in order behind the
      waiting ones, and clipIds come from crypto.getRandomValues. */
-  'phone-upload-guard-rules.test.js'
+  'phone-upload-guard-rules.test.js',
+  /* h10-1.0.0 (2026-09-25): the Avatar check-in says what happened - no
+     check-in written into another patient's visit, an unfinished emergency
+     check-in drawn red and never "completed", controls alive across a token
+     refresh, a silent Pause, honest PIN and finish failures, a usable phone
+     layout, and Setup that never claims a save or a voice it did not get */
+  'avatar-checkin-kiosk-and-setup-say-what-happened-runtime.test.js',
+  /* h10-1.0.0 (2026-09-25): the full-history PDF prints only the open chart's
+     own visits, keeps each procedure note's clinician and says what its font
+     changed; a saved range pull resumes for its own account, another
+     account's controls never touch it, and a calendar-seen clinician's pull
+     survives that clinician's verification */
+  'full-history-pdf-prints-only-this-chart-runtime.test.js',
+  'range-jobs-follow-the-signed-in-doctor-runtime.test.js'
 ];
 
 const discovered = fs.readdirSync(__dirname)

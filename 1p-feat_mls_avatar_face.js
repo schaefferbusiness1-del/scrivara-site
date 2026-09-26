@@ -302,12 +302,23 @@
     var matchAttrs = matchButton ? [priorAttr(matchButton, 'aria-controls')] : [];
     if (matchButton) {
       matchButton.setAttribute('aria-controls', 'mlsAvLookStage mlsAvLookNote');
-      on(matchButton, 'click', function () {
+      on(matchButton, 'click', function (event) {
         var before = Number(window.__mlsAvatar && window.__mlsAvatar.lastMatchReceipt && window.__mlsAvatar.lastMatchReceipt.at) || 0;
         var startedAt = Date.now();
         meter.setAttribute('data-level', '');
         var mh = meter.querySelector('.mlsP1FaceMeterHead');
         var md = meter.querySelector('.mlsP1FaceMeterDetail');
+        /* h10-1.0.0 (2026-09-25): the engine's listener runs first on this same
+           click. When it refused outright (no photo yet) it published a receipt
+           stamped with this event, and the meter says that refusal instead of
+           polling 45 s for a match that was never started. */
+        var refusal = window.__mlsAvatar && window.__mlsAvatar.lastMatchReceipt;
+        if (refusal && refusal.refused && event && refusal.clickStamp === event.timeStamp) {
+          meter.setAttribute('data-level', 'limited');
+          if (mh) mh.textContent = 'No photo to match yet';
+          if (md) md.textContent = clean(refusal.why) || 'Capture your photo above first, then Match my photo.';
+          return;
+        }
         if (mh) mh.textContent = 'Matching your photo…';
         if (md) md.textContent = 'Only details the photo supports will change.';
         /* p1-face-studio-poll-1.1.0 — THE METER USED TO STOP LOOKING.

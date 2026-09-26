@@ -108,10 +108,18 @@
     return Math.max(0, Number(safe(function () { return window.__mlsSessionEpoch; }, sessionEpoch)) || 0);
   }
   sessionAccount = runtimeAccount();
+  /* h10-1.0.0 (2026-09-25): THE TOKEN IS A CREDENTIAL, NOT AN IDENTITY. The
+     shell rotates the bearer token for the SAME account (slideSession on tab
+     return, a password change) without a session boundary, and a receipt that
+     demanded the exact launch-time token went stale on every rotation: the
+     menu button, the Visit card and an open kiosk's controls all went dead and
+     the badge refresh wedged. Generation, epoch and account are the identity
+     (every account change or logout moves them); a live token must still be
+     present, so a blank-token logout still fails closed. */
   function sessionCredentialsCurrent(receipt) {
     if (disposed || !receipt || !receipt.account || !receipt.token ||
         receipt.generation !== sessionGeneration || receipt.epoch !== sessionEpoch ||
-        receipt.account !== sessionAccount || receipt.token !== clean(token())) return false;
+        receipt.account !== sessionAccount || !clean(token())) return false;
     return runtimeEpoch() === receipt.epoch && runtimeAccount() === receipt.account;
   }
   function liveSessionCredentials() {
@@ -252,7 +260,7 @@
       '.mlsAvAsk{margin:4px 0 0;padding-left:19px;font-size:13px;color:#26417a;display:grid;gap:3px}' +
       '.mlsAvSummary{margin-top:9px;font-size:13px;color:#3a453f;background:#fff;border:1px solid #E7E5DD;border-radius:10px;padding:9px 11px;white-space:pre-wrap;max-height:180px;overflow:auto}' +
       '.mlsAvActions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.mlsAvAction{border:1px solid #cbd8d0;background:#EAF1EE;color:#204034;border-radius:9px;padding:8px 11px;font-weight:750;cursor:pointer}.mlsAvAction.primary{border-color:#204034;background:#204034;color:#fff}.mlsAvAction[disabled]{opacity:.6;cursor:default}' +
-      '.mlsAvForm{display:grid;gap:9px}.mlsAvForm label{font-size:12.5px;font-weight:700;color:#55605A}.mlsAvForm input,.mlsAvForm textarea{width:100%;box-sizing:border-box;border:1px solid #d7ded9;border-radius:10px;padding:9px 11px;font:13.5px \'Public Sans\',system-ui,sans-serif}' +
+      '.mlsAvForm{display:grid;grid-template-columns:minmax(0,1fr);gap:9px}.mlsAvForm label{font-size:12.5px;font-weight:700;color:#55605A}.mlsAvForm input,.mlsAvForm textarea{width:100%;box-sizing:border-box;border:1px solid #d7ded9;border-radius:10px;padding:9px 11px;font:13.5px \'Public Sans\',system-ui,sans-serif}' +
       /* lv-1.0 - the live capture view's words (the canvas carries geometry only) */
       '.mlsAvLiveLine{font:600 12.5px \'Public Sans\',system-ui;color:#204034;margin-top:6px;max-width:420px}' +
       '.mlsAvLiveList{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:2px 10px;margin-top:4px;font-size:11.5px;color:#55605A;max-width:640px}' +
@@ -315,7 +323,10 @@
      av-1.2.0: the fetched ready list is CACHED on the public surface so the
      Copilot's snapshot can answer "who's ready for me?" without a second
      network path. The cache carries a timestamp; consumers judge freshness. */
-  var lastRefreshAt = 0, refreshInFlight = false;
+  /* h10-1.0.0: refreshInFlight holds the id of the ONE request that owns it,
+     and only that request's own settle releases it - a stale response can no
+     longer leave the latch set forever. */
+  var lastRefreshAt = 0, refreshInFlight = 0, refreshSeq = 0;
   function cacheReady(rows) {
     safe(function () {
       /* av-2.0.2: the ACTIVE patient's row must survive the sampling — with
@@ -335,11 +346,17 @@
       currentApi.lastReady = {
         at: Date.now(),
         total: (rows || []).length, /* the TRUE count — the list below is a sample */
+        /* h10-1.0.0: how many of that count are NOT finished - see checkinUnfinished */
+        unfinished: (rows || []).filter(checkinUnfinished).length,
         checkins: sample.map(function (c) {
           return {
             id: c.id,
             patient_external_id: clean(c.patient_external_id),
             ready_at: c.ready_at || null,
+            /* h10-1.0.0: an unfinished interview rides the ready answer when it
+               raised a flag, and it must never be painted as a completed one */
+            inProgress: checkinUnfinished(c),
+            flaggedAt: c.flaggedAt || null,
             bullets: (Array.isArray(c.bullets) ? c.bullets : []).slice(0, 3).map(function (b) { return String(b).slice(0, 160); }),
             /* A SLICE IS A TRUNCATION AND MUST SAY SO - the same law the summary
                field above already obeys. The bullets now travel into the chart and
@@ -386,16 +403,17 @@
     var now = Date.now();
     if (!force && (now - lastRefreshAt) < REFRESH_MIN_MS) return;
     if (!token()) return;
-    refreshInFlight = true; lastRefreshAt = now;
+    var mine = ++refreshSeq;
+    refreshInFlight = mine; lastRefreshAt = now;
     api('/api/avatar/checkins?status=ready').then(function (r) {
+      if (refreshInFlight === mine) refreshInFlight = 0;
       if (!apiResponseCurrent(r)) return;
-      refreshInFlight = false;
       if (r.ok && r.json && Array.isArray(r.json.checkins)) {
         setCount(r.json.checkins.length);
         cacheReady(r.json.checkins);
         ensureVisitCard();
       }
-    }, function () { refreshInFlight = false; });
+    });
   }
 
   /* ---- accessible ownership for the Setup / inbox overlay ----------------
@@ -652,6 +670,23 @@
     }
     return lines.length ? (lines.join('\n') + '\n') : '';
   }
+  /* h10-1.0.0 (2026-09-25): THE FLAG IS DRAWN, NOT ONLY FILED. The ready inbox
+     deliberately includes an interview that raised emergency language and was
+     never finished (inProgress, status 'active'). It has no summary, headline or
+     bullets, so its flag lived only in a field no desktop surface drew: the
+     Visit card called it "completed" and the inbox called it "Seen". One helper
+     draws the red banner on both. A finished check-in's server headline already
+     leads with the same ⚠, so that one is not drawn twice (the briefLines rule). */
+  function checkinUnfinished(c) { return !!(c && (c.inProgress === true || c.status === 'active')); }
+  function emergencyBanner(checkin) {
+    var flagged = Array.isArray(checkin.flags) && checkin.flags.indexOf('emergency-language') >= 0;
+    var unfinished = checkinUnfinished(checkin);
+    if (!unfinished && (!flagged || /^⚠/.test(clean(checkin.headline)))) return null;
+    return make('div', 'mlsAvBrief flag', flagged
+      ? '⚠ EMERGENCY LANGUAGE — the patient used emergency-sounding words during the check-in' +
+        (unfinished ? ', and the interview was NOT finished. Check on the patient now.' : '. Read the check-in itself before relying on the summary.')
+      : '⚠ This check-in was NOT finished — there is no summary yet.');
+  }
   function importSummary(checkin, button) {
     var patient = exactPatient(checkin.patient_external_id);
     if (!patient) {
@@ -704,7 +739,8 @@
     var title = patient ? (patient.name || 'Patient') : ('Patient (portal id ' + (clean(checkin.patient_external_id) || 'unknown') + ')');
     card.appendChild(make('div', 'mlsAvTitle', title));
     card.appendChild(make('div', 'mlsAvMeta',
-      (checkin.status === 'ready' ? 'Ready ' : 'Seen ') + (formatDate(checkin.ready_at || checkin.created_at) || '') +
+      (checkinUnfinished(checkin) ? 'In progress — NOT finished · started ' : (checkin.status === 'ready' ? 'Ready ' : 'Seen ')) +
+      (formatDate(checkin.ready_at || checkin.created_at) || '') +
       ' · ' + (Number(checkin.turns) || 0) + ' turns' +
       /* 'rejected' HAS A SURFACE NOW. The backend gained that state and every
          consumer gave it the empty arm - byte-for-byte the rendering of null,
@@ -721,6 +757,8 @@
     /* mlsAvBrief, NOT mlsAvHead: .mlsAvHead is already the panel's own header
        and carries `display:flex` - reusing it would have laid the headline out
        as a flex row of words. */
+    var inboxBanner = emergencyBanner(checkin);
+    if (inboxBanner) card.appendChild(inboxBanner);
     if (checkin.headline) {
       card.appendChild(make('div', 'mlsAvBrief' + (/^⚠/.test(String(checkin.headline)) ? ' flag' : ''),
         String(checkin.headline)));
@@ -795,19 +833,14 @@
        BOUND, NOT GLOBAL. addToTranscript writes into whichever visit is open, and the
        Visit card could only ever offer it for the OPEN patient. Reached from the
        panel it has to prove that itself: filing one patient's check-in into another
-       patient's visit transcript would be the worst defect on this screen, so this
-       refuses, names the chart to open, and writes nothing. */
+       patient's visit transcript would be the worst defect on this screen, so it
+       refuses, names the chart to open, and writes nothing. h10-1.0.0: that proof
+       now lives inside addToTranscript, the one writer, for every caller. */
     var txBtn = make('button', 'mlsAvAction', 'Add to visit transcript');
     txBtn.type = 'button';
     if (patient && checkin.summary) {
       txBtn.addEventListener('click', function () {
         if (!cardCurrent()) return;
-        var openId = activePtIdSafe();
-        if (!openId || (openId !== clean(patient.id) && openId !== clean(checkin.patient_external_id))) {
-          toast('Nothing was written: open ' + (patient.name || 'this patient') +
-            '\'s visit first, then use this button — the transcript belongs to whichever chart is open.');
-          return;
-        }
         addToTranscript(checkin, txBtn);
       });
     } else {
@@ -824,7 +857,12 @@
         api('/api/avatar/checkins/' + checkin.id + '/seen', { method: 'POST' }).then(function (r) {
           if (!apiResponseCurrent(r)) return;
           if (r.ok) { seenBtn.textContent = 'Seen ✓'; refreshCount(true); }
-          else { seenBtn.disabled = false; seenBtn.textContent = 'Mark seen'; }
+          else {
+            seenBtn.disabled = false; seenBtn.textContent = 'Mark seen';
+            /* h10-1.0.0: a failed Mark seen says so - a label that quietly
+               reverts reads as a tap that never registered */
+            toast('Could not mark this check-in seen — nothing changed. Try again.');
+          }
         });
       });
       actions.appendChild(seenBtn);
@@ -8594,7 +8632,7 @@
         }, 90);
         return setupNextId;
       }
-      matchBtn.addEventListener('click', function () {
+      matchBtn.addEventListener('click', function (event) {
         if (!setupCurrent()) return;
         var matchGeneration = faceMutated();
         var shown = pendingFace === undefined ? (cfg.faceImage || '') : pendingFace;
@@ -8606,7 +8644,18 @@
         var src = hi || shown;
         var usedHi = !!hi;
         var matchPortrait = String(shown || '');
-        if (!src) { lookNoteSay('Capture your photo above first, then Match my photo.', 0); return; }
+        if (!src) {
+          lookNoteSay('Capture your photo above first, then Match my photo.', 0);
+          /* h10-1.0.0 (2026-09-25): the refusal is a RESULT too. It published no
+             receipt, so the face studio's meter said "Matching your photo…" for
+             45 s beside this very sentence and then claimed the match "did not
+             finish". The receipt names the click it answers (the event's own
+             timeStamp), because the studio reads it in the same dispatch. */
+          safe(function () { if (currentApi && currentApi === window.__mlsAvatar) currentApi.lastMatchReceipt = {
+            at: Date.now(), refused: 'no-photo', why: 'Capture your photo above first, then Match my photo.',
+            clickStamp: event && event.timeStamp, receipt: null }; });
+          return;
+        }
         avatarSetupStep('matching');
         lookNoteCalm();
         lookNote.textContent = usedHi
@@ -8933,10 +8982,13 @@
          right here with one tap (spoken by the same engine the kiosk uses). */
       var voiceLabel = make('label', '', 'Voice — the natural voice patients hear in the office');
       var voiceRow = make('div', '');
-      voiceRow.style.cssText = 'display:flex;gap:8px;align-items:center';
+      voiceRow.style.cssText = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap';
       var voiceSelect = document.createElement('select');
       voiceSelect.id = 'mlsAvVoicePick';
-      voiceSelect.style.cssText = toneSelect.style.cssText; voiceSelect.style.flex = '1'; voiceSelect.style.width = 'auto';
+      voiceSelect.style.cssText = toneSelect.style.cssText; voiceSelect.style.flex = '1 1 180px'; voiceSelect.style.width = 'auto';
+      /* h10-1.0.0: a select's long option text sets its minimum width, which
+         pushed "Hear this voice" off a phone-width panel; it may shrink now */
+      voiceSelect.style.minWidth = '0';
       [['coral', 'Coral (female) - warm & caring (default)'], ['nova', 'Nova (female) - bright & upbeat'], ['shimmer', 'Shimmer (female) - soft & gentle'], ['sage', 'Sage (female) - calm & steady'], ['ash', 'Ash (male) - deep & reassuring'], ['echo', 'Echo (male) - clear & even'], ['onyx', 'Onyx (male) - rich & low'], ['alloy', 'Alloy (neutral) - balanced']].forEach(function (opt) {
         var o = document.createElement('option'); o.value = opt[0]; o.textContent = opt[1];
         if ((cfg.voice || 'coral') === opt[0]) o.selected = true;
@@ -8944,9 +8996,26 @@
       });
       var voiceTry = make('button', 'mlsAvAction', '▶ Hear this voice');
       voiceTry.type = 'button';
+      /* h10-1.0.0 (2026-09-25): AN AUDITION IS AN EXPLICIT RETRY, AND A
+         SUBSTITUTE SAYS SO. One failed TTS request opens a two-minute breaker,
+         and every voice auditioned behind it - male picks included - played the
+         same browser voice with nothing on screen to say so. The tap retries the
+         real voice, and if the browser's voice had to stand in, this line says
+         it next to the button. */
+      var voiceNote = make('div', 'mlsAvMeta', '');
+      voiceNote.setAttribute('role', 'status');
+      function voiceNoteSay(picked) {
+        if (!setupCurrent()) return;
+        voiceNote.textContent = Date.now() < ttsDownUntil
+          ? 'Could not load ' + picked + ' — this sample was your browser\'s own voice, not the one patients will hear. Try again in a moment.'
+          : '';
+      }
       voiceTry.addEventListener('click', function () {
         if (!setupCurrent()) return;
         pvStopVoice();
+        ttsDownUntil = 0;
+        voiceNote.textContent = '';
+        var picked = clean((voiceSelect.options[voiceSelect.selectedIndex] || {}).textContent).split(' (')[0] || 'that voice';
         /* THE PREVIEW HAS TO BE THE REAL THING. The doctor chooses the voice his
            patients will hear from this one button, and the sample was neither
            what they hear nor how they hear it: no AI disclosure (so it was
@@ -8958,7 +9027,8 @@
         /* The sample belongs to the visible Setup portrait, not kiosk.face
            (which does not exist here). Passing that controller makes the face
            patients are being shown lip-sync to the voice they are choosing. */
-        pvSpeakVoiced('Hi there, I\'m ' + (nameInput.value.trim() || 'Ava') + ' — I\'m the practice\'s AI assistant, and I help get everyone settled before the doctor comes in. It\'s good to meet you. This only takes a few minutes, and you can just answer in your own words.', null, voiceSelect.value, 'greet', lookCtl);
+        pvSpeakVoiced('Hi there, I\'m ' + (nameInput.value.trim() || 'Ava') + ' — I\'m the practice\'s AI assistant, and I help get everyone settled before the doctor comes in. It\'s good to meet you. This only takes a few minutes, and you can just answer in your own words.',
+          function () { voiceNoteSay(picked); }, voiceSelect.value, 'greet', lookCtl, function () { voiceNoteSay(picked); });
       });
       voiceRow.appendChild(voiceSelect); voiceRow.appendChild(voiceTry);
 
@@ -9083,10 +9153,14 @@
                   (why === 'too_large' ? ' — it came out too large for the server (' + Math.round(sentPhoto.length / 1024) + 'KB). Retake it a little further back.'
                     : why === 'shape' ? ' — the camera returned something this server will not store. Retake it.'
                     : ' — the server did not store it. Retake the photo and save again.')) : '');
-            } else if (sentFaceGeneration === faceMutationGeneration) status.textContent = 'Could not save — check your connection and try again.';
-          }, function () {
-            saveBtn.disabled = false;
-            if (sentFaceGeneration === faceMutationGeneration) status.textContent = 'Could not save — check your connection and try again.';
+            } else {
+              /* h10-1.0.0 (2026-09-25): A FAILED SAVE ALWAYS SAYS SO. This line was
+                 written only when the face had not been touched since the tap, so
+                 changing Face style during a save that then failed left "Saving…"
+                 on screen for ever, and the lost questions, PIN and name were never
+                 reported. Nothing was stored, the newer face edits included. */
+              status.textContent = 'Could not save — nothing was stored. Check your connection and press Save avatar again.';
+            }
           });
       });
       /* av-5.3.0 — the typed rehearsal log is GONE by owner order ("GET RIDE
@@ -9098,7 +9172,7 @@
       form.appendChild(nameLabel); form.appendChild(nameInput);
       form.appendChild(introLabel); form.appendChild(introInput);
       form.appendChild(toneLabel); form.appendChild(toneSelect);
-      form.appendChild(voiceLabel); form.appendChild(voiceRow);
+      form.appendChild(voiceLabel); form.appendChild(voiceRow); form.appendChild(voiceNote);
       form.appendChild(faceLabel); form.appendChild(faceRow); form.appendChild(camHost);
       form.appendChild(faceModeLabel); form.appendChild(faceModeSelect);
       form.appendChild(lookLabel); form.appendChild(lookWrap);
@@ -9385,7 +9459,7 @@
       else if (held && existing !== held && existing.indexOf(held) < 0) input.value = clean(existing + ' ' + held);
     }
     if (input) safe(function () { input.focus(); });
-    kioskState('ready');
+    kioskMood('ready', '');   /* h10-1.0.0: the root class too, not only the chip */
     kioskLine('alert', reason || 'The speech service is unavailable right now — type your answer below.');
     kioskArmWatchdog(20000);
     return false;
@@ -9407,8 +9481,17 @@
          av-3.0.0 that this rule OPENS `position:fixed;inset:0;z-index:N;background:linear-gradient`
          (full-screen and OPAQUE, so a patient never sees the app behind the kiosk). Custom
          properties do not care about order and that pin does, so the pin keeps its subject. */
-      '#mlsAvKiosk{position:fixed;inset:0;z-index:2147483200;background:linear-gradient(165deg,#F7F5EE,#E9F0EA 55%,#DEE9E1);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2.6vh;font-family:\'Public Sans\',system-ui,sans-serif;padding:4vh 5vw;text-align:center;--mlsav-panel:min(370px,92vw)}' +
-      '#mlsAvKioskEnd{position:absolute;top:14px;right:16px;border:1px solid #cfd9d2;background:#fff;color:#55605A;border-radius:999px;padding:8px 14px;font:600 12.5px system-ui;cursor:pointer;opacity:.75}' +
+      '#mlsAvKiosk{position:fixed;inset:0;z-index:2147483200;background:linear-gradient(165deg,#F7F5EE,#E9F0EA 55%,#DEE9E1);display:flex;flex-direction:column;align-items:center;justify-content:center;justify-content:safe center;overflow-y:auto;gap:2.6vh;font-family:\'Public Sans\',system-ui,sans-serif;padding:4vh 5vw;text-align:center;--mlsav-panel:min(370px,92vw)}' +
+      /* h10-1.0.1: the kiosk column scrolls, so its controls and overlays (End, Pause,
+         the PIN pad, consent, review, orders) are position:fixed - they stay on screen
+         while the column scrolls. 'center' before 'safe center' is the fallback for
+         browsers without the safe keyword (older office iPads). */
+      /* h10-1.0.0 (2026-09-25): at phone size the column is taller than the screen.
+         It scrolls from the top (safe center) instead of spilling past both edges,
+         End sits above the face like Pause (z-index 6) so staff can always tap it,
+         the face yields to a narrow screen (60vw), and the question never shrinks
+         below its own text (flex-shrink:0) to run under the Listening pill. */
+      '#mlsAvKioskEnd{position:fixed;top:14px;right:16px;border:1px solid #cfd9d2;background:#fff;color:#55605A;border-radius:999px;padding:8px 14px;font:600 12.5px system-ui;cursor:pointer;opacity:.75;z-index:6}' +
       '#mlsAvKiosk.speaking{background:linear-gradient(165deg,#F5F7EE,#E4F0E6 55%,#D6E8DC)}' +
       '#mlsAvKiosk.listening{background:linear-gradient(165deg,#F0F4F8,#E2EBF4 55%,#D6E2F0)}' +
       '#mlsAvKioskWave{display:flex;gap:7px;align-items:center;height:4.4vh;min-height:30px;visibility:hidden}' +
@@ -9420,6 +9503,7 @@
       '#mlsAvKiosk.listening #mlsAvKioskMic{display:inline-flex}' +
       '#mlsAvKioskMic i{width:1.6vh;height:1.6vh;min-width:12px;min-height:12px;border-radius:999px;background:#c0392b;animation:mlsAvKRing 1.4s ease-in-out infinite}' +
       '#mlsAvKioskFaceWrap{position:relative;width:min(40vh,420px);height:min(40vh,420px)}' +
+      '@media (max-width:600px){#mlsAvKioskFaceWrap{width:min(40vh,60vw);height:min(40vh,60vw)}}' +
       '#mlsAvKioskFace{width:100%;height:100%;border-radius:999px;overflow:hidden;background:#fff;display:flex;align-items:center;justify-content:center;font-size:12vh;border:5px solid #fff;box-shadow:0 18px 60px rgba(32,64,52,.22);transition:box-shadow .5s ease}' +
       '#mlsAvKioskFace{background:radial-gradient(circle at 50% 38%,#ffffff,#f2f4ef)}' +
       '#mlsAvKioskFaceWrap::after{content:"";position:absolute;inset:-14px;border-radius:999px;border:3px solid transparent;transition:border-color .4s ease}' +
@@ -9430,7 +9514,7 @@
       '#mlsAvKiosk.thinking #mlsAvKioskFace{animation:mlsAvKThink 2.2s ease-in-out infinite}' +
       '#mlsAvKiosk.caring #mlsAvKioskFace{box-shadow:0 18px 60px rgba(168,99,60,.3)}' +
       '#mlsAvKioskName{font:800 3vh \'Newsreader\',Georgia,serif;color:#204034;margin-top:-.6vh}' +
-      '#mlsAvKioskSay{font:600 3.4vh/1.35 \'Public Sans\',system-ui;color:#1A211C;max-width:900px;min-height:9vh}' +
+      '#mlsAvKioskSay{font:600 3.4vh/1.35 \'Public Sans\',system-ui;color:#1A211C;max-width:900px;min-height:9vh;flex-shrink:0}' +
       '#mlsAvKioskInterim{font:500 2.4vh/1.4 system-ui;color:#55605A;max-width:820px;min-height:3.4vh}' +
       '#mlsAvKioskProgress{font:700 1.9vh system-ui;color:#69736d;letter-spacing:.4px}' + /* p1-mic-1.0.0: the patient sees THAT it is hearing them, not a stream of half-words */ /* p1-mic-1.1.0 -- RESERVE THE SPACE, NEVER TOGGLE display.
    1.0.0 flipped display:none <-> inline-flex on every recognition event. This box
@@ -9446,7 +9530,7 @@
       '#mlsAvKioskFace img{width:100%;height:100%;object-fit:cover}' +
       '#mlsAvKioskFace svg{animation:mlsAvKBreathe 4.5s ease-in-out infinite}' +
       '@keyframes mlsAvKBreathe{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(1.5px) scale(1.008)}}' +
-      '#mlsAvKioskPin{display:none;position:absolute;inset:0;background:rgba(20,28,24,.55);align-items:center;justify-content:center;z-index:5}' +
+      '#mlsAvKioskPin{display:none;position:fixed;inset:0;background:rgba(20,28,24,.55);align-items:center;justify-content:center;z-index:5}' +
       '#mlsAvKioskPinCard{background:#fff;border-radius:18px;padding:26px 30px;display:flex;flex-direction:column;gap:10px;box-shadow:0 24px 70px rgba(0,0,0,.35);min-width:min(340px,86vw)}' +
       '#mlsAvKioskPinTitle{font:800 17px \'Public Sans\',system-ui;color:#204034}' +
       '#mlsAvKioskPinSub{font:500 13px system-ui;color:#55605A}' +
@@ -9465,7 +9549,7 @@
          fullscreen. It covers the whole overlay including the End and Pause
          buttons, so the only two things reachable on this screen are Yes and
          No. */
-      '#mlsAvKioskConsent{display:flex;position:absolute;inset:0;background:linear-gradient(165deg,#F7F5EE,#E9F0EA 55%,#DEE9E1);align-items:center;justify-content:center;z-index:12;padding:4vh 5vw}' +
+      '#mlsAvKioskConsent{display:flex;position:fixed;inset:0;background:linear-gradient(165deg,#F7F5EE,#E9F0EA 55%,#DEE9E1);align-items:center;justify-content:center;z-index:12;padding:4vh 5vw}' +
       '#mlsAvKioskConsentCard{background:#fff;border-radius:22px;padding:30px 32px;display:flex;flex-direction:column;gap:14px;box-shadow:0 26px 74px rgba(32,64,52,.28);width:min(680px,94vw);text-align:left}' +
       '#mlsAvKioskConsentTitle{font:800 26px/1.3 \'Newsreader\',Georgia,serif;color:#204034}' +
       '#mlsAvKioskConsentSub{font:600 15px/1.55 system-ui;color:#55605A}' +
@@ -9519,7 +9603,7 @@
       '#mlsAvKioskState[data-state="saving"],#mlsAvKioskState[data-state="paused"]{color:#204034;border-color:#204034}' +
       '#mlsAvKioskAi{font:700 1.85vh/1.4 system-ui;color:#55605A;background:#fff;border:1px solid #cfd9d2;border-radius:999px;padding:.7vh 2vh;max-width:min(760px,92vw);margin-top:-.4vh}' +
       /* mute/pause, top-LEFT so it can never be hit while reaching for End */
-      '#mlsAvKioskMute{position:absolute;top:14px;left:16px;border:1px solid #cfd9d2;background:#fff;color:#204034;border-radius:999px;padding:10px 18px;font:700 13px system-ui;cursor:pointer;z-index:6}' +
+      '#mlsAvKioskMute{position:fixed;top:14px;left:16px;border:1px solid #cfd9d2;background:#fff;color:#204034;border-radius:999px;padding:10px 18px;font:700 13px system-ui;cursor:pointer;z-index:6}' +
       '#mlsAvKioskMute[aria-pressed="true"]{background:#7a1f16;color:#fff;border-color:#7a1f16}' +
       /* PAUSED: the red dot stops, the banner goes grey, and nothing on this
          screen still implies a live microphone. */
@@ -9532,7 +9616,7 @@
       '#mlsAvKiosk.saving #mlsAvKioskSave{background:#EDE7D6;color:#55605A}' +
       /* ONE end control during a capture. The interview-era button is hidden
          rather than left beside it: two ways to end a visit is one too many. */
-      '#mlsAvKioskEndVisit{display:none;position:absolute;top:14px;right:16px;border:0;background:#204034;color:#fff;border-radius:999px;padding:12px 22px;font:800 14px system-ui;cursor:pointer;box-shadow:0 8px 26px rgba(32,64,52,.28);z-index:6}' +
+      '#mlsAvKioskEndVisit{display:none;position:fixed;top:14px;right:16px;border:0;background:#204034;color:#fff;border-radius:999px;padding:12px 22px;font:800 14px system-ui;cursor:pointer;box-shadow:0 8px 26px rgba(32,64,52,.28);z-index:6}' +
       '#mlsAvKiosk.ambient #mlsAvKioskEndVisit{display:block}' +
       '#mlsAvKiosk.ambient #mlsAvKioskEnd{display:none}' +
       '#mlsAvKioskEndVisit:hover{background:#2E6A4B}' +
@@ -9551,7 +9635,7 @@
          So the column RESERVES the panel's area, from the same custom property the panel is sized
          from, and `.hasorders` is toggled by ordersReserve — the only writer — from both branches
          of ordersRender, the only function that shows or hides this panel. */
-      '#mlsAvKioskOrders{display:none;position:absolute;right:16px;bottom:16px;width:var(--mlsav-panel);max-height:52vh;overflow:auto;background:#fff;border:1px solid #cfd9d2;border-radius:16px;box-shadow:0 14px 44px rgba(32,64,52,.2);padding:12px 13px;text-align:left;z-index:6}' +
+      '#mlsAvKioskOrders{display:none;position:fixed;right:16px;bottom:16px;width:var(--mlsav-panel);max-height:52vh;overflow:auto;background:#fff;border:1px solid #cfd9d2;border-radius:16px;box-shadow:0 14px 44px rgba(32,64,52,.2);padding:12px 13px;text-align:left;z-index:6}' +
       '#mlsAvKiosk.hasorders{padding-right:calc(var(--mlsav-panel) + 32px)}' +
       '#mlsAvKioskOrders .mlsAvOrdHead{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:8px}' +
       '#mlsAvKioskOrders .mlsAvOrdTitle{font:800 13px \'Public Sans\',system-ui;color:#204034}' +
@@ -9578,7 +9662,7 @@
       '#mlsAvKioskOrders .mlsAvOrdFoot{font:600 10.8px/1.45 system-ui;color:#69736d;border-top:1px solid #E7E5DD;padding-top:7px;margin-top:2px}' +
       /* the review: one screen, one verdict, and the pending list said out
          loud rather than quietly omitted */
-      '#mlsAvKioskReview{display:none;position:absolute;inset:0;background:rgba(20,28,24,.62);align-items:center;justify-content:center;z-index:8;padding:4vh 4vw}' +
+      '#mlsAvKioskReview{display:none;position:fixed;inset:0;background:rgba(20,28,24,.62);align-items:center;justify-content:center;z-index:8;padding:4vh 4vw}' +
       '#mlsAvKioskReview .mlsAvRevCard{background:#fff;border-radius:20px;padding:24px 26px;width:min(620px,94vw);max-height:88vh;overflow:auto;text-align:left;box-shadow:0 28px 80px rgba(0,0,0,.38)}' +
       '#mlsAvKioskReview .mlsAvRevHead{font:800 20px \'Public Sans\',system-ui;margin-bottom:8px}' +
       '#mlsAvKioskReview .mlsAvRevHead.ok{color:#2E6A4B}' +
@@ -9754,11 +9838,17 @@ function kioskLine(kind, text) {
   function kioskState(name) {
     var el = gid('mlsAvKioskState');
     if (!el) return;
+    if (name === 'listening' && kiosk.mic === false) name = 'ready';   /* h10-1.0.0 - see kioskMood */
     el.textContent = KIOSK_STATES[name] || KIOSK_STATES.ready;
     el.setAttribute('data-state', name);
   }
+  /* h10-1.0.0 (2026-09-25): with the microphone off (typed mode) nothing is
+     listening, so 'listening' paints the ready state - never the "just talk"
+     pill, the red dot or the wave over a typing box. One mapping, here, for
+     every caller. */
   function kioskMood(state, say, answer) {
     var root = gid('mlsAvKiosk'); if (!root) return;
+    if (state === 'listening' && kiosk.mic === false) state = 'ready';
     /* paused and documenting OUTRANK the momentary mood: a paused kiosk is
        paused whatever it was last doing, and a room capture is documenting
        even while the face is animating a listen. */
@@ -10024,9 +10114,12 @@ function kioskLine(kind, text) {
       }
       return true;
     }
-    api('/api/avatar/office/turn', { method: 'POST', body: JSON.stringify(body) }).then(function (r) {
-      if (typeof apiResponseCurrent === 'function' && !apiResponseCurrent(r)) return;
-      if (!settleRequest() || !turnCurrent()) return;
+    /* h10-1.0.0 (2026-09-25): PAUSE MEANS SILENT. A reply that lands while the
+       kiosk is paused used to be spoken over the "Paused" screen. It is held
+       whole - success or refusal - and delivered on Resume exactly as it would
+       have been (kioskPauseToggle), so nothing is lost and nothing is said to a
+       patient who asked for quiet. */
+    function onTurnReply(r) {
       var j = r.json || {};
       /* A non-2xx that carries no {ok:false} — a 401, a 402 gate, a 429 whose
          body never parsed — must NEVER be walked as a successful turn: that
@@ -10172,6 +10265,15 @@ function kioskLine(kind, text) {
           if (turnCurrent()) kioskSpeechStarted(kiosk.lastSay, answer);
         });
       }
+    }
+    api('/api/avatar/office/turn', { method: 'POST', body: JSON.stringify(body) }).then(function (r) {
+      if (typeof apiResponseCurrent === 'function' && !apiResponseCurrent(r)) return;
+      if (!settleRequest() || !turnCurrent()) return;
+      /* h10-1.0.1: an emergency warning is never held by Pause - it is shown and
+         spoken at once (the rule above); listening stays closed while paused,
+         because kioskListen and the watchdog both refuse a paused kiosk. */
+      if (kiosk.paused && !(r && r.json && r.json.emergency === true)) { kiosk.heldReply = function () { if (turnCurrent()) onTurnReply(r); }; return; }
+      onTurnReply(r);
     }, function () {
       if (!settleRequest() || !turnCurrent()) return;
       /* the same words the spoken refusal above uses. This path is DISPLAY only
@@ -10200,6 +10302,8 @@ function kioskLine(kind, text) {
   function kioskWatchdog() {
     if (kiosk.ambient) return;   /* see kioskArmWatchdog - the auto-finish must never end a room capture */
     if (!kiosk.open || kiosk.busy || kiosk.completed) return;
+    /* h10-1.0.0: a paused kiosk neither nudges nor self-finishes; Resume re-arms */
+    if (kiosk.paused) return;
     var typed = (kiosk.mic === false);
     var wait = typed ? 20000 : 9000;   /* typing is slower than talking */
     /* AND A SENTENCE STILL PLAYING COUNTS AS ACTIVITY — WITH NO CAP ON THE WAIT.
@@ -10669,13 +10773,19 @@ function kioskLine(kind, text) {
         if (showSummary) safe(function () { open(); });
         return;
       }
-      if (msg) msg.textContent = (r.json && r.json.message) || 'That PIN isn\'t right — try again.';
+      /* h10-1.0.0 (2026-09-25): ONLY THE SERVER'S ANSWER IS A WRONG PIN. The
+         server says "wrong" as 200 {ok:false}; a dropped request, a cold-start
+         502, the limiter's text 429 or an expired 401 is not an answer about the
+         PIN at all, and calling it one told staff holding the right PIN to keep
+         retyping it (api() always resolves, so the old connection branch never
+         ran). Those keep the digits and say what happened. */
+      if (!(r.ok && r.json && r.json.ok === false)) {
+        if (msg) msg.textContent = 'Could not check the PIN — check the connection and try again.';
+        if (input) safe(function () { input.focus(); });
+        return;
+      }
+      if (msg) msg.textContent = r.json.message || 'That PIN isn\'t right — try again.';
       if (input) { input.value = ''; safe(function () { input.focus(); }); }
-    }, function () {
-      if (!unlockCurrent()) return;
-      kiosk.pinUnlockBusy = false;
-      if (go) go.disabled = false;
-      if (msg) msg.textContent = 'Could not check the PIN — check the connection and try again.';
     });
   }
   function kioskMicPreflight(then) {
@@ -12750,6 +12860,10 @@ function kioskLine(kind, text) {
       /* Pause is a privacy state, not a UI preference. Stop the independently
          adopted AEC stream/RAF/AudioContext synchronously with the disclosure. */
       safe(function () { pvVoiceGateStop(); });
+      /* h10-1.0.0: and the silence clock with it - the nudge used to be spoken
+         at a paused patient, and three silent windows self-finished the check-in */
+      if (kiosk.nudgeTimer) { safe(function () { clearTimeout(kiosk.nudgeTimer); }); kiosk.nudgeTimer = null; }
+      if (kiosk.deadTimer) { safe(function () { clearTimeout(kiosk.deadTimer); }); kiosk.deadTimer = null; }
       if (kiosk.preflighting) kiosk.preflightNeedsResume = true;
       if (kiosk.ambient) {
         /* stop() is immediate, but its trailing final remains wired for at most
@@ -12784,6 +12898,13 @@ function kioskLine(kind, text) {
       if (!kiosk.ambClosing) kioskAmbientListen();
     } else if (!kiosk.completed) {
       kioskSetSay(kiosk.lastSay || '');
+      /* h10-1.0.0: a reply that landed while paused was held, not spoken - it is
+         delivered now, exactly as it would have been, and opens listening itself */
+      if (kiosk.heldReply) {
+        var held = kiosk.heldReply; kiosk.heldReply = null;
+        held();
+        return false;
+      }
       if (kiosk.preflighting || kiosk.preflightNeedsResume) {
         /* Consent preflight never produced an opening question. Resume must
            restart THAT proof/turn, not open a recogniser on "Getting ready". */
@@ -12796,11 +12917,24 @@ function kioskLine(kind, text) {
       }
       /* Resume is the trusted user gesture that may reacquire the optional AEC
          stream. Speech recognition still works if the browser declines it. */
-      pvVoiceGateStart(function (adopted) {
-        if (adopted && kiosk.open && !kiosk.paused && !kiosk.completed) kioskListen();
-      });
+      kioskResumeListening();
     }
     return false;
+  }
+  /* h10-1.0.0 (2026-09-25): Resume and "Back to the interview" reopen listening
+     WHETHER OR NOT the echo-cancel gate adopts - adoption only upgrades echo
+     handling, exactly as kioskMicPreflight treats it. Gating on adoption left a
+     device without confirmed echo cancellation on a "Listening" screen with no
+     recogniser, no watchdog and no further turn, for ever. A gate request that
+     a later Pause, End or close CANCELED (pvVoiceGateStop moves
+     vgStartGeneration) still never reopens the microphone. */
+  function kioskResumeListening() {
+    var startedAt = -1;
+    pvVoiceGateStart(function () {
+      if (startedAt >= 0 && startedAt !== vgStartGeneration) return;
+      if (kiosk.open && !kiosk.paused && !kiosk.completed) kioskListen();
+    });
+    startedAt = vgStartGeneration;
   }
   function kioskEndVisit() {
     if (!kiosk.ambient || kiosk.ambEnding) return;
@@ -13062,13 +13196,29 @@ function kioskLine(kind, text) {
     /* A session that never had consent has no row to close - and asking the
        server to close it CREATES one. See the comment in kioskTurn. */
     if (!kiosk.consentAt) return;
-    if (kiosk.open && !kiosk.completed && kiosk.sid && kiosk.ext) {
-      safe(function () {
-        api('/api/avatar/office/turn', { method: 'POST', body: JSON.stringify({
-          clientSessionId: kiosk.sid, patientExternalId: kiosk.ext, finish: true }) })
-          .then(function (r) { if (apiResponseCurrent(r)) refreshCount(true); });
+    if (kiosk.open && !kiosk.completed && kiosk.sid && kiosk.ext) kioskFinishSend(kiosk.sid, kiosk.ext, 0);
+  }
+  /* h10-1.0.0 (2026-09-25): A LOST FINISH IS NEVER SILENT. This POST is the only
+     thing that moves the row out of 'active', the one state no inbox shows, and
+     it runs after the overlay is gone - so a dropped request or a cold-start 502
+     stranded the patient's answers with nobody told. It is retried with backoff
+     (the server answers an already-closed row with done, so a retry is safe),
+     and if every try fails staff are told what was lost. A session boundary
+     retires the retries (the timers are session-owned): it is a teardown, not a
+     clinical action. */
+  var KIOSK_FINISH_RETRY_MS = [1000, 3000, 6000];
+  function kioskFinishSend(sid, ext, attempt) {
+    api('/api/avatar/office/turn', { method: 'POST', body: JSON.stringify({
+      clientSessionId: sid, patientExternalId: ext, finish: true }) })
+      .then(function (r) {
+        if (!apiResponseCurrent(r)) return;
+        if (r.ok && r.json && r.json.ok !== false) { refreshCount(true); return; }
+        if (attempt < KIOSK_FINISH_RETRY_MS.length) {
+          avatarSessionTimer(function () { kioskFinishSend(sid, ext, attempt + 1); }, KIOSK_FINISH_RETRY_MS[attempt]);
+          return;
+        }
+        toast('This check-in was NOT closed — the server could not be reached, so the patient\'s answers are not in the check-in inbox. Check the connection.');
       });
-    }
   }
   function openKiosk() {
     /* A shell rerender can detach Setup before its cleanup runs. The retained
@@ -13131,6 +13281,7 @@ function kioskLine(kind, text) {
     kiosk.ambActions = []; kiosk.ambWindow = ''; kiosk.ambClosing = false; kiosk.ambFlushWaiters = []; kiosk.ambExitPending = false;
     kiosk.ambEnding = false; kiosk.ambSaveOk = null; kiosk.ambSaveTrim = false; kiosk.ambSavedAt = 0;
     kiosk.paused = false;   /* a paused kiosk must never be inherited by the next patient */
+    kiosk.heldReply = null; /* nor a reply held while the last one was paused (h10-1.0.0) */
     kiosk.ext = activeId;
     kiosk.sid = 'office-' + Date.now().toString(36) + '-' + kioskNonce().slice(3);
     var root = document.createElement('div'); root.id = 'mlsAvKiosk';
@@ -13237,11 +13388,12 @@ function kioskLine(kind, text) {
     root.querySelector('#mlsAvKioskPinInput').addEventListener('keydown', kioskEvent(function (e) { if (e.key === 'Enter') { e.preventDefault(); kioskPinSubmit('end'); } }));
     root.querySelector('#mlsAvKioskPinBack').addEventListener('click', kioskEvent(function () {
       var pad = gid('mlsAvKioskPin'); if (pad) pad.style.display = 'none';
-      /* a FINISHED interview stays at rest — Back never reopens the mic */
-      if (kiosk.open && !kiosk.busy && !kiosk.completed) {
+      /* a FINISHED interview stays at rest — Back never reopens the mic; nor does
+         Back on a PAUSED kiosk (h10-1.0.1): Resume reopens it */
+      if (kiosk.open && !kiosk.busy && !kiosk.completed && !kiosk.paused) {
         /* Back is a new trusted staff gesture. Reacquire the optional AEC gate
            here; a canceled PIN pad must never silently inherit a stopped gate. */
-        pvVoiceGateStart(function (adopted) { if (adopted && kiosk.open && !kiosk.paused && !kiosk.completed) kioskListen(); });
+        kioskResumeListening();
       }
     }));
     function kioskTypedSubmit() {
@@ -13365,7 +13517,18 @@ function kioskLine(kind, text) {
   function transcriptStamp(checkin) {
     return '[Pre-visit check-in #' + (checkin.id != null ? checkin.id : '?') + ' — patient-reported]';
   }
+  /* h10-1.0.0 (2026-09-25): THE ONE WRITER PROVES THE CHART. The box belongs to
+     whichever chart is open, and the Visit card's full-row refetch let the doctor
+     switch patients between the tap and this write, so patient A's check-in
+     landed in patient B's transcript under a toast that said it worked. Every
+     caller now gets the refusal the inbox panel already had. */
   function addToTranscript(checkin, button) {
+    var owner = exactPatient(checkin.patient_external_id), openId = activePtIdSafe();
+    if (!openId || (openId !== clean(checkin.patient_external_id) && !(owner && openId === clean(owner.id)))) {
+      toast('Nothing was written: open ' + ((owner && owner.name) || 'this patient') +
+        '\'s visit first, then use this button — the transcript belongs to whichever chart is open.');
+      return false;
+    }
     var box = gid('ez3flTranscript') || gid('ez3Transcript');
     if (!box || typeof box.value !== 'string') {
       toast('The visit transcript box is not on this screen right now — open the Visit recorder first.');
@@ -13574,9 +13737,11 @@ function kioskLine(kind, text) {
        on a later poll with the id, count and chart all identical - and the card
        would keep painting the unverified summary as if nothing had been decided.
        headline and bullet count are here for the same reason. */
+    var unfinished = cache ? (Number(cache.unfinished) || 0) : 0;
     var sig = (activeHit ? 'a' + activeHit.id + ':' + clean(activeHit.audited) +
         ':' + String(activeHit.headline || '').length +
-        ':' + (Array.isArray(activeHit.bullets) ? activeHit.bullets.length : 0) : 'n') + '|' + total + '|' + activeId +
+        ':' + (Array.isArray(activeHit.bullets) ? activeHit.bullets.length : 0) +
+        ':' + (activeHit.inProgress ? 'p' : 'f') : 'n') + '|' + total + '|' + unfinished + '|' + activeId +
       /* pend.held is in the signature, or a SECOND held capture appearing would
          not rebuild the card and its line would never be drawn */
       '|' + (pend ? 'r' + pend.bound + ':' + pend.chars + ':' + pend.held : 'r0') +
@@ -13592,11 +13757,18 @@ function kioskLine(kind, text) {
     var title = make('span', '', '🧑‍⚕️ Avatar');
     title.style.cssText = 'font-weight:800;color:#204034;font-size:13.5px';
     head.appendChild(title);
+    /* h10-1.0.0: an unfinished interview is never "completed" and never counted
+       as "finished" - see checkinUnfinished */
+    var hitUnfinished = !!(activeHit && activeHit.inProgress);
+    var finished = total == null ? null : Math.max(0, total - unfinished);
     var line = make('span', '', activeHit
-      ? '✨ This patient completed their pre-visit check-in:'
+      ? (hitUnfinished ? '⚠ This patient\'s check-in is NOT finished:' : '✨ This patient completed their pre-visit check-in:')
       : (total == null ? 'Your AI check-in assistant — patients answer your questions before the visit.'
-        : (total === 0 ? 'No completed check-ins waiting.' : (total + ' patient' + (total === 1 ? '' : 's') + ' finished their check-in.'))));
-    line.style.cssText = 'font-size:12.5px;color:' + (activeHit ? '#2E6A4B;font-weight:700' : '#55605A');
+        : ((finished === 0 && !unfinished) ? 'No completed check-ins waiting.'
+          : ((finished ? finished + ' patient' + (finished === 1 ? '' : 's') + ' finished their check-in.' : '') +
+            (unfinished ? (finished ? ' ' : '') + '⚠ ' + unfinished + ' check-in' + (unfinished === 1 ? ' was' : 's were') + ' NOT finished.' : '')))));
+    line.style.cssText = 'font-size:12.5px;color:' + ((hitUnfinished || (!activeHit && unfinished)) ? '#7a1f16;font-weight:700'
+      : (activeHit ? '#2E6A4B;font-weight:700' : '#55605A'));
     head.appendChild(line);
     /* av-3.0.0: the headline action — the patient is in the room, start the
        interview on THIS screen for THIS patient. */
@@ -13705,6 +13877,8 @@ function kioskLine(kind, text) {
       /* THE REVIEW UI: the doctor sees the patient's key points right here,
          no click required, and files them where they belong with one tap. */
       var full = null; /* full summary text arrives via the panel cache rows */
+      var visitBanner = emergencyBanner(activeHit);
+      if (visitBanner) card.appendChild(visitBanner);
       /* av-5.7.0: the HEADLINE leads here too. This card is the surface the
          doctor is already looking at when he opens the visit, so the brief has
          to arrive here or it may as well not exist. */
@@ -13722,7 +13896,7 @@ function kioskLine(kind, text) {
       /* the verdict itself, on the surface the doctor reads before the room. All four
          states were rendering byte-identically here: `audited` was added to this
          card's own cache payload by av-5.7.0 and then read by nothing. */
-      card.appendChild(make('div', 'mlsAvMeta' + (clean(activeHit.audited) === 'rejected' ? ' flag' : ''),
+      if (!hitUnfinished) card.appendChild(make('div', 'mlsAvMeta' + (clean(activeHit.audited) === 'rejected' ? ' flag' : ''),
         clean(activeHit.audited) === 'rejected'
           ? '⚠ The AI audit REJECTED this summary — it could not be reconciled with the patient\'s answers. Read the check-in before relying on it.'
           : (clean(activeHit.audited) === 'corrected' ? 'AI audit: corrected against the patient\'s answers.'
@@ -13735,6 +13909,9 @@ function kioskLine(kind, text) {
         });
         card.appendChild(ul);
       }
+      /* h10-1.0.0: with no summary there is nothing to file - an unfinished
+         interview has none yet - so the file buttons are not offered at all */
+      if (!activeHit.summary) return;
       var actions = make('div', 'mlsAvActions');
       actions.style.marginTop = '9px';
       /* `audited` MUST be on this object. Both write paths stamp the verdict beside
@@ -13751,9 +13928,18 @@ function kioskLine(kind, text) {
       function withSummary(run, button) {
         if (!needSummary) { run(); return; }
         button.disabled = true; var was = button.textContent; button.textContent = 'Loading…';
+        /* h10-1.0.0: the refetch is a wait, and the doctor can open another
+           patient or visit during it. What the tap was for is re-proved when it
+           lands: the same patient, the same visit, and this card still painting
+           this check-in - otherwise nothing is written or shown. */
+        var tapPatient = activePtIdSafe(), tapVisit = checkinVisitToken();
         api('/api/avatar/checkins?status=ready').then(function (r) {
           if (!apiResponseCurrent(r)) return;
           button.disabled = false; button.textContent = was;
+          if (button.isConnected === false || activePtIdSafe() !== tapPatient || checkinVisitToken() !== tapVisit) {
+            toast('Nothing was written — a different patient or visit was opened while the check-in was loading. Open that patient\'s visit and try again.');
+            return;
+          }
           var rows = (r.ok && r.json && Array.isArray(r.json.checkins)) ? r.json.checkins : [];
           /* The refetch must be PROVEN, not assumed: detail.summary was already
              pre-seeded with the 4000-char cache truncation, so testing it after
@@ -13777,7 +13963,7 @@ function kioskLine(kind, text) {
             if (Array.isArray(found.flags)) detail.flags = found.flags;
             needSummary = false; run();
           } else toast('Could not load the full summary — open All check-ins and use it from there.');
-        }, function () { button.disabled = false; button.textContent = was; toast('Could not load the full summary — try again.'); });
+        });
       }
       actions.appendChild(visitButton('Add to visit transcript', true, function (b) {
         withSummary(function () { addToTranscript(detail, b); }, b);
@@ -13930,7 +14116,7 @@ function kioskLine(kind, text) {
       safe(function () { if (controller && isFn(controller.destroy)) controller.destroy(); });
     });
 
-    lastRefreshAt = 0; refreshInFlight = false;
+    lastRefreshAt = 0; refreshInFlight = 0;
     setCount(0);
     var avatarButton = gid(BUTTON_ID);
     if (avatarButton && avatarButton.parentNode) avatarButton.parentNode.removeChild(avatarButton);

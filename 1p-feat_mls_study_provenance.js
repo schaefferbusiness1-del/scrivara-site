@@ -44,6 +44,9 @@
   var wrappers = null;
   var enrichCache = typeof WeakMap === 'function' ? new WeakMap() : null;
   var resultOwners = typeof WeakMap === 'function' ? new WeakMap() : null;
+  /* h10-1.0.0 (2026-09-25): the range each UI run was STARTED with, keyed by
+     that run's own promise. See engine.runFromUi below. */
+  var runRanges = typeof WeakMap === 'function' ? new WeakMap() : null;
   var objectUrls = [];
   var lastDiagnostic = { status: 'not-run', receiptId: '', counts: null };
 
@@ -122,6 +125,29 @@
     if (to > today) to = today;
     return { ok: true, requestedKind: kind, range: { kind: 'dates', from: from, to: to, requestedKind: kind } };
   }
+  /* h10-1.0.0 (2026-09-25): the month and year readers below take ONE period,
+     and rewriteQueryRange then pins the whole study to it. They took the first
+     token they met, so "since 2026-03-15" became March 2026 and "2025-2026" or
+     "2025 and 2026" became 2025 alone - each still labelled "Coverage
+     verified". A request naming more than one year, a full date outside the
+     from/to form, a range word before a period, or two months is not one
+     period: the doctor is asked to name it instead of getting a narrower
+     study. */
+  var MONTH_WORD = '(?:january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sept|sep|oct|nov|dec)';
+  function namesMoreThanOnePeriod(lower) {
+    var years = {}, yearCount = 0;
+    /* h10-1.0.1: a number followed by a unit is a dose or a size, not a year
+       ("gabapentin 2000 mg" named no period). */
+    (lower.match(/(?:^|\D)(?:19|20)\d{2}(?!\d|\s*(?:mg|mcg|ug|g|ml|units?|iu|%|cc|mm|cm|kg|lbs?)\b)/g) || []).forEach(function (hit) {
+      var y = hit.slice(-4); if (!years[y]) { years[y] = 1; yearCount++; }
+    });
+    if (!yearCount) return false; // no year: nothing below reads a period
+    if (yearCount > 1) return true;
+    if (/(?:19|20)\d{2}-\d{1,2}-\d{1,2}/.test(lower)) return true;
+    if (new RegExp('\\b(?:since|after|before|until|till|through|thru|from|between|starting|beginning|ending)\\s+(?:' + MONTH_WORD + '\\b|(?:19|20)\\d{2})').test(lower)) return true;
+    if (new RegExp('\\b' + MONTH_WORD + '\\b\\.?\\s*(?:-|\u2013|to|through|thru|until|till|and|or|&)\\s*' + MONTH_WORD + '\\b\\.?,?\\s+(?:19|20)\\d{2}\\b').test(lower)) return true;
+    return (lower.match(new RegExp('\\b' + MONTH_WORD + '\\.?\\s+(?:19|20)\\d{2}\\b|\\b(?:19|20)\\d{2}[-/](?:0?[1-9]|1[0-2])\\b', 'g')) || []).length > 1;
+  }
   function parseExplicitRange(query, options) {
     options = options || {};
     var text = S(query), lower = text.toLowerCase(), m;
@@ -134,13 +160,18 @@
       if (from > todayIso(options.now) || to > todayIso(options.now)) return { ok: false, code: 'future-range', clarification: 'Historical study ranges cannot extend beyond today.' };
       return { ok: true, requestedKind: 'custom', range: { kind: 'dates', from: from, to: to, requestedKind: 'custom' } };
     }
+    if (namesMoreThanOnePeriod(lower)) {
+      return { ok: false, code: 'ambiguous-range', clarification: 'Name one month (March 2026), one year (2025), or an exact range (from 2026-03-15 to 2026-09-25).' };
+    }
     m = lower.match(/\b(?:month(?:\s+of)?\s+)?(19\d{2}|20\d{2})[-\/](0?[1-9]|1[0-2])\b/);
     if (m && (/(?:\bmonth\b|\bfor\b|\bin\b|\bduring\b)/.test(lower) || !/\d{4}-\d{1,2}-\d{1,2}/.test(lower))) {
       return boundedCalendarRange('month', Number(m[1]), Number(m[2]), options.now);
     }
     m = lower.match(/\b(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\s+(19\d{2}|20\d{2})\b/);
     if (m) return boundedCalendarRange('month', Number(m[2]), MONTHS[m[1]], options.now);
-    m = lower.match(/\b(?:calendar\s+year|year|during|in|for)\s+(19\d{2}|20\d{2})\b/);
+    /* h10-1.0.1: 'for 2000 mg' is a dose, not a year - the same unit look-ahead as
+       namesMoreThanOnePeriod, so both readers agree on what a year is */
+    m = lower.match(/\b(?:calendar\s+year|year|during|in|for)\s+(19\d{2}|20\d{2})(?!\d|\s*(?:mg|mcg|ug|g|ml|units?|iu|%|cc|mm|cm|kg|lbs?)\b)/);
     if (m && !/\d{4}-\d{1,2}-\d{1,2}/.test(lower)) return boundedCalendarRange('year', Number(m[1]), null, options.now);
     return null;
   }
@@ -651,7 +682,8 @@
         /* Original engine exceptions may include stored-record text or internal
            implementation details. Keep those out of the physician surface;
            the bounded coverage status remains available in diagnostics. */
-        status.textContent = 'The stored-data study could not be completed. Check the requested range and try again.';
+        status.textContent = error && error.p1RangeRefusal ? error.message
+          : 'The stored-data study could not be completed. Check the requested range and try again.';
         status.hidden = false; status.setAttribute('data-state', 'error');
       }
     });
@@ -694,12 +726,26 @@
       var owner = sessionOwner(root);
       if (!owner) return Promise.reject(coverageError('coverage-session-unverified', 'Sign in again before running a stored-data study.'));
       var explicit = parseExplicitRange(query, {});
-      if (explicit && !explicit.ok) return Promise.reject(coverageError(explicit.code, explicit.clarification));
+      if (explicit && !explicit.ok) {
+        var refused = coverageError(explicit.code, explicit.clarification);
+        refused.p1RangeRefusal = true;
+        return Promise.reject(refused);
+      }
       var rewritten = rewriteQueryRange(query, explicit);
-      return Promise.resolve(originals.runFromUi.call(engine, rewritten)).then(function (result) {
+      var run = originals.runFromUi.call(engine, rewritten);
+      /* h10-1.0.0 (2026-09-25): a second Enter while a study runs is handed the
+         SAME in-flight run, and stamped its own range onto that run's result:
+         the receipt, CSV, PDF and ledger of a March study read "2026-01-01
+         through 2026-09-25". The range belongs to the call that started the
+         run; a later call handed the same run inherits it. */
+      var requested = explicit && explicit.range ? clone(explicit.range) : null;
+      if (runRanges && run && typeof run === 'object') {
+        if (runRanges.has(run)) requested = runRanges.get(run); else runRanges.set(run, requested);
+      }
+      return Promise.resolve(run).then(function (result) {
         requireCurrentSession(owner, root);
         if (!result || !result.model || !result.scoped) return result;
-        if (explicit && explicit.range) result.p1RequestedRange = clone(explicit.range);
+        if (requested) result.p1RequestedRange = clone(requested);
         return enrichResult(result, { engine: engine, owner: owner }).then(function (value) { renderReceiptUi(value); return value; });
       }).catch(function (error) {
         if (error && error.code === 'coverage-session-changed') scrubStudyUi();

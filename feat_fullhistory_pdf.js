@@ -3,8 +3,8 @@
  * ---------------------------------------------------------------------
  * Adds ONE action — "🗂 Export full history (PDF)" — to the per-patient
  * visit-history view (§52 #mlsVisitHistoryExt; falls back to the base
- * #mlsVisitHistory / #profileCard).  Clicking it compiles EVERY visit on
- * file for the active patient into ONE well-formatted PDF:
+ * #mlsVisitHistory / #profileCard).  Clicking it compiles EVERY visit the
+ * visit model verifies as the active patient's own into ONE PDF:
  *
  *   • Cover page: patient name, DOB, MRN (when present), provider,
  *     generated date/time, total visit count, first→last date range, and
@@ -24,8 +24,9 @@
  *     NO new PDF library is introduced.
  *   • Op-note formatting: window.__mlsOpNotePro.normalize / .isNormalized.
  *   • Letterhead: window.MLS_OPNOTE_LETTERHEAD (shared with §53/§54).
- *   • Data: window.__mlsVisitModel (getVisits / deriveFromLegacy /
- *     _svcToYMD) over patient.visits[] — REAL visits only; no fabrication.
+ *   • Data: window.__mlsVisitModel (usableVisits / getVisits /
+ *     deriveFromLegacy / _svcToYMD) over patient.visits[] — this chart's
+ *     own REAL visits only; no fabrication.
  *
  * SAFETY / PRIVACY:
  *   • Read-only: never writes a patient/visit, never calls upsertPatient,
@@ -70,14 +71,19 @@
     return safe(function () { return isFn(window.getSpec) ? (window.getSpec() || "") : ""; }) || "";
   }
 
-  /* ---- visits (REAL model only; never fabricated) ---- */
-  function getVisits(p) {
+  /* ---- visits (REAL model only; never fabricated) ----
+     h10-1.0.0 (2026-09-25): this printed EVERY row in p.visits under the open
+     chart's name - a row the visit model binds to ANOTHER chart, an old
+     unverified athena row, an index-only shell - as "this patient's visit
+     record". It now prints exactly the rows the visit model calls this chart's
+     own (usableVisits, the gate History summaries and the Copilot use) and
+     counts the rest so the cover can say they were left out. Without the model
+     there is no gate, so there is no PDF. */
+  function visitSets(p) {
     var M = MODEL();
-    if (M) {
-      try { if (isFn(M.deriveFromLegacy)) M.deriveFromLegacy(p); } catch (e) {}
-      try { if (isFn(M.getVisits)) return M.getVisits(p) || []; } catch (e) {}
-    }
-    return Array.isArray(p && p.visits) ? p.visits.slice() : [];
+    if (!M || !isFn(M.usableVisits) || !isFn(M.getVisits)) return null;
+    try { if (isFn(M.deriveFromLegacy)) M.deriveFromLegacy(p); } catch (e) {}
+    try { return { own: M.usableVisits(p) || [], all: M.getVisits(p) || [] }; } catch (e) { return null; }
   }
   function ymd(d) {
     var M = MODEL();
@@ -115,12 +121,39 @@
       document.head.appendChild(s);
     });
   }
-  // jsPDF standard-14 fonts are Latin-1 only; strip what won't render (mirror §53).
+  /* jsPDF standard-14 fonts are Latin-1 only.
+     h10-1.0.0 (2026-09-25): everything else used to be DELETED, silently - a
+     Vietnamese name printed as "Nguyn Th Hng", and "↑ gabapentin 300 → 600 mg;
+     pain ≤ 3/10" lost the direction of both changes. Clinical symbols now
+     become their words, a letter outside Latin-1 keeps its base letter (only
+     the accent goes), anything else prints as a visible "[?]", and both are
+     counted so every page footer says what the font changed. */
+  var PDF_WORDS = { "\u2191": "increase", "\u2193": "decrease", "\u2192": "->", "\u2190": "<-", "\u2194": "<->",
+    "\u21d2": "=>", "\u2264": "<=", "\u2265": ">=", "\u2260": "!=", "\u2248": "~", "\u03bc": "\u00b5" };
+  var pdfLoss = { accents: 0, unknown: 0 };
+  function withoutAccents(s) {
+    var t = S(s);
+    return isFn(t.normalize) ? t.normalize("NFKD").replace(/[\u0300-\u036f]/g, "") : t;
+  }
   function pdfSafe(s) {
-    return S(s).replace(/[‘’‚‛]/g, "'").replace(/[“”„]/g, '"')
+    var t = S(s);
+    if (isFn(t.normalize)) t = t.normalize("NFC");
+    /* h10-1.0.1: invisible format characters (zero-width spaces and joiners, marks,
+       word joiners, BOM) print as nothing, and Unicode hyphens and spaces print as
+       their plain forms - none of them is a lost character or a "[?]". */
+    return t.replace(/[\u200B-\u200F\u2060-\u2064\uFEFF\u202A-\u202E\u2066-\u2069\u180E\uFE00-\uFE0F]/g, "")
+      .replace(/[\u2028\u2029]/g, "\n")
+      .replace(/[\u2000-\u200A\u202F\u205F\u3000]/g, " ")
+      .replace(/[\u2010-\u2012\u2015\u2043\uFE63\uFF0D]/g, "-")
+      .replace(/[‘’‚‛]/g, "'").replace(/[“”„]/g, '"')
       .replace(/[–—−]/g, "-").replace(/…/g, "...")
       .replace(/[•●▪·]/g, "-")
-      .replace(/[^\x09\x0A\x0D\x20-\xFF]/g, "");
+      .replace(/[\u2190-\u21ff\u2248\u2260\u2264\u2265\u03bc]/g, function (c) { return PDF_WORDS[c] || c; })
+      .replace(/[\ud800-\udbff][\udc00-\udfff]|[^\x09\x0A\x0D\x20-\xFF]/g, function (c) {
+        var base = withoutAccents(c);
+        if (base !== c && /^[\x20-\xFF]*$/.test(base)) { pdfLoss.accents++; return base; }
+        pdfLoss.unknown++; return "[?]";
+      });
   }
 
   /* ---- op-note heading detection (mirrors the §53 engine's render pass) ---- */
@@ -182,16 +215,19 @@
   function build(p) {
     p = p || activeP();
     if (!p) { toast("Open a patient first.", "err"); return Promise.resolve(false); }
-    var visits = chronological(getVisits(p));
     var patientName = trim(p.name) || trim(p.fullName) || "Patient";
+    var sets = visitSets(p);
+    if (!sets) { toast("The visit record is not ready yet — try again in a moment.", "err"); return Promise.resolve(false); }
+    var visits = chronological(sets.own), leftOut = sets.all.length - sets.own.length;
     // HONEST empty state — never invent a visit to fill the document.
     if (!visits.length) {
-      toast("No visits on file for " + patientName + " — nothing to export.", "err");
+      toast((leftOut ? "No visits verified as " + patientName + "'s own" : "No visits on file for " + patientName) + " — nothing to export.", "err");
       return Promise.resolve(false);
     }
 
     return ensureJsPdf().then(function (ns) {
       try {
+        pdfLoss = { accents: 0, unknown: 0 };
         var jsPDF = ns.jsPDF;
         var doc = new jsPDF({ unit: "pt", format: "letter" });
         var pageW = doc.internal.pageSize.getWidth();
@@ -233,7 +269,7 @@
             doc.setFont("helvetica", "bold"); doc.setFontSize(16); doc.setTextColor(21, 95, 179);
             doc.text("MLS", margin, y);
             doc.setFont("helvetica", "normal"); doc.setFontSize(9.5); doc.setTextColor(95, 113, 134);
-            doc.text(spec || "Physical Medicine, Rehabilitation & Pain", margin + 42, y); y += 16;
+            doc.text(pdfSafe(spec || "Physical Medicine, Rehabilitation & Pain"), margin + 42, y); y += 16;
           }
           doc.setFont("helvetica", "normal"); doc.setFontSize(9.5); doc.setTextColor(95, 113, 134);
           if (prov) doc.text(pdfSafe("Provider: " + prov + (spec && lh.clinicName ? (" · " + spec) : "")), pageW - margin, margin, { align: "right" });
@@ -257,7 +293,9 @@
           ? (fmtDate(dated[0]) + "  →  " + fmtDate(dated[dated.length - 1]))
           : "no dated visits";
         var undatedN = visits.length - dated.length;
-        write("Total visits on file: " + visits.length, 10.5, false);
+        write("Visits in this document: " + visits.length, 10.5, false);
+        if (leftOut) write("Not included: " + leftOut + " visit record" + (leftOut === 1 ? "" : "s") +
+          " not verified as this patient's own (index-only entries, or athena visits not verified for this chart).", 10.5, false);
         write("Date range: " + rangeStr + (undatedN ? ("  (" + undatedN + " undated)") : ""), 10.5, false);
         y += 6;
 
@@ -319,7 +357,11 @@
             var pro = raw, P = PRO();
             try {
               if (P && isFn(P.normalize)) {
-                var meta = { patient: patientName, dob: trim(p.dob), mrn: trim(p.mrn), provider: prov, spec: spec, dop: ymd(v.date) };
+                /* h10-1.0.0 (2026-09-25): no provider here. A past procedure note
+                   names the clinician who performed it, and meta.provider would
+                   replace that name with whoever is compiling this PDF. The
+                   compiler is on the cover letterhead only. */
+                var meta = { patient: patientName, dob: trim(p.dob), mrn: trim(p.mrn), dop: ymd(v.date) };
                 pro = (isFn(P.isNormalized) && P.isNormalized(raw)) ? raw : P.normalize(raw, meta);
               }
             } catch (e) { pro = raw; }
@@ -360,15 +402,19 @@
 
         /* ---------- footer / page numbers on every page ---------- */
         var pc = doc.internal.getNumberOfPages();
+        var fontNote = [];
+        if (pdfLoss.accents) fontNote.push(pdfLoss.accents + " accent" + (pdfLoss.accents === 1 ? "" : "s") + " removed from letters");
+        if (pdfLoss.unknown) fontNote.push(pdfLoss.unknown + " character" + (pdfLoss.unknown === 1 ? "" : "s") + " shown as [?]");
         for (var pg = 1; pg <= pc; pg++) {
           doc.setPage(pg);
           doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(150);
           doc.text("Page " + pg + " of " + pc, pageW - margin, pageH - 24, { align: "right" });
           doc.text("Complete visit history — compiled with MLS from this patient's visit record. Confidential / PHI.", margin, pageH - 24);
+          if (fontNote.length) doc.text("This PDF font prints Latin-1 text only: " + fontNote.join("; ") + ".", margin, pageH - 36);
         }
         doc.setTextColor(0);
 
-        var fname = "VisitHistory_" + slug(patientName) + "_" + todayStamp() + ".pdf";
+        var fname = "VisitHistory_" + slug(withoutAccents(patientName)) + "_" + todayStamp() + ".pdf";
         doc.save(fname);
         toast("Saved " + fname + " (" + visits.length + " visit" + (visits.length === 1 ? "" : "s") + ")", "ok");
         return true;

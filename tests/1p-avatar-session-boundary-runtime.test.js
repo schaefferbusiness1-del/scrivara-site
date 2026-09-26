@@ -71,8 +71,14 @@ for (const [name, first, last] of guarded) {
   const block = slice(first, last);
   ok(block.includes('apiResponseCurrent('), name + ' can apply a completion without the exact session receipt');
 }
-ok(/function sessionCredentialsCurrent\(receipt\)[\s\S]*!receipt\.account[\s\S]*!receipt\.token[\s\S]*receipt\.epoch !== sessionEpoch[\s\S]*receipt\.account !== sessionAccount[\s\S]*receipt\.token !== clean\(token\(\)\)/.test(source),
-  'the response receipt is not exact across generation, epoch, account, and token');
+/* h10-1.0.0 (2026-09-25): a same-account token rotation (slideSession, a
+   password change) is not a boundary, so the receipt is exact across
+   generation, epoch and account and requires a LIVE token - not the launch-time
+   one, which killed every control on the first rotation. The runtime below
+   still proves every real boundary and the lingering-token logout. */
+ok(/function sessionCredentialsCurrent\(receipt\)[\s\S]*!receipt\.account[\s\S]*!receipt\.token[\s\S]*receipt\.epoch !== sessionEpoch[\s\S]*receipt\.account !== sessionAccount[\s\S]*!clean\(token\(\)\)/.test(source) &&
+  !/receipt\.token !== clean\(token\(\)\)/.test(source),
+  'the response receipt is not exact across generation, epoch and account with a live token');
 ok(/function api\(path, options\)[\s\S]{0,900}if \(!sessionReceiptCurrent\(receipt\)\)[\s\S]{0,260}blocked: 'stale-or-blank-session'/.test(source),
   'the network door does not fail closed before fetch for a blank/stale session');
 ok(/return Promise\.resolve\(\)\.then\(function \(\) \{[\s\S]{0,500}if \(!sessionReceiptCurrent\(receipt\)\)[\s\S]{0,250}blocked: 'stale-before-fetch'[\s\S]{0,250}return fetch\(/.test(source),

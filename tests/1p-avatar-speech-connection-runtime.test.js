@@ -61,7 +61,8 @@ function extractFunction(name) {
   const previewAt = SOURCE.indexOf("var voiceTry = make('button'");
   const previewEnd = SOURCE.indexOf('voiceRow.appendChild', previewAt);
   const preview = SOURCE.slice(previewAt, previewEnd);
-  ok(/pvSpeakVoiced\([^]*voiceSelect\.value, 'greet', lookCtl\);/.test(preview),
+  /* h10-1.0.0: a trailing playback-start callback (the substitute-voice notice) may follow the face */
+  ok(/pvSpeakVoiced\([^]*voiceSelect\.value, 'greet', lookCtl[,)]/.test(preview),
     'Hear-this-voice does not bind playback to the visible Setup face');
   const tabsAt = SOURCE.indexOf('defs.forEach(function (def, index)');
   const tabsEnd = SOURCE.indexOf('panel.appendChild(tabs)', tabsAt);

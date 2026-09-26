@@ -106,14 +106,14 @@ let OCCLUDERS = [];
   let m;
   while ((m = re.exec(css))) {
     const decl = m[2];
-    if (!/position:absolute/.test(decl)) continue;
+    if (!/position:(absolute|fixed)/.test(decl)) continue;   /* h10-1.0.1: the kiosk's floating controls are fixed now */
     if (!/z-index:\s*\d/.test(decl)) continue;
     if (!/background:\s*(#|rgb|linear-gradient)/.test(decl)) continue;   /* transparent cannot hide text */
     if (MODALS.indexOf(m[1]) >= 0) continue;   /* a modal covering the screen is its job */
     if (floating.indexOf(m[1]) < 0) floating.push(m[1]);
   }
   assert.ok(floating.length >= 1,
-    'no absolutely positioned, opaque, z-indexed element was derived from the stylesheet, so this ' +
+    'no absolutely or fixed positioned, opaque, z-indexed element was derived from the stylesheet, so this ' +
     'suite is reading the wrong thing and its "0 covered" result would mean nothing');
   assert.ok(floating.indexOf('mlsAvKioskOrders') >= 0,
     'THE PROPOSED-ACTIONS PANEL IS NO LONGER AN OPAQUE FLOATING CARD in the stylesheet, so the ' +

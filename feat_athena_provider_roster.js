@@ -902,6 +902,19 @@
     var eq = providerEquivalentKey(raw, true);
     exact = eq ? entries.filter(function (e) { return e.equivalentKey === eq; }) : [];
     if (exact.length === 1) return exact[0]; // same-name ambiguity fails closed
+    /* h10-1.0.0 (2026-09-25): a 'calendar-seen:<equivalentKey>' key names a
+       clinician the calendar showed before the roster could verify them.
+       seenOnCalendar() stops listing that clinician once a verified entry
+       carries the same equivalentKey or name; resolve() now answers the key
+       with that one verified entry by the same test, so a pull saved against
+       the key is not stranded by the verification. Ambiguity still fails
+       closed. */
+    if (raw.indexOf('calendar-seen:') === 0) {
+      var seenEq = raw.slice('calendar-seen:'.length), seenName = '';
+      seenStored().forEach(function (n) { var se = seenEntry(n); if (se && se.stableKey === raw) seenName = normKey(se.name); });
+      exact = entries.filter(function (e) { return (seenEq && e.equivalentKey === seenEq) || (seenName && normKey(e.name) === seenName); });
+      if (exact.length === 1) return exact[0];
+    }
     /* csp-1.0.0: LAST, and only after every verified path missed. A clinician
        the calendar named but the roster could not prove still resolves, so a
        scoped pull can be aimed at her - carrying seenOnCalendar:true and

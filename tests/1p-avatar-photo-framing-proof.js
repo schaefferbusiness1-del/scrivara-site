@@ -25,7 +25,11 @@ function originFile(name) {
 /* Strong boundary: the regular avatar bytes and the p1 camera hot path both
    remain exactly as they were at origin/main. This change may only affect the
    decoded-upload lane. */
-assert.strictEqual(sha(fs.readFileSync(MAIN_PATH)), sha(originFile('feat_mls_avatar.js')),
+/* h10-1.0.1 (2026-09-26): the production avatar is DERIVED from 1p now
+   (derive-production-from-1p --check proves they match), so this boundary pins it to
+   HEAD, as its sibling proofs do - pinned to origin/main it went red on every
+   reviewed avatar change until the branch was merged. */
+assert.strictEqual(sha(fs.readFileSync(MAIN_PATH)), sha(cp.execFileSync('git', ['show', 'HEAD:feat_mls_avatar.js'], { cwd: ROOT })),
   'regular/main avatar bytes changed');
 const originP1 = originFile('1p-feat_mls_avatar.js').toString('utf8');
 assert.strictEqual(

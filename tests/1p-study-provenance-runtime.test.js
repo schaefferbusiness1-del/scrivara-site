@@ -123,6 +123,33 @@ class FakeJsPDF {
   assert.strictEqual(custom.range.from, '2026-03-01');
   assert.strictEqual(api.parseExplicitRange('during 2027', { now: new Date('2026-08-15T12:00:00Z') }).code, 'future-range');
   assert.strictEqual(api.parseExplicitRange('from 2026-01-01 through 2027-01-01', { now: new Date('2026-08-15T12:00:00Z') }).code, 'future-range');
+  /* h10-1.0.0 (2026-09-25): a request naming more than one period is asked
+     about, never narrowed to its first month or year. */
+  for (const narrowed of [
+    'procedure volume for patients seen in clinic since 2026-03-15',
+    'procedure volume in 2025-2026',
+    'procedure volume for 2025 and 2026',
+    'procedure volume from March to June 2026',
+    'procedure volume March-June 2026',
+    'outcomes since March 2026',
+    'procedure volume in March 2026 vs June 2026'
+  ]) {
+    const got = api.parseExplicitRange(narrowed, { now: new Date('2026-09-25T12:00:00Z') });
+    assert(got && got.ok === false && got.code === 'ambiguous-range' && /one month .* one year .* exact range/.test(got.clarification),
+      'a request naming more than one period was narrowed instead of asked about: ' + JSON.stringify(narrowed) + ' -> ' + JSON.stringify(got && (got.range || got.code)));
+  }
+  for (const [single, from, to] of [
+    ['procedure volume in March 2026', '2026-03-01', '2026-03-31'],
+    ['outcomes for patients who may or may not respond in 2025', '2025-01-01', '2025-12-31'],
+    ['trigger point injection CPT 20553 volume in 2025', '2025-01-01', '2025-12-31'],
+    ['procedure volume in 2025 for gabapentin 2000 mg', '2025-01-01', '2025-12-31'],
+    ['dose escalation for 2000 mg in 2025', '2025-01-01', '2025-12-31'],
+    ['botox for 2000 units in 2025', '2025-01-01', '2025-12-31']
+  ]) {
+    const got = api.parseExplicitRange(single, { now: new Date('2026-09-25T12:00:00Z') });
+    assert(got && got.ok && got.range.from === from && got.range.to === to, 'a one-period request lost its range: ' + JSON.stringify(single));
+  }
+  assert.strictEqual(api.parseExplicitRange('procedure volume in the last 12 months', {}), null, 'a request with no year was given a pre-parsed range');
 
   const upgraded = api.upgradedSpec('procedure volume in June 2026', () => baseSpec({ kind: 'all' }, 'volume'), { now: new Date('2026-08-15T12:00:00Z') });
   assert.strictEqual(upgraded.range.requestedKind, 'month');
@@ -322,6 +349,56 @@ class FakeJsPDF {
   resolveLate(fixture());
   await assert.rejects(late, (error) => error && error.code === 'coverage-session-changed');
   assert.strictEqual(switchedStorage.writes, 0, 'an old-account result wrote a receipt into the new account namespace');
+
+  /* h10-1.0.0 (2026-09-25): a second Enter while a study runs is handed the
+     SAME in-flight result (feat_mls_study_request.js runFromUi returns
+     uiRunPromise). Its range must not be stamped onto the first study's
+     receipt, CSV and ledger. */
+  {
+    const uiStorage = new MemoryStorage();
+    const savedGlobals = { uns: globalThis.uns, localStorage: globalThis.localStorage };
+    globalThis.uns = (name) => 'acct-ui::' + name;
+    globalThis.localStorage = uiStorage;
+    let inFlight = null, release = null;
+    const submitted = [];
+    const uiEngine = {
+      parseStudySpec: () => baseSpec({ kind: 'all' }, 'volume'),
+      run: () => Promise.resolve(null),
+      runFromUi(query) {
+        submitted.push(query);
+        if (inFlight) return inFlight;
+        inFlight = new Promise((resolve) => { release = () => resolve(fixture({
+          spec: baseSpec({ kind: 'month-window', fromMonth: '2025-03', toMonth: '2025-03' }, 'volume'),
+          patients: [{ code: 'P001', name: 'P001', ageYears: 45, visits: [
+            { date: '2025-03', type: 'Procedure', detail: 'documented', source: 'athena-history' }] }],
+          fromMonth: '2025-03', toMonth: '2025-03', excludedOutOfRange: 2
+        })); });
+        return inFlight;
+      },
+      executeSpec: () => Promise.resolve(null),
+      shouldSubmitKey: () => false
+    };
+    try {
+      assert.strictEqual(api.installEngine(uiEngine), true);
+      const first = uiEngine.runFromUi('procedure volume in March 2025');
+      const second = uiEngine.runFromUi('procedure volume in 2025');
+      assert.strictEqual(submitted.length, 2, 'the fixture did not see both submits');
+      release();
+      const [a, b] = await Promise.all([first, second]);
+      assert.strictEqual(a, b, 'the fixture no longer returns the one in-flight result');
+      assert.strictEqual(a.p1CoverageReceipt.range.label, '2025-03-01 through 2025-03-31',
+        'a second Enter restamped the running study\'s coverage range: ' + a.p1CoverageReceipt.range.label);
+      const ledger = uiStorage.getItem('acct-ui::p1StudyCoverageReceiptsV1');
+      assert(ledger && ledger.includes('2025-03-01 through 2025-03-31') && !ledger.includes('2025-01-01 through 2025-12-31'),
+        'the durable ledger carries the second request\'s range');
+      await assert.rejects(uiEngine.runFromUi('procedure volume in 2024 and 2025'),
+        (error) => error && error.code === 'ambiguous-range' && error.p1RangeRefusal === true && /one month/.test(error.message),
+        'a two-period request reached the engine instead of being asked about');
+      assert.strictEqual(submitted.length, 2, 'a refused two-period request was still submitted to the engine');
+    } finally {
+      globalThis.uns = savedGlobals.uns; globalThis.localStorage = savedGlobals.localStorage;
+    }
+  }
 
   console.log('PASS /p1 study provenance: month/year/custom ranges, explicit included/excluded/undated/source coverage, PHI-free durable incremental receipts, export embedding, and fail-closed reconciliation');
 })().catch((error) => {
